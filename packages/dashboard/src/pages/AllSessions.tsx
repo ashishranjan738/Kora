@@ -82,6 +82,8 @@ export function AllSessions() {
   const [agentCliArgsOverrides, setAgentCliArgsOverrides] = useState<Record<number, string>>({});
   const [playbookMessagingMode, setPlaybookMessagingMode] = useState<"mcp" | "terminal" | "manual">("mcp");
   const [playbookWorktreeMode, setPlaybookWorktreeMode] = useState<"isolated" | "shared">("isolated");
+  const [topologyExpanded, setTopologyExpanded] = useState(false);
+  const [expandedCliFlags, setExpandedCliFlags] = useState<Record<number, boolean>>({});
 
   // Daemon status
   const [daemonStatus, setDaemonStatus] = useState<{
@@ -247,6 +249,8 @@ export function AllSessions() {
       setDefaultModelForAll("");
       setPlaybookMessagingMode("mcp");
       setPlaybookWorktreeMode("isolated");
+      setTopologyExpanded(false);
+      setExpandedCliFlags({});
       navigate(`/session/${sessionResult.id}`);
     } catch (err: any) {
       alert(`Failed to launch playbook: ${err.message}`);
@@ -943,11 +947,13 @@ export function AllSessions() {
             setDefaultModelForAll("");
             setPlaybookMessagingMode("mcp");
             setPlaybookWorktreeMode("isolated");
+            setTopologyExpanded(false);
+            setExpandedCliFlags({});
           }}
         >
           <div
             className="dialog"
-            style={{ maxWidth: "min(720px, 90vw)", minWidth: 0, width: "min(720px, calc(100vw - 32px))" }}
+            style={{ maxWidth: "min(700px, 90vw)", minWidth: 0, width: "min(700px, calc(100vw - 32px))" }}
             onClick={(e) => e.stopPropagation()}
           >
             {!selectedPlaybook ? (
@@ -1022,367 +1028,209 @@ export function AllSessions() {
                 </div>
               </>
             ) : (
-              <>
-                <h2>Launch: {selectedPlaybook.name}</h2>
-                {selectedPlaybook.description && (
-                  <p
-                    style={{
-                      color: "var(--text-secondary)",
-                      fontSize: 14,
-                      marginBottom: 16,
-                    }}
-                  >
-                    {selectedPlaybook.description}
-                  </p>
-                )}
-
-                <div
-                  style={{
-                    marginBottom: 16,
-                    padding: 16,
-                    backgroundColor: "var(--bg-primary)",
-                    borderRadius: 8,
-                    border: "1px solid var(--border-color)",
-                  }}
-                >
-                  <p
-                    style={{
-                      fontSize: 12,
-                      color: "var(--text-muted)",
-                      marginBottom: 8,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                    }}
-                  >
-                    Agent Topology
-                  </p>
-                  {renderPlaybookVisual(selectedPlaybook)}
+              <div className="playbook-launch-dialog">
+                {/* Dialog header */}
+                <div className="playbook-launch-header">
+                  <h2>Launch: {selectedPlaybook.name}</h2>
+                  {selectedPlaybook.description && (
+                    <p className="playbook-launch-desc">{selectedPlaybook.description}</p>
+                  )}
                 </div>
 
-                <div className="form-group">
-                  <label>Session Name</label>
-                  <input
-                    value={playbookSessionName}
-                    onChange={(e) => setPlaybookSessionName(e.target.value)}
-                    placeholder={selectedPlaybook.name}
-                  />
-                </div>
+                {/* Scrollable content area */}
+                <div className="playbook-launch-content">
 
-                <div className="form-group">
-                  <label>Project Path</label>
-                  <input
-                    value={playbookPath}
-                    onChange={(e) => setPlaybookPath(e.target.value)}
-                    placeholder="/path/to/project"
-                    autoFocus
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Messaging Mode</label>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
-                    <label className="radio-option">
+                  {/* Section: Session Settings */}
+                  <div className="playbook-section">
+                    <div className="playbook-section-title">Session Settings</div>
+                    <div className="playbook-settings-grid">
+                      <label className="playbook-grid-label">Session Name</label>
                       <input
-                        type="radio"
-                        name="playbook-messaging-mode"
-                        value="mcp"
-                        checked={playbookMessagingMode === "mcp"}
-                        onChange={() => setPlaybookMessagingMode("mcp")}
-                        style={{ marginTop: 2 }}
+                        className="playbook-grid-input"
+                        value={playbookSessionName}
+                        onChange={(e) => setPlaybookSessionName(e.target.value)}
+                        placeholder={selectedPlaybook.name}
                       />
-                      <span>
-                        <strong>MCP Tools (recommended)</strong>
-                        <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>
-                          Agents use send_message/check_messages. Supports long messages (30k chars).
-                        </span>
-                      </span>
-                    </label>
-                    <label className="radio-option">
+
+                      <label className="playbook-grid-label">Project Path</label>
                       <input
-                        type="radio"
-                        name="playbook-messaging-mode"
-                        value="terminal"
-                        checked={playbookMessagingMode === "terminal"}
-                        onChange={() => setPlaybookMessagingMode("terminal")}
-                        style={{ marginTop: 2 }}
+                        className="playbook-grid-input"
+                        value={playbookPath}
+                        onChange={(e) => setPlaybookPath(e.target.value)}
+                        placeholder="/path/to/project"
+                        autoFocus
                       />
-                      <span>
-                        <strong>Terminal (@mentions)</strong>
-                        <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>
-                          Agents use @Name: in terminal output. 500 char limit.
-                        </span>
-                      </span>
-                    </label>
-                    <label className="radio-option">
-                      <input
-                        type="radio"
-                        name="playbook-messaging-mode"
-                        value="manual"
-                        checked={playbookMessagingMode === "manual"}
-                        onChange={() => setPlaybookMessagingMode("manual")}
-                        style={{ marginTop: 2 }}
-                      />
-                      <span>
-                        <strong>Manual</strong>
-                        <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>
-                          User relays all messages via dashboard. No auto-messaging.
-                        </span>
-                      </span>
-                    </label>
-                  </div>
-                </div>
 
-                <div className="form-group">
-                  <label>Worktree Mode</label>
-                  <div style={{ display: "flex", gap: 0, marginTop: 4, borderRadius: 6, overflow: "hidden", border: "1px solid var(--border-color)" }}>
-                    <button
-                      type="button"
-                      onClick={() => setPlaybookWorktreeMode("isolated")}
-                      style={{
-                        flex: 1,
-                        padding: "8px 12px",
-                        minHeight: 44,
-                        fontSize: 13,
-                        fontWeight: 500,
-                        border: "none",
-                        cursor: "pointer",
-                        backgroundColor: playbookWorktreeMode === "isolated" ? "var(--accent-blue)" : "var(--bg-tertiary)",
-                        color: playbookWorktreeMode === "isolated" ? "#fff" : "var(--text-secondary)",
-                        transition: "background-color 0.15s, color 0.15s",
-                      }}
-                    >
-                      Isolated
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPlaybookWorktreeMode("shared")}
-                      style={{
-                        flex: 1,
-                        padding: "8px 12px",
-                        minHeight: 44,
-                        fontSize: 13,
-                        fontWeight: 500,
-                        border: "none",
-                        borderLeft: "1px solid var(--border-color)",
-                        cursor: "pointer",
-                        backgroundColor: playbookWorktreeMode === "shared" ? "var(--accent-blue)" : "var(--bg-tertiary)",
-                        color: playbookWorktreeMode === "shared" ? "#fff" : "var(--text-secondary)",
-                        transition: "background-color 0.15s, color 0.15s",
-                      }}
-                    >
-                      Shared
-                    </button>
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                    {playbookWorktreeMode === "isolated"
-                      ? "Each agent gets its own git worktree branch. Safe for parallel file edits."
-                      : "All agents share the same working directory. Use when agents work on different files."}
-                  </div>
-                </div>
-
-                {/* Model Configuration Section */}
-                {selectedPlaybook.agents.length > 0 && (
-                  <div
-                    style={{
-                      marginBottom: 16,
-                      padding: 16,
-                      backgroundColor: "var(--bg-primary)",
-                      borderRadius: 8,
-                      border: "1px solid var(--border-color)",
-                    }}
-                  >
-                    <p
-                      style={{
-                        fontSize: 12,
-                        color: "var(--text-muted)",
-                        marginBottom: 12,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                      }}
-                    >
-                      Configure Models
-                    </p>
-
-                    {/* Default model for all */}
-                    <div style={{ marginBottom: 12 }}>
-                      <label
-                        style={{
-                          fontSize: 12,
-                          color: "var(--text-secondary)",
-                          display: "block",
-                          marginBottom: 4,
-                        }}
-                      >
-                        Default model for all agents
-                      </label>
-                      <input
-                        value={defaultModelForAll}
-                        onChange={(e) => handleDefaultModelChange(e.target.value)}
-                        placeholder="Type a model name to set all agents..."
-                        style={{
-                          width: "100%",
-                          fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
-                          fontSize: 13,
-                          boxSizing: "border-box",
-                        }}
-                      />
-                    </div>
-
-                    {/* Agent model configuration table */}
-                    <div
-                      style={{
-                        borderRadius: 6,
-                        border: "1px solid var(--border-color)",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {/* Table header */}
-                      <div
-                        className="agent-config-header"
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 150px 1fr",
-                          gap: 0,
-                          padding: "8px 12px",
-                          backgroundColor: "rgba(255,255,255,0.03)",
-                          borderBottom: "1px solid var(--border-color)",
-                          fontSize: 11,
-                          color: "var(--text-muted)",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.05em",
-                          fontWeight: 600,
-                        }}
-                      >
-                        <span>Agent</span>
-                        <span>Provider</span>
-                        <span>Model</span>
+                      <label className="playbook-grid-label">Messaging</label>
+                      <div>
+                        <select
+                          className="playbook-grid-input"
+                          value={playbookMessagingMode}
+                          onChange={(e) => setPlaybookMessagingMode(e.target.value as "mcp" | "terminal" | "manual")}
+                        >
+                          <option value="mcp">MCP Tools (recommended)</option>
+                          <option value="terminal">Terminal (@mentions)</option>
+                          <option value="manual">Manual</option>
+                        </select>
+                        <div className="playbook-setting-hint">
+                          {playbookMessagingMode === "mcp"
+                            ? "Agents use send_message/check_messages. Supports long messages."
+                            : playbookMessagingMode === "terminal"
+                            ? "Agents use @Name: in terminal output. 500 char limit."
+                            : "User relays all messages via dashboard. No auto-messaging."}
+                        </div>
                       </div>
 
-                      {/* Agent rows */}
-                      {selectedPlaybook.agents.map((agent, i) => {
-                        const currentProvider = agentProviderOverrides[i] || agent.provider || "claude-code";
-                        const hints = PROVIDER_MODEL_HINTS[currentProvider] || [];
-                        return (
-                          <div
-                            key={i}
-                            className="agent-config-row"
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "1fr 150px 1fr",
-                              gap: 0,
-                              padding: "8px 12px",
-                              borderBottom:
-                                i < selectedPlaybook.agents.length - 1
-                                  ? "1px solid rgba(255,255,255,0.06)"
-                                  : "none",
-                              alignItems: "center",
-                            }}
+                      <label className="playbook-grid-label">Worktree</label>
+                      <div>
+                        <div className="playbook-worktree-toggle">
+                          <button
+                            type="button"
+                            className={`playbook-worktree-btn ${playbookWorktreeMode === "isolated" ? "active" : ""}`}
+                            onClick={() => setPlaybookWorktreeMode("isolated")}
                           >
-                            {/* Agent name + role */}
-                            <div>
-                              <span
-                                style={{
-                                  fontSize: 13,
-                                  fontWeight: 500,
-                                  color: "var(--text-primary)",
-                                }}
-                              >
-                                {agent.name}
-                              </span>
-                              <span
-                                style={{
-                                  fontSize: 11,
-                                  color: "var(--text-muted)",
-                                  marginLeft: 6,
-                                }}
-                              >
-                                {agent.role}
-                              </span>
-                            </div>
-
-                            {/* Provider select */}
-                            <select
-                              value={currentProvider}
-                              onChange={(e) => {
-                                setAgentProviderOverrides((prev) => ({
-                                  ...prev,
-                                  [i]: e.target.value,
-                                }));
-                              }}
-                              style={{
-                                fontSize: 12,
-                                fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
-                                backgroundColor: "var(--bg-secondary)",
-                                color: "var(--text-primary)",
-                                border: "1px solid var(--border-color)",
-                                borderRadius: 4,
-                                padding: "4px 6px",
-                                cursor: "pointer",
-                              }}
-                            >
-                              {KNOWN_PROVIDERS.map((p) => (
-                                <option key={p} value={p}>
-                                  {p}
-                                </option>
-                              ))}
-                            </select>
-
-                            {/* Model text input */}
-                            <div style={{ position: "relative" }}>
-                              <input
-                                value={agentModelOverrides[i] ?? agent.model ?? ""}
-                                onChange={(e) =>
-                                  setAgentModelOverrides((prev) => ({
-                                    ...prev,
-                                    [i]: e.target.value,
-                                  }))
-                                }
-                                placeholder={hints[0] || "model name"}
-                                style={{
-                                  width: "100%",
-                                  fontSize: 12,
-                                  fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
-                                  boxSizing: "border-box",
-                                  padding: "4px 6px",
-                                }}
-                                list={`model-hints-${i}`}
-                              />
-                              <datalist id={`model-hints-${i}`}>
-                                {hints.map((h) => (
-                                  <option key={h} value={h} />
-                                ))}
-                              </datalist>
-                            </div>
-
-                            {/* CLI flags input spanning full row */}
-                            <div style={{ gridColumn: "1 / -1", marginTop: 4 }}>
-                              <input
-                                value={agentCliArgsOverrides[i] ?? ""}
-                                onChange={(e) =>
-                                  setAgentCliArgsOverrides((prev) => ({
-                                    ...prev,
-                                    [i]: e.target.value,
-                                  }))
-                                }
-                                placeholder="CLI flags (optional)"
-                                style={{
-                                  width: "100%",
-                                  fontSize: 11,
-                                  fontFamily: "var(--font-mono)",
-                                  boxSizing: "border-box",
-                                  padding: "3px 6px",
-                                  color: "var(--accent-yellow)",
-                                }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
+                            Isolated
+                          </button>
+                          <button
+                            type="button"
+                            className={`playbook-worktree-btn ${playbookWorktreeMode === "shared" ? "active" : ""}`}
+                            onClick={() => setPlaybookWorktreeMode("shared")}
+                          >
+                            Shared
+                          </button>
+                        </div>
+                        <div className="playbook-setting-hint">
+                          {playbookWorktreeMode === "isolated"
+                            ? "Each agent gets its own git worktree branch."
+                            : "All agents share the same working directory."}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                )}
 
-                <div className="form-actions">
+                  {/* Section: Agent Topology (collapsible, default collapsed) */}
+                  <div className="playbook-section playbook-section-collapsible">
+                    <button
+                      type="button"
+                      className="playbook-section-toggle"
+                      onClick={() => setTopologyExpanded(!topologyExpanded)}
+                    >
+                      <span className={`playbook-chevron ${topologyExpanded ? "expanded" : ""}`}>&#9654;</span>
+                      <span className="playbook-section-title">Agent Topology</span>
+                    </button>
+                    {topologyExpanded && (
+                      <div className="playbook-topology-content">
+                        {renderPlaybookVisual(selectedPlaybook)}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Section: Agents */}
+                  {selectedPlaybook.agents.length > 0 && (
+                    <div className="playbook-section">
+                      <div className="playbook-section-title">
+                        Agents ({selectedPlaybook.agents.length})
+                      </div>
+
+                      {/* Default model for all */}
+                      <div className="playbook-default-model">
+                        <label className="playbook-default-model-label">Default model:</label>
+                        <input
+                          value={defaultModelForAll}
+                          onChange={(e) => handleDefaultModelChange(e.target.value)}
+                          placeholder="Set model for all agents..."
+                          className="playbook-default-model-input"
+                        />
+                      </div>
+
+                      {/* Agent list */}
+                      <div className="playbook-agent-list">
+                        {selectedPlaybook.agents.map((agent, i) => {
+                          const currentProvider = agentProviderOverrides[i] || agent.provider || "claude-code";
+                          const hints = PROVIDER_MODEL_HINTS[currentProvider] || [];
+                          const hasCliFlags = !!(agentCliArgsOverrides[i]?.trim());
+                          const showCliFlags = expandedCliFlags[i] || hasCliFlags;
+                          return (
+                            <div
+                              key={i}
+                              className={`playbook-agent-row ${i % 2 === 1 ? "playbook-agent-row-alt" : ""}`}
+                            >
+                              {/* Line 1: Name + role badge + provider + model */}
+                              <div className="playbook-agent-main">
+                                <span className="playbook-agent-name">{agent.name}</span>
+                                <span className={`playbook-agent-role badge ${agent.role === "master" ? "badge-yellow" : "badge-blue"}`}>
+                                  {agent.role}
+                                </span>
+                                <select
+                                  className="playbook-agent-provider"
+                                  value={currentProvider}
+                                  onChange={(e) => {
+                                    setAgentProviderOverrides((prev) => ({
+                                      ...prev,
+                                      [i]: e.target.value,
+                                    }));
+                                  }}
+                                >
+                                  {KNOWN_PROVIDERS.map((p) => (
+                                    <option key={p} value={p}>{p}</option>
+                                  ))}
+                                </select>
+                                <div className="playbook-agent-model-wrapper">
+                                  <input
+                                    className="playbook-agent-model"
+                                    value={agentModelOverrides[i] ?? agent.model ?? ""}
+                                    onChange={(e) =>
+                                      setAgentModelOverrides((prev) => ({
+                                        ...prev,
+                                        [i]: e.target.value,
+                                      }))
+                                    }
+                                    placeholder={hints[0] || "model name"}
+                                    list={`model-hints-${i}`}
+                                  />
+                                  <datalist id={`model-hints-${i}`}>
+                                    {hints.map((h) => (
+                                      <option key={h} value={h} />
+                                    ))}
+                                  </datalist>
+                                </div>
+                                {!showCliFlags && (
+                                  <button
+                                    type="button"
+                                    className="playbook-agent-flags-toggle"
+                                    title="Add CLI flags"
+                                    onClick={() => setExpandedCliFlags(prev => ({ ...prev, [i]: true }))}
+                                  >
+                                    +flags
+                                  </button>
+                                )}
+                              </div>
+                              {/* Line 2: CLI flags (shown if expanded or has content) */}
+                              {showCliFlags && (
+                                <div className="playbook-agent-cli-row">
+                                  <input
+                                    className="playbook-agent-cli-input"
+                                    value={agentCliArgsOverrides[i] ?? ""}
+                                    onChange={(e) =>
+                                      setAgentCliArgsOverrides((prev) => ({
+                                        ...prev,
+                                        [i]: e.target.value,
+                                      }))
+                                    }
+                                    placeholder="CLI flags (e.g. --verbose --max-tokens 4096)"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Fixed footer */}
+                <div className="playbook-launch-footer">
                   <button onClick={() => setSelectedPlaybook(null)}>
                     Back
                   </button>
@@ -1396,7 +1244,7 @@ export function AllSessions() {
                       : `Launch ${selectedPlaybook.agents.length} Agents`}
                   </button>
                 </div>
-              </>
+              </div>
             )}
           </div>
         </div>
