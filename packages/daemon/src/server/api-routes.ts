@@ -456,6 +456,7 @@ export function createApiRouter(deps: {
         runtimeDir: session.runtimeDir,
         autonomyLevel: body.autonomyLevel,
         extraCliArgs: body.extraCliArgs,
+        skipArgValidation: body.skipArgValidation,
         envVars: body.envVars,
         initialTask: body.initialTask,
         messagingMode: session.config.messagingMode || "mcp",

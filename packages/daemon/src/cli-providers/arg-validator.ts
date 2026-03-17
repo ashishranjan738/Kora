@@ -7,7 +7,11 @@
 export function validateExtraArgs(
   args: string[],
   allowed: string[],
+  options?: { skipValidation?: boolean },
 ): { valid: boolean; invalid: string[] } {
+  if (options?.skipValidation) {
+    return { valid: true, invalid: [] };
+  }
   const invalid: string[] = [];
 
   for (const arg of args) {

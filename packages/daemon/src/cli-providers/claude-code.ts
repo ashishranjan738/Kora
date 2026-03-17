@@ -15,6 +15,12 @@ export const claudeCodeProvider: CLIProvider = {
     "--no-suggestions",
     "--allowedTools",
     "--max-tokens",
+    "--dangerously-skip-permissions",
+    "--permission-mode",
+    "--output-format",
+    "--continue",
+    "--resume",
+    "--no-cache",
   ],
 
   supportsMcp: true,
@@ -35,6 +41,7 @@ export const claudeCodeProvider: CLIProvider = {
       const { valid, invalid } = validateExtraArgs(
         config.extraArgs,
         this.allowedExtraArgs,
+        { skipValidation: config.skipArgValidation },
       );
       if (!valid) {
         throw new Error(

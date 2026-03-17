@@ -26,6 +26,7 @@ export interface SpawnAgentOptions {
   initialTask?: string;
   messagingMode?: MessagingMode;
   worktreeMode?: WorktreeMode;
+  skipArgValidation?: boolean;
 }
 
 /** Convert a name like "CSS Expert" to "css-expert" */
@@ -169,6 +170,7 @@ export class AgentManager extends EventEmitter {
       systemPromptFile: options.persona ? systemPromptFile : undefined,
       workingDirectory: agentWorkDir,
       extraArgs: options.extraCliArgs,
+      skipArgValidation: options.skipArgValidation,
     });
 
     // 3c. Append --mcp-config and pre-approve tools for MCP-capable providers

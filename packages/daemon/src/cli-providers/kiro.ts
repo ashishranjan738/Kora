@@ -10,7 +10,7 @@ export const kiroProvider: CLIProvider = {
   id: "kiro",
   displayName: "Kiro (Amazon)",
 
-  allowedExtraArgs: ["--verbose", "--profile"],
+  allowedExtraArgs: ["--verbose", "--profile", "--region"],
 
   supportsMcp: true,
   supportsHotModelSwap: false,
@@ -27,6 +27,7 @@ export const kiroProvider: CLIProvider = {
       const { valid, invalid } = validateExtraArgs(
         config.extraArgs,
         this.allowedExtraArgs,
+        { skipValidation: config.skipArgValidation },
       );
       if (!valid) {
         throw new Error(
