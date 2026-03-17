@@ -1,5 +1,5 @@
 import type { AgentConfig, AgentState, AgentRole, AgentPermissions, AgentCost, MessagingMode, WorktreeMode } from "@kora/shared";
-import { AutonomyLevel, DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS, DEFAULT_MAX_RESTARTS, PERSONAS_DIR, GRACEFUL_SHUTDOWN_TIMEOUT_MS, getRuntimeTmuxPrefix, getRuntimeMcpName } from "@kora/shared";
+import { AutonomyLevel, DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS, DEFAULT_MAX_RESTARTS, PERSONAS_DIR, GRACEFUL_SHUTDOWN_TIMEOUT_MS, getRuntimeTmuxPrefix, MCP_SERVER_NAME } from "@kora/shared";
 import type { CLIProvider } from "@kora/shared";
 import { TmuxController } from "./tmux-controller.js";
 import { AgentHealthMonitor } from "./agent-health.js";
@@ -145,7 +145,7 @@ export class AgentManager extends EventEmitter {
 
         const mcpConfig = {
           mcpServers: {
-            [getRuntimeMcpName(isDev)]: {
+            [MCP_SERVER_NAME]: {
               command: "node",
               args: [
                 mcpServerScript,
