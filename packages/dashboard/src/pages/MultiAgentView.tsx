@@ -632,6 +632,25 @@ export function MultiAgentView() {
             <span className="mosaic-agent-meta">
               {[agent.provider, agent.model].filter(Boolean).join("/")}
             </span>
+            {agent.config?.extraCliArgs && (agent.config.extraCliArgs as string[]).length > 0 && (
+              <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 3 }}>
+                {(agent.config.extraCliArgs as string[]).map((flag: string, fi: number) => (
+                  <span
+                    key={fi}
+                    style={{
+                      fontSize: 10,
+                      fontFamily: "var(--font-mono)",
+                      padding: "1px 6px",
+                      borderRadius: 4,
+                      background: "var(--bg-tertiary)",
+                      color: "var(--accent-yellow)",
+                    }}
+                  >
+                    {flag}
+                  </span>
+                ))}
+              </span>
+            )}
             {agent.config?.channels && (agent.config.channels as string[]).length > 0 && (
               <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 3 }}>
                 {(agent.config.channels as string[]).map((ch: string) => (

@@ -35,6 +35,15 @@ function getTierBadgeClass(tier: string): string {
   }
 }
 
+function getCliPlaceholder(provider: string): string {
+  switch (provider) {
+    case "claude-code": return "e.g. --dangerously-skip-permissions --verbose";
+    case "aider": return "e.g. --no-auto-commits --yes --dark-mode";
+    case "kiro": return "e.g. --verbose --profile default";
+    default: return "e.g. --verbose";
+  }
+}
+
 export function SpawnAgentDialog({
   sessionId,
   onClose,
@@ -50,6 +59,7 @@ export function SpawnAgentDialog({
   const [initialTask, setInitialTask] = useState("");
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(true);
+  const [extraCliArgs, setExtraCliArgs] = useState("");
   const [spawning, setSpawning] = useState(false);
   const [error, setError] = useState("");
 
@@ -168,6 +178,7 @@ export function SpawnAgentDialog({
         model: modelId || undefined,
         persona: persona.trim() || undefined,
         initialTask: initialTask.trim() || undefined,
+        extraCliArgs: extraCliArgs.trim() ? extraCliArgs.trim().split(/\s+/) : undefined,
       };
       const result = await api.spawnAgent(sessionId, payload);
       onSpawned(result);
@@ -375,6 +386,20 @@ export function SpawnAgentDialog({
               })()}
             </div>
           )}
+        </div>
+
+        {/* CLI Flags */}
+        <div className="form-group">
+          <label>CLI Flags (optional)</label>
+          <input
+            value={extraCliArgs}
+            onChange={(e) => setExtraCliArgs(e.target.value)}
+            placeholder={getCliPlaceholder(providerId)}
+            style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}
+          />
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+            Space-separated flags passed directly to the CLI. Example: --dangerously-skip-permissions --verbose
+          </div>
         </div>
 
         {/* Persona */}
