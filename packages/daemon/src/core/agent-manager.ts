@@ -1,4 +1,4 @@
-import type { AgentConfig, AgentState, AgentRole, AgentPermissions, AgentCost, MessagingMode } from "@kora/shared";
+import type { AgentConfig, AgentState, AgentRole, AgentPermissions, AgentCost, MessagingMode, WorktreeMode } from "@kora/shared";
 import { AutonomyLevel, DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS, DEFAULT_MAX_RESTARTS, PERSONAS_DIR, GRACEFUL_SHUTDOWN_TIMEOUT_MS } from "@kora/shared";
 import type { CLIProvider } from "@kora/shared";
 import { TmuxController } from "./tmux-controller.js";
@@ -25,6 +25,7 @@ export interface SpawnAgentOptions {
   envVars?: Record<string, string>;
   initialTask?: string;
   messagingMode?: MessagingMode;
+  worktreeMode?: WorktreeMode;
 }
 
 /** Convert a name like "CSS Expert" to "css-expert" */
@@ -69,9 +70,9 @@ export class AgentManager extends EventEmitter {
       await fs.writeFile(systemPromptFile, personaWithId, "utf-8");
     }
 
-    // Create git worktree for agent isolation (if in a git repo)
+    // Create git worktree for agent isolation (if in a git repo and not shared mode)
     let agentWorkDir = options.workingDirectory;
-    if (await this.worktreeManager.isGitRepo(options.workingDirectory)) {
+    if (options.worktreeMode !== "shared" && await this.worktreeManager.isGitRepo(options.workingDirectory)) {
       try {
         agentWorkDir = await this.worktreeManager.createWorktree(
           options.workingDirectory,
@@ -113,10 +114,10 @@ export class AgentManager extends EventEmitter {
       );
     }
 
-    // 3a. Generate MCP config for inter-agent messaging (claude-code + MCP mode only)
+    // 3a. Generate MCP config for inter-agent messaging (MCP-capable providers + MCP mode only)
     const effectiveMessagingMode = options.messagingMode ?? "mcp";
     let mcpConfigPath: string | undefined;
-    if (options.provider.id === "claude-code" && effectiveMessagingMode === "mcp") {
+    if (options.provider.supportsMcp && effectiveMessagingMode === "mcp") {
       try {
         const mcpDir = path.join(options.runtimeDir, "mcp");
         await fs.mkdir(mcpDir, { recursive: true });
@@ -170,8 +171,8 @@ export class AgentManager extends EventEmitter {
       extraArgs: options.extraCliArgs,
     });
 
-    // 3c. Append --mcp-config and pre-approve tools for claude-code provider
-    if (options.provider.id === "claude-code") {
+    // 3c. Append --mcp-config and pre-approve tools for MCP-capable providers
+    if (options.provider.supportsMcp) {
       if (mcpConfigPath && effectiveMessagingMode === "mcp") {
         command.push("--mcp-config", mcpConfigPath);
         // Pre-approve read operations + MCP messaging so agents work autonomously
@@ -190,7 +191,15 @@ export class AgentManager extends EventEmitter {
           // MCP task tools — agents can view and update their assigned tasks
           "mcp__kora__list_tasks",
           "mcp__kora__update_task",
+          "mcp__kora__create_task",
         );
+        // Master agents get agent management tools
+        if (options.role === "master") {
+          command.push(
+            "mcp__kora__spawn_agent",
+            "mcp__kora__remove_agent",
+          );
+        }
       } else {
         // Non-MCP modes: only pre-approve read operations
         command.push(
@@ -301,6 +310,15 @@ export class AgentManager extends EventEmitter {
       },
       cost: { totalTokensIn: 0, totalTokensOut: 0, totalCostUsd: 0, lastUpdatedAt: now },
     };
+
+    // Auto-assign channels based on role and name
+    const autoChannels: string[] = ["#all"];
+    if (options.role === "master") {
+      autoChannels.push("#orchestration");
+    }
+    const nameChannel = `#${slugify(options.name)}`;
+    autoChannels.push(nameChannel);
+    agentState.config.channels = autoChannels;
 
     this.agents.set(agentId, agentState);
 

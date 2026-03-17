@@ -68,6 +68,61 @@ if (!AGENT_ID && !SESSION_ID) {
 }
 
 // ---------------------------------------------------------------------------
+// Unread message counter for piggyback notifications
+// ---------------------------------------------------------------------------
+
+function countUnreadMessages(): number {
+  if (!PROJECT_PATH) return 0;
+  let count = 0;
+  try {
+    const inboxDir = nodePath.join(PROJECT_PATH, ".kora", "messages", `inbox-${AGENT_ID}`);
+    const files = fs.readdirSync(inboxDir);
+    count += files.filter((f: string) => f.endsWith(".md")).length;
+  } catch { /* inbox may not exist */ }
+  try {
+    const pendingDir = nodePath.join(PROJECT_PATH, ".kora", "mcp-pending", AGENT_ID);
+    const files = fs.readdirSync(pendingDir);
+    count += files.filter((f: string) => f.endsWith(".json")).length;
+  } catch { /* pending dir may not exist */ }
+  return count;
+}
+
+function readAndConsumePendingMessages(): Array<{ from: string; content: string; timestamp: string }> {
+  if (!PROJECT_PATH) return [];
+
+  const pendingDir = nodePath.join(PROJECT_PATH, ".kora", "mcp-pending", AGENT_ID);
+  const processedDir = nodePath.join(pendingDir, "processed");
+
+  try {
+    const files = fs.readdirSync(pendingDir);
+    const jsonFiles = files.filter((f: string) => f.endsWith(".json"));
+    if (jsonFiles.length === 0) return [];
+
+    // Ensure processed dir exists
+    fs.mkdirSync(processedDir, { recursive: true });
+
+    const messages: Array<{ from: string; content: string; timestamp: string }> = [];
+
+    for (const file of jsonFiles) {
+      const filePath = nodePath.join(pendingDir, file);
+      try {
+        const raw = fs.readFileSync(filePath, "utf-8");
+        const msg = JSON.parse(raw);
+        messages.push(msg);
+        // Move to processed
+        fs.renameSync(filePath, nodePath.join(processedDir, file));
+      } catch {
+        // Skip malformed files
+      }
+    }
+
+    return messages;
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
 // HTTP helper to call daemon API
 // ---------------------------------------------------------------------------
 
@@ -140,8 +195,16 @@ const TOOL_DEFINITIONS = [
           type: "string",
           description: "Message content to send",
         },
+        messageType: {
+          type: "string",
+          description: "Optional message type: text, task-assignment, question, completion, stop, ack. Defaults to text.",
+        },
+        channel: {
+          type: "string",
+          description: "Optional channel to broadcast to (e.g. #frontend, #backend). Alternative to 'to'.",
+        },
       },
-      required: ["to", "message"],
+      required: ["message"],
     },
   },
   {
@@ -208,6 +271,78 @@ const TOOL_DEFINITIONS = [
       required: ["taskId"],
     },
   },
+  {
+    name: "create_task",
+    description:
+      "Create a new task on the session's task board. Use this to break down work into trackable tasks.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        title: {
+          type: "string",
+          description: "Task title",
+        },
+        description: {
+          type: "string",
+          description: "Task description",
+        },
+        assignedTo: {
+          type: "string",
+          description: "Agent name or ID to assign to (optional)",
+        },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "spawn_agent",
+    description:
+      "Spawn a new worker agent in the session. Only available to master/orchestrator agents.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        name: {
+          type: "string",
+          description: "Name for the new agent",
+        },
+        role: {
+          type: "string",
+          description: '"worker" (default)',
+        },
+        persona: {
+          type: "string",
+          description: "System prompt / persona for the agent",
+        },
+        model: {
+          type: "string",
+          description: "Model to use (e.g. claude-sonnet-4-6)",
+        },
+        task: {
+          type: "string",
+          description: "Initial task to send after spawning (optional)",
+        },
+      },
+      required: ["name", "model"],
+    },
+  },
+  {
+    name: "remove_agent",
+    description: "Remove/stop an agent from the session.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        agentId: {
+          type: "string",
+          description: "ID of the agent to remove",
+        },
+        reason: {
+          type: "string",
+          description: "Reason for removal",
+        },
+      },
+      required: ["agentId"],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -270,6 +405,11 @@ async function handleToolCall(
 ): Promise<unknown> {
   switch (toolName) {
     case "send_message": {
+      // Validate: either 'to' or 'channel' must be provided
+      if (!toolArgs.to && !toolArgs.channel) {
+        return { success: false, error: "Either 'to' or 'channel' must be provided" };
+      }
+
       // Circuit breaker: if the agent has sent too many messages, reject
       if (isSendRateLimited()) {
         return {
@@ -278,11 +418,36 @@ async function handleToolCall(
         };
       }
 
-      // Find target agent by name or ID
       const agents = (await apiCall(
         "GET",
         `/api/v1/sessions/${SESSION_ID}/agents`,
       )) as AgentsResponse;
+
+      // Channel-based routing: send to all agents subscribed to the channel
+      if (toolArgs.channel) {
+        const subscribers = (agents.agents || []).filter((a) => {
+          const channels = (a.config as any)?.channels || [];
+          return channels.includes(toolArgs.channel) && a.id !== AGENT_ID;
+        });
+
+        if (subscribers.length === 0) {
+          return { success: false, error: `No agents subscribed to channel "${toolArgs.channel}"` };
+        }
+
+        for (const sub of subscribers) {
+          await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/relay`, {
+            from: AGENT_ID,
+            to: sub.id,
+            message: `[${toolArgs.channel}] ${toolArgs.message}`,
+            messageType: toolArgs.messageType || "text",
+          });
+        }
+
+        recordSendMessage();
+        return { success: true, channel: toolArgs.channel, sentTo: subscribers.map((s) => s.config?.name || s.id) };
+      }
+
+      // Direct routing: find target agent by name or ID
       const search = (toolArgs.to || "").toLowerCase();
       const target = (agents.agents || []).find((a) => {
         const name = (a.config?.name || "").toLowerCase();
@@ -301,6 +466,7 @@ async function handleToolCall(
         from: AGENT_ID,
         to: target.id,
         message: toolArgs.message,
+        messageType: toolArgs.messageType || "text",
       });
 
       recordSendMessage();
@@ -308,8 +474,11 @@ async function handleToolCall(
     }
 
     case "check_messages": {
-      // Read unread messages from inbox files (MCP file-based delivery)
-      const inboxMessages: Array<{ from: string; content: string; timestamp: string; file: string }> = [];
+      // Read from mcp-pending (primary for MCP agents)
+      const pendingMessages = readAndConsumePendingMessages();
+
+      // Also read from inbox files (backward compat)
+      const inboxMessages: Array<{ from: string; content: string; timestamp: string }> = [];
 
       if (PROJECT_PATH) {
         const inboxDir = nodePath.join(PROJECT_PATH, ".kora", "messages", `inbox-${AGENT_ID}`);
@@ -320,26 +489,46 @@ async function handleToolCall(
             const filePath = nodePath.join(inboxDir, file);
             const content = fs.readFileSync(filePath, "utf-8");
             const timestamp = file.split("-")[0];
-            // Extract sender name from content
             const senderMatch = content.match(/\[(?:Message|Task|DONE|Question|Broadcast|System)[^\]]*from (.+?)\]/);
             const from = senderMatch?.[1] || "unknown";
-            inboxMessages.push({ from, content, timestamp, file });
+            inboxMessages.push({ from, content, timestamp });
 
-            // Move to processed directory
+            // Move to processed
             const processedDir = nodePath.join(inboxDir, "processed");
             try {
               fs.mkdirSync(processedDir, { recursive: true });
               fs.renameSync(filePath, nodePath.join(processedDir, file));
-            } catch {
-              // Best effort — file may have been moved already
-            }
+            } catch { /* best effort */ }
           }
-        } catch {
-          // Inbox directory may not exist yet — no messages
+        } catch { /* inbox may not exist */ }
+      }
+
+      // Combine (pending first, then inbox, deduplicate by content)
+      const seen = new Set<string>();
+      const allMessages: Array<{ from: string; content: string; timestamp: string }> = [];
+
+      for (const pm of pendingMessages) {
+        const key = `${pm.from}:${pm.content.substring(0, 100)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          allMessages.push(pm);
         }
       }
 
-      // Also query the events API for messages (backward compatibility / terminal mode)
+      for (const im of inboxMessages) {
+        const key = `${im.from}:${im.content.substring(0, 100)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          allMessages.push(im);
+        }
+      }
+
+      // Skip events API fallback if we have messages from either source
+      if (allMessages.length > 0) {
+        return { messages: allMessages, count: allMessages.length };
+      }
+
+      // Fallback: query events API for agents with no inbox/pending
       const events = (await apiCall(
         "GET",
         `/api/v1/sessions/${SESSION_ID}/events?limit=20&type=message-sent`,
@@ -355,16 +544,7 @@ async function handleToolCall(
         timestamp: e.timestamp || "",
       }));
 
-      // Combine inbox file messages (priority) + API messages
-      const allMessages = [
-        ...inboxMessages.map((m) => ({ from: m.from, content: m.content, timestamp: m.timestamp })),
-        ...apiMessages,
-      ];
-
-      return {
-        messages: allMessages,
-        count: allMessages.length,
-      };
+      return { messages: apiMessages, count: apiMessages.length };
     }
 
     case "list_agents": {
@@ -379,6 +559,7 @@ async function handleToolCall(
           id: a.id,
           role: a.config?.role,
           status: a.status,
+          activity: (a as any).activity || a.status,
           provider: a.config?.cliProvider,
           model: a.config?.model,
           isMe: a.id === AGENT_ID,
@@ -403,16 +584,57 @@ async function handleToolCall(
     }
 
     case "list_tasks": {
-      const response = await apiCall(
+      const response = (await apiCall(
         "GET",
         `/api/v1/sessions/${SESSION_ID}/tasks`,
-      );
+      )) as { tasks?: Array<{ id: string; title: string; status: string; dependencies?: string[]; [key: string]: unknown }> };
+
+      // Enhance tasks with dependency blocking info
+      const tasks = response.tasks || [];
+      const taskMap = new Map(tasks.map((t) => [t.id, t]));
+
+      for (const task of tasks) {
+        if (task.dependencies && task.dependencies.length > 0) {
+          const incompleteDeps = task.dependencies
+            .map((depId: string) => taskMap.get(depId))
+            .filter((dep) => dep && dep.status !== "done");
+          if (incompleteDeps.length > 0) {
+            (task as any).blocked = true;
+            (task as any).blockedReason = `Waiting for: ${incompleteDeps.map((d) => d!.title).join(", ")}`;
+          }
+        }
+      }
+
       return response;
     }
 
     case "update_task": {
       const { taskId, status, comment } = toolArgs;
       const results: { statusUpdate?: unknown; commentAdded?: unknown } = {};
+
+      // If setting to "in-progress", check dependency gating first
+      if (status === "in-progress") {
+        const allTasks = (await apiCall(
+          "GET",
+          `/api/v1/sessions/${SESSION_ID}/tasks`,
+        )) as { tasks?: Array<{ id: string; title: string; status: string; dependencies?: string[] }> };
+
+        const tasks = allTasks.tasks || [];
+        const taskMap = new Map(tasks.map((t) => [t.id, t]));
+        const thisTask = taskMap.get(taskId);
+
+        if (thisTask?.dependencies && thisTask.dependencies.length > 0) {
+          const incompleteDeps = thisTask.dependencies
+            .map((depId: string) => taskMap.get(depId))
+            .filter((dep) => dep && dep.status !== "done");
+          if (incompleteDeps.length > 0) {
+            return {
+              success: false,
+              error: `Cannot start — blocked by incomplete dependencies: ${incompleteDeps.map((d) => d!.title).join(", ")}`,
+            };
+          }
+        }
+      }
 
       // Update status if provided
       if (status) {
@@ -436,6 +658,31 @@ async function handleToolCall(
         success: true,
         ...results,
       };
+    }
+
+    case "create_task": {
+      const result = await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/tasks`, {
+        title: toolArgs.title,
+        description: toolArgs.description || "",
+        assignedTo: toolArgs.assignedTo || undefined,
+      });
+      return result;
+    }
+
+    case "spawn_agent": {
+      const result = await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents`, {
+        name: toolArgs.name,
+        role: toolArgs.role || "worker",
+        model: toolArgs.model,
+        persona: toolArgs.persona || "",
+        initialTask: toolArgs.task,
+      });
+      return result;
+    }
+
+    case "remove_agent": {
+      await apiCall("DELETE", `/api/v1/sessions/${SESSION_ID}/agents/${toolArgs.agentId}`);
+      return { success: true, removed: toolArgs.agentId, reason: toolArgs.reason };
     }
 
     default:
@@ -491,11 +738,37 @@ rl.on("line", async (line: string) => {
 
         try {
           const result = await handleToolCall(toolName, toolArgs);
-          sendResponse(id, {
-            content: [
-              { type: "text", text: JSON.stringify(result, null, 2) },
-            ],
-          });
+
+          // === MCP PUSH: Inject pending messages into response ===
+          const pendingMessages = (toolName !== "check_messages") ? readAndConsumePendingMessages() : [];
+          const content: Array<{ type: string; text: string }> = [];
+
+          // Prepend pending messages so agent sees them BEFORE the tool result
+          if (pendingMessages.length > 0) {
+            for (const pm of pendingMessages) {
+              content.push({
+                type: "text",
+                text: `[Message from ${pm.from}]: ${pm.content}`,
+              });
+            }
+          }
+
+          content.push(
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          );
+
+          // Piggyback unread message notifications (except for check_messages itself)
+          if (toolName !== "check_messages") {
+            const unread = countUnreadMessages();
+            if (unread > 0) {
+              content.push({
+                type: "text",
+                text: `\n[System: You have ${unread} unread message(s). Use check_messages tool to read them.]`,
+              });
+            }
+          }
+
+          sendResponse(id, { content });
         } catch (err: unknown) {
           const errMsg = err instanceof Error ? err.message : String(err);
           sendResponse(id, {

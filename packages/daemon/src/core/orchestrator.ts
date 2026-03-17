@@ -7,6 +7,7 @@ import type {
   RemoveAgentCommand,
   GetAgentStatusCommand,
   MessagingMode,
+  WorktreeMode,
 } from "@kora/shared";
 import { AgentManager } from "./agent-manager.js";
 import { MessageBus } from "./message-bus.js";
@@ -31,6 +32,7 @@ export interface OrchestratorConfig {
   tmux: TmuxController;
   providerRegistry: CLIProviderRegistry;
   messagingMode?: MessagingMode;
+  worktreeMode?: WorktreeMode;
 }
 
 export class Orchestrator extends EventEmitter {
@@ -83,6 +85,14 @@ export class Orchestrator extends EventEmitter {
       this.costTracker.initAgent(agent.id);
       this.usageMonitor.startMonitoring(agent);
       this.autoRelay.startMonitoring(agent);
+
+      // Register MCP-capable agents for mcp-pending delivery
+      if (agent.config.cliProvider) {
+        const provider = this.config.providerRegistry.get(agent.config.cliProvider);
+        if (provider?.supportsMcp) {
+          this.messageQueue.registerMcpAgent(agent.id);
+        }
+      }
 
       await this.eventLog.log({
         sessionId: this.config.sessionId,
@@ -240,6 +250,7 @@ export class Orchestrator extends EventEmitter {
             spawnedBy: fromAgentId,
             initialTask: cmd.task,
             messagingMode: this.config.messagingMode,
+            worktreeMode: this.config.worktreeMode,
           });
 
           agent.childAgents.push(newAgent.id);
@@ -307,7 +318,7 @@ export class Orchestrator extends EventEmitter {
    * Relay a message from one agent to another by sending it directly to the target's tmux terminal.
    * This is the reliable path -- agents don't need to check file inboxes.
    */
-  async relayMessage(fromAgentId: string, toAgentId: string, message: string): Promise<boolean> {
+  async relayMessage(fromAgentId: string, toAgentId: string, message: string, messageType?: string): Promise<boolean> {
     const fromAgent = this.agentManager.getAgent(fromAgentId);
     const toAgent = this.agentManager.getAgent(toAgentId);
     if (!toAgent || toAgent.status !== 'running') return false;
@@ -322,7 +333,7 @@ export class Orchestrator extends EventEmitter {
     await this.eventLog.log({
       sessionId: this.config.sessionId,
       type: 'message-sent' as any,
-      data: { from: fromAgentId, to: toAgentId, content: message.substring(0, 200) },
+      data: { from: fromAgentId, to: toAgentId, content: message.substring(0, 200), messageType: messageType || "text" },
     });
 
     return true;
@@ -460,6 +471,7 @@ export class Orchestrator extends EventEmitter {
       envVars: oldConfig.envVars,
       initialTask,
       messagingMode: this.config.messagingMode,
+      worktreeMode: this.config.worktreeMode,
     });
 
     await this.eventLog.log({

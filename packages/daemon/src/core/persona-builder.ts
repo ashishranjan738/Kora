@@ -57,7 +57,7 @@ export function buildPersona(options: PersonaBuildOptions): string {
 
   // Control plane instructions (master or agents with spawn permissions)
   if (options.permissions.canSpawnAgents || options.permissions.canRemoveAgents) {
-    sections.push(buildControlPlaneInstructions(options.agentId, options.permissions));
+    sections.push(buildControlPlaneInstructions(options.agentId, options.permissions, options.runtimeDir));
   }
 
   // Role-specific protocol instructions
@@ -97,6 +97,7 @@ You have MCP tools available for team communication:
 You also have task management tools:
 - \`list_tasks()\` -- See all tasks in the session, including ones assigned to you
 - \`update_task(taskId, status?, comment?)\` -- Update a task's status or post a progress comment
+- \`create_task(title, description, assignedTo?)\` -- Create a new task on the board
 
 When you're assigned a task, use \`update_task\` to:
 - Set status to "in-progress" when you start working
@@ -151,16 +152,25 @@ You can also communicate via message files:
 Messages from other agents will appear in your terminal as: [Message from AgentName]: their message`;
 }
 
-function buildControlPlaneInstructions(agentId: string, permissions: AgentPermissions): string {
-  const sections = ["## Agent Management (Control Plane)\n\nYou can manage other agents by writing command files."];
+function buildControlPlaneInstructions(agentId: string, permissions: AgentPermissions, runtimeDir: string): string {
+  const controlDir = `${runtimeDir}/control`;
+  const sections = [`## Agent Management (Control Plane)
+
+### Primary method: MCP tools (recommended)
+Use MCP tools for agent management — they work reliably in all modes:
+- \`spawn_agent(name, role, persona, model, task?)\` -- Spawn a new worker agent
+- \`remove_agent(agentId, reason)\` -- Remove an agent
+
+### Fallback: file-based commands
+If MCP tools are unavailable, you can write command files. IMPORTANT: Use the absolute path shown below, not a relative path.`];
 
   if (permissions.canSpawnAgents) {
     sections.push(`### To spawn a new agent:
-Write a JSON file to \`.kora/control/commands-${agentId}/\`:
+Write a JSON file to \`${controlDir}/commands-${agentId}/\`:
 \`\`\`json
 {"action":"spawn-agent","id":"unique-cmd-id","name":"Agent Name","role":"worker","persona":"You are a...","model":"claude-sonnet-4-6","task":"Optional initial task"}
 \`\`\`
-Then check \`.kora/control/responses-${agentId}/\` for the response with the new agent's ID.
+Then check \`${controlDir}/responses-${agentId}/\` for the response with the new agent's ID.
 
 Guidelines:
 - Spawn specialists when a task requires focused expertise
@@ -172,7 +182,7 @@ Guidelines:
 
   if (permissions.canRemoveAgents) {
     sections.push(`### To remove an agent:
-Write a JSON file to \`.kora/control/commands-${agentId}/\`:
+Write a JSON file to \`${controlDir}/commands-${agentId}/\`:
 \`\`\`json
 {"action":"remove-agent","id":"unique-cmd-id","targetAgentId":"agent-id","reason":"Task completed"}
 \`\`\``);
@@ -235,13 +245,14 @@ function buildWorkerInstructions(): string {
 
 You are a worker agent. Follow this protocol:
 
-1. When you receive a task, START WORKING on it immediately
-2. DO NOT acknowledge the task — just do it
-3. DO NOT send status updates — focus on completing the work
-4. Only send a message to the orchestrator when:
-   - You have a SPECIFIC QUESTION that blocks your work
-   - You have COMPLETED the task (send a brief summary of what you did)
-5. When done, send ONE completion message: "@Orchestrator: DONE - [brief summary of what was completed]"
-6. After sending the completion message, STOP — do not send any more messages
+1. When you receive a task, first reply with a brief acknowledgment: "Starting on [task summary]"
+2. Then START WORKING on it
+3. Use \`update_task\` to set your task status to "in-progress" when you begin
+4. Work silently — do NOT send progress updates unless you hit a blocker
+5. If the orchestrator tells you to STOP or WAIT, you MUST comply immediately. Do not continue working until explicitly told to proceed. Acknowledge with "Standing by".
+6. Before starting a task, check \`list_tasks\` — if your task shows as "blocked", do NOT start. Wait until the blocking tasks are done.
+7. When done, send ONE completion message with a summary of what you did
+8. Use \`update_task\` to set your task status to "done"
+9. After sending the completion message, STOP — do not send any more messages
 `;
 }

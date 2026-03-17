@@ -7,6 +7,9 @@
 /** How agents communicate within a session */
 export type MessagingMode = "mcp" | "terminal" | "manual";
 
+/** Whether agents get isolated git worktrees or share the project directory */
+export type WorktreeMode = "isolated" | "shared";
+
 export interface SessionConfig {
   id: string;
   name: string;
@@ -20,6 +23,8 @@ export interface SessionConfig {
   customModels?: Record<string, CustomModel[]>;
   /** How agents communicate. Default: "mcp" for claude-code, "terminal" for others */
   messagingMode?: MessagingMode;
+  /** Whether agents get isolated git worktrees or share the project directory. Default: "isolated" */
+  worktreeMode?: WorktreeMode;
 }
 
 export interface CustomModel {
@@ -57,6 +62,7 @@ export interface AgentConfig {
   restartPolicy: RestartPolicy;
   maxRestarts: number;
   budgetLimit?: number; // Max cost in dollars, undefined = no limit
+  channels?: string[];  // Message channels the agent is subscribed to (e.g. #all, #frontend)
 }
 
 export type AgentRole = "master" | "worker";
@@ -121,6 +127,7 @@ export interface AgentMessage {
   content: string;
   timestamp: string;
   metadata?: MessageMetadata;
+  payload?: MessagePayload;
 }
 
 export type MessageType =
@@ -131,6 +138,62 @@ export type MessageType =
   | "result"
   | "summary"
   | "user-message";
+
+// --- Typed Message Payloads ---
+
+export type MessagePayload =
+  | TextMessage
+  | TaskAssignmentMessage
+  | StatusUpdateMessage
+  | QuestionMessage
+  | CompletionMessage
+  | StopCommandMessage
+  | AcknowledgmentMessage;
+
+export interface TextMessage {
+  messageType: "text";
+  text: string;
+}
+
+export interface TaskAssignmentMessage {
+  messageType: "task-assignment";
+  title: string;
+  description?: string;
+  files?: string[];
+  acceptanceCriteria?: string[];
+}
+
+export interface StatusUpdateMessage {
+  messageType: "status-update";
+  taskId?: string;
+  status: string;
+  summary: string;
+}
+
+export interface QuestionMessage {
+  messageType: "question";
+  question: string;
+  context?: string;
+  urgency?: "low" | "normal" | "high";
+}
+
+export interface CompletionMessage {
+  messageType: "completion";
+  taskId?: string;
+  summary: string;
+  filesChanged?: string[];
+}
+
+export interface StopCommandMessage {
+  messageType: "stop";
+  reason: string;
+}
+
+export interface AcknowledgmentMessage {
+  messageType: "ack";
+  replyTo?: string;
+  message: string;
+}
 
 export interface MessageMetadata {
   taskId?: string;

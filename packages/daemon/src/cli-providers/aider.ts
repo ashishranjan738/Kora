@@ -12,6 +12,7 @@ export const aiderProvider: CLIProvider = {
 
   allowedExtraArgs: ["--no-auto-commits", "--yes", "--dark-mode"],
 
+  supportsMcp: false,
   supportsHotModelSwap: true,
 
   buildCommand(config: CLIProviderConfig): string[] {
