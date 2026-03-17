@@ -4,7 +4,7 @@ import type {
   ModelOption,
   ParsedOutput,
 } from "@kora/shared";
-import { validateExtraArgs } from "./arg-validator.js";
+
 
 export const aiderProvider: CLIProvider = {
   id: "aider",
@@ -34,16 +34,6 @@ export const aiderProvider: CLIProvider = {
     }
 
     if (config.extraArgs?.length) {
-      const { valid, invalid } = validateExtraArgs(
-        config.extraArgs,
-        this.allowedExtraArgs,
-        { skipValidation: config.skipArgValidation },
-      );
-      if (!valid) {
-        throw new Error(
-          `Invalid extra args for aider: ${invalid.join(", ")}`,
-        );
-      }
       cmd.push(...config.extraArgs);
     }
 

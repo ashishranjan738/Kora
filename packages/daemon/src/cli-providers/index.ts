@@ -1,4 +1,3 @@
-export { validateExtraArgs } from "./arg-validator.js";
 export { CLIProviderRegistry, registry } from "./provider-registry.js";
 
 import { registry } from "./provider-registry.js";

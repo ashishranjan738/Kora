@@ -882,7 +882,7 @@ function AgentsTab({
             key={a.id}
             className={`agent-card-v2 ${stateClass}`}
           >
-            {/* Header: name + overflow menu */}
+            {/* Header */}
             <div className="ac2-header">
               <div className="ac2-header-left">
                 <span className={`ac2-status-dot ${stateClass}`} />
@@ -894,55 +894,28 @@ function AgentsTab({
               <span className="ac2-uptime">{formatUptime(a.startedAt)}</span>
             </div>
 
-            {/* Model info */}
-            {(a.provider || a.model) && (
-              <div className="ac2-model">
-                {[a.provider, a.model].filter(Boolean).join(" / ")}
-              </div>
-            )}
+            {/* Meta: model, channels, flags */}
+            <div className="ac2-meta">
+              {(a.provider || a.model) && (
+                <span className="ac2-model">{[a.provider, a.model].filter(Boolean).join(" / ")}</span>
+              )}
+              {a.config?.channels && (a.config.channels as string[]).length > 0 && (
+                <div className="ac2-tags">
+                  {(a.config.channels as string[]).map((ch: string) => (
+                    <span key={ch} className="ac2-tag">{ch}</span>
+                  ))}
+                </div>
+              )}
+              {a.config?.extraCliArgs && (a.config.extraCliArgs as string[]).length > 0 && (
+                <div className="ac2-tags">
+                  {(a.config.extraCliArgs as string[]).map((flag: string, fi: number) => (
+                    <span key={fi} className="ac2-tag ac2-tag-flag">{flag}</span>
+                  ))}
+                </div>
+              )}
+            </div>
 
-            {/* Channel badges */}
-            {a.config?.channels && (a.config.channels as string[]).length > 0 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
-                {(a.config.channels as string[]).map((ch: string) => (
-                  <span
-                    key={ch}
-                    style={{
-                      fontSize: 10,
-                      padding: "2px 8px",
-                      borderRadius: 8,
-                      background: "var(--bg-tertiary)",
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    {ch}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {/* CLI flags badges */}
-            {a.config?.extraCliArgs && (a.config.extraCliArgs as string[]).length > 0 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
-                {(a.config.extraCliArgs as string[]).map((flag: string, fi: number) => (
-                  <span
-                    key={fi}
-                    style={{
-                      fontSize: 10,
-                      fontFamily: "var(--font-mono)",
-                      padding: "2px 8px",
-                      borderRadius: 4,
-                      background: "var(--bg-tertiary)",
-                      color: "var(--accent-yellow)",
-                    }}
-                  >
-                    {flag}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {/* Activity summary — replaces terminal preview */}
+            {/* Activity */}
             <div className="ac2-activity">
               <div className="ac2-current-action">
                 <span className={`ac2-action-icon ${stateClass}`}>
@@ -969,14 +942,14 @@ function AgentsTab({
               )}
             </div>
 
-            {/* Metrics bar */}
+            {/* Metrics */}
             <div className="ac2-metrics">
               <div className="ac2-metric">
                 <span className="ac2-metric-label">Tokens</span>
                 <span className="ac2-metric-value">
-                  <span style={{ color: "var(--text-muted)" }}>{"\u2193"}</span>{typeof tokensIn === "number" ? formatTokens(tokensIn) : "--"}
+                  <span className="ac2-metric-dim">{"\u2193"}</span>{typeof tokensIn === "number" ? formatTokens(tokensIn) : "--"}
                   {" "}
-                  <span style={{ color: "var(--text-muted)" }}>{"\u2191"}</span>{typeof tokensOut === "number" ? formatTokens(tokensOut) : "--"}
+                  <span className="ac2-metric-dim">{"\u2191"}</span>{typeof tokensOut === "number" ? formatTokens(tokensOut) : "--"}
                 </span>
               </div>
               <div className="ac2-metric">
