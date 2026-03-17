@@ -1,0 +1,30 @@
+{
+  "name": "@kora/daemon",
+  "version": "0.1.0",
+  "bin": {
+    "kora": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -w -p tsconfig.json",
+    "start": "node dist/cli.js start"
+  },
+  "dependencies": {
+    "@kora/shared": "*",
+    "@xterm/addon-attach": "^0.12.0",
+    "better-sqlite3": "^12.8.0",
+    "express": "^5.1.0",
+    "node-pty": "^1.2.0-beta.12",
+    "uuid": "^11.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.0",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.5.0",
+    "typescript": "^5.7.0"
+  }
+}

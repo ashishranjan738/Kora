@@ -1,0 +1,152 @@
+const API_BASE = "/api/v1";
+
+function getToken(): string {
+  // 1. Injected by daemon into the HTML (most reliable)
+  const injected = (window as any).__KORA_TOKEN__ as string | undefined;
+  if (injected) return injected;
+
+  // 2. From URL query param (e.g. ?token=abc)
+  const params = new URLSearchParams(window.location.search);
+  const urlToken = params.get("token");
+  if (urlToken) {
+    localStorage.setItem("kora_token", urlToken);
+    return urlToken;
+  }
+
+  // 3. From localStorage (persisted from a previous visit)
+  return localStorage.getItem("kora_token") || "";
+}
+
+async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`API ${res.status}: ${await res.text()}`);
+  }
+  // Handle 204 No Content (e.g. DELETE responses)
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    return undefined as T;
+  }
+  return res.json();
+}
+
+export function useApi() {
+  return {
+    getSessions: () => apiFetch<{ sessions: any[] }>("/sessions"),
+    createSession: (data: any) =>
+      apiFetch("/sessions", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    getSession: (sid: string) => apiFetch(`/sessions/${sid}`),
+    getAgents: (sid: string) =>
+      apiFetch<{ agents: any[] }>(`/sessions/${sid}/agents`),
+    spawnAgent: (sid: string, data: any) =>
+      apiFetch(`/sessions/${sid}/agents`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    removeAgent: (sid: string, aid: string) =>
+      apiFetch(`/sessions/${sid}/agents/${aid}`, { method: "DELETE" }),
+    sendMessage: (sid: string, aid: string, msg: string) =>
+      apiFetch(`/sessions/${sid}/agents/${aid}/message`, {
+        method: "POST",
+        body: JSON.stringify({ message: msg }),
+      }),
+    getOutput: (sid: string, aid: string, lines?: number) =>
+      apiFetch<{ output: string[] }>(
+        `/sessions/${sid}/agents/${aid}/output?lines=${lines || 100}`
+      ),
+    getProviders: () => apiFetch<{ providers: any[] }>("/providers"),
+    getEvents: (sid: string, limit?: number) =>
+      apiFetch<{ events: any[] }>(
+        `/sessions/${sid}/events?limit=${limit || 50}`
+      ),
+    getStatus: () => apiFetch<any>("/status"),
+    getTasks: (sid: string) =>
+      apiFetch<{ tasks: any[] }>(`/sessions/${sid}/tasks`),
+    createTask: (sid: string, data: any) =>
+      apiFetch(`/sessions/${sid}/tasks`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    deleteTask: (sid: string, tid: string) =>
+      apiFetch(`/sessions/${sid}/tasks/${tid}`, { method: "DELETE" }),
+    updateTask: (sid: string, tid: string, data: any) =>
+      apiFetch(`/sessions/${sid}/tasks/${tid}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+    addTaskComment: (sid: string, tid: string, text: string) =>
+      apiFetch(`/sessions/${sid}/tasks/${tid}/comments`, {
+        method: "POST",
+        body: JSON.stringify({ text, author: "user", authorName: "You" }),
+      }),
+    pauseSession: (sid: string) =>
+      apiFetch(`/sessions/${sid}/pause`, { method: "POST" }),
+    stopSession: (sid: string) =>
+      apiFetch(`/sessions/${sid}`, { method: "DELETE" }),
+    getPlaybooks: () => apiFetch<{ playbooks: string[] }>("/playbooks"),
+    getPlaybook: (name: string) => apiFetch<any>(`/playbooks/${name}`),
+    savePlaybook: (data: any) =>
+      apiFetch("/playbooks", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    pauseResumeAgent: (sid: string, aid: string, action: "pause" | "resume") =>
+      apiFetch(`/sessions/${sid}/agents/${aid}/${action}`, {
+        method: "POST",
+      }),
+    changeModel: (sid: string, aid: string, model: string) =>
+      apiFetch(`/sessions/${sid}/agents/${aid}/model`, {
+        method: "PUT",
+        body: JSON.stringify({ model }),
+      }),
+    replaceAgent: (sid: string, aid: string, opts?: { contextLines?: number; extraContext?: string; freshStart?: boolean }) =>
+      apiFetch<any>(`/sessions/${sid}/agents/${aid}/replace`, {
+        method: "POST",
+        body: JSON.stringify(opts ?? {}),
+      }),
+    restartAgent: (sid: string, aid: string) =>
+      apiFetch<any>(`/sessions/${sid}/agents/${aid}/restart`, { method: "POST" }),
+    restartAllAgents: (sid: string) =>
+      apiFetch<any>(`/sessions/${sid}/restart-all`, { method: "POST" }),
+    broadcastMessage: (sid: string, message: string) =>
+      apiFetch<any>(`/sessions/${sid}/broadcast`, { method: "POST", body: JSON.stringify({ message }) }),
+    relayMessage: (sid: string, from: string, to: string, message: string) =>
+      apiFetch<any>(`/sessions/${sid}/relay`, {
+        method: "POST",
+        body: JSON.stringify({ from, to, message }),
+      }),
+    addCustomModel: (sid: string, model: { id: string; label: string; provider: string }) =>
+      apiFetch(`/sessions/${sid}/models`, { method: "POST", body: JSON.stringify(model) }),
+    removeCustomModel: (sid: string, modelId: string, provider: string) =>
+      apiFetch(`/sessions/${sid}/models/${encodeURIComponent(modelId)}?provider=${provider}`, { method: "DELETE" }),
+    getSessionModels: (sid: string, provider: string) =>
+      apiFetch<{ models: any[] }>(`/sessions/${sid}/models?provider=${provider}`),
+    discoverModels: (providerId: string) =>
+      apiFetch<{ discoveredModels: any[]; builtInModels: any[] }>(`/providers/${providerId}/discover`),
+    openVscode: (sid: string, aid: string) =>
+      apiFetch<{ opened: boolean; path: string }>(`/sessions/${sid}/agents/${aid}/open-vscode`, { method: "POST" }),
+    openVscodeSession: (sid: string) =>
+      apiFetch<{ opened: boolean; path: string }>(`/sessions/${sid}/open-vscode`, { method: "POST" }),
+    openTerminal: (sid: string) =>
+      apiFetch<{ id: string; tmuxSession: string; projectPath: string }>(`/sessions/${sid}/terminal`, { method: "POST" }),
+    listFiles: (sid: string, subpath?: string) =>
+      apiFetch<{ items: any[]; currentPath: string }>(`/sessions/${sid}/files?path=${encodeURIComponent(subpath || "")}`),
+    readFile: (sid: string, filePath: string) =>
+      apiFetch<{ content: string; path: string; language: string }>(`/sessions/${sid}/files/read?path=${encodeURIComponent(filePath)}`),
+    writeFile: (sid: string, filePath: string, content: string) =>
+      apiFetch<{ saved: boolean }>(`/sessions/${sid}/files/write`, { method: "PUT", body: JSON.stringify({ path: filePath, content }) }),
+    getGitStatus: (sid: string) =>
+      apiFetch<{ branch: string; changes: any[]; repos?: any[] }>(`/sessions/${sid}/git/status`),
+    getGitDiff: (sid: string, filePath: string, repo?: string) =>
+      apiFetch<{ diff: string; original: string; modified: string; path: string }>(`/sessions/${sid}/git/diff?path=${encodeURIComponent(filePath)}&repo=${encodeURIComponent(repo || ".")}`),
+  };
+}

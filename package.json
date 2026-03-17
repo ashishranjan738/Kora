@@ -1,0 +1,26 @@
+{
+  "name": "kora",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/shared",
+    "packages/daemon",
+    "packages/dashboard",
+    "packages/vscode-extension"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "build:shared": "npm run build -w packages/shared",
+    "build:daemon": "npm run build -w packages/daemon",
+    "build:dashboard": "npm run build -w packages/dashboard",
+    "dev:daemon": "npm run dev -w packages/daemon",
+    "dev:dashboard": "npm run dev -w packages/dashboard",
+    "lint": "eslint packages/*/src/**/*.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "eslint": "^9.0.0"
+  }
+}
