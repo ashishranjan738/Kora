@@ -275,7 +275,7 @@ describe("MessageQueue", () => {
     // Now start — scheduleNextPoll should see the queued message and use 500ms
     queue.start();
 
-    const timeouts = setTimeoutSpy.mock.calls.map((call) => call[1]);
+    const timeouts = setTimeoutSpy.mock.calls.map((call: any) => call[1]);
     expect(timeouts).toContain(500);
 
     queue.stop();
@@ -290,7 +290,7 @@ describe("MessageQueue", () => {
 
     await vi.advanceTimersByTimeAsync(100);
 
-    const timeouts = setTimeoutSpy.mock.calls.map((call) => call[1]);
+    const timeouts = setTimeoutSpy.mock.calls.map((call: any) => call[1]);
     expect(timeouts).toContain(2000);
 
     queue.stop();
