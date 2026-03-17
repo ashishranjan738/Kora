@@ -10,6 +10,7 @@ import type {
   SessionState,
   SessionStatus,
   MessagingMode,
+  WorktreeMode,
 } from "@kora/shared";
 import {
   DAEMON_DIR,
@@ -89,6 +90,7 @@ export class SessionManager {
     projectPath: string;
     defaultProvider?: string;
     messagingMode?: MessagingMode;
+    worktreeMode?: WorktreeMode;
   }): Promise<SessionConfig> {
     const id = slugify(config.name);
 
@@ -113,6 +115,7 @@ export class SessionManager {
       createdAt: new Date().toISOString(),
       status: "active" as SessionStatus,
       messagingMode: config.messagingMode ?? "mcp",
+      worktreeMode: config.worktreeMode ?? "isolated",
     };
 
     // 3. Write session.json inside the runtime dir

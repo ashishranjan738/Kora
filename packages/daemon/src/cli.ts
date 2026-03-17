@@ -73,6 +73,7 @@ async function handleStart(): Promise<void> {
         tmux,
         providerRegistry: registry,
         messagingMode: config.messagingMode || "mcp",
+        worktreeMode: config.worktreeMode,
       });
       await orch.start();
       const result = await orch.restore();

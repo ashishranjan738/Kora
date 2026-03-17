@@ -12,6 +12,7 @@ import type {
   OrchestratorEvent,
   AutonomyLevel,
   MessagingMode,
+  WorktreeMode,
 } from "./types.js";
 import type { ModelOption } from "./providers.js";
 
@@ -35,6 +36,7 @@ export interface CreateSessionRequest {
   autoCreateMaster?: boolean;
   masterModel?: string;
   messagingMode?: MessagingMode; // defaults to "mcp"
+  worktreeMode?: WorktreeMode;   // defaults to "isolated"
 }
 
 export interface UpdateSessionRequest {

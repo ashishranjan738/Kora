@@ -17,6 +17,7 @@ export const claudeCodeProvider: CLIProvider = {
     "--max-tokens",
   ],
 
+  supportsMcp: true,
   supportsHotModelSwap: false,
 
   buildCommand(config: CLIProviderConfig): string[] {
