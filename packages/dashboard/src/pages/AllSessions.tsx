@@ -79,6 +79,7 @@ export function AllSessions() {
   const [agentModelOverrides, setAgentModelOverrides] = useState<Record<number, string>>({});
   const [agentProviderOverrides, setAgentProviderOverrides] = useState<Record<number, string>>({});
   const [defaultModelForAll, setDefaultModelForAll] = useState("");
+  const [agentCliArgsOverrides, setAgentCliArgsOverrides] = useState<Record<number, string>>({});
   const [playbookMessagingMode, setPlaybookMessagingMode] = useState<"mcp" | "terminal" | "manual">("mcp");
   const [playbookWorktreeMode, setPlaybookWorktreeMode] = useState<"isolated" | "shared">("isolated");
 
@@ -227,6 +228,9 @@ export function AllSessions() {
             model: agentModelOverrides[i] || agent.model,
             persona: agent.persona,
             initialTask: agent.initialTask,
+            extraCliArgs: agentCliArgsOverrides[i]?.trim()
+              ? agentCliArgsOverrides[i].trim().split(/\s+/)
+              : (agent as any).extraCliArgs,
           });
         } catch {
           // continue spawning others if one fails
@@ -239,6 +243,7 @@ export function AllSessions() {
       setPlaybookSessionName("");
       setAgentModelOverrides({});
       setAgentProviderOverrides({});
+      setAgentCliArgsOverrides({});
       setDefaultModelForAll("");
       setPlaybookMessagingMode("mcp");
       setPlaybookWorktreeMode("isolated");
@@ -934,6 +939,7 @@ export function AllSessions() {
             setPlaybookSessionName("");
             setAgentModelOverrides({});
             setAgentProviderOverrides({});
+            setAgentCliArgsOverrides({});
             setDefaultModelForAll("");
             setPlaybookMessagingMode("mcp");
             setPlaybookWorktreeMode("isolated");
@@ -1346,6 +1352,28 @@ export function AllSessions() {
                                   <option key={h} value={h} />
                                 ))}
                               </datalist>
+                            </div>
+
+                            {/* CLI flags input spanning full row */}
+                            <div style={{ gridColumn: "1 / -1", marginTop: 4 }}>
+                              <input
+                                value={agentCliArgsOverrides[i] ?? ""}
+                                onChange={(e) =>
+                                  setAgentCliArgsOverrides((prev) => ({
+                                    ...prev,
+                                    [i]: e.target.value,
+                                  }))
+                                }
+                                placeholder="CLI flags (optional)"
+                                style={{
+                                  width: "100%",
+                                  fontSize: 11,
+                                  fontFamily: "var(--font-mono)",
+                                  boxSizing: "border-box",
+                                  padding: "3px 6px",
+                                  color: "var(--accent-yellow)",
+                                }}
+                              />
                             </div>
                           </div>
                         );
