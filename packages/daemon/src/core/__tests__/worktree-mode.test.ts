@@ -95,11 +95,15 @@ function makeOptions(overrides: Partial<SpawnAgentOptions> = {}): SpawnAgentOpti
     role: "worker",
     provider: {
       id: "claude-code",
-      name: "Claude Code",
+      displayName: "Claude Code",
       supportsMcp: true,
       supportsHotModelSwap: false,
       buildCommand: () => ["claude"],
-      isAvailable: async () => true,
+      buildSendInput: (msg: string) => msg,
+      buildExitCommand: () => "/exit",
+      parseOutput: () => ({}),
+      getModels: () => [],
+      allowedExtraArgs: [],
     },
     model: "claude-sonnet-4-6",
     workingDirectory: "/projects/myapp",
@@ -118,7 +122,7 @@ describe("AgentManager — worktree mode", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     const tmux = new TmuxController();
-    const health = new AgentHealthMonitor();
+    const health = new AgentHealthMonitor(tmux as any);
     const wt = new WorktreeManager();
     manager = new AgentManager(tmux, health, wt);
 
