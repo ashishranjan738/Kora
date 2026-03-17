@@ -126,9 +126,11 @@ export class AgentManager extends EventEmitter {
         // __dirname at runtime is <pkg>/dist/core/, MCP server is at <pkg>/dist/mcp/
         const mcpServerScript = path.resolve(__dirname, "../mcp/agent-mcp-server.js");
 
-        // Read daemon port and token from global config (~/.kora/)
+        // Read daemon port and token from global config (~/.kora/ or ~/.kora-dev/)
         const os = await import("os");
-        const globalDir = path.join(os.default.homedir(), ".kora");
+        const isDev = process.env.KORA_DEV === "1";
+        const configDir = process.env.KORA_CONFIG_DIR || path.join(os.default.homedir(), isDev ? ".kora-dev" : ".kora");
+        const globalDir = configDir;
         let daemonPort = "7890";
         let daemonToken = "";
         try {
