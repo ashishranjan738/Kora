@@ -15,6 +15,30 @@ interface TimelineEvent {
 }
 
 type EventFilter = "all" | "agents" | "messages" | "session";
+type MessageTypeFilter = "all" | "text" | "task-assignment" | "question" | "completion" | "stop" | "ack";
+
+const MESSAGE_TYPE_STYLES: Record<string, { borderColor: string; icon: string; label: string }> = {
+  "task-assignment": { borderColor: "var(--accent-blue)", icon: "\uD83D\uDCCB", label: "Task Assignment" },
+  question: { borderColor: "var(--accent-yellow)", icon: "\u2753", label: "Question" },
+  completion: { borderColor: "var(--accent-green)", icon: "\u2705", label: "Completion" },
+  stop: { borderColor: "var(--accent-red)", icon: "\uD83D\uDED1", label: "Stop" },
+  ack: { borderColor: "var(--border-color)", icon: "\uD83D\uDC4D", label: "Ack" },
+  text: { borderColor: "none", icon: "\uD83D\uDCAC", label: "Text" },
+};
+
+const MESSAGE_TYPE_FILTER_LABELS: Record<MessageTypeFilter, string> = {
+  all: "All Messages",
+  text: "\uD83D\uDCAC Text",
+  "task-assignment": "\uD83D\uDCCB Task Assignments",
+  question: "\u2753 Questions",
+  completion: "\u2705 Completions",
+  stop: "\uD83D\uDED1 Stop",
+  ack: "\uD83D\uDC4D Acknowledgements",
+};
+
+function getMessageTypeStyle(messageType?: string) {
+  return MESSAGE_TYPE_STYLES[messageType || "text"] || MESSAGE_TYPE_STYLES.text;
+}
 
 const EVENT_STYLES: Record<
   string,
@@ -169,6 +193,7 @@ export function Timeline({ sessionId }: TimelineProps) {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<EventFilter>("all");
+  const [messageTypeFilter, setMessageTypeFilter] = useState<MessageTypeFilter>("all");
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
 
   function toggleExpand(eventId: string) {
@@ -209,9 +234,18 @@ export function Timeline({ sessionId }: TimelineProps) {
   }, [sessionId]);
 
   const allowedTypes = FILTER_GROUPS[filter];
-  const filteredEvents = allowedTypes
+  let filteredEvents = allowedTypes
     ? events.filter((evt) => allowedTypes.includes(evt.type))
     : events;
+
+  // Apply message type sub-filter
+  if (messageTypeFilter !== "all") {
+    filteredEvents = filteredEvents.filter((evt) => {
+      if (evt.type !== "message-sent") return true; // non-message events pass through
+      const msgType = (evt.data?.messageType as string) || "text";
+      return msgType === messageTypeFilter;
+    });
+  }
 
   return (
     <div style={{ marginTop: 32 }}>
@@ -234,24 +268,45 @@ export function Timeline({ sessionId }: TimelineProps) {
           Timeline
         </h2>
 
-        <select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value as EventFilter)}
-          style={{
-            fontSize: 12,
-            padding: "4px 8px",
-            borderRadius: 6,
-            border: "1px solid var(--border-color, #333)",
-            background: "var(--bg-secondary, #1e1e1e)",
-            color: "var(--text-secondary, #ccc)",
-            cursor: "pointer",
-          }}
-        >
-          <option value="all">All Events</option>
-          <option value="agents">Agents Only</option>
-          <option value="messages">Messages Only</option>
-          <option value="session">Session Only</option>
-        </select>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as EventFilter)}
+            style={{
+              fontSize: 12,
+              padding: "4px 8px",
+              minHeight: 44,
+              borderRadius: 6,
+              border: "1px solid var(--border-color, #333)",
+              background: "var(--bg-secondary, #1e1e1e)",
+              color: "var(--text-secondary, #ccc)",
+              cursor: "pointer",
+            }}
+          >
+            <option value="all">All Events</option>
+            <option value="agents">Agents Only</option>
+            <option value="messages">Messages Only</option>
+            <option value="session">Session Only</option>
+          </select>
+          <select
+            value={messageTypeFilter}
+            onChange={(e) => setMessageTypeFilter(e.target.value as MessageTypeFilter)}
+            style={{
+              fontSize: 12,
+              padding: "4px 8px",
+              minHeight: 44,
+              borderRadius: 6,
+              border: "1px solid var(--border-color, #333)",
+              background: "var(--bg-secondary, #1e1e1e)",
+              color: "var(--text-secondary, #ccc)",
+              cursor: "pointer",
+            }}
+          >
+            {(Object.entries(MESSAGE_TYPE_FILTER_LABELS) as [MessageTypeFilter, string][]).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {loading && (
@@ -271,7 +326,15 @@ export function Timeline({ sessionId }: TimelineProps) {
           const style = getEventStyle(evt.type);
           const detail = formatEventDetail(evt);
           const messageContent = getMessageContent(evt);
-          const borderColor = style.borderColor;
+          let borderColor = style.borderColor;
+
+          // Apply message-type-specific styling for message events
+          const msgType = evt.type === "message-sent" ? ((evt.data?.messageType as string) || "text") : null;
+          const msgStyle = msgType ? getMessageTypeStyle(msgType) : null;
+          if (msgStyle && msgStyle.borderColor !== "none") {
+            borderColor = msgStyle.borderColor;
+          }
+          const isAck = msgType === "ack";
 
           const eventKey = evt.id || String(idx);
           const isExpanded = expandedEvents.has(eventKey);
@@ -285,6 +348,7 @@ export function Timeline({ sessionId }: TimelineProps) {
                 borderLeft: borderColor
                   ? `3px solid ${borderColor}`
                   : undefined,
+                opacity: isAck ? 0.7 : 1,
               }}
             >
               <div
@@ -329,7 +393,9 @@ export function Timeline({ sessionId }: TimelineProps) {
                   className={`badge ${style.badge}`}
                   style={{ flexShrink: 0 }}
                 >
-                  {style.icon && (
+                  {msgStyle ? (
+                    <span style={{ marginRight: 4 }}>{msgStyle.icon}</span>
+                  ) : style.icon ? (
                     <span
                       style={{
                         marginRight: 4,
@@ -339,8 +405,8 @@ export function Timeline({ sessionId }: TimelineProps) {
                     >
                       {style.icon}
                     </span>
-                  )}
-                  {style.label}
+                  ) : null}
+                  {msgStyle ? msgStyle.label : style.label}
                 </span>
 
                 {/* Detail text */}
@@ -353,6 +419,8 @@ export function Timeline({ sessionId }: TimelineProps) {
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
+                      fontWeight: msgType === "task-assignment" || msgType === "stop" ? 600 : "normal",
+                      fontStyle: isAck ? "italic" : "normal",
                     }}
                   >
                     {detail}
@@ -362,7 +430,7 @@ export function Timeline({ sessionId }: TimelineProps) {
                     <span
                       style={{
                         fontSize: 12,
-                        color: "var(--text-muted)",
+                        color: isAck ? "var(--text-muted)" : "var(--text-muted)",
                         fontStyle: "italic",
                         display: "block",
                         marginTop: 4,
@@ -372,6 +440,52 @@ export function Timeline({ sessionId }: TimelineProps) {
                       }}
                     >
                       &ldquo;{messageContent}&rdquo;
+                    </span>
+                  )}
+
+                  {/* Show files changed for completion messages */}
+                  {msgType === "completion" && (evt.data as any)?.filesChanged && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "var(--accent-green)",
+                        display: "block",
+                        marginTop: 4,
+                      }}
+                    >
+                      {Array.isArray((evt.data as any).filesChanged)
+                        ? `${((evt.data as any).filesChanged as string[]).length} file(s) changed`
+                        : String((evt.data as any).filesChanged)}
+                    </span>
+                  )}
+
+                  {/* Show urgency for questions */}
+                  {msgType === "question" && (evt.data as any)?.urgency === "high" && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "var(--accent-red)",
+                        fontWeight: 600,
+                        display: "block",
+                        marginTop: 4,
+                      }}
+                    >
+                      ⚠ High urgency
+                    </span>
+                  )}
+
+                  {/* Show reason for stop messages */}
+                  {msgType === "stop" && (evt.data as any)?.reason && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "var(--accent-red)",
+                        fontWeight: 600,
+                        display: "block",
+                        marginTop: 4,
+                      }}
+                    >
+                      Reason: {String((evt.data as any).reason)}
                     </span>
                   )}
                 </div>

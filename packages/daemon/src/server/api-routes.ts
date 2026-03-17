@@ -72,7 +72,9 @@ export function createApiRouter(deps: {
         const fs = await import("fs/promises");
         const os = await import("os");
         const nodePath = await import("path");
-        port = (await fs.readFile(nodePath.join(os.default.homedir(), ".kora", "daemon.port"), "utf-8")).trim();
+        const isDev = process.env.KORA_DEV === "1";
+        const configDir = process.env.KORA_CONFIG_DIR || nodePath.join(os.default.homedir(), isDev ? ".kora-dev" : ".kora");
+        port = (await fs.readFile(nodePath.join(configDir, "daemon.port"), "utf-8")).trim();
       } catch {}
 
       const response: DaemonStatusResponse = {
