@@ -4,7 +4,7 @@ import type {
   ModelOption,
   ParsedOutput,
 } from "@kora/shared";
-import { validateExtraArgs } from "./arg-validator.js";
+
 
 export const gooseProvider: CLIProvider = {
   id: "goose",
@@ -26,16 +26,6 @@ export const gooseProvider: CLIProvider = {
     }
 
     if (config.extraArgs?.length) {
-      const { valid, invalid } = validateExtraArgs(
-        config.extraArgs,
-        this.allowedExtraArgs,
-        { skipValidation: config.skipArgValidation },
-      );
-      if (!valid) {
-        throw new Error(
-          `Invalid extra args for goose: ${invalid.join(", ")}`,
-        );
-      }
       cmd.push(...config.extraArgs);
     }
 
