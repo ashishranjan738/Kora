@@ -85,9 +85,10 @@ check: typecheck test lint ## Run all checks (typecheck + test + lint)
 # ─── Clean ────────────────────────────────────────────────
 
 clean-dist: ## Remove all build artifacts
-	rm -rf packages/shared/dist
-	rm -rf packages/daemon/dist
+	rm -rf packages/shared/dist packages/shared/tsconfig.tsbuildinfo
+	rm -rf packages/daemon/dist packages/daemon/tsconfig.tsbuildinfo
 	rm -rf packages/dashboard/dist
+	rm -f tsconfig.tsbuildinfo
 
 clean-dev: stop-dev ## Stop dev daemon and remove dev runtime files
 	rm -rf .kora-dev
