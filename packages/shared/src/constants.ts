@@ -34,6 +34,27 @@ export const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 10_000;
 
 // Tmux session namespace — all Kora-managed tmux sessions use this prefix
 export const TMUX_SESSION_PREFIX = "kora--";
+export const TMUX_SESSION_PREFIX_DEV = "kora-dev--";
+
+// Per-project runtime directory (dev mode)
+export const DAEMON_DIR_DEV = ".kora-dev";
+
+// MCP server name in agent MCP configs
+export const MCP_SERVER_NAME = "kora";
+export const MCP_SERVER_NAME_DEV = "kora-dev";
+
+// Helper functions for runtime use
+export function getRuntimeDaemonDir(isDev: boolean): string {
+  return isDev ? DAEMON_DIR_DEV : DAEMON_DIR;
+}
+
+export function getRuntimeTmuxPrefix(isDev: boolean): string {
+  return isDev ? TMUX_SESSION_PREFIX_DEV : TMUX_SESSION_PREFIX;
+}
+
+export function getRuntimeMcpName(isDev: boolean): string {
+  return isDev ? MCP_SERVER_NAME_DEV : MCP_SERVER_NAME;
+}
 
 // Terminal streaming
 export const TERMINAL_RING_BUFFER_LINES = 1000;

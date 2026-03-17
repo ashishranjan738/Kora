@@ -1,5 +1,5 @@
 import type { AgentConfig, AgentState, AgentRole, AgentPermissions, AgentCost, MessagingMode, WorktreeMode } from "@kora/shared";
-import { AutonomyLevel, DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS, DEFAULT_MAX_RESTARTS, PERSONAS_DIR, GRACEFUL_SHUTDOWN_TIMEOUT_MS, TMUX_SESSION_PREFIX } from "@kora/shared";
+import { AutonomyLevel, DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS, DEFAULT_MAX_RESTARTS, PERSONAS_DIR, GRACEFUL_SHUTDOWN_TIMEOUT_MS, getRuntimeTmuxPrefix, getRuntimeMcpName } from "@kora/shared";
 import type { CLIProvider } from "@kora/shared";
 import { TmuxController } from "./tmux-controller.js";
 import { AgentHealthMonitor } from "./agent-health.js";
@@ -56,7 +56,8 @@ export class AgentManager extends EventEmitter {
   async spawnAgent(options: SpawnAgentOptions): Promise<AgentState> {
     // 1. Generate agent ID (slugify name)
     const agentId = slugify(options.name) + "-" + uuidv4().slice(0, 8);
-    const tmuxSession = `${TMUX_SESSION_PREFIX}${options.sessionId}-${agentId}`;
+    const isDev = process.env.KORA_DEV === "1";
+    const tmuxSession = `${getRuntimeTmuxPrefix(isDev)}${options.sessionId}-${agentId}`;
 
     // 2. Write persona to file: {runtimeDir}/personas/{agentId}-prompt.md
     //    Replace placeholder "pending" agent ID with the real one
@@ -144,7 +145,7 @@ export class AgentManager extends EventEmitter {
 
         const mcpConfig = {
           mcpServers: {
-            "kora": {
+            [getRuntimeMcpName(isDev)]: {
               command: "node",
               args: [
                 mcpServerScript,
@@ -154,6 +155,10 @@ export class AgentManager extends EventEmitter {
                 "--token", daemonToken,
                 "--project-path", path.resolve(options.runtimeDir, ".."),
               ],
+              env: {
+                KORA_DEV: isDev ? "1" : "0",
+                ...(process.env.KORA_CONFIG_DIR ? { KORA_CONFIG_DIR: process.env.KORA_CONFIG_DIR } : {}),
+              },
             },
           },
         };
@@ -429,7 +434,7 @@ export class AgentManager extends EventEmitter {
       agent.config.cliProvider = provider.id;
     } else {
       const options: SpawnAgentOptions = {
-        sessionId: agent.config.tmuxSession.replace(TMUX_SESSION_PREFIX, "").split("-").slice(0, -1).join("-"),
+        sessionId: agent.config.tmuxSession.replace(getRuntimeTmuxPrefix(process.env.KORA_DEV === "1"), "").split("-").slice(0, -1).join("-"),
         name: agent.config.name,
         role: agent.config.role,
         provider,
