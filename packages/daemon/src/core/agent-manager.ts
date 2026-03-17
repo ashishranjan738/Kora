@@ -345,24 +345,26 @@ export class AgentManager extends EventEmitter {
     // 1. Stop health monitoring
     this.healthMonitor.stopMonitoring(agentId);
 
-    // 2. Stop pipe-pane
-    await this.tmux.pipePaneStop(tmuxSession);
+    // 2. Gracefully stop tmux session (if it still exists)
+    const sessionExists = await this.tmux.hasSession(tmuxSession);
+    if (sessionExists) {
+      try { await this.tmux.pipePaneStop(tmuxSession); } catch {}
 
-    // 3. Send exit command
-    await this.tmux.sendKeys(tmuxSession, "/exit", { literal: false });
+      try { await this.tmux.sendKeys(tmuxSession, "/exit", { literal: false }); } catch {}
 
-    // 4. Wait up to GRACEFUL_SHUTDOWN_TIMEOUT_MS
-    const deadline = Date.now() + GRACEFUL_SHUTDOWN_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      const alive = await this.tmux.hasSession(tmuxSession);
-      if (!alive) break;
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
+      // Wait up to GRACEFUL_SHUTDOWN_TIMEOUT_MS for exit
+      const deadline = Date.now() + GRACEFUL_SHUTDOWN_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        const alive = await this.tmux.hasSession(tmuxSession);
+        if (!alive) break;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
 
-    // 5. If still alive, kill tmux session
-    const stillAlive = await this.tmux.hasSession(tmuxSession);
-    if (stillAlive) {
-      await this.tmux.killSession(tmuxSession);
+      // Force kill if still alive
+      const stillAlive = await this.tmux.hasSession(tmuxSession);
+      if (stillAlive) {
+        try { await this.tmux.killSession(tmuxSession); } catch {}
+      }
     }
 
     // 6. Clean up git worktree (if one was created for this agent)
