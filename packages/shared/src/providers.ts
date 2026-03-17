@@ -42,6 +42,8 @@ export interface CLIProviderConfig {
   workingDirectory: string;
   extraArgs?: string[];
   envVars?: Record<string, string>;
+  /** When true, skip extra args validation — allows arbitrary CLI flags */
+  skipArgValidation?: boolean;
 }
 
 export interface ParsedOutput {

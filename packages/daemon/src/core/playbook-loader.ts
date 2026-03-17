@@ -14,6 +14,7 @@ export interface PlaybookAgent {
   model: string;
   persona?: string;
   initialTask?: string;
+  extraCliArgs?: string[];
 }
 
 /** Load a playbook from the global playbooks directory */
