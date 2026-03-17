@@ -41,22 +41,35 @@ function getConfigDir(): string {
 }
 
 function getDaemonUrl(): string {
+  // CLI args take priority (always correct for the daemon that spawned us)
+  const cliUrl = getArg("daemon-url");
+  if (cliUrl) return cliUrl;
+  // Filesystem fallback
   try {
     const path = require("path");
     const port = fs.readFileSync(path.join(getConfigDir(), "daemon.port"), "utf-8").trim();
     return `http://localhost:${port}`;
   } catch {
-    return getArg("daemon-url") || "http://localhost:7890";
+    return "http://localhost:7890";
   }
 }
 
 function getToken(): string {
+  // CLI args take priority (always correct for the daemon that spawned us)
+  const cliToken = getArg("token");
+  if (cliToken) return cliToken;
+  // Filesystem fallback
   try {
     const path = require("path");
     return fs.readFileSync(path.join(getConfigDir(), "daemon.token"), "utf-8").trim();
   } catch {
-    return getArg("token");
+    return "";
   }
+}
+
+function getRuntimeDir(): string {
+  const isDev = process.env.KORA_DEV === "1";
+  return isDev ? ".kora-dev" : ".kora";
 }
 
 // If called with no args, print usage and exit (serves as a --help check)
@@ -75,12 +88,12 @@ function countUnreadMessages(): number {
   if (!PROJECT_PATH) return 0;
   let count = 0;
   try {
-    const inboxDir = nodePath.join(PROJECT_PATH, ".kora", "messages", `inbox-${AGENT_ID}`);
+    const inboxDir = nodePath.join(PROJECT_PATH, getRuntimeDir(), "messages", `inbox-${AGENT_ID}`);
     const files = fs.readdirSync(inboxDir);
     count += files.filter((f: string) => f.endsWith(".md")).length;
   } catch { /* inbox may not exist */ }
   try {
-    const pendingDir = nodePath.join(PROJECT_PATH, ".kora", "mcp-pending", AGENT_ID);
+    const pendingDir = nodePath.join(PROJECT_PATH, getRuntimeDir(), "mcp-pending", AGENT_ID);
     const files = fs.readdirSync(pendingDir);
     count += files.filter((f: string) => f.endsWith(".json")).length;
   } catch { /* pending dir may not exist */ }
@@ -90,7 +103,7 @@ function countUnreadMessages(): number {
 function readAndConsumePendingMessages(): Array<{ from: string; content: string; timestamp: string }> {
   if (!PROJECT_PATH) return [];
 
-  const pendingDir = nodePath.join(PROJECT_PATH, ".kora", "mcp-pending", AGENT_ID);
+  const pendingDir = nodePath.join(PROJECT_PATH, getRuntimeDir(), "mcp-pending", AGENT_ID);
   const processedDir = nodePath.join(pendingDir, "processed");
 
   try {
@@ -481,7 +494,7 @@ async function handleToolCall(
       const inboxMessages: Array<{ from: string; content: string; timestamp: string }> = [];
 
       if (PROJECT_PATH) {
-        const inboxDir = nodePath.join(PROJECT_PATH, ".kora", "messages", `inbox-${AGENT_ID}`);
+        const inboxDir = nodePath.join(PROJECT_PATH, getRuntimeDir(), "messages", `inbox-${AGENT_ID}`);
         try {
           const files = fs.readdirSync(inboxDir);
           const messageFiles = files.filter((f: string) => f.endsWith(".md"));
