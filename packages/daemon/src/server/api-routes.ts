@@ -6,7 +6,7 @@ import type { WebSocketServer } from "ws";
 import {
   APP_VERSION,
   API_VERSION,
-  TMUX_SESSION_PREFIX,
+  getRuntimeTmuxPrefix,
 } from "@kora/shared";
 import type {
   DaemonStatusResponse,
@@ -279,7 +279,7 @@ export function createApiRouter(deps: {
       // Kill any plain terminal tmux sessions (term-*) for this session
       try {
         const allTmuxSessions = await tmux.listSessions();
-        const termPrefix = `${TMUX_SESSION_PREFIX}${sid}-term-`;
+        const termPrefix = `${getRuntimeTmuxPrefix(process.env.KORA_DEV === "1")}${sid}-term-`;
         for (const s of allTmuxSessions) {
           if (s.startsWith(termPrefix)) {
             try { await tmux.killSession(s); } catch {}
@@ -1343,7 +1343,7 @@ export function createApiRouter(deps: {
       }
 
       const termId = `term-${randomUUID().slice(0, 8)}`;
-      const tmuxSessionName = `${TMUX_SESSION_PREFIX}${sid}-${termId}`;
+      const tmuxSessionName = `${getRuntimeTmuxPrefix(process.env.KORA_DEV === "1")}${sid}-${termId}`;
 
       await tmux.newSession(tmuxSessionName);
       // cd to the project directory

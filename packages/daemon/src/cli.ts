@@ -14,7 +14,7 @@ import { SessionManager } from "./core/session-manager.js";
 import { Orchestrator } from "./core/orchestrator.js";
 import { registry } from "./cli-providers/index.js";
 import tmux from "./core/tmux-controller.js";
-import { DEFAULT_PORT, APP_VERSION, TMUX_SESSION_PREFIX } from "@kora/shared";
+import { DEFAULT_PORT, APP_VERSION, getRuntimeTmuxPrefix, getRuntimeDaemonDir } from "@kora/shared";
 import { ensureBuiltinPlaybooks } from "./core/playbook-loader.js";
 
 const args = process.argv.slice(2);
@@ -64,7 +64,7 @@ async function handleStart(): Promise<void> {
   for (const config of existingSessions) {
     if (config.status === "stopped") continue;
     try {
-      const runtimeDir = path.join(config.projectPath, ".kora");
+      const runtimeDir = path.join(config.projectPath, getRuntimeDaemonDir(process.env.KORA_DEV === "1"));
       const orch = new Orchestrator({
         sessionId: config.id,
         projectPath: config.projectPath,
@@ -112,13 +112,14 @@ async function handleStart(): Promise<void> {
 
   // 5a. Global tmux cleanup on startup — kill orphaned Kora sessions not matching any active session
   try {
+    const tmuxPrefix = getRuntimeTmuxPrefix(process.env.KORA_DEV === "1");
     const allTmux = await tmux.listSessions();
     const activeSessionIds = new Set(sessionManager.listSessions().map(s => s.id));
     let cleaned = 0;
     for (const s of allTmux) {
-      // Only consider sessions created by Kora (prefixed with "kora--")
-      if (!s.startsWith(TMUX_SESSION_PREFIX)) continue;
-      const belongsToActive = Array.from(activeSessionIds).some(sid => s.startsWith(`${TMUX_SESSION_PREFIX}${sid}-`));
+      // Only consider sessions created by this Kora instance (dev or prod)
+      if (!s.startsWith(tmuxPrefix)) continue;
+      const belongsToActive = Array.from(activeSessionIds).some(sid => s.startsWith(`${tmuxPrefix}${sid}-`));
       if (!belongsToActive) {
         try { await tmux.killSession(s); cleaned++; } catch {}
       }

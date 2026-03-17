@@ -9,7 +9,7 @@ import type {
   MessagingMode,
   WorktreeMode,
 } from "@kora/shared";
-import { TMUX_SESSION_PREFIX } from "@kora/shared";
+import { getRuntimeTmuxPrefix } from "@kora/shared";
 import { AgentManager } from "./agent-manager.js";
 import { MessageBus } from "./message-bus.js";
 import { AgentControlPlane } from "./agent-control-plane.js";
@@ -546,8 +546,8 @@ export class Orchestrator extends EventEmitter {
       const activeAgents = this.agentManager.listAgents();
       const activeSessionNames = new Set(activeAgents.map(a => a.config.tmuxSession));
 
-      // Find orphaned sessions that belong to this orchestrator (start with kora--sessionId-)
-      const sessionPrefix = `${TMUX_SESSION_PREFIX}${this.config.sessionId}-`;
+      // Find orphaned sessions that belong to this orchestrator
+      const sessionPrefix = `${getRuntimeTmuxPrefix(process.env.KORA_DEV === "1")}${this.config.sessionId}-`;
       const orphanedSessions = allSessions.filter(
         session => session.startsWith(sessionPrefix) && !activeSessionNames.has(session)
       );
