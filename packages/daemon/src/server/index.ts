@@ -10,7 +10,7 @@ import type { Orchestrator } from "../core/orchestrator.js";
 import type { CLIProviderRegistry } from "../cli-providers/provider-registry.js";
 import type { TmuxController } from "../core/tmux-controller.js";
 import type { WSEvent } from "@kora/shared";
-import { TMUX_SESSION_PREFIX } from "@kora/shared";
+import { getRuntimeTmuxPrefix } from "@kora/shared";
 import { PtyManager } from "../core/pty-manager.js";
 
 export interface ServerDeps {
@@ -137,9 +137,9 @@ function handleTerminalConnection(
   agentId: string,
   deps: ServerDeps,
 ): void {
-  // Plain terminal tile — tmux session name is "kora--{sessionId}-{termId}"
+  // Plain terminal tile — tmux session name is "kora--{sessionId}-{termId}" or "kora-dev--..."
   if (agentId.startsWith("term-")) {
-    const tmuxSession = `${TMUX_SESSION_PREFIX}${sessionId}-${agentId}`;
+    const tmuxSession = `${getRuntimeTmuxPrefix(process.env.KORA_DEV === "1")}${sessionId}-${agentId}`;
     deps.tmux.hasSession(tmuxSession).then((exists) => {
       if (!exists) {
         ws.close(4004, "Terminal session not found");

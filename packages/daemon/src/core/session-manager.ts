@@ -14,6 +14,7 @@ import type {
 } from "@kora/shared";
 import {
   DAEMON_DIR,
+  getRuntimeDaemonDir,
   SESSIONS_FILE,
   MESSAGES_DIR,
   CONTROL_DIR,
@@ -55,7 +56,7 @@ export class SessionManager {
         this.sessions.set(config.id, {
           config,
           agents: {},
-          runtimeDir: path.join(config.projectPath, DAEMON_DIR),
+          runtimeDir: path.join(config.projectPath, getRuntimeDaemonDir(process.env.KORA_DEV === "1")),
         });
       }
     } catch (err: unknown) {
@@ -98,7 +99,7 @@ export class SessionManager {
       throw new Error(`Session with id "${id}" already exists`);
     }
 
-    const runtimeDir = path.join(config.projectPath, DAEMON_DIR);
+    const runtimeDir = path.join(config.projectPath, getRuntimeDaemonDir(process.env.KORA_DEV === "1"));
 
     // 1. Create the runtime directory and all subdirectories
     for (const sub of SESSION_SUBDIRS) {
@@ -285,7 +286,7 @@ export class SessionManager {
     }
 
     const gitignorePath = path.join(projectPath, ".gitignore");
-    const entry = `${DAEMON_DIR}/`;
+    const entries = [`${DAEMON_DIR}/`, `${getRuntimeDaemonDir(true)}/`];
 
     let content = "";
     try {
@@ -294,17 +295,18 @@ export class SessionManager {
       // .gitignore doesn't exist yet — we'll create it
     }
 
-    // Check if the entry already exists (as a whole line)
+    // Check which entries are missing and append them
     const lines = content.split("\n");
-    if (lines.some((line) => line.trim() === entry)) {
+    const missing = entries.filter(entry => !lines.some((line) => line.trim() === entry));
+    if (missing.length === 0) {
       return;
     }
 
-    // Append the entry, ensuring there's a newline before it
+    // Append missing entries, ensuring there's a newline before them
     const separator = content.length > 0 && !content.endsWith("\n") ? "\n" : "";
     await writeFile(
       gitignorePath,
-      content + separator + entry + "\n",
+      content + separator + missing.join("\n") + "\n",
       "utf-8",
     );
   }
