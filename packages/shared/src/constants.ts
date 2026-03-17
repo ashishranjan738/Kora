@@ -32,6 +32,9 @@ export const MAX_CONSECUTIVE_FAILURES = 3;
 export const DEFAULT_MAX_RESTARTS = 3;
 export const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 10_000;
 
+// Tmux session namespace — all Kora-managed tmux sessions use this prefix
+export const TMUX_SESSION_PREFIX = "kora--";
+
 // Terminal streaming
 export const TERMINAL_RING_BUFFER_LINES = 1000;
 export const MAX_TERMINAL_CONNECTIONS_PER_AGENT = 3;

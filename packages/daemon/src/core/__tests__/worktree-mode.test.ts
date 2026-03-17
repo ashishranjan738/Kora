@@ -162,7 +162,7 @@ describe("AgentManager — worktree mode", () => {
 
   it("creates a tmux session with correct name", async () => {
     const agent = await manager.spawnAgent(makeOptions());
-    expect(mockNewSession).toHaveBeenCalledWith(`test-session-${agent.id}`);
+    expect(mockNewSession).toHaveBeenCalledWith(`kora--test-session-${agent.id}`);
   });
 
   it("starts pipe-pane for terminal logging", async () => {
