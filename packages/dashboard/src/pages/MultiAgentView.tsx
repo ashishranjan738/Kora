@@ -94,6 +94,7 @@ export function MultiAgentView() {
   // Mosaic layout state
   const [mosaicValue, setMosaicValue] = useState<MosaicNode<string> | null>(null);
   const mosaicInitialized = useRef(false);
+  const knownAgentIdsRef = useRef<string>("");
 
   // Broadcast state
   const [broadcastMsg, setBroadcastMsg] = useState("");
@@ -177,7 +178,14 @@ export function MultiAgentView() {
         api.getAgents(sessionId),
       ]);
       setSession(s);
-      setAgents(a.agents || []);
+
+      // Only update agents if something actually changed
+      const newAgents = a.agents || [];
+      setAgents(prev => {
+        const prevKey = prev.map(a => `${a.id}:${a.status}:${a.config?.model}`).join("|");
+        const newKey = newAgents.map((a: any) => `${a.id}:${a.status}:${a.config?.model}`).join("|");
+        return prevKey === newKey ? prev : newAgents;
+      });
     } catch (err) {
       console.error("Failed to load session data:", err);
     } finally {
@@ -244,9 +252,17 @@ export function MultiAgentView() {
 
   // When agents change (add/remove), update the mosaic
   useEffect(() => {
-    if (mosaicValue && mosaicInitialized.current) {
+    if (!mosaicValue || !mosaicInitialized.current) return;
+
+    const agentIds = agents.map(a => a.id);
+    const agentIdsKey = [...agentIds].sort().join(",");
+
+    // Skip if agent set hasn't changed (just status/cost updates)
+    if (agentIdsKey === knownAgentIdsRef.current) return;
+    knownAgentIdsRef.current = agentIdsKey;
+
+    {
       const currentIds = getLeafIds(mosaicValue);
-      const agentIds = agents.map(a => a.id);
       let updated: MosaicNode<string> | null = mosaicValue;
 
       // Remove tiles for agents that no longer exist (but keep term-* and editor-* tiles)
@@ -271,6 +287,7 @@ export function MultiAgentView() {
       }
     }
   }, [agents]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   // Save mosaic layout on change
   useEffect(() => {
@@ -567,7 +584,7 @@ export function MultiAgentView() {
     );
   }
 
-  function renderTile(id: string, path: MosaicPath) {
+  const renderTile = useCallback(function renderTile(id: string, path: MosaicPath) {
     // Check if this is a plain terminal tile
     if (id.startsWith("term-")) {
       return renderTerminalTile(id, path);
@@ -615,6 +632,24 @@ export function MultiAgentView() {
             <span className="mosaic-agent-meta">
               {[agent.provider, agent.model].filter(Boolean).join("/")}
             </span>
+            {agent.config?.channels && (agent.config.channels as string[]).length > 0 && (
+              <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 3 }}>
+                {(agent.config.channels as string[]).map((ch: string) => (
+                  <span
+                    key={ch}
+                    style={{
+                      fontSize: 10,
+                      padding: "1px 6px",
+                      borderRadius: 8,
+                      background: "var(--bg-tertiary)",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    {ch}
+                  </span>
+                ))}
+              </span>
+            )}
             <span className="mosaic-token-usage">
               <span>In: {formatTokenCount(tokenIn)}</span>
               <span>Out: {formatTokenCount(tokenOut)}</span>
@@ -854,7 +889,7 @@ export function MultiAgentView() {
         </div>
       </MosaicWindow>
     );
-  }
+  }, [sessionId, agents, focusedPanel, menuOpen, inlineMsgOpen, messages, sendingMap, sendAsMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- Fullscreen overlay ---- */
 

@@ -18,6 +18,9 @@ interface Task {
   createdBy: string;
   createdAt: string;
   comments?: TaskComment[];
+  dependencies?: string[];
+  blocked?: boolean;
+  blockedReason?: string;
 }
 
 interface TaskBoardProps {
@@ -63,6 +66,7 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
   const [newAssignee, setNewAssignee] = useState("");
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
+  const [newDependencies, setNewDependencies] = useState<string[]>([]);
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -107,6 +111,12 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
     const task = tasks.find((t) => t.id === draggedTaskId);
     if (!task || task.status === column) { setDraggedTaskId(null); return; }
 
+    if (task.blocked && column === "in-progress") {
+      alert(`Cannot start: ${task.blockedReason || "This task has incomplete dependencies"}`);
+      setDraggedTaskId(null);
+      return;
+    }
+
     setTasks((prev) => prev.map((t) => (t.id === draggedTaskId ? { ...t, status: column } : t)));
     try {
       await api.updateTask(sessionId, draggedTaskId, { status: column });
@@ -123,10 +133,12 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
         title: newTitle.trim(),
         description: newDescription.trim(),
         assignedTo: newAssignee || undefined,
+        dependencies: newDependencies.length > 0 ? newDependencies : undefined,
       });
       setNewTitle("");
       setNewDescription("");
       setNewAssignee("");
+      setNewDependencies([]);
       setShowAddDialog(false);
       fetchTasks();
     } catch {}
@@ -154,6 +166,10 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
   const handleChangeStatus = async (taskId: string, newStatus: string) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task || task.status === newStatus) return;
+    if (task.blocked && newStatus === "in-progress") {
+      alert(`Cannot start: ${task.blockedReason || "This task has incomplete dependencies"}`);
+      return;
+    }
     setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)));
     try {
       await api.updateTask(sessionId, taskId, { status: newStatus });
@@ -236,7 +252,7 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
                     padding: 12,
                     marginBottom: 8,
                     cursor: "pointer",
-                    opacity: draggedTaskId === task.id ? 0.5 : 1,
+                    opacity: draggedTaskId === task.id ? 0.5 : task.blocked ? 0.7 : 1,
                     transition: "border 0.15s, box-shadow 0.15s",
                   }}
                 >
@@ -258,6 +274,24 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
                   <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", marginBottom: 4 }}>
                     #{task.id}
                   </div>
+                  {task.blocked && (
+                    <div
+                      title={task.blockedReason || "This task has incomplete dependencies"}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        fontSize: 11,
+                        color: "var(--accent-yellow)",
+                        backgroundColor: "rgba(210, 153, 34, 0.1)",
+                        borderRadius: 4,
+                        padding: "2px 8px",
+                        marginBottom: 6,
+                      }}
+                    >
+                      <span style={{ fontSize: 12 }}>&#128274;</span> Blocked
+                    </div>
+                  )}
                   {task.description && (
                     <div style={{ color: "var(--text-secondary)", fontSize: 12, marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {task.description.length > 80 ? task.description.slice(0, 80) + "..." : task.description}
@@ -322,8 +356,62 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
                 ))}
               </select>
             </div>
+            {tasks.length > 0 && (
+              <div className="form-group">
+                <label>Dependencies (blocks this task)</label>
+                <div style={{
+                  maxHeight: 150,
+                  overflowY: "auto",
+                  border: "1px solid var(--border-color)",
+                  borderRadius: 6,
+                  background: "var(--bg-tertiary)",
+                }}>
+                  {tasks.filter((t) => t.status !== "done").map((t) => (
+                    <label
+                      key={t.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "8px 12px",
+                        fontSize: 13,
+                        cursor: "pointer",
+                        minHeight: 44,
+                        borderBottom: "1px solid var(--border-color)",
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={newDependencies.includes(t.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setNewDependencies((prev) => [...prev, t.id]);
+                          } else {
+                            setNewDependencies((prev) => prev.filter((d) => d !== t.id));
+                          }
+                        }}
+                      />
+                      <span style={{ flex: 1 }}>{t.title}</span>
+                      <span style={{
+                        fontSize: 11,
+                        color: COLUMN_COLORS[t.status] || "var(--text-muted)",
+                        fontWeight: 500,
+                      }}>
+                        {COLUMN_LABELS[t.status] || t.status}
+                      </span>
+                    </label>
+                  ))}
+                  {tasks.filter((t) => t.status !== "done").length === 0 && (
+                    <div style={{ padding: "12px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                      No incomplete tasks to depend on.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="form-actions">
-              <button onClick={() => { setShowAddDialog(false); setNewTitle(""); setNewDescription(""); setNewAssignee(""); }}>
+              <button onClick={() => { setShowAddDialog(false); setNewTitle(""); setNewDescription(""); setNewAssignee(""); setNewDependencies([]); }}>
                 Cancel
               </button>
               <button className="primary" onClick={handleAddTask} disabled={!newTitle.trim()}>
@@ -418,6 +506,75 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
                 ))}
               </div>
             </div>
+
+            {/* Dependencies Section */}
+            {expandedTask.dependencies && expandedTask.dependencies.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", marginBottom: 8, fontSize: 13, fontWeight: 600 }}>
+                  Dependencies ({expandedTask.dependencies.length})
+                </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {expandedTask.dependencies.map((depId) => {
+                    const depTask = tasks.find((t) => t.id === depId);
+                    const isDone = depTask?.status === "done";
+                    return (
+                      <div
+                        key={depId}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "6px 10px",
+                          background: "var(--bg-tertiary)",
+                          borderRadius: 6,
+                          fontSize: 13,
+                          minHeight: 44,
+                          cursor: depTask ? "pointer" : "default",
+                        }}
+                        onClick={() => {
+                          if (depTask) setExpandedTaskId(depId);
+                        }}
+                      >
+                        <span style={{ fontSize: 14 }}>{isDone ? "\u2705" : "\u23F3"}</span>
+                        <span style={{
+                          color: isDone ? "var(--accent-green)" : "var(--text-primary)",
+                          textDecoration: isDone ? "line-through" : "none",
+                          flex: 1,
+                        }}>
+                          {depTask?.title || depId}
+                        </span>
+                        <span style={{
+                          fontSize: 11,
+                          color: isDone ? "var(--accent-green)" : "var(--text-muted)",
+                          fontWeight: 500,
+                        }}>
+                          {isDone ? "Done" : depTask ? COLUMN_LABELS[depTask.status] || depTask.status : "Unknown"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Blocked indicator in detail */}
+            {expandedTask.blocked && (
+              <div style={{
+                marginBottom: 16,
+                padding: "10px 12px",
+                borderRadius: 6,
+                backgroundColor: "rgba(210, 153, 34, 0.1)",
+                border: "1px solid var(--accent-yellow)",
+                color: "var(--accent-yellow)",
+                fontSize: 13,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}>
+                <span style={{ fontSize: 16 }}>&#128274;</span>
+                <span>{expandedTask.blockedReason || "This task is blocked by incomplete dependencies"}</span>
+              </div>
+            )}
 
             {/* Comments Section */}
             <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: 16 }}>

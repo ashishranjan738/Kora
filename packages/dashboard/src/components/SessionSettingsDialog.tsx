@@ -31,6 +31,7 @@ export function SessionSettingsDialog({
 
   const [defaultProvider, setDefaultProvider] = useState("");
   const [defaultModel, setDefaultModel] = useState("");
+  const [worktreeMode, setWorktreeMode] = useState<string>("");
 
   // Add custom model form state
   const [newProvider, setNewProvider] = useState("");
@@ -43,9 +44,15 @@ export function SessionSettingsDialog({
     let cancelled = false;
     async function load() {
       try {
-        const data = await api.getProviders();
+        const [providerData, sessionData] = await Promise.all([
+          api.getProviders(),
+          api.getSession(sessionId) as Promise<any>,
+        ]);
         if (!cancelled) {
-          setProviders(data.providers || []);
+          setProviders(providerData.providers || []);
+          if (sessionData?.worktreeMode) {
+            setWorktreeMode(sessionData.worktreeMode);
+          }
         }
       } catch {
         // ignore
@@ -142,7 +149,7 @@ export function SessionSettingsDialog({
     <div className="dialog-overlay" onClick={onClose}>
       <div
         className="dialog"
-        style={{ maxWidth: 640, minWidth: 480 }}
+        style={{ maxWidth: "min(640px, 90vw)", minWidth: 0, width: "min(640px, calc(100vw - 32px))" }}
         onClick={(e) => e.stopPropagation()}
       >
         <h2>Session Settings</h2>
@@ -207,6 +214,60 @@ export function SessionSettingsDialog({
             }}
           >
             Default model used when spawning new agents.
+          </div>
+        </div>
+
+        {/* Worktree Mode (read-only) */}
+        <div className="form-group">
+          <label>Worktree Mode</label>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "8px 12px",
+              backgroundColor: "var(--bg-tertiary)",
+              borderRadius: 6,
+              border: "1px solid var(--border-color)",
+            }}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={worktreeMode === "isolated" ? "var(--accent-blue)" : worktreeMode === "shared" ? "var(--accent-purple)" : "var(--text-muted)"}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              {worktreeMode === "shared" ? (
+                <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+              ) : (
+                <>
+                  <line x1="6" y1="3" x2="6" y2="15" />
+                  <circle cx="18" cy="6" r="3" />
+                  <circle cx="6" cy="18" r="3" />
+                  <path d="M18 9a9 9 0 01-9 9" />
+                </>
+              )}
+            </svg>
+            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>
+              {worktreeMode === "isolated" ? "Isolated" : worktreeMode === "shared" ? "Shared" : "Not set"}
+            </span>
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted)",
+              marginTop: 4,
+            }}
+          >
+            {worktreeMode === "isolated"
+              ? "Each agent has its own git worktree branch. Cannot be changed mid-session."
+              : worktreeMode === "shared"
+                ? "All agents share the same working directory. Cannot be changed mid-session."
+                : "Worktree mode was not configured for this session."}
           </div>
         </div>
 

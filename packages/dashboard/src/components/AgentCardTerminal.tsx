@@ -49,6 +49,7 @@ export function AgentCardTerminal({
   const api = useApi();
   const [lines, setLines] = useState<string[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  const prevOutputRef = useRef<string>("");
 
   const isInactive = agentStatus === "crashed" || agentStatus === "stopped";
 
@@ -66,9 +67,15 @@ export function AgentCardTerminal({
         const data = await api.getOutput(sessionId, agentId, 15);
         if (!cancelled) {
           const outputLines: string[] = data.output || [];
-          setLines(outputLines);
-          const fullText = outputLines.join("\n");
-          const activity = detectActivity(fullText, agentStatus);
+          const outputKey = outputLines.join("\n");
+
+          // Only update state if output actually changed
+          if (outputKey !== prevOutputRef.current) {
+            prevOutputRef.current = outputKey;
+            setLines(outputLines);
+          }
+
+          const activity = detectActivity(outputKey, agentStatus);
           onActivityDetected?.(activity);
         }
       } catch {
@@ -77,7 +84,7 @@ export function AgentCardTerminal({
     }
 
     poll();
-    const interval = setInterval(poll, 3000);
+    const interval = setInterval(poll, 5000);
 
     return () => {
       cancelled = true;

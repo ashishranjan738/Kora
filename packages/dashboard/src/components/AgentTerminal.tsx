@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { useThemeStore } from "../stores/themeStore";
@@ -10,7 +10,7 @@ interface AgentTerminalProps {
   height?: string;
 }
 
-export function AgentTerminal({ sessionId, agentId, height = "400px" }: AgentTerminalProps) {
+export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agentId, height = "400px" }: AgentTerminalProps) {
   const termRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -166,4 +166,4 @@ export function AgentTerminal({ sessionId, agentId, height = "400px" }: AgentTer
       }} />
     </div>
   );
-}
+});
