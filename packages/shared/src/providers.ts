@@ -27,6 +27,9 @@ export interface CLIProvider {
   /** Command to switch models at runtime (if supported) */
   buildModelSwapCommand?(model: string): string;
 
+  /** Whether this CLI supports MCP (--mcp-config). Drives MCP message delivery. */
+  supportsMcp: boolean;
+
   /** Allowlist of valid extra CLI flags for this provider */
   allowedExtraArgs: string[];
 }

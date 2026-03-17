@@ -24,6 +24,7 @@ export const ARCHIVE_DIR = "archive";
 export const PERSONAS_DIR = "personas";
 export const KNOWLEDGE_DIR = "knowledge";
 export const PROCESSED_DIR = "processed";
+export const MCP_PENDING_DIR = "mcp-pending";
 
 // Agent health check
 export const HEALTH_CHECK_INTERVAL_MS = 5_000;

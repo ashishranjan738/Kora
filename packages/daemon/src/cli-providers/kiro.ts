@@ -12,6 +12,7 @@ export const kiroProvider: CLIProvider = {
 
   allowedExtraArgs: ["--verbose", "--profile"],
 
+  supportsMcp: true,
   supportsHotModelSwap: false,
 
   buildCommand(config: CLIProviderConfig): string[] {

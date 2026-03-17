@@ -144,6 +144,7 @@ export function createApiRouter(deps: {
         projectPath: body.projectPath,
         defaultProvider: body.defaultProvider,
         messagingMode: body.messagingMode,
+        worktreeMode: body.worktreeMode,
       });
 
       // Create an Orchestrator for this session so agents can be spawned
@@ -156,6 +157,7 @@ export function createApiRouter(deps: {
         tmux,
         providerRegistry,
         messagingMode: config.messagingMode || "mcp",
+        worktreeMode: config.worktreeMode,
       });
       await orch.start();
       orchestrators.set(config.id, orch);
@@ -335,7 +337,7 @@ export function createApiRouter(deps: {
 
   // ─── Agents CRUD ─────────────────────────────────────────────────────
 
-  router.get("/sessions/:sid/agents", (req: Request, res: Response) => {
+  router.get("/sessions/:sid/agents", async (req: Request, res: Response) => {
     try {
       const sid = String(req.params.sid);
       const session = sessionManager.getSession(sid);
@@ -346,7 +348,37 @@ export function createApiRouter(deps: {
 
       const am = orchestrators.get(sid)?.agentManager;
       const agents = am ? am.listAgents() : [];
-      res.json({ agents });
+
+      // Enrich each running agent with activity detection from terminal output
+      const enrichedAgents = await Promise.all(agents.map(async (agent) => {
+        if (agent.status !== "running") {
+          return { ...agent, activity: agent.status };
+        }
+        try {
+          const output = await tmux.capturePane(agent.config.tmuxSession, 5, false);
+          const lines = output.trim().split("\n").filter((l: string) => l.trim());
+          const lastLine = lines[lines.length - 1] || "";
+
+          let activity = "working";
+          if (lastLine.includes("\u276F") || lastLine.includes("> ") || lastLine.match(/[$%#]\s*$/)) {
+            activity = "idle";
+          } else if (lastLine.includes("Thinking") || lastLine.includes("oking")) {
+            activity = "thinking";
+          } else if (lastLine.includes("Reading") || lastLine.includes("Searching")) {
+            activity = "reading";
+          } else if (lastLine.includes("Writing") || lastLine.includes("Editing")) {
+            activity = "writing";
+          } else if (lastLine.includes("Running") || lastLine.includes("Bash")) {
+            activity = "running-command";
+          }
+
+          return { ...agent, activity };
+        } catch {
+          return { ...agent, activity: "unknown" };
+        }
+      }));
+
+      res.json({ agents: enrichedAgents });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
@@ -427,6 +459,7 @@ export function createApiRouter(deps: {
         envVars: body.envVars,
         initialTask: body.initialTask,
         messagingMode: session.config.messagingMode || "mcp",
+        worktreeMode: session.config.worktreeMode,
       });
 
       // Broadcast agent-spawned event via WebSocket
@@ -661,7 +694,7 @@ export function createApiRouter(deps: {
   router.post("/sessions/:sid/relay", async (req: Request, res: Response) => {
     try {
       const sid = String(req.params.sid);
-      const body = req.body as { from: string; to: string; message: string };
+      const body = req.body as { from: string; to: string; message: string; messageType?: string };
 
       if (!body.to || !body.message) {
         res.status(400).json({ error: "to and message are required" });
@@ -674,7 +707,7 @@ export function createApiRouter(deps: {
         return;
       }
 
-      const success = await orch.relayMessage(body.from || "user", body.to, body.message);
+      const success = await orch.relayMessage(body.from || "user", body.to, body.message, body.messageType);
       if (!success) {
         res.status(404).json({ error: `Target agent "${body.to}" not found or not running` });
         return;

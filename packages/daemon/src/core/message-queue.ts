@@ -13,10 +13,15 @@ interface QueuedMessage {
 
 export class MessageQueue {
   private queues = new Map<string, QueuedMessage[]>();
-  private deliveryInterval: NodeJS.Timeout | null = null;
+  private deliveryInterval: ReturnType<typeof setTimeout> | null = null;
   private messageCountWindow = new Map<string, { count: number; windowStart: number }>();
   /** Track recent messages to detect loops — key: "from:to", value: count in window */
   private conversationWindow = new Map<string, { count: number; windowStart: number }>();
+  /** Cache agent readiness to avoid redundant tmux capture-pane calls */
+  private readinessCache = new Map<string, { ready: boolean; checkedAt: number }>();
+  private readonly READINESS_CACHE_TTL = 400; // ms
+  /** Agent IDs that support MCP — get mcp-pending delivery */
+  private mcpAgents = new Set<string>();
 
   constructor(
     private tmux: TmuxController,
@@ -75,47 +80,74 @@ export class MessageQueue {
       message,
       timestamp: Date.now(),
     });
+    // Try to deliver immediately instead of waiting for next poll cycle
+    this.processQueues().catch(() => {});
     return true;
   }
 
-  /** Start the delivery loop */
+  /** Start the delivery loop with adaptive polling */
   start(): void {
     if (this.deliveryInterval) return;
-    this.deliveryInterval = setInterval(() => this.processQueues(), 2000);
+    this.scheduleNextPoll();
+  }
+
+  /** Schedule the next poll with adaptive interval */
+  private scheduleNextPoll(): void {
+    const hasMessages = Array.from(this.queues.values()).some(q => q.length > 0);
+    const interval = hasMessages ? 500 : 2000;
+    this.deliveryInterval = setTimeout(() => {
+      this.processQueues().catch(() => {}).finally(() => {
+        if (this.deliveryInterval) this.scheduleNextPoll();
+      });
+    }, interval);
   }
 
   /** Stop the delivery loop */
   stop(): void {
     if (this.deliveryInterval) {
-      clearInterval(this.deliveryInterval);
+      clearTimeout(this.deliveryInterval);
       this.deliveryInterval = null;
     }
   }
 
-  /** Process all queues — deliver messages to agents that are ready */
+  /** Process all queues — deliver messages to agents that are ready (parallel) */
   private async processQueues(): Promise<void> {
+    const promises: Promise<void>[] = [];
     for (const [_agentId, queue] of this.queues) {
       if (queue.length === 0) continue;
+      promises.push(this.processOneQueue(queue));
+    }
+    await Promise.all(promises);
+  }
 
-      const msg = queue[0]; // peek at first message
-
-      // Check if agent is at a prompt (ready for input)
-      const ready = await this.isAgentReady(msg.tmuxSession);
-      if (ready) {
-        queue.shift(); // remove from queue
-        await this.deliver(msg);
-      } else {
-        // Check if message is too old (>60s) — force deliver to avoid stuck messages
-        if (Date.now() - msg.timestamp > 60000) {
-          queue.shift();
-          await this.deliver(msg);
-        }
-      }
+  /** Process a single agent's queue */
+  private async processOneQueue(queue: QueuedMessage[]): Promise<void> {
+    const msg = queue[0];
+    const ready = await this.isAgentReady(msg.tmuxSession);
+    if (ready) {
+      queue.shift();
+      await this.deliver(msg);
+    } else if (Date.now() - msg.timestamp > 15000) {
+      // Force deliver after 15s to avoid stuck messages
+      queue.shift();
+      await this.deliver(msg);
     }
   }
 
-  /** Check if the agent's terminal is at an input prompt */
+  /** Check if the agent's terminal is at an input prompt (with caching) */
   private async isAgentReady(tmuxSession: string): Promise<boolean> {
+    const cached = this.readinessCache.get(tmuxSession);
+    if (cached && Date.now() - cached.checkedAt < this.READINESS_CACHE_TTL) {
+      return cached.ready;
+    }
+
+    const ready = await this.checkAgentReady(tmuxSession);
+    this.readinessCache.set(tmuxSession, { ready, checkedAt: Date.now() });
+    return ready;
+  }
+
+  /** Actually check agent readiness via tmux capture-pane */
+  private async checkAgentReady(tmuxSession: string): Promise<boolean> {
     try {
       const output = await this.tmux.capturePane(tmuxSession, 5, false);
       const lines = output
@@ -155,8 +187,11 @@ export class MessageQueue {
     }
 
     try {
-      if (this.messagingMode === "mcp") {
-        // MCP mode: write full message to file, send short notification to tmux
+      if (this.mcpAgents.has(msg.agentId)) {
+        // MCP agent: write to pending store + send tmux notification as fallback
+        await this.deliverViaMcpPending(msg);
+      } else if (this.messagingMode === "mcp") {
+        // Legacy MCP mode (non-MCP agent in MCP session): inbox file + notification
         await this.deliverViaMcp(msg);
       } else if (this.messagingMode === "terminal") {
         // Terminal mode: send directly via tmux (500 char limit)
@@ -182,6 +217,25 @@ export class MessageQueue {
     const senderName = msg.message.match(/\[(?:Message|Task|DONE|Question|Broadcast|System) from (.+?)\]/)?.[1]
       || msg.message.match(/\[Message from (.+?)\]/)?.[1]
       || "teammate";
+    const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
+    await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
+  }
+
+  /** MCP pending mode: write to mcp-pending store + send tmux notification */
+  private async deliverViaMcpPending(msg: QueuedMessage): Promise<void> {
+    // 1. Write to mcp-pending store
+    const pendingDir = path.join(this.runtimeDir, "mcp-pending", msg.agentId);
+    await fs.mkdir(pendingDir, { recursive: true });
+    const filename = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.json`;
+    const payload = {
+      from: msg.message.match(/\[(?:Message|Task|DONE|Question|Broadcast|System)[^\]]*from (.+?)\]/)?.[1] || "unknown",
+      content: msg.message,
+      timestamp: new Date().toISOString(),
+    };
+    await fs.writeFile(path.join(pendingDir, filename), JSON.stringify(payload), "utf-8");
+
+    // 2. Also send tmux notification as fallback
+    const senderName = payload.from;
     const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
     await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
   }
@@ -236,8 +290,14 @@ export class MessageQueue {
     return `[Message from ${senderName}]: ${content}`;
   }
 
+  /** Register an agent as MCP-capable */
+  registerMcpAgent(agentId: string): void {
+    this.mcpAgents.add(agentId);
+  }
+
   /** Remove all queued messages for an agent */
   removeAgent(agentId: string): void {
     this.queues.delete(agentId);
+    this.mcpAgents.delete(agentId);
   }
 }
