@@ -2705,31 +2705,32 @@ textarea:focus {
 .agent-card-v2 {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: visible;
   transition: border-color 0.2s, box-shadow 0.2s;
+  display: flex;
+  flex-direction: column;
 }
 .agent-card-v2:hover {
   border-color: var(--text-muted);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
 }
 [data-theme="dark"] .agent-card-v2:hover {
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
-/* State-driven left accent */
-.agent-card-v2.state-working { box-shadow: inset 3px 0 0 var(--accent-blue); }
-.agent-card-v2.state-idle { box-shadow: inset 3px 0 0 var(--text-muted); }
-.agent-card-v2.state-crashed { box-shadow: inset 3px 0 0 var(--accent-red); }
-.agent-card-v2.state-stopped { box-shadow: inset 3px 0 0 var(--text-muted); opacity: 0.65; }
+/* State-driven top accent bar */
+.agent-card-v2.state-working { border-top: 2px solid var(--accent-blue); }
+.agent-card-v2.state-idle { border-top: 2px solid var(--text-muted); }
+.agent-card-v2.state-crashed { border-top: 2px solid var(--accent-red); }
+.agent-card-v2.state-stopped { border-top: 2px solid var(--text-muted); opacity: 0.6; }
 .agent-card-v2.state-stopped:hover { opacity: 1; }
-.agent-card-v2.state-crashed:hover { box-shadow: inset 3px 0 0 var(--accent-red), 0 2px 12px rgba(248, 81, 73, 0.1); }
 
 /* Header */
 .ac2-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 14px 0 14px;
+  padding: 16px 16px 0 16px;
 }
 .ac2-header-left {
   display: flex;
@@ -2747,27 +2748,54 @@ textarea:focus {
   text-overflow: ellipsis;
 }
 .ac2-role-badge {
-  font-size: 11px;
-  font-weight: 500;
-  padding: 1px 8px;
-  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
   background: var(--bg-tertiary);
-  color: var(--text-secondary);
+  color: var(--text-muted);
   white-space: nowrap;
-  text-transform: capitalize;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 .ac2-uptime {
   font-size: 12px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
-/* Model line */
+/* Meta section: model, channels, flags */
+.ac2-meta {
+  padding: 8px 16px 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 .ac2-model {
-  padding: 2px 14px 0 14px;
   font-size: 11px;
   color: var(--text-muted);
   font-family: var(--font-mono);
+}
+.ac2-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.ac2-tag {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  line-height: 1.4;
+}
+.ac2-tag-flag {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px dashed var(--border-color);
 }
 
 /* Status dot */
@@ -2779,25 +2807,30 @@ textarea:focus {
 }
 .ac2-status-dot.state-working {
   background: var(--accent-blue);
-  animation: ac2-pulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 0 3px rgba(56, 132, 255, 0.15);
+  animation: ac2-pulse 2s ease-in-out infinite;
 }
 .ac2-status-dot.state-idle { background: var(--text-muted); }
-.ac2-status-dot.state-crashed { background: var(--accent-red); }
+.ac2-status-dot.state-crashed {
+  background: var(--accent-red);
+  box-shadow: 0 0 0 3px rgba(248, 81, 73, 0.15);
+}
 .ac2-status-dot.state-stopped { background: var(--text-muted); }
 
 @keyframes ac2-pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  50% { opacity: 0.4; }
 }
 
-/* Activity summary */
+/* Activity */
 .ac2-activity {
-  padding: 12px 14px;
+  padding: 12px 16px;
+  flex: 1;
 }
 .ac2-current-action {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 13px;
   color: var(--text-secondary);
 }
@@ -2823,7 +2856,7 @@ textarea:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding-left: 20px;
+  padding-left: 22px;
 }
 
 /* Spinner */
@@ -2833,22 +2866,23 @@ textarea:focus {
   border: 2px solid var(--border-color);
   border-top-color: var(--accent-blue);
   border-radius: 50%;
-  animation: ac2-spin 0.7s linear infinite;
+  animation: ac2-spin 0.8s linear infinite;
   display: inline-block;
 }
 @keyframes ac2-spin { to { transform: rotate(360deg); } }
 
-/* Metrics bar */
+/* Metrics */
 .ac2-metrics {
   display: flex;
   border-top: 1px solid var(--border-color);
-  padding: 10px 14px;
+  padding: 10px 16px;
+  background: var(--bg-tertiary);
 }
 .ac2-metric {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 .ac2-metric:not(:last-child) {
   border-right: 1px solid var(--border-color);
@@ -2868,33 +2902,37 @@ textarea:focus {
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
+.ac2-metric-dim {
+  color: var(--text-muted);
+}
 
 /* Action bar */
 .ac2-actions {
   display: flex;
-  gap: 8px;
-  padding: 10px 14px 14px 14px;
-  border-top: 1px solid var(--border-color);
+  gap: 6px;
+  padding: 10px 16px 14px 16px;
 }
 .ac2-btn {
   flex: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 32px;
-  padding: 0 12px;
+  height: 30px;
+  padding: 0 10px;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  font-size: 13px;
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.12s ease;
   white-space: nowrap;
 }
 .ac2-btn:hover {
-  background: var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
 }
 .ac2-btn-primary {
   background: var(--accent-blue);
@@ -2915,7 +2953,7 @@ textarea:focus {
 }
 .ac2-btn-settings {
   flex: 0 0 auto;
-  width: 32px;
+  width: 30px;
   padding: 0;
   display: inline-flex;
   align-items: center;
