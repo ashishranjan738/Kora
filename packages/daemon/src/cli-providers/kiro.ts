@@ -4,7 +4,7 @@ import type {
   ModelOption,
   ParsedOutput,
 } from "@kora/shared";
-import { validateExtraArgs } from "./arg-validator.js";
+
 
 export const kiroProvider: CLIProvider = {
   id: "kiro",
@@ -24,16 +24,6 @@ export const kiroProvider: CLIProvider = {
     // which is handled by agent-manager before spawning.
 
     if (config.extraArgs?.length) {
-      const { valid, invalid } = validateExtraArgs(
-        config.extraArgs,
-        this.allowedExtraArgs,
-        { skipValidation: config.skipArgValidation },
-      );
-      if (!valid) {
-        throw new Error(
-          `Invalid extra args for kiro: ${invalid.join(", ")}`,
-        );
-      }
       cmd.push(...config.extraArgs);
     }
 
