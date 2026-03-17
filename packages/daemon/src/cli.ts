@@ -14,7 +14,7 @@ import { SessionManager } from "./core/session-manager.js";
 import { Orchestrator } from "./core/orchestrator.js";
 import { registry } from "./cli-providers/index.js";
 import tmux from "./core/tmux-controller.js";
-import { DEFAULT_PORT, APP_VERSION } from "@kora/shared";
+import { DEFAULT_PORT, APP_VERSION, TMUX_SESSION_PREFIX } from "@kora/shared";
 import { ensureBuiltinPlaybooks } from "./core/playbook-loader.js";
 
 const args = process.argv.slice(2);
@@ -110,14 +110,15 @@ async function handleStart(): Promise<void> {
     );
   });
 
-  // 5a. Global tmux cleanup on startup — kill sessions not matching any active session
+  // 5a. Global tmux cleanup on startup — kill orphaned Kora sessions not matching any active session
   try {
     const allTmux = await tmux.listSessions();
     const activeSessionIds = new Set(sessionManager.listSessions().map(s => s.id));
     let cleaned = 0;
     for (const s of allTmux) {
-      // Check if this tmux session belongs to any active session
-      const belongsToActive = Array.from(activeSessionIds).some(sid => s.startsWith(`${sid}-`));
+      // Only consider sessions created by Kora (prefixed with "kora--")
+      if (!s.startsWith(TMUX_SESSION_PREFIX)) continue;
+      const belongsToActive = Array.from(activeSessionIds).some(sid => s.startsWith(`${TMUX_SESSION_PREFIX}${sid}-`));
       if (!belongsToActive) {
         try { await tmux.killSession(s); cleaned++; } catch {}
       }
