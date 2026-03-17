@@ -14,5 +14,8 @@ dist/
 # Playwright MCP
 .playwright-mcp/
 
-# Claude memory
+# Claude
+CLAUDE.md
 .claude/
+.kora/
+.kora-dev/
