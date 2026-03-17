@@ -39,9 +39,8 @@ export const TMUX_SESSION_PREFIX_DEV = "kora-dev--";
 // Per-project runtime directory (dev mode)
 export const DAEMON_DIR_DEV = ".kora-dev";
 
-// MCP server name in agent MCP configs
+// MCP server name in agent MCP configs (always "kora" — isolation comes from port/token/config dir)
 export const MCP_SERVER_NAME = "kora";
-export const MCP_SERVER_NAME_DEV = "kora-dev";
 
 // Helper functions for runtime use
 export function getRuntimeDaemonDir(isDev: boolean): string {
@@ -50,10 +49,6 @@ export function getRuntimeDaemonDir(isDev: boolean): string {
 
 export function getRuntimeTmuxPrefix(isDev: boolean): string {
   return isDev ? TMUX_SESSION_PREFIX_DEV : TMUX_SESSION_PREFIX;
-}
-
-export function getRuntimeMcpName(isDev: boolean): string {
-  return isDev ? MCP_SERVER_NAME_DEV : MCP_SERVER_NAME;
 }
 
 // Terminal streaming
