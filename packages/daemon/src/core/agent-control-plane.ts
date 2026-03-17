@@ -68,10 +68,11 @@ export class AgentControlPlane extends EventEmitter {
         await fs.rename(filePath, path.join(cmdDir, PROCESSED_DIR, filename));
 
         // Emit for the orchestrator to handle
+        console.log(`[AgentControlPlane] Received command "${command.action}" (id: ${command.id}) from agent ${agentId}`);
         this.emit("command", agentId, command);
       } catch (err) {
-        // Ignore parse errors or ENOENT (file already moved)
         if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+        console.error(`[AgentControlPlane] Failed to process command file ${filename} for agent ${agentId}:`, err);
       }
     });
 
@@ -84,6 +85,7 @@ export class AgentControlPlane extends EventEmitter {
 
   /** Write a response for an agent */
   async writeResponse(agentId: string, response: ControlResponse): Promise<void> {
+    console.log(`[AgentControlPlane] Writing response for command ${response.commandId} to agent ${agentId}: ${response.status}`);
     const resDir = path.join(this.runtimeDir, CONTROL_DIR, `responses-${agentId}`);
     const filename = `${Date.now()}-${response.commandId}.json`;
     const tmpFile = path.join(resDir, `.${filename}.tmp`);

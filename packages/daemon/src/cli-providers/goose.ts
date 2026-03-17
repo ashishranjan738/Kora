@@ -12,6 +12,7 @@ export const gooseProvider: CLIProvider = {
 
   allowedExtraArgs: ["--verbose", "--max-tokens"],
 
+  supportsMcp: false,
   supportsHotModelSwap: false,
 
   buildCommand(config: CLIProviderConfig): string[] {

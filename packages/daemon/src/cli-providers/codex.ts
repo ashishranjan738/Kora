@@ -12,6 +12,7 @@ export const codexProvider: CLIProvider = {
 
   allowedExtraArgs: ["--full-auto", "--quiet"],
 
+  supportsMcp: false,
   supportsHotModelSwap: false,
 
   buildCommand(config: CLIProviderConfig): string[] {
