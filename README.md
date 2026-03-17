@@ -7,10 +7,7 @@ Kora lets you run multiple AI coding agents simultaneously on the same project �
 Think of it as a mission control for your AI coding team.
 
 ```bash
-npm install && npm run build:shared
-npx tsc -p packages/daemon/tsconfig.json
-cd packages/dashboard && npm run build && cd ../..
-node packages/daemon/dist/cli.js start
+make install && make build && make prod
 # → http://localhost:7890
 ```
 
@@ -97,15 +94,18 @@ Most AI coding tools run a single agent at a time. Real software projects need *
 ```bash
 git clone https://github.com/AshishRanjan738/Kora.git
 cd Kora
-npm install
+make install  # npm install
+make build    # build shared → daemon → dashboard
+make prod     # start on http://localhost:7890
+```
 
-# Build
+Or without Make:
+
+```bash
+npm install
 npm run build:shared && npx tsc -p packages/daemon/tsconfig.json
 cd packages/dashboard && npm run build && cd ../..
-
-# Start
 node packages/daemon/dist/cli.js start
-# → Kora daemon running on http://localhost:7890
 ```
 
 Open `http://localhost:7890` in your browser.
@@ -120,10 +120,72 @@ Open `http://localhost:7890` in your browser.
 ### Dev Mode
 
 ```bash
-# Run a separate dev instance on port 7891
-node packages/daemon/dist/cli.js start --dev
-# → Config: ~/.kora-dev/ | Port: 7891
+make dev      # build + start on port 7891 (foreground)
+make dev-bg   # same but in background
 ```
+
+Dev mode uses completely isolated resources (`~/.kora-dev/`, port 7891, separate tmux prefix) so you can run dev and prod side by side.
+
+---
+
+## Make Commands
+
+Run `make help` to see all commands. Here's the full list:
+
+### Build
+
+| Command | Description |
+|---------|-------------|
+| `make build` | Build all packages (shared → daemon → dashboard) |
+| `make build-shared` | Build shared types only |
+| `make build-daemon` | Build daemon (auto-builds shared first) |
+| `make build-dashboard` | Build dashboard only |
+
+### Dev (port 7891)
+
+| Command | Description |
+|---------|-------------|
+| `make dev` | Build and start dev daemon (foreground) |
+| `make dev-bg` | Build and start dev daemon in background |
+| `make stop-dev` | Stop dev daemon |
+| `make restart-dev` | Rebuild and restart dev daemon |
+
+### Prod (port 7890)
+
+| Command | Description |
+|---------|-------------|
+| `make prod` | Build and start prod daemon (foreground) |
+| `make prod-bg` | Build and start prod daemon in background |
+| `make stop-prod` | Stop prod daemon |
+| `make restart-prod` | Rebuild and restart prod daemon |
+
+### Quality
+
+| Command | Description |
+|---------|-------------|
+| `make test` | Run all tests (54 vitest tests) |
+| `make test-watch` | Run tests in watch mode |
+| `make typecheck` | Type-check daemon + dashboard |
+| `make lint` | Lint all source files |
+| `make check` | Run all checks (typecheck + test + lint) |
+
+### Clean
+
+| Command | Description |
+|---------|-------------|
+| `make clean` | Remove build artifacts (`dist/` dirs) |
+| `make clean-dev` | Stop dev daemon + remove `~/.kora-dev/` runtime files |
+| `make clean-prod` | Stop prod daemon + remove `~/.kora/` runtime files |
+| `make clean-modules` | Remove all `node_modules/` |
+| `make clean-all` | Full nuclear cleanup: stop daemons, remove builds + modules + runtime |
+
+### Other
+
+| Command | Description |
+|---------|-------------|
+| `make install` | Install all dependencies |
+| `make fresh` | Full clean → install → build (start from scratch) |
+| `make status` | Show running daemons and their sessions |
 
 ---
 
@@ -229,17 +291,26 @@ All endpoints require `Authorization: Bearer <token>` header.
 ```bash
 git clone https://github.com/AshishRanjan738/Kora.git
 cd Kora
-npm install
-npm run build:shared
+make install && make build
 
-# Daemon (with auto-rebuild)
-cd packages/daemon && npx tsc -w &
+# Start dev daemon (port 7891, isolated from prod)
+make dev-bg
 
-# Dashboard (hot reload)
+# Check everything is running
+make status
+
+# Run tests before pushing
+make check
+```
+
+For active development with auto-rebuild:
+
+```bash
+# Terminal 1: daemon with auto-rebuild
+cd packages/daemon && npx tsc -w
+
+# Terminal 2: dashboard with hot reload
 cd packages/dashboard && npm run dev
-
-# Or run in dev mode (port 7891, separate config)
-node packages/daemon/dist/cli.js start --dev
 ```
 
 ---
