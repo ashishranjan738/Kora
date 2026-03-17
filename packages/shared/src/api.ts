@@ -74,6 +74,7 @@ export interface SpawnAgentRequest {
   autonomyLevel?: AutonomyLevel;
   workingDirectory?: string; // defaults to session projectPath
   extraCliArgs?: string[];
+  skipArgValidation?: boolean; // bypass CLI arg allowlist validation
   envVars?: Record<string, string>;
   initialTask?: string;     // first message sent to agent after spawn
 }

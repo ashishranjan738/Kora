@@ -10,7 +10,15 @@ export const aiderProvider: CLIProvider = {
   id: "aider",
   displayName: "Aider",
 
-  allowedExtraArgs: ["--no-auto-commits", "--yes", "--dark-mode"],
+  allowedExtraArgs: [
+    "--no-auto-commits",
+    "--yes",
+    "--dark-mode",
+    "--no-git",
+    "--auto-test",
+    "--test-cmd",
+    "--lint-cmd",
+  ],
 
   supportsMcp: false,
   supportsHotModelSwap: true,
@@ -29,6 +37,7 @@ export const aiderProvider: CLIProvider = {
       const { valid, invalid } = validateExtraArgs(
         config.extraArgs,
         this.allowedExtraArgs,
+        { skipValidation: config.skipArgValidation },
       );
       if (!valid) {
         throw new Error(

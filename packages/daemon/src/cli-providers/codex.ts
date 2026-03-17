@@ -10,7 +10,7 @@ export const codexProvider: CLIProvider = {
   id: "codex",
   displayName: "OpenAI Codex CLI",
 
-  allowedExtraArgs: ["--full-auto", "--quiet"],
+  allowedExtraArgs: ["--full-auto", "--quiet", "--no-cache", "--json"],
 
   supportsMcp: false,
   supportsHotModelSwap: false,
@@ -29,6 +29,7 @@ export const codexProvider: CLIProvider = {
       const { valid, invalid } = validateExtraArgs(
         config.extraArgs,
         this.allowedExtraArgs,
+        { skipValidation: config.skipArgValidation },
       );
       if (!valid) {
         throw new Error(

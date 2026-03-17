@@ -10,7 +10,7 @@ export const gooseProvider: CLIProvider = {
   id: "goose",
   displayName: "Goose",
 
-  allowedExtraArgs: ["--verbose", "--max-tokens"],
+  allowedExtraArgs: ["--verbose", "--max-tokens", "--no-cache", "--profile"],
 
   supportsMcp: false,
   supportsHotModelSwap: false,
@@ -29,6 +29,7 @@ export const gooseProvider: CLIProvider = {
       const { valid, invalid } = validateExtraArgs(
         config.extraArgs,
         this.allowedExtraArgs,
+        { skipValidation: config.skipArgValidation },
       );
       if (!valid) {
         throw new Error(
