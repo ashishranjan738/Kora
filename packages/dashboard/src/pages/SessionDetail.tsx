@@ -901,6 +901,26 @@ function AgentsTab({
               </div>
             )}
 
+            {/* Channel badges */}
+            {a.config?.channels && (a.config.channels as string[]).length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
+                {(a.config.channels as string[]).map((ch: string) => (
+                  <span
+                    key={ch}
+                    style={{
+                      fontSize: 10,
+                      padding: "2px 8px",
+                      borderRadius: 8,
+                      background: "var(--bg-tertiary)",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    {ch}
+                  </span>
+                ))}
+              </div>
+            )}
+
             {/* Activity summary — replaces terminal preview */}
             <div className="ac2-activity">
               <div className="ac2-current-action">

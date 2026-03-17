@@ -63,6 +63,7 @@ export function AllSessions() {
   const [newPath, setNewPath] = useState("");
   const [creating, setCreating] = useState(false);
   const [newMessagingMode, setNewMessagingMode] = useState<"mcp" | "terminal" | "manual">("mcp");
+  const [newWorktreeMode, setNewWorktreeMode] = useState<"isolated" | "shared">("isolated");
 
   // Playbook state
   const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
@@ -79,6 +80,7 @@ export function AllSessions() {
   const [agentProviderOverrides, setAgentProviderOverrides] = useState<Record<number, string>>({});
   const [defaultModelForAll, setDefaultModelForAll] = useState("");
   const [playbookMessagingMode, setPlaybookMessagingMode] = useState<"mcp" | "terminal" | "manual">("mcp");
+  const [playbookWorktreeMode, setPlaybookWorktreeMode] = useState<"isolated" | "shared">("isolated");
 
   // Daemon status
   const [daemonStatus, setDaemonStatus] = useState<{
@@ -130,12 +132,14 @@ export function AllSessions() {
         name: newName,
         projectPath: newPath,
         messagingMode: newMessagingMode,
+        worktreeMode: newWorktreeMode,
       });
       useSessionStore.getState().addSession(result);
       setShowCreateDialog(false);
       setNewName("");
       setNewPath("");
       setNewMessagingMode("mcp");
+      setNewWorktreeMode("isolated");
       if (result.id) {
         navigate(`/session/${result.id}`);
       }
@@ -208,6 +212,7 @@ export function AllSessions() {
         name: playbookSessionName.trim() || selectedPlaybook.name,
         projectPath: playbookPath,
         messagingMode: playbookMessagingMode,
+        worktreeMode: playbookWorktreeMode,
       });
       useSessionStore.getState().addSession(sessionResult);
 
@@ -236,6 +241,7 @@ export function AllSessions() {
       setAgentProviderOverrides({});
       setDefaultModelForAll("");
       setPlaybookMessagingMode("mcp");
+      setPlaybookWorktreeMode("isolated");
       navigate(`/session/${sessionResult.id}`);
     } catch (err: any) {
       alert(`Failed to launch playbook: ${err.message}`);
@@ -599,6 +605,48 @@ export function AllSessions() {
                   </div>
                 )}
 
+                {/* Worktree mode badge */}
+                {(s as any).worktreeMode && (
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      fontSize: 11,
+                      color: (s as any).worktreeMode === "isolated" ? "var(--accent-blue)" : "var(--accent-purple)",
+                      backgroundColor: (s as any).worktreeMode === "isolated" ? "rgba(88, 166, 255, 0.1)" : "rgba(188, 140, 255, 0.1)",
+                      borderRadius: 4,
+                      padding: "2px 8px",
+                      marginBottom: 8,
+                    }}
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      {(s as any).worktreeMode === "isolated" ? (
+                        <>
+                          <line x1="6" y1="3" x2="6" y2="15" />
+                          <circle cx="18" cy="6" r="3" />
+                          <circle cx="6" cy="18" r="3" />
+                          <path d="M18 9a9 9 0 01-9 9" />
+                        </>
+                      ) : (
+                        <>
+                          <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+                        </>
+                      )}
+                    </svg>
+                    {(s as any).worktreeMode === "isolated" ? "Isolated" : "Shared"}
+                  </div>
+                )}
+
                 {/* Quick actions */}
                 <div className="session-card-actions">
                   {s.status === "active" && (
@@ -814,6 +862,53 @@ export function AllSessions() {
                 </label>
               </div>
             </div>
+            <div className="form-group">
+              <label>Worktree Mode</label>
+              <div style={{ display: "flex", gap: 0, marginTop: 4, borderRadius: 6, overflow: "hidden", border: "1px solid var(--border-color)" }}>
+                <button
+                  type="button"
+                  onClick={() => setNewWorktreeMode("isolated")}
+                  style={{
+                    flex: 1,
+                    padding: "8px 12px",
+                    minHeight: 44,
+                    fontSize: 13,
+                    fontWeight: 500,
+                    border: "none",
+                    cursor: "pointer",
+                    backgroundColor: newWorktreeMode === "isolated" ? "var(--accent-blue)" : "var(--bg-tertiary)",
+                    color: newWorktreeMode === "isolated" ? "#fff" : "var(--text-secondary)",
+                    transition: "background-color 0.15s, color 0.15s",
+                  }}
+                >
+                  Isolated
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewWorktreeMode("shared")}
+                  style={{
+                    flex: 1,
+                    padding: "8px 12px",
+                    minHeight: 44,
+                    fontSize: 13,
+                    fontWeight: 500,
+                    border: "none",
+                    borderLeft: "1px solid var(--border-color)",
+                    cursor: "pointer",
+                    backgroundColor: newWorktreeMode === "shared" ? "var(--accent-blue)" : "var(--bg-tertiary)",
+                    color: newWorktreeMode === "shared" ? "#fff" : "var(--text-secondary)",
+                    transition: "background-color 0.15s, color 0.15s",
+                  }}
+                >
+                  Shared
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                {newWorktreeMode === "isolated"
+                  ? "Each agent gets its own git worktree branch. Safe for parallel file edits."
+                  : "All agents share the same working directory. Use when agents work on different files."}
+              </div>
+            </div>
             <div className="form-actions">
               <button onClick={() => setShowCreateDialog(false)}>Cancel</button>
               <button
@@ -841,11 +936,12 @@ export function AllSessions() {
             setAgentProviderOverrides({});
             setDefaultModelForAll("");
             setPlaybookMessagingMode("mcp");
+            setPlaybookWorktreeMode("isolated");
           }}
         >
           <div
             className="dialog"
-            style={{ maxWidth: 720, minWidth: 520 }}
+            style={{ maxWidth: "min(720px, 90vw)", minWidth: 0, width: "min(720px, calc(100vw - 32px))" }}
             onClick={(e) => e.stopPropagation()}
           >
             {!selectedPlaybook ? (
@@ -1030,6 +1126,54 @@ export function AllSessions() {
                   </div>
                 </div>
 
+                <div className="form-group">
+                  <label>Worktree Mode</label>
+                  <div style={{ display: "flex", gap: 0, marginTop: 4, borderRadius: 6, overflow: "hidden", border: "1px solid var(--border-color)" }}>
+                    <button
+                      type="button"
+                      onClick={() => setPlaybookWorktreeMode("isolated")}
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        minHeight: 44,
+                        fontSize: 13,
+                        fontWeight: 500,
+                        border: "none",
+                        cursor: "pointer",
+                        backgroundColor: playbookWorktreeMode === "isolated" ? "var(--accent-blue)" : "var(--bg-tertiary)",
+                        color: playbookWorktreeMode === "isolated" ? "#fff" : "var(--text-secondary)",
+                        transition: "background-color 0.15s, color 0.15s",
+                      }}
+                    >
+                      Isolated
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPlaybookWorktreeMode("shared")}
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        minHeight: 44,
+                        fontSize: 13,
+                        fontWeight: 500,
+                        border: "none",
+                        borderLeft: "1px solid var(--border-color)",
+                        cursor: "pointer",
+                        backgroundColor: playbookWorktreeMode === "shared" ? "var(--accent-blue)" : "var(--bg-tertiary)",
+                        color: playbookWorktreeMode === "shared" ? "#fff" : "var(--text-secondary)",
+                        transition: "background-color 0.15s, color 0.15s",
+                      }}
+                    >
+                      Shared
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                    {playbookWorktreeMode === "isolated"
+                      ? "Each agent gets its own git worktree branch. Safe for parallel file edits."
+                      : "All agents share the same working directory. Use when agents work on different files."}
+                  </div>
+                </div>
+
                 {/* Model Configuration Section */}
                 {selectedPlaybook.agents.length > 0 && (
                   <div
@@ -1088,6 +1232,7 @@ export function AllSessions() {
                     >
                       {/* Table header */}
                       <div
+                        className="agent-config-header"
                         style={{
                           display: "grid",
                           gridTemplateColumns: "1fr 150px 1fr",
@@ -1114,6 +1259,7 @@ export function AllSessions() {
                         return (
                           <div
                             key={i}
+                            className="agent-config-row"
                             style={{
                               display: "grid",
                               gridTemplateColumns: "1fr 150px 1fr",
