@@ -921,6 +921,27 @@ function AgentsTab({
               </div>
             )}
 
+            {/* CLI flags badges */}
+            {a.config?.extraCliArgs && (a.config.extraCliArgs as string[]).length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
+                {(a.config.extraCliArgs as string[]).map((flag: string, fi: number) => (
+                  <span
+                    key={fi}
+                    style={{
+                      fontSize: 10,
+                      fontFamily: "var(--font-mono)",
+                      padding: "2px 8px",
+                      borderRadius: 4,
+                      background: "var(--bg-tertiary)",
+                      color: "var(--accent-yellow)",
+                    }}
+                  >
+                    {flag}
+                  </span>
+                ))}
+              </div>
+            )}
+
             {/* Activity summary — replaces terminal preview */}
             <div className="ac2-activity">
               <div className="ac2-current-action">
