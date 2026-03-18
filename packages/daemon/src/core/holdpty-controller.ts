@@ -14,11 +14,11 @@ import { promisify } from "util";
 import * as net from "net";
 import * as path from "path";
 import * as fs from "fs";
+import type { IPtyBackend } from "./pty-backend.js";
 
 const execFile = promisify(execFileCb);
 
-// Import holdpty protocol helpers
-// We use dynamic require since holdpty is an ESM package
+// Import holdpty protocol helpers (ESM — loaded dynamically)
 let protocol: any = null;
 async function getProtocol() {
   if (!protocol) {
@@ -35,7 +35,7 @@ async function getPlatform() {
   return platform;
 }
 
-export class HoldptyController {
+export class HoldptyController implements IPtyBackend {
   private holdptyPath = "holdpty";
   private holdptyChecked = false;
 

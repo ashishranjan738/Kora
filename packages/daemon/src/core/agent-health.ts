@@ -1,12 +1,12 @@
 import type { AgentState, AgentHealthCheck } from "@kora/shared";
 import { HEALTH_CHECK_INTERVAL_MS, MAX_CONSECUTIVE_FAILURES } from "@kora/shared";
-import { TmuxController } from "./tmux-controller.js";
+import type { IPtyBackend } from "./pty-backend.js";
 import { EventEmitter } from "events";
 
 export class AgentHealthMonitor extends EventEmitter {
   private intervals = new Map<string, NodeJS.Timeout>();
 
-  constructor(private tmux: TmuxController) {
+  constructor(private tmux: IPtyBackend) {
     super();
   }
 

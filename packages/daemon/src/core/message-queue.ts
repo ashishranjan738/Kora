@@ -1,4 +1,4 @@
-import { TmuxController } from "./tmux-controller.js";
+import type { IPtyBackend } from "./pty-backend.js";
 import type { MessagingMode } from "@kora/shared";
 import fs from "fs/promises";
 import path from "path";
@@ -35,7 +35,7 @@ export class MessageQueue {
   private getAgentTmuxSessionFn: ((agentId: string) => string | null) | null = null;
 
   constructor(
-    private tmux: TmuxController,
+    private tmux: IPtyBackend,
     private runtimeDir: string = "",
     private messagingMode: MessagingMode = "mcp",
   ) {}
