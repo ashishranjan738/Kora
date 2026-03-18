@@ -7,6 +7,8 @@ import { ReplaceAgentDialog } from "../components/ReplaceAgentDialog";
 import { EditorTile } from "../components/EditorTile";
 import { Mosaic, MosaicWindow, MosaicNode, MosaicPath, MosaicWindowProps, getLeaves, createBalancedTreeFromLeaves } from "react-mosaic-component";
 import "react-mosaic-component/react-mosaic-component.css";
+import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
+import { Indicator, Tooltip } from "@mantine/core";
 
 const PANEL_BORDER_COLORS = [
   "#58a6ff",
@@ -632,43 +634,8 @@ export function MultiAgentView() {
             <span className="mosaic-agent-meta">
               {[agent.provider, agent.model].filter(Boolean).join("/")}
             </span>
-            {agent.config?.extraCliArgs && (agent.config.extraCliArgs as string[]).length > 0 && (
-              <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 3 }}>
-                {(agent.config.extraCliArgs as string[]).map((flag: string, fi: number) => (
-                  <span
-                    key={fi}
-                    style={{
-                      fontSize: 10,
-                      fontFamily: "var(--font-mono)",
-                      padding: "1px 6px",
-                      borderRadius: 4,
-                      background: "var(--bg-tertiary)",
-                      color: "var(--accent-yellow)",
-                    }}
-                  >
-                    {flag}
-                  </span>
-                ))}
-              </span>
-            )}
-            {agent.config?.channels && (agent.config.channels as string[]).length > 0 && (
-              <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 3 }}>
-                {(agent.config.channels as string[]).map((ch: string) => (
-                  <span
-                    key={ch}
-                    style={{
-                      fontSize: 10,
-                      padding: "1px 6px",
-                      borderRadius: 8,
-                      background: "var(--bg-tertiary)",
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    {ch}
-                  </span>
-                ))}
-              </span>
-            )}
+            <FlagIndicator flags={(agent.config?.extraCliArgs as string[]) || []} />
+            <ChannelIndicator channels={(agent.config?.channels as string[]) || []} />
             <span className="mosaic-token-usage">
               <span>In: {formatTokenCount(tokenIn)}</span>
               <span>Out: {formatTokenCount(tokenOut)}</span>
@@ -686,6 +653,25 @@ export function MultiAgentView() {
                 {agent.status || "unknown"}
               </span>
             )}
+
+            {/* Nudge button */}
+            <Tooltip label={`${agent.unreadMessages || 0} unread — nudge`}>
+              <Indicator disabled={!agent.unreadMessages} label={agent.unreadMessages || 0} size={12} color="red" offset={2}>
+                <button
+                  className="split-panel-btn"
+                  title="Nudge agent"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    try { await api.nudgeAgent(sessionId!, agent.id); } catch {}
+                  }}
+                  style={{ color: agent.unreadMessages ? "var(--accent-yellow)" : undefined }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                  </svg>
+                </button>
+              </Indicator>
+            </Tooltip>
 
             {/* Fullscreen button */}
             <button

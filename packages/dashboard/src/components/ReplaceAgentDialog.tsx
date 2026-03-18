@@ -1,5 +1,18 @@
 import { useState } from "react";
 import { useApi } from "../hooks/useApi";
+import {
+  Modal,
+  Button,
+  Textarea,
+  Stack,
+  Group,
+  Text,
+  Slider,
+  Alert,
+  Loader,
+  Card,
+} from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 
 interface ReplaceAgentDialogProps {
   sessionId: string;
@@ -17,6 +30,7 @@ export function ReplaceAgentDialog({
   onReplaced,
 }: ReplaceAgentDialogProps) {
   const api = useApi();
+  const isMobile = useMediaQuery("(max-width: 48em)");
 
   const [contextLines, setContextLines] = useState(50);
   const [extraContext, setExtraContext] = useState("");
@@ -58,225 +72,176 @@ export function ReplaceAgentDialog({
   }
 
   return (
-    <div className="dialog-overlay" onClick={onClose}>
-      <div
-        className="dialog"
-        style={{ maxWidth: 680, minWidth: 480 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2>Replace Agent: {agentName}</h2>
-
-        <p
-          style={{
-            color: "var(--text-secondary)",
-            fontSize: 14,
-            marginBottom: 16,
-            lineHeight: 1.5,
-          }}
-        >
+    <Modal
+      opened
+      onClose={onClose}
+      title={`Replace Agent: ${agentName}`}
+      size="lg"
+      fullScreen={isMobile}
+      centered
+      styles={{
+        header: {
+          backgroundColor: "var(--bg-secondary)",
+          borderBottom: "1px solid var(--border-color)",
+        },
+        body: { backgroundColor: "var(--bg-secondary)" },
+        content: { backgroundColor: "var(--bg-secondary)" },
+        title: { color: "var(--text-primary)", fontWeight: 600, fontSize: 18 },
+        close: { color: "var(--text-secondary)" },
+      }}
+    >
+      <Stack gap="md">
+        <Text size="sm" c="var(--text-secondary)" lh={1.5}>
           The current agent will be killed and a new one will be spawned with
           the same configuration.
-        </p>
+        </Text>
 
         {error && (
-          <div
-            style={{
-              padding: "8px 12px",
-              marginBottom: 12,
-              borderRadius: 6,
-              backgroundColor: "rgba(248, 81, 73, 0.1)",
-              border: "1px solid var(--accent-red)",
-              color: "var(--accent-red)",
-              fontSize: 13,
-            }}
-          >
+          <Alert color="red" variant="light">
             {error}
-          </div>
+          </Alert>
         )}
 
         {replacing ? (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: "40px 0",
-              gap: 12,
-            }}
-          >
-            <span
-              className="spinner"
-              style={{ width: 28, height: 28, borderWidth: 3 }}
-            />
-            <span style={{ color: "var(--text-secondary)", fontSize: 14 }}>
+          <Stack align="center" justify="center" py="xl" gap="md">
+            <Loader size="md" color="var(--accent-blue)" />
+            <Text size="sm" c="var(--text-secondary)">
               Replacing agent...
-            </span>
-          </div>
+            </Text>
+          </Stack>
         ) : (
-          <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ display: "flex", gap: 12, flexDirection: isMobile ? "column" : "row" }}>
             {/* Card 1: Replace with Context */}
-            <div
+            <Card
+              withBorder
+              padding="md"
               style={{
                 flex: 1,
-                border: "1px solid var(--border-color)",
-                borderRadius: 8,
-                padding: 16,
+                backgroundColor: "var(--bg-primary)",
+                borderColor: "var(--border-color)",
                 display: "flex",
                 flexDirection: "column",
                 gap: 12,
-                backgroundColor: "var(--bg-secondary)",
               }}
             >
-              <div style={{ fontSize: 20 }}>[refresh]</div>
-              <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>
+              <Text size="lg">[refresh]</Text>
+              <Text fw={600} size="sm">
                 Replace with Context
-              </h3>
-              <p
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-secondary)",
-                  lineHeight: 1.5,
-                  margin: 0,
-                }}
-              >
+              </Text>
+              <Text size="xs" c="var(--text-secondary)" lh={1.5}>
                 Captures the last {contextLines} lines of terminal output and
-                passes them to the new agent as recovery context. Best when the
-                agent was making progress but went off track.
-              </p>
+                passes them to the new agent as recovery context.
+              </Text>
 
-              {/* Context lines slider */}
               <div>
-                <label
-                  style={{
-                    fontSize: 12,
-                    color: "var(--text-muted)",
-                    display: "block",
-                    marginBottom: 4,
-                  }}
-                >
+                <Text size="xs" c="var(--text-muted)" mb={4}>
                   Context lines: {contextLines}
-                </label>
-                <input
-                  type="range"
+                </Text>
+                <Slider
                   min={10}
                   max={200}
                   step={10}
                   value={contextLines}
-                  onChange={(e) => setContextLines(Number(e.target.value))}
-                  style={{ width: "100%" }}
+                  onChange={setContextLines}
+                  color="blue"
+                  styles={{
+                    track: { backgroundColor: "var(--bg-tertiary)" },
+                  }}
                 />
               </div>
 
-              {/* Extra instructions */}
-              <div>
-                <label
-                  style={{
-                    fontSize: 12,
-                    color: "var(--text-muted)",
-                    display: "block",
-                    marginBottom: 4,
-                  }}
-                >
-                  Additional instructions (optional)
-                </label>
-                <textarea
-                  value={extraContext}
-                  onChange={(e) => setExtraContext(e.target.value)}
-                  placeholder="e.g. Focus on the header, not the footer"
-                  rows={3}
-                  style={{
-                    width: "100%",
-                    fontFamily: "inherit",
-                    fontSize: 13,
-                    padding: "6px 10px",
-                    border: "1px solid var(--border-color)",
-                    borderRadius: 6,
+              <Textarea
+                label="Additional instructions (optional)"
+                value={extraContext}
+                onChange={(e) => setExtraContext(e.currentTarget.value)}
+                placeholder="e.g. Focus on the header, not the footer"
+                rows={3}
+                autosize
+                minRows={2}
+                maxRows={4}
+                styles={{
+                  input: {
                     backgroundColor: "var(--bg-tertiary)",
+                    borderColor: "var(--border-color)",
                     color: "var(--text-primary)",
-                    outline: "none",
-                    resize: "vertical",
-                  }}
-                />
-              </div>
+                  },
+                  label: { color: "var(--text-muted)", fontSize: 12 },
+                }}
+              />
 
-              <button
-                className="primary"
+              <Button
+                fullWidth
                 onClick={handleReplaceWithContext}
-                style={{
-                  width: "100%",
-                  fontSize: 13,
-                  marginTop: "auto",
-                  backgroundColor: "var(--accent-blue)",
-                  borderColor: "var(--accent-blue)",
+                mt="auto"
+                styles={{
+                  root: {
+                    backgroundColor: "var(--accent-blue)",
+                    borderColor: "var(--accent-blue)",
+                    minHeight: 44,
+                  },
                 }}
               >
                 Replace with Context
-              </button>
-            </div>
+              </Button>
+            </Card>
 
             {/* Card 2: Fresh Restart */}
-            <div
+            <Card
+              withBorder
+              padding="md"
               style={{
                 flex: 1,
-                border: "1px solid var(--border-color)",
-                borderRadius: 8,
-                padding: 16,
+                backgroundColor: "var(--bg-primary)",
+                borderColor: "var(--border-color)",
                 display: "flex",
                 flexDirection: "column",
                 gap: 12,
-                backgroundColor: "var(--bg-secondary)",
               }}
             >
-              <div style={{ fontSize: 20 }}>[new]</div>
-              <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>
+              <Text size="lg">[new]</Text>
+              <Text fw={600} size="sm">
                 Fresh Restart
-              </h3>
-              <p
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-secondary)",
-                  lineHeight: 1.5,
-                  margin: 0,
-                }}
-              >
+              </Text>
+              <Text size="xs" c="var(--text-secondary)" lh={1.5}>
                 Starts a completely clean agent with no memory of the previous
-                one. Best when the agent was completely wrong and you want to
-                start over.
-              </p>
+                one. Best when the agent was completely wrong.
+              </Text>
 
               <div style={{ flex: 1 }} />
 
-              <button
+              <Button
+                fullWidth
+                variant="outline"
+                color="green"
+                mt="auto"
                 onClick={handleFreshRestart}
-                style={{
-                  width: "100%",
-                  fontSize: 13,
-                  marginTop: "auto",
-                  backgroundColor: "transparent",
-                  color: "var(--accent-green)",
-                  borderColor: "var(--accent-green)",
-                  cursor: "pointer",
-                }}
+                styles={{ root: { minHeight: 44 } }}
               >
                 Fresh Restart
-              </button>
-            </div>
+              </Button>
+            </Card>
           </div>
         )}
 
         {!replacing && (
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              marginTop: 16,
-            }}
-          >
-            <button onClick={onClose}>Cancel</button>
-          </div>
+          <Group justify="flex-end">
+            <Button
+              variant="default"
+              onClick={onClose}
+              styles={{
+                root: {
+                  backgroundColor: "var(--bg-tertiary)",
+                  borderColor: "var(--border-color)",
+                  color: "var(--text-primary)",
+                  minHeight: 44,
+                },
+              }}
+            >
+              Cancel
+            </Button>
+          </Group>
         )}
-      </div>
-    </div>
+      </Stack>
+    </Modal>
   );
 }

@@ -1,4 +1,15 @@
 import React, { useEffect, useRef } from "react";
+import {
+  Modal,
+  Button,
+  Stack,
+  Group,
+  Text,
+  List,
+  Loader,
+  Alert,
+} from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 
 export interface StopSessionDialogProps {
   session: {
@@ -21,8 +32,8 @@ export function StopSessionDialog({
   success,
 }: StopSessionDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const isMobile = useMediaQuery("(max-width: 48em)");
 
-  // Auto-focus cancel button on mount
   useEffect(() => {
     if (!stopping && !success && cancelRef.current) {
       cancelRef.current.focus();
@@ -36,104 +47,90 @@ export function StopSessionDialog({
 
   const sessionName = session.name || "Unnamed Session";
 
+  const modalStyles = {
+    header: {
+      backgroundColor: "var(--bg-secondary)",
+      borderBottom: "1px solid var(--border-color)",
+    },
+    body: { backgroundColor: "var(--bg-secondary)" },
+    content: { backgroundColor: "var(--bg-secondary)" },
+    title: { color: "var(--text-primary)", fontWeight: 600 as const, fontSize: 18 },
+    close: { color: "var(--text-secondary)" },
+  };
+
   // Success state
   if (success) {
     return (
-      <div className="dialog-overlay" onClick={(e) => e.stopPropagation()}>
-        <div
-          className="dialog stop-session-dialog"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="stop-progress">
-            <div className="stop-progress-check">
-              <svg
-                width="48"
-                height="48"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
-                <polyline points="22 4 12 14.01 9 11.01" />
-              </svg>
-            </div>
-            <p style={{ fontSize: 16, fontWeight: 600 }}>
-              Session stopped successfully
-            </p>
-            <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
-              Redirecting...
-            </p>
-          </div>
-        </div>
-      </div>
+      <Modal opened onClose={() => {}} title="Stop Session" size="sm" fullScreen={isMobile} centered styles={modalStyles} closeOnClickOutside={false} withCloseButton={false}>
+        <Stack align="center" py="xl" gap="md">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+          </svg>
+          <Text fw={600} size="md">Session stopped successfully</Text>
+          <Text size="xs" c="var(--text-muted)">Redirecting...</Text>
+        </Stack>
+      </Modal>
     );
   }
 
-  // Stopping / progress state
+  // Stopping state
   if (stopping) {
     return (
-      <div className="dialog-overlay" onClick={(e) => e.stopPropagation()}>
-        <div
-          className="dialog stop-session-dialog"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="stop-progress">
-            <div className="stop-progress-spinner" />
-            <p style={{ fontSize: 16, fontWeight: 600 }}>
-              Stopping session &ldquo;{sessionName}&rdquo;...
-            </p>
-            <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
-              Killing {agentCount} agent{agentCount !== 1 ? "s" : ""} and
-              cleaning up...
-            </p>
-          </div>
-        </div>
-      </div>
+      <Modal opened onClose={() => {}} title="Stop Session" size="sm" fullScreen={isMobile} centered styles={modalStyles} closeOnClickOutside={false} withCloseButton={false}>
+        <Stack align="center" py="xl" gap="md">
+          <Loader size="lg" color="var(--accent-red)" />
+          <Text fw={600} size="md">
+            Stopping session &ldquo;{sessionName}&rdquo;...
+          </Text>
+          <Text size="xs" c="var(--text-muted)">
+            Killing {agentCount} agent{agentCount !== 1 ? "s" : ""} and cleaning up...
+          </Text>
+        </Stack>
+      </Modal>
     );
   }
 
   // Confirmation state
   return (
-    <div className="dialog-overlay" onClick={onCancel}>
-      <div
-        className="dialog stop-session-dialog"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2>Stop Session: &ldquo;{sessionName}&rdquo;</h2>
+    <Modal opened onClose={onCancel} title={`Stop Session: \u201C${sessionName}\u201D`} size="md" fullScreen={isMobile} centered styles={modalStyles}>
+      <Stack gap="md">
+        <Alert
+          color="red"
+          variant="light"
+          icon={<span style={{ fontSize: 18, lineHeight: 1 }}>&#9888;</span>}
+        >
+          This will:
+        </Alert>
 
-        <div className="stop-dialog-warning">
-          <span style={{ fontSize: 18, lineHeight: 1 }}>&#9888;</span>
-          <span>This will:</span>
-        </div>
-
-        <ul className="stop-dialog-list">
-          <li>
+        <List size="sm" c="var(--text-secondary)" spacing="xs">
+          <List.Item>
             Kill{" "}
             {agentCount > 0
               ? `all ${agentCount} running agent${agentCount !== 1 ? "s" : ""}`
               : "all running agents"}
-          </li>
-          <li>Terminate their tmux sessions</li>
-          <li>Remove the session from the registry</li>
-        </ul>
+          </List.Item>
+          <List.Item>Terminate their tmux sessions</List.Item>
+          <List.Item>Remove the session from the registry</List.Item>
+        </List>
 
-        <p className="stop-dialog-preserve">
-          Agent data and event history will be preserved in the project
-          directory.
-        </p>
+        <Text size="xs" c="var(--accent-green)" fs="italic">
+          Agent data and event history will be preserved in the project directory.
+        </Text>
 
-        <div className="form-actions" style={{ marginTop: 20 }}>
-          <button ref={cancelRef} onClick={onCancel}>
+        <Group justify="flex-end" mt="md">
+          <Button ref={cancelRef} variant="default" onClick={onCancel}
+            styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)", minHeight: 44 } }}
+          >
             Cancel
-          </button>
-          <button className="danger stop-dialog-confirm-btn" onClick={onConfirm}>
+          </Button>
+          <Button color="red" onClick={onConfirm}
+            styles={{ root: { minHeight: 44, fontWeight: 600 } }}
+          >
             Stop Session
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
   );
 }
