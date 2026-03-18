@@ -168,20 +168,34 @@ export class HoldptyController implements IPtyBackend {
   }
 
   /**
-   * Send keystrokes to a holdpty session via the binary protocol.
-   * Connects in attach mode, sends DATA_IN frame, then disconnects.
+   * Send keystrokes to a holdpty session.
+   * Uses in-process holder's ptyProcess.write() when available (avoids exclusive
+   * attach mode conflict with PtyManager dashboard connections).
+   * Falls back to socket-based attach for sessions from before daemon restart.
    */
   async sendKeys(
     session: string,
     keys: string,
     options?: { literal?: boolean },
   ): Promise<void> {
+    // Fast path: write directly to the in-process holder's PTY
+    const holder = this.holders.get(session);
+    if (holder && holder.ptyProcess) {
+      try {
+        const data = options?.literal ? keys : keys + "\n";
+        holder.ptyProcess.write(data);
+        return;
+      } catch {
+        // Holder may have died — fall through to socket path
+      }
+    }
+
+    // Fallback: socket-based attach (for sessions from before daemon restart)
     const proto = await getProtocol();
     const socketPath = await this.getSocketPath(session);
 
     return new Promise<void>((resolve, reject) => {
       const socket = net.createConnection(socketPath, () => {
-        // Send HELLO with attach mode
         const hello = proto.encodeHello({
           mode: "attach",
           protocolVersion: 1,
@@ -193,21 +207,17 @@ export class HoldptyController implements IPtyBackend {
 
       socket.on("data", (chunk: Buffer) => {
         if (!gotAck) {
-          // First response should be HELLO_ACK — parse header
           if (chunk.length >= 5 && chunk[0] === proto.MSG.HELLO_ACK) {
             gotAck = true;
 
-            // Send DATA_IN with the keys
             const dataFrame = proto.encodeDataIn(Buffer.from(keys, "utf-8"));
             socket.write(dataFrame);
 
-            // If not literal, also send Enter
             if (!options?.literal) {
               const enterFrame = proto.encodeDataIn(Buffer.from("\n", "utf-8"));
               socket.write(enterFrame);
             }
 
-            // Disconnect after a brief delay to let data flush
             setTimeout(() => {
               socket.destroy();
               resolve();
@@ -218,7 +228,6 @@ export class HoldptyController implements IPtyBackend {
 
       socket.on("error", (err) => {
         const msg = err.message;
-        // Gracefully handle stale/dead sessions
         if (msg.includes("ENOENT") || msg.includes("ECONNREFUSED") || msg.includes("no such file")) {
           process.stderr.write(`[HoldptyController] Ignoring stale session error for ${session}: ${msg}\n`);
           resolve();
@@ -230,7 +239,7 @@ export class HoldptyController implements IPtyBackend {
       // Timeout after 5s
       setTimeout(() => {
         socket.destroy();
-        resolve(); // Don't fail on timeout — best effort
+        resolve();
       }, 5000);
     });
   }
