@@ -78,7 +78,8 @@ export function createServer(options: ServerOptions) {
   // WebSocket with auth
   wss.on("connection", (ws, req) => {
     if (!validateWsToken(req.url || "", token)) {
-      logger.warn({ url: req.url }, 'WebSocket connection rejected: unauthorized');
+      const sanitizedUrl = req.url?.split('?')[0] || 'unknown';
+      logger.warn({ path: sanitizedUrl }, 'WebSocket connection rejected: unauthorized');
       ws.close(4001, "Unauthorized");
       return;
     }
