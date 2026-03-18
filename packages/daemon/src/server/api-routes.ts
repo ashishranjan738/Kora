@@ -43,11 +43,13 @@ export function createApiRouter(deps: {
   const { sessionManager, orchestrators, providerRegistry, tmux, startTime, globalConfigDir } = deps;
   const router = Router();
 
-  // Helper function to broadcast events to all WebSocket clients
+  // Helper function to broadcast events to dashboard WebSocket clients only.
+  // Terminal connections (wsType === 'terminal') are excluded to prevent
+  // raw JSON from appearing in agent terminal output.
   const broadcastEvent = (event: any) => {
     const message = JSON.stringify(event);
     wss.clients.forEach((client) => {
-      if (client.readyState === 1) { // 1 = OPEN
+      if (client.readyState === 1 && (client as any).wsType !== 'terminal') {
         client.send(message);
       }
     });
