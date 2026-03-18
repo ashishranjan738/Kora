@@ -983,9 +983,7 @@ export function MultiAgentView() {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                <circle cx="12" cy="5" r="2.5" /><circle cx="12" cy="12" r="2.5" /><circle cx="12" cy="19" r="2.5" />
-              </svg>
+              <span style={{ fontSize: 18, lineHeight: 1, letterSpacing: 0 }}>&#8942;</span>
             </button>
             {menuOpen === agent.id && (
               <div
