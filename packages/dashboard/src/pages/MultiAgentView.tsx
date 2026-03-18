@@ -913,12 +913,14 @@ export function MultiAgentView() {
                 setMessages((prev) => ({ ...prev, [agent.id]: e.target.value }))
               }
               onKeyDown={(e) => {
+                e.stopPropagation();
                 if (e.key === "Enter") {
                   e.preventDefault();
                   handleSendMessage(agent.id);
                 }
               }}
               onClick={(e) => e.stopPropagation()}
+              onFocus={(e) => e.stopPropagation()}
               disabled={sendingMap[agent.id]}
             />
             <button
