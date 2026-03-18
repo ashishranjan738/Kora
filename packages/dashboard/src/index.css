@@ -3088,9 +3088,140 @@ textarea:focus {
 }
 
 /* ===========================
-   Mobile / Responsive
+   Tablet (768px and below)
    =========================== */
-@media (max-width: 640px) {
+@media (max-width: 768px) {
+  /* Page layout */
+  .page {
+    padding: 12px;
+  }
+
+  /* Hero section */
+  .hero {
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .hero-title {
+    font-size: 22px;
+  }
+
+  .hero-title-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  /* Stats bar — stack vertically */
+  .stats-bar {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .stats-item {
+    padding: 8px 16px;
+    justify-content: flex-start;
+  }
+
+  .stats-divider {
+    width: 100%;
+    height: 1px;
+  }
+
+  /* Session cards grid */
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Session header — stack on mobile */
+  .session-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .session-header-left h1 {
+    font-size: 20px;
+    flex-wrap: wrap;
+  }
+
+  /* Session header actions — wrap buttons */
+  .session-header-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .session-header-actions button {
+    flex: 1 1 auto;
+    min-width: 100px;
+    min-height: 44px;
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+
+  /* Tab bar — horizontal scroll */
+  .tab-bar {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+
+  .tab-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab-bar button {
+    white-space: nowrap;
+    flex-shrink: 0;
+    padding: 10px 14px;
+    font-size: 13px;
+    min-height: 44px;
+  }
+
+  /* Agent grid — single column */
+  .agent-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Agent view layout — stack vertically */
+  .agent-view-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+    gap: 12px;
+  }
+
+  .agent-view-layout .resize-handle {
+    display: none;
+  }
+
+  .agent-view-layout .info-col {
+    padding-left: 0;
+    padding-top: 12px;
+  }
+
+  .agent-view-layout .terminal-col {
+    min-height: 300px;
+  }
+
+  /* Multi-agent grid — single column */
+  .multi-agent-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .multi-agent-grid-resizable {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto !important;
+  }
+
+  /* Agent view page */
+  .agent-view-page {
+    height: auto;
+    min-height: calc(100vh - 60px);
+    padding: 8px 12px;
+  }
+
+  /* Dialog (fallback for non-Mantine dialogs) */
   .dialog {
     min-width: 0;
     max-width: none;
@@ -3116,19 +3247,7 @@ textarea:focus {
     min-height: 44px;
   }
 
-  .grid {
-    grid-template-columns: 1fr;
-  }
-
-  .hero-title {
-    font-size: 24px;
-  }
-
-  .stats-bar {
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
+  /* Session card */
   .session-card-header {
     flex-wrap: wrap;
     gap: 6px;
@@ -3136,6 +3255,20 @@ textarea:focus {
 
   .session-card-providers {
     flex-wrap: wrap;
+  }
+
+  .session-card-actions {
+    flex-wrap: wrap;
+  }
+
+  .session-action-btn {
+    min-height: 44px;
+    padding: 8px 12px;
+  }
+
+  /* Empty states */
+  .empty-state {
+    padding: 32px 16px;
   }
 
   .empty-state-actions {
@@ -3148,12 +3281,33 @@ textarea:focus {
     min-height: 44px;
   }
 
+  .empty-callout {
+    padding: 32px 16px;
+  }
+
+  /* Playbook cards */
   .playbook-card {
     padding: 12px;
   }
 
   .playbook-visual-workers {
     flex-wrap: wrap;
+  }
+
+  .playbook-settings-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .playbook-agent-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .playbook-agent-model-wrapper {
+    flex: 1 1 100%;
+    width: 100%;
   }
 
   /* Stack the agent model config grid on mobile */
@@ -3165,6 +3319,127 @@ textarea:focus {
   .agent-config-header {
     display: none !important;
   }
+
+  /* Breadcrumbs */
+  .breadcrumb {
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+
+  /* All buttons: ensure touch-friendly size */
+  button {
+    min-height: 44px;
+  }
+
+  /* Agent card v2 actions */
+  .ac2-actions {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .ac2-btn {
+    min-height: 44px;
+    padding: 8px 12px;
+  }
+
+  /* Agent card message input */
+  .agent-card-message-input {
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 12px 12px;
+  }
+
+  .agent-card-message-input button {
+    width: 100%;
+  }
+
+  /* Side terminal */
+  .side-terminal {
+    height: 250px !important;
+  }
+
+  /* Broadcast bar */
+  .broadcast-bar {
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    gap: 6px;
+  }
+
+  .broadcast-bar input {
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+
+  /* Mosaic panel header */
+  .mosaic-panel-header {
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px 8px;
+  }
+
+  .mosaic-agent-name {
+    max-width: 100px;
+    font-size: 12px;
+  }
+
+  .mosaic-agent-meta {
+    max-width: 100px;
+    font-size: 10px;
+  }
+
+  /* Editor focus mode on mobile */
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+/* ===========================
+   Small mobile (375px and below)
+   =========================== */
+@media (max-width: 375px) {
+  .page {
+    padding: 8px;
+  }
+
+  .hero {
+    padding: 12px;
+  }
+
+  .hero-title {
+    font-size: 20px;
+  }
+
+  .session-header-actions button {
+    min-width: 80px;
+    font-size: 11px;
+  }
+
+  .tab-bar button {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  .agent-card-message-input input {
+    font-size: 14px; /* Prevents iOS zoom on focus */
+  }
+}
+
+/* ===========================
+   Task Card Hover Effects
+   =========================== */
+.task-card-hover:hover {
+  border-color: var(--text-muted) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.task-card-hover:hover .task-id-text {
+  opacity: 0.6 !important;
+}
+
+.task-card-hover:hover .task-delete-btn {
+  opacity: 1 !important;
 }
 
 /* ---- Drag-and-drop reorder styles (handled by react-mosaic) ---- */
