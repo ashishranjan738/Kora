@@ -15,7 +15,20 @@ import { EditorTile } from "../components/EditorTile";
 import { GitChanges } from "../components/GitChanges";
 import type { TerminalTab } from "../components/SideTerminalPanel";
 import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
-import { ActionIcon, Indicator, Tooltip } from "@mantine/core";
+import {
+  ActionIcon,
+  Indicator,
+  Tooltip,
+  Modal,
+  Button,
+  Stack,
+  Group,
+  Text,
+  Paper,
+  Badge,
+  TextInput,
+  Loader,
+} from "@mantine/core";
 
 type TabId = "editor" | "agents" | "tasks" | "timeline" | "changes";
 
@@ -80,6 +93,7 @@ export function SessionDetail() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabId>(getInitialTab);
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
+  const [showPlaybookLauncher, setShowPlaybookLauncher] = useState(false);
   const [replaceAgentId, setReplaceAgentId] = useState<string | null>(null);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [sendingTo, setSendingTo] = useState<string | null>(null);
@@ -333,6 +347,11 @@ export function SessionDetail() {
             + Add Agent
           </button>
           <button
+            onClick={() => setShowPlaybookLauncher(true)}
+          >
+            &#128640; Launch Playbook
+          </button>
+          <button
             style={{
               backgroundColor: "var(--accent-blue, #58a6ff)",
               borderColor: "var(--accent-blue, #58a6ff)",
@@ -578,6 +597,8 @@ export function SessionDetail() {
           getStatusDotClass={getStatusDotClass}
           getRoleBadgeClass={getRoleBadgeClass}
           getRoleCardClass={getRoleCardClass}
+          showPlaybookLauncher={showPlaybookLauncher}
+          onClosePlaybookLauncher={() => setShowPlaybookLauncher(false)}
         />
       )}
 
@@ -724,6 +745,8 @@ interface AgentsTabProps {
   getStatusDotClass: (status: string) => string;
   getRoleBadgeClass: (role: string) => string;
   getRoleCardClass: (role: string) => string;
+  showPlaybookLauncher?: boolean;
+  onClosePlaybookLauncher?: () => void;
 }
 
 function AgentsTab({
@@ -744,6 +767,8 @@ function AgentsTab({
   getStatusDotClass,
   getRoleBadgeClass,
   getRoleCardClass,
+  showPlaybookLauncher,
+  onClosePlaybookLauncher,
 }: AgentsTabProps) {
   const api = useApi();
   const [agentActivities, setAgentActivities] = useState<Record<string, AgentActivity>>({});
@@ -853,22 +878,232 @@ function AgentsTab({
     }
   }, [agents]);
 
+  // Playbook launcher state
+  const [showPlaybookDialog, setShowPlaybookDialogInner] = useState(false);
+  const setShowPlaybookDialog = (v: boolean) => {
+    setShowPlaybookDialogInner(v);
+    if (!v && onClosePlaybookLauncher) onClosePlaybookLauncher();
+  };
+
+  // Respond to external trigger from header button
+  useEffect(() => {
+    if (showPlaybookLauncher) {
+      openPlaybookDialog();
+    }
+  }, [showPlaybookLauncher]);
+  const [playbookNames, setPlaybookNames] = useState<string[]>([]);
+  const [playbookDetails, setPlaybookDetails] = useState<Record<string, any>>({});
+  const [selectedPlaybookName, setSelectedPlaybookName] = useState<string | null>(null);
+  const [playbookTask, setPlaybookTask] = useState("");
+  const [launchingPlaybook, setLaunchingPlaybook] = useState(false);
+  const [loadingPlaybooks, setLoadingPlaybooks] = useState(false);
+
+  const openPlaybookDialog = async () => {
+    setShowPlaybookDialog(true);
+    setLoadingPlaybooks(true);
+    try {
+      const data = await api.getPlaybooks();
+      const names = data.playbooks || [];
+      setPlaybookNames(names);
+      // Load details for each playbook
+      const details: Record<string, any> = {};
+      for (const name of names) {
+        try {
+          details[name] = await api.getPlaybook(name);
+        } catch {}
+      }
+      setPlaybookDetails(details);
+    } catch {} finally {
+      setLoadingPlaybooks(false);
+    }
+  };
+
+  const handleLaunchPlaybook = async () => {
+    if (!selectedPlaybookName) return;
+    setLaunchingPlaybook(true);
+    try {
+      // Try the dedicated endpoint first
+      try {
+        await api.launchPlaybook(sessionId, selectedPlaybookName, playbookTask || undefined);
+      } catch {
+        // Fallback: spawn agents individually from playbook details
+        const pb = playbookDetails[selectedPlaybookName];
+        if (pb?.agents) {
+          for (const agent of pb.agents) {
+            await api.spawnAgent(sessionId, {
+              name: agent.name,
+              role: agent.role || "worker",
+              provider: agent.provider || "claude-code",
+              model: agent.model,
+              persona: agent.persona,
+              initialTask: playbookTask || agent.initialTask,
+              channels: agent.channels,
+              extraCliArgs: agent.extraCliArgs,
+            });
+          }
+        }
+      }
+      setShowPlaybookDialog(false);
+      setSelectedPlaybookName(null);
+      setPlaybookTask("");
+    } catch {} finally {
+      setLaunchingPlaybook(false);
+    }
+  };
+
+  const playbookDialog = (
+    <Modal
+      opened={showPlaybookDialog}
+      onClose={() => {
+        setShowPlaybookDialog(false);
+        setSelectedPlaybookName(null);
+        setPlaybookTask("");
+      }}
+      title="Launch Playbook"
+      size="md"
+      centered
+      styles={{
+        header: { backgroundColor: "var(--bg-secondary)", borderBottom: "1px solid var(--border-color)" },
+        body: { backgroundColor: "var(--bg-secondary)" },
+        content: { backgroundColor: "var(--bg-secondary)" },
+        title: { color: "var(--text-primary)", fontWeight: 600, fontSize: 18 },
+        close: { color: "var(--text-secondary)" },
+      }}
+    >
+      <Stack gap="md">
+        {loadingPlaybooks ? (
+          <Stack align="center" py="xl">
+            <Loader size="sm" color="blue" />
+            <Text size="sm" c="dimmed">Loading playbooks...</Text>
+          </Stack>
+        ) : playbookNames.length === 0 ? (
+          <Stack align="center" py="xl">
+            <Text size="sm" c="dimmed">No playbooks found.</Text>
+            <Text size="xs" c="dimmed">Create playbooks in ~/.kora/playbooks/ or ~/.kora-dev/playbooks/</Text>
+          </Stack>
+        ) : (
+          <>
+            <Text size="sm" c="dimmed">Select a playbook to launch into this session:</Text>
+            <Stack gap="xs">
+              {playbookNames.map((name) => {
+                const pb = playbookDetails[name];
+                const isSelected = selectedPlaybookName === name;
+                return (
+                  <Paper
+                    key={name}
+                    p="sm"
+                    withBorder
+                    style={{
+                      cursor: "pointer",
+                      borderColor: isSelected ? "var(--accent-blue)" : "var(--border-color)",
+                      backgroundColor: isSelected ? "rgba(88,166,255,0.08)" : "var(--bg-primary)",
+                      transition: "border-color 0.15s, background-color 0.15s",
+                    }}
+                    onClick={() => setSelectedPlaybookName(name)}
+                  >
+                    <Group justify="space-between" align="flex-start">
+                      <div>
+                        <Text fw={600} size="sm" c="var(--text-primary)">{name}</Text>
+                        {pb?.description && (
+                          <Text size="xs" c="dimmed" mt={2}>{pb.description}</Text>
+                        )}
+                      </div>
+                      {pb?.agents && (
+                        <Badge variant="light" color="blue" size="sm">
+                          {pb.agents.length} agent{pb.agents.length !== 1 ? "s" : ""}
+                        </Badge>
+                      )}
+                    </Group>
+                    {isSelected && pb?.agents && (
+                      <Group gap={4} mt="xs" wrap="wrap">
+                        {pb.agents.map((a: any, i: number) => (
+                          <Badge key={i} variant="outline" color="gray" size="xs">
+                            {a.name} ({a.role || "worker"})
+                          </Badge>
+                        ))}
+                      </Group>
+                    )}
+                  </Paper>
+                );
+              })}
+            </Stack>
+
+            {selectedPlaybookName && (
+              <TextInput
+                label="Initial task (optional)"
+                placeholder="Describe the task for the agents..."
+                value={playbookTask}
+                onChange={(e) => setPlaybookTask(e.currentTarget.value)}
+                styles={{
+                  input: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" },
+                  label: { color: "var(--text-secondary)", fontSize: 13 },
+                }}
+              />
+            )}
+
+            <Group justify="flex-end" mt="sm">
+              <Button
+                variant="default"
+                onClick={() => {
+                  setShowPlaybookDialog(false);
+                  setSelectedPlaybookName(null);
+                  setPlaybookTask("");
+                }}
+                styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" } }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleLaunchPlaybook}
+                disabled={!selectedPlaybookName || launchingPlaybook}
+                loading={launchingPlaybook}
+                styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)" } }}
+              >
+                {launchingPlaybook ? "Launching..." : "Launch"}
+              </Button>
+            </Group>
+          </>
+        )}
+      </Stack>
+    </Modal>
+  );
+
   if (agents.length === 0) {
     return (
-      <div className="empty-callout">
-        <h3>Add your first agent</h3>
-        <p>
-          No agents are running in this session yet. Spawn an agent to start
-          working on your tasks.
-        </p>
-        <button className="primary" onClick={onShowSpawnDialog}>
-          + Add Agent
-        </button>
-      </div>
+      <>
+        <div className="empty-callout">
+          <h3>No agents running</h3>
+          <p>
+            Launch a playbook to spin up a pre-configured team, or spawn an
+            individual agent.
+          </p>
+          <Group gap="sm" justify="center" mt="md">
+            <Button
+              size="md"
+              onClick={openPlaybookDialog}
+              styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)" } }}
+              leftSection={<span style={{ fontSize: 16 }}>&#128640;</span>}
+            >
+              Launch Playbook
+            </Button>
+            <Button
+              size="md"
+              variant="default"
+              onClick={onShowSpawnDialog}
+              styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" } }}
+            >
+              + Spawn Agent
+            </Button>
+          </Group>
+        </div>
+        {playbookDialog}
+      </>
     );
   }
 
   return (
+    <>
+    {playbookDialog}
     <div className="agent-grid">
       {agents.map((a) => {
         const activity = agentActivities[a.id] || "working";
@@ -884,7 +1119,7 @@ function AgentsTab({
             key={a.id}
             className={`agent-card-v2 ${stateClass}`}
           >
-            {/* Header */}
+            {/* Header: dot + name + role + channels/flags + uptime — all one line */}
             <div className="ac2-header">
               <div className="ac2-header-left">
                 <span className={`ac2-status-dot ${stateClass}`} />
@@ -892,38 +1127,34 @@ function AgentsTab({
                 {a.role && (
                   <span className="ac2-role-badge">{a.role}</span>
                 )}
+                <ChannelIndicator channels={(a.config?.channels as string[]) || []} />
+                <FlagIndicator flags={(a.config?.extraCliArgs as string[]) || []} />
               </div>
               <span className="ac2-uptime">{formatUptime(a.startedAt)}</span>
             </div>
 
-            {/* Meta: model, channels, flags */}
-            <div className="ac2-meta">
-              {(a.provider || a.model) && (
-                <span className="ac2-model">{[a.provider, a.model].filter(Boolean).join(" / ")}</span>
-              )}
-              <ChannelIndicator channels={(a.config?.channels as string[]) || []} />
-              <FlagIndicator flags={(a.config?.extraCliArgs as string[]) || []} />
-            </div>
-
-            {/* Activity */}
+            {/* Activity — compact */}
             <div className="ac2-activity">
               <div className="ac2-current-action">
                 <span className={`ac2-action-icon ${stateClass}`}>
                   {isCrashed ? (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
                   ) : isStopped ? (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
                   ) : activity === "idle" ? (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                   ) : (
                     <span className="ac2-spinner" />
                   )}
                 </span>
                 <span className="ac2-action-text">
-                  {isCrashed ? (a.error || "Process crashed unexpectedly")
-                    : isStopped ? "Agent stopped"
+                  {isCrashed ? (a.error || "Crashed")
+                    : isStopped ? "Stopped"
                     : activityLabels[activity]}
                 </span>
+                {(a.provider || a.model) && (
+                  <span className="ac2-model-inline">{[a.provider, a.model].filter(Boolean).join("/")}</span>
+                )}
               </div>
               {a.currentTask && (
                 <div className="ac2-task" title={a.currentTask}>
@@ -932,24 +1163,17 @@ function AgentsTab({
               )}
             </div>
 
-            {/* Metrics */}
-            <div className="ac2-metrics">
-              <div className="ac2-metric">
-                <span className="ac2-metric-label">Tokens</span>
-                <span className="ac2-metric-value">
-                  <span className="ac2-metric-dim">{"\u2193"}</span>{typeof tokensIn === "number" ? formatTokens(tokensIn) : "--"}
-                  {" "}
-                  <span className="ac2-metric-dim">{"\u2191"}</span>{typeof tokensOut === "number" ? formatTokens(tokensOut) : "--"}
-                </span>
-              </div>
-              <div className="ac2-metric">
-                <span className="ac2-metric-label">Cost</span>
-                <span className="ac2-metric-value">${formatCost(costUsd)}</span>
-              </div>
-              <div className="ac2-metric">
-                <span className="ac2-metric-label">Uptime</span>
-                <span className="ac2-metric-value">{formatUptime(a.startedAt)}</span>
-              </div>
+            {/* Stats — single inline row with dot separators */}
+            <div className="ac2-stats-row">
+              <span className="ac2-stat">
+                <span className="ac2-stat-dim">{"\u2193"}</span>{typeof tokensIn === "number" ? formatTokens(tokensIn) : "--"}
+                {" "}
+                <span className="ac2-stat-dim">{"\u2191"}</span>{typeof tokensOut === "number" ? formatTokens(tokensOut) : "--"}
+              </span>
+              <span className="ac2-stat-sep">{"\u00B7"}</span>
+              <span className="ac2-stat">${formatCost(costUsd)}</span>
+              <span className="ac2-stat-sep">{"\u00B7"}</span>
+              <span className="ac2-stat">{formatUptime(a.startedAt)}</span>
             </div>
 
             {/* Inline message input (slides down) */}
@@ -972,7 +1196,7 @@ function AgentsTab({
               </div>
             )}
 
-            {/* Action bar */}
+            {/* Action bar — compact */}
             <div className="ac2-actions">
               {isCrashed || isStopped ? (
                 <>
@@ -990,13 +1214,13 @@ function AgentsTab({
                     <Indicator disabled={!a.unreadMessages} label={a.unreadMessages || 0} size={14} color="red" offset={2}>
                       <ActionIcon
                         variant="subtle"
-                        size="sm"
+                        size="xs"
                         onClick={async () => {
                           try { await api.nudgeAgent(sessionId, a.id); } catch {}
                         }}
                         style={{ color: a.unreadMessages ? "var(--accent-yellow)" : "var(--text-muted)" }}
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
                         </svg>
                       </ActionIcon>
@@ -1005,7 +1229,7 @@ function AgentsTab({
                   <div style={{ flex: 1 }} />
                   <div style={{ position: "relative" }}>
                     <button className="ac2-btn ac2-btn-settings" onClick={() => setGearOpen(gearOpen === a.id ? null : a.id)}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
                       </svg>
                     </button>
@@ -1026,5 +1250,6 @@ function AgentsTab({
         );
       })}
     </div>
+    </>
   );
 }

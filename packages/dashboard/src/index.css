@@ -1866,6 +1866,7 @@ textarea:focus {
 }
 .kora-mosaic-theme .mosaic-window-body-overlay {
   background: transparent !important;
+  pointer-events: none;
 }
 .kora-mosaic-theme .mosaic-split {
   background: var(--bg-tertiary);
@@ -2036,13 +2037,18 @@ textarea:focus {
    Fullscreen panel (legacy + split-pane)
    =========================== */
 .agent-panel-fullscreen {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 50;
   border-radius: 0;
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
+  animation: agentPanelFadeIn 0.15s ease-out;
+}
+@keyframes agentPanelFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .agent-panel-fullscreen .agent-panel-terminal {
@@ -2725,21 +2731,23 @@ textarea:focus {
 .agent-card-v2.state-stopped { border-top: 2px solid var(--text-muted); opacity: 0.6; }
 .agent-card-v2.state-stopped:hover { opacity: 1; }
 
-/* Header */
+/* Header — single compact row */
 .ac2-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 16px 0 16px;
+  padding: 10px 12px 0 12px;
+  gap: 8px;
 }
 .ac2-header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
+  flex-wrap: wrap;
 }
 .ac2-name {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
@@ -2748,10 +2756,10 @@ textarea:focus {
   text-overflow: ellipsis;
 }
 .ac2-role-badge {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 4px;
+  padding: 1px 6px;
+  border-radius: 3px;
   background: var(--bg-tertiary);
   color: var(--text-muted);
   white-space: nowrap;
@@ -2759,18 +2767,27 @@ textarea:focus {
   letter-spacing: 0.3px;
 }
 .ac2-uptime {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
-/* Meta section: model, channels, flags */
+/* Model inline (shown next to activity text) */
+.ac2-model-inline {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Meta section: model, channels, flags (kept for backwards compat) */
 .ac2-meta {
-  padding: 8px 16px 0 16px;
+  padding: 4px 12px 0 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 .ac2-model {
   font-size: 11px;
@@ -2822,16 +2839,16 @@ textarea:focus {
   50% { opacity: 0.4; }
 }
 
-/* Activity */
+/* Activity — compact */
 .ac2-activity {
-  padding: 12px 16px;
+  padding: 4px 12px;
   flex: 1;
 }
 .ac2-current-action {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  gap: 6px;
+  font-size: 12px;
   color: var(--text-secondary);
 }
 .ac2-action-icon {
@@ -2848,21 +2865,22 @@ textarea:focus {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
+  font-size: 12px;
 }
 .ac2-task {
-  margin-top: 4px;
-  font-size: 12px;
+  margin-top: 2px;
+  font-size: 11px;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding-left: 22px;
+  padding-left: 18px;
 }
 
 /* Spinner */
 .ac2-spinner {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   border: 2px solid var(--border-color);
   border-top-color: var(--accent-blue);
   border-radius: 50%;
@@ -2871,7 +2889,33 @@ textarea:focus {
 }
 @keyframes ac2-spin { to { transform: rotate(360deg); } }
 
-/* Metrics */
+/* Stats row — compact inline with dot separators */
+.ac2-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ac2-stat {
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.ac2-stat-dim {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.ac2-stat-sep {
+  color: var(--text-muted);
+  opacity: 0.5;
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Legacy metrics (backwards compat) */
 .ac2-metrics {
   display: flex;
   border-top: 1px solid var(--border-color);
@@ -2906,24 +2950,25 @@ textarea:focus {
   color: var(--text-muted);
 }
 
-/* Action bar */
+/* Action bar — compact */
 .ac2-actions {
   display: flex;
-  gap: 6px;
-  padding: 10px 16px 14px 16px;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px 10px 12px;
+  border-top: 1px solid var(--border-color);
 }
 .ac2-btn {
-  flex: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 30px;
-  padding: 0 10px;
+  height: 26px;
+  padding: 0 8px;
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: 5px;
   background: var(--bg-primary);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.12s ease;
@@ -2953,7 +2998,8 @@ textarea:focus {
 }
 .ac2-btn-settings {
   flex: 0 0 auto;
-  width: 30px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   display: inline-flex;
   align-items: center;
