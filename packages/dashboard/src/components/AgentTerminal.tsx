@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { useThemeStore } from "../stores/themeStore";
 import "@xterm/xterm/css/xterm.css";
 
@@ -35,12 +36,47 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
       lineHeight: 1.2,
       cursorBlink: true,
       scrollback: 100000,
-      smoothScrollDuration: 100,
+      smoothScrollDuration: 80,
+      scrollSensitivity: 1,
+      fastScrollSensitivity: 5,
+      scrollOnUserInput: true,
+      rightClickSelectsWord: true,
+      allowProposedApi: true,
     });
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(termRef.current);
+
+    // Load WebGL renderer for better performance
+    try {
+      const webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => {
+        webglAddon.dispose();
+      });
+      term.loadAddon(webglAddon);
+    } catch {
+      // WebGL not available, fall back to canvas renderer
+      console.warn('[terminal] WebGL not available, using canvas renderer');
+    }
+
+    // Right-click to copy selected text
+    term.element?.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const selection = term.getSelection();
+      if (selection) {
+        navigator.clipboard.writeText(selection).catch(() => {
+          // Fallback for older browsers
+          const textarea = document.createElement('textarea');
+          textarea.value = selection;
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+        });
+      }
+    });
+
     fitAddon.fit();
     terminalRef.current = term;
 
@@ -163,6 +199,8 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
         background: resolvedTerminalColors.background,
         borderRadius: 8,
         padding: "4px 4px 4px 8px",
+        overflow: "hidden",
+        touchAction: "pan-y",
       }} />
     </div>
   );
