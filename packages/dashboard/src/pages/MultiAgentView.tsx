@@ -1015,7 +1015,7 @@ export function MultiAgentView() {
         {/* Chat input */}
         <div className="mosaic-panel-input" style={{ padding: '8px 16px' }}>
           <select
-            style={{ fontSize: 11, padding: "3px 4px", background: "var(--bg-tertiary)", border: "1px solid var(--border-color)", borderRadius: 4, color: "var(--text-secondary)", cursor: "pointer", maxWidth: 110 }}
+            style={{ fontSize: 13, padding: "8px 12px", background: "var(--bg-tertiary)", border: "1px solid var(--border-color)", borderRadius: 6, color: "var(--text-primary)", cursor: "pointer", maxWidth: 120 }}
             title="Send as"
             value={sendAsMap[agent.id] || ""}
             onChange={(e) => setSendAsMap((prev) => ({ ...prev, [agent.id]: e.target.value }))}
