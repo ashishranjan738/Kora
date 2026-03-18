@@ -74,6 +74,15 @@ export class Orchestrator extends EventEmitter {
     this.messageQueue = new MessageQueue(config.tmux, config.runtimeDir, config.messagingMode || "mcp");
     this.autoRelay.setMessageQueue(this.messageQueue);
 
+    // Wire re-notification callbacks so MessageQueue can check unread counts
+    this.messageQueue.setRenotifyCallbacks(
+      (agentId: string) => this.messageBus.getUnreadCount(agentId),
+      (agentId: string) => {
+        const agent = this.agentManager.getAgent(agentId);
+        return agent?.config.tmuxSession || null;
+      },
+    );
+
     this.wireEvents();
   }
 
@@ -491,10 +500,11 @@ export class Orchestrator extends EventEmitter {
     this.controlPlane.startWatching();
     this.messageQueue.start();
 
-    // Start periodic log rotation (every 60 seconds)
+    // Start periodic log rotation (every 20 seconds — agents can produce
+    // massive output during npm install / builds that exceeds 5MB between checks)
     this.logRotationInterval = setInterval(async () => {
       await this.rotateAgentLogs();
-    }, 60 * 1000);
+    }, 20 * 1000);
   }
 
   /** Stop the orchestrator — persists state before stopping */
@@ -512,6 +522,11 @@ export class Orchestrator extends EventEmitter {
     await this.persistState();
     this.messageBus.stopWatching();
     this.controlPlane.stopWatching();
+
+    // Detach event log from database before stopping agents
+    // (agent stop events would fail if DB closes first)
+    this.eventLog.setDatabase(null as any);
+
     await this.agentManager.stopAll();
 
     // Kill all tmux sessions that belong to this orchestrator's session
@@ -570,7 +585,7 @@ export class Orchestrator extends EventEmitter {
    * Rotate log file if it exceeds the maximum size.
    * Keeps only the last 1MB of the file to prevent unbounded growth.
    */
-  private async rotateLogFile(logPath: string, maxSizeBytes: number = 5 * 1024 * 1024): Promise<void> {
+  private async rotateLogFile(logPath: string, maxSizeBytes: number = 2 * 1024 * 1024): Promise<void> {
     try {
       const fs = await import("fs/promises");
       const stats = await fs.stat(logPath);
@@ -590,8 +605,8 @@ export class Orchestrator extends EventEmitter {
   }
 
   /**
-   * Check all agent log files and rotate any that exceed 5MB.
-   * Called periodically (every 60 seconds) by the log rotation interval.
+   * Check all agent log files and rotate any that exceed 2MB.
+   * Called periodically (every 20 seconds) by the log rotation interval.
    */
   private async rotateAgentLogs(): Promise<void> {
     const agents = this.agentManager.listAgents();

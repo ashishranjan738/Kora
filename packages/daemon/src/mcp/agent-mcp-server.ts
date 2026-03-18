@@ -536,6 +536,11 @@ async function handleToolCall(
         }
       }
 
+      // Notify daemon that agent has read messages (resets re-notification attempts)
+      if (allMessages.length > 0 || pendingMessages.length > 0 || inboxMessages.length > 0) {
+        apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}/ack-read`).catch(() => {});
+      }
+
       // Skip events API fallback if we have messages from either source
       if (allMessages.length > 0) {
         return { messages: allMessages, count: allMessages.length };
@@ -556,6 +561,11 @@ async function handleToolCall(
         content: e.data?.content || "",
         timestamp: e.timestamp || "",
       }));
+
+      // Also ack-read on fallback path
+      if (apiMessages.length > 0) {
+        apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}/ack-read`).catch(() => {});
+      }
 
       return { messages: apiMessages, count: apiMessages.length };
     }

@@ -23,6 +23,17 @@ export class MessageQueue {
   /** Agent IDs that support MCP — get mcp-pending delivery */
   private mcpAgents = new Set<string>();
 
+  // ─── Re-notification state ──────────────────────────────
+  /** Notification attempt counters per agent (reset when agent reads messages) */
+  private notificationAttempts = new Map<string, number>();
+  /** Last notification timestamp per agent (rate limiting) */
+  private lastNotificationTime = new Map<string, number>();
+  private renotifyInterval: ReturnType<typeof setTimeout> | null = null;
+  /** Callback to get unread count for an agent — set by orchestrator */
+  private getUnreadCountFn: ((agentId: string) => Promise<number>) | null = null;
+  /** Callback to get agent tmux session — set by orchestrator */
+  private getAgentTmuxSessionFn: ((agentId: string) => string | null) | null = null;
+
   constructor(
     private tmux: TmuxController,
     private runtimeDir: string = "",
@@ -89,6 +100,7 @@ export class MessageQueue {
   start(): void {
     if (this.deliveryInterval) return;
     this.scheduleNextPoll();
+    this.startRenotifyLoop();
   }
 
   /** Schedule the next poll with adaptive interval */
@@ -108,6 +120,7 @@ export class MessageQueue {
       clearTimeout(this.deliveryInterval);
       this.deliveryInterval = null;
     }
+    this.stopRenotifyLoop();
   }
 
   /** Process all queues — deliver messages to agents that are ready (parallel) */
@@ -299,5 +312,103 @@ export class MessageQueue {
   removeAgent(agentId: string): void {
     this.queues.delete(agentId);
     this.mcpAgents.delete(agentId);
+    this.notificationAttempts.delete(agentId);
+    this.lastNotificationTime.delete(agentId);
+  }
+
+  // ─── Re-notification system ──────────────────────────────
+
+  /** Set callbacks needed by the re-notification loop */
+  setRenotifyCallbacks(
+    getUnreadCount: (agentId: string) => Promise<number>,
+    getAgentTmuxSession: (agentId: string) => string | null,
+  ): void {
+    this.getUnreadCountFn = getUnreadCount;
+    this.getAgentTmuxSessionFn = getAgentTmuxSession;
+  }
+
+  /** Reset notification attempts for an agent (called when agent reads messages) */
+  resetNotificationAttempts(agentId: string): void {
+    this.notificationAttempts.delete(agentId);
+    this.lastNotificationTime.delete(agentId);
+  }
+
+  /** Get notification attempts count for an agent */
+  getNotificationAttempts(agentId: string): number {
+    return this.notificationAttempts.get(agentId) || 0;
+  }
+
+  /** Send an immediate nudge notification to an agent. Returns unread count. */
+  async nudgeAgent(agentId: string, tmuxSession: string): Promise<number> {
+    if (!this.getUnreadCountFn) return 0;
+    const unread = await this.getUnreadCountFn(agentId);
+    if (unread === 0) return 0;
+
+    const notification = `\n>>> 📬 YOU HAVE ${unread} UNREAD MESSAGE(S) — run check_messages NOW <<<\n`;
+    try {
+      await this.tmux.sendKeys(tmuxSession, notification, { literal: true });
+    } catch { /* agent may be dead */ }
+    return unread;
+  }
+
+  /** Start the re-notification loop (every 20 seconds) */
+  private startRenotifyLoop(): void {
+    if (this.renotifyInterval) return;
+    this.renotifyInterval = setInterval(async () => {
+      await this.processRenotifications();
+    }, 20_000);
+  }
+
+  /** Stop the re-notification loop */
+  private stopRenotifyLoop(): void {
+    if (this.renotifyInterval) {
+      clearInterval(this.renotifyInterval);
+      this.renotifyInterval = null;
+    }
+  }
+
+  /** Process re-notifications for all MCP agents with unread messages */
+  private async processRenotifications(): Promise<void> {
+    if (!this.getUnreadCountFn || !this.getAgentTmuxSessionFn) return;
+
+    for (const agentId of this.mcpAgents) {
+      try {
+        const unread = await this.getUnreadCountFn(agentId);
+        if (unread === 0) {
+          // Clear attempts when no unread messages
+          this.notificationAttempts.delete(agentId);
+          this.lastNotificationTime.delete(agentId);
+          continue;
+        }
+
+        // Rate limit: skip if last notification was <10s ago
+        const lastTime = this.lastNotificationTime.get(agentId) || 0;
+        if (Date.now() - lastTime < 10_000) continue;
+
+        const tmuxSession = this.getAgentTmuxSessionFn(agentId);
+        if (!tmuxSession) continue;
+
+        // Check if agent is at a prompt (ready to receive)
+        const ready = await this.isAgentReady(tmuxSession);
+        if (!ready) continue;
+
+        const attempts = this.notificationAttempts.get(agentId) || 0;
+        let notification: string;
+
+        if (attempts === 0) {
+          notification = `[You have ${unread} unread message(s). Run check_messages to read.]`;
+        } else if (attempts < 3) {
+          notification = `\n⚠️ ${unread} UNREAD MESSAGE(S) waiting. Please run check_messages.\n`;
+        } else {
+          notification = `\n🔴 URGENT: ${unread} unread message(s)! Run check_messages NOW.\n`;
+        }
+
+        await this.tmux.sendKeys(tmuxSession, notification, { literal: true });
+        this.notificationAttempts.set(agentId, attempts + 1);
+        this.lastNotificationTime.set(agentId, Date.now());
+      } catch {
+        // Agent may be dead — ignore
+      }
+    }
   }
 }
