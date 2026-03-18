@@ -16,7 +16,8 @@ import { registry } from "./cli-providers/index.js";
 import tmuxDefault from "./core/tmux-controller.js";
 import { HoldptyController } from "./core/holdpty-controller.js";
 import type { IPtyBackend } from "./core/pty-backend.js";
-import { DEFAULT_PORT, APP_VERSION, getRuntimeTmuxPrefix, getRuntimeDaemonDir } from "@kora/shared";
+import { DEFAULT_PORT, APP_VERSION, DEFAULT_PTY_BACKEND, getRuntimeTmuxPrefix, getRuntimeDaemonDir } from "@kora/shared";
+import type { PtyBackendType } from "@kora/shared";
 import { ensureBuiltinPlaybooks } from "./core/playbook-loader.js";
 
 const args = process.argv.slice(2);
@@ -37,7 +38,7 @@ async function handleStart(): Promise<void> {
   const defaultPort = isDev ? devPort : DEFAULT_PORT;
   const port = parseInt(parseFlag("--port") ?? String(defaultPort), 10);
   const projectPath = parseFlag("--project");
-  const backendFlag = parseFlag("--backend") || process.env.KORA_PTY_BACKEND || "tmux";
+  const backendFlag = (parseFlag("--backend") || process.env.KORA_PTY_BACKEND || DEFAULT_PTY_BACKEND) as PtyBackendType;
 
   // Select PTY backend: "tmux" (default) or "holdpty"
   let ptyBackend: IPtyBackend;
