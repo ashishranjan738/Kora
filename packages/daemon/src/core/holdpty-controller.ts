@@ -1,6 +1,9 @@
 /**
  * HoldptyController — drop-in replacement for TmuxController using holdpty.
  *
+ * Uses holdpty's Node.js API (Holder, session, client) for session management
+ * and the binary protocol over Unix sockets for sendKeys/capturePane.
+ *
  * holdpty provides persistent PTY sessions accessible via Unix domain sockets.
  * Protocol: binary frames [1B type][4B length BE][payload]
  * Socket location: /tmp/dt-{UID}/{name}.sock (or HOLDPTY_DIR env override)
@@ -12,72 +15,82 @@
 import { execFile as execFileCb } from "child_process";
 import { promisify } from "util";
 import * as net from "net";
-import * as path from "path";
 import * as fs from "fs";
 import type { IPtyBackend } from "./pty-backend.js";
 
 const execFile = promisify(execFileCb);
 
-// Import holdpty protocol helpers (ESM — loaded dynamically)
-let protocol: any = null;
-async function getProtocol() {
-  if (!protocol) {
-    protocol = await import("holdpty/dist/protocol.js");
+// Lazy-loaded holdpty modules (ESM)
+let _Holder: any = null;
+async function getHolder() {
+  if (!_Holder) {
+    const mod = await import("holdpty/dist/holder.js");
+    _Holder = mod.Holder;
   }
-  return protocol;
+  return _Holder;
 }
 
-let platform: any = null;
-async function getPlatform() {
-  if (!platform) {
-    platform = await import("holdpty/dist/platform.js");
+let _session: any = null;
+async function getSessionModule() {
+  if (!_session) {
+    _session = await import("holdpty/dist/session.js");
   }
-  return platform;
+  return _session;
+}
+
+let _protocol: any = null;
+async function getProtocol() {
+  if (!_protocol) {
+    _protocol = await import("holdpty/dist/protocol.js");
+  }
+  return _protocol;
+}
+
+let _platform: any = null;
+async function getPlatform() {
+  if (!_platform) {
+    _platform = await import("holdpty/dist/platform.js");
+  }
+  return _platform;
 }
 
 export class HoldptyController implements IPtyBackend {
-  private holdptyPath = "holdpty";
-  private holdptyChecked = false;
+  /** Track holders we started (for kill). Not all sessions may be here if daemon restarted. */
+  private holders = new Map<string, any>();
 
   /**
-   * Ensures holdpty is available (via npx or direct path).
+   * Resolve the holdpty CLI path for commands that still need CLI (logs, attach).
+   * Cached after first call.
    */
-  private async ensureHoldpty(): Promise<void> {
-    if (this.holdptyChecked) return;
+  private cliPath: string | null = null;
+  private async getCliPath(): Promise<string> {
+    if (this.cliPath) return this.cliPath;
 
-    try {
-      const { stdout } = await execFile("npx", ["holdpty", "--version"]);
-      if (stdout.includes("holdpty")) {
-        this.holdptyPath = "npx";
-        this.holdptyChecked = true;
-        return;
-      }
-    } catch { /* try direct */ }
-
+    // Try direct holdpty first (faster)
     try {
       const { stdout } = await execFile("holdpty", ["--version"]);
       if (stdout.includes("holdpty")) {
-        this.holdptyPath = "holdpty";
-        this.holdptyChecked = true;
-        return;
+        this.cliPath = "holdpty";
+        return this.cliPath;
       }
-    } catch {
-      throw new Error("holdpty is not installed. Run: npm install holdpty");
-    }
+    } catch { /* fall through */ }
+
+    // Fallback to npx
+    this.cliPath = "npx-holdpty";
+    return this.cliPath;
   }
 
   /**
-   * Run a holdpty CLI command.
+   * Run a holdpty CLI command (for operations without a Node.js API equivalent).
    */
-  private async run(...args: string[]): Promise<string> {
-    await this.ensureHoldpty();
-
+  private async runCli(...args: string[]): Promise<string> {
+    const cli = await this.getCliPath();
     try {
-      if (this.holdptyPath === "npx") {
+      if (cli === "npx-holdpty") {
         const { stdout } = await execFile("npx", ["holdpty", ...args]);
         return stdout;
       }
-      const { stdout } = await execFile(this.holdptyPath, args);
+      const { stdout } = await execFile(cli, args);
       return stdout;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -96,31 +109,33 @@ export class HoldptyController implements IPtyBackend {
   }
 
   /**
-   * Creates a new holdpty session (replaces tmux newSession).
+   * Creates a new holdpty session using the Node.js Holder API.
    */
   async newSession(
     name: string,
     width: number = 200,
     height: number = 50,
   ): Promise<void> {
-    const shell = process.env.SHELL || "/bin/bash";
-    await this.run(
-      "launch", "--bg",
-      "--name", name,
-      "--cols", String(width),
-      "--rows", String(height),
-      "--", shell,
-    );
+    const Holder = await getHolder();
+    const shell = process.env.SHELL || "/bin/zsh";
+
+    const holder = await Holder.start({
+      command: [shell],
+      name,
+      cols: width,
+      rows: height,
+    });
+
+    this.holders.set(name, holder);
   }
 
   /**
-   * Checks whether a holdpty session exists.
+   * Checks whether a holdpty session exists and is alive.
    */
   async hasSession(name: string): Promise<boolean> {
     try {
-      const output = await this.run("ls", "--json");
-      const sessions = JSON.parse(output);
-      return sessions.some((s: any) => s.name === name);
+      const session = await getSessionModule();
+      return session.isSessionActive(name);
     } catch {
       return false;
     }
@@ -131,7 +146,15 @@ export class HoldptyController implements IPtyBackend {
    */
   async killSession(name: string): Promise<void> {
     try {
-      await this.run("stop", name);
+      // Try in-process holder first
+      const holder = this.holders.get(name);
+      if (holder) {
+        holder.kill();
+        this.holders.delete(name);
+        return;
+      }
+      // Fallback to CLI for sessions we didn't start (e.g. after daemon restart)
+      await this.runCli("stop", name);
     } catch {
       // Already dead — that's fine
     }
@@ -148,8 +171,6 @@ export class HoldptyController implements IPtyBackend {
   ): Promise<void> {
     const proto = await getProtocol();
     const socketPath = await this.getSocketPath(session);
-
-    const data = options?.literal ? keys : keys;
 
     return new Promise<void>((resolve, reject) => {
       const socket = net.createConnection(socketPath, () => {
@@ -170,7 +191,7 @@ export class HoldptyController implements IPtyBackend {
             gotAck = true;
 
             // Send DATA_IN with the keys
-            const dataFrame = proto.encodeDataIn(Buffer.from(data, "utf-8"));
+            const dataFrame = proto.encodeDataIn(Buffer.from(keys, "utf-8"));
             socket.write(dataFrame);
 
             // If not literal, also send Enter
@@ -215,11 +236,11 @@ export class HoldptyController implements IPtyBackend {
   }
 
   /**
-   * Captures terminal output from a holdpty session (replaces tmux capturePane).
+   * Captures terminal output from a holdpty session via CLI logs command.
    */
   async capturePane(session: string, lines: number = 1000, _escapeSequences: boolean = false): Promise<string> {
     try {
-      const output = await this.run("logs", session, "--tail", String(lines));
+      const output = await this.runCli("logs", session, "--tail", String(lines));
       return output;
     } catch {
       return "";
@@ -227,12 +248,12 @@ export class HoldptyController implements IPtyBackend {
   }
 
   /**
-   * Lists all active holdpty sessions.
+   * Lists all active holdpty sessions using the session module.
    */
   async listSessions(): Promise<string[]> {
     try {
-      const output = await this.run("ls", "--json");
-      const sessions = JSON.parse(output);
+      const session = await getSessionModule();
+      const sessions = await session.listSessions({ clean: true });
       return sessions.map((s: any) => s.name);
     } catch {
       return [];
@@ -261,17 +282,20 @@ export class HoldptyController implements IPtyBackend {
   }
 
   /**
-   * Start piping session output to a log file (replaces tmux pipePaneStart).
+   * Start piping session output to a log file via CLI logs --follow.
    */
   async pipePaneStart(session: string, outputFile: string): Promise<void> {
     try {
-      const child = require("child_process").spawn(
-        "npx", ["holdpty", "logs", session, "--follow"],
-        {
-          stdio: ["ignore", fs.openSync(outputFile, "a"), "ignore"],
-          detached: true,
-        },
-      );
+      const cli = await this.getCliPath();
+      const cmd = cli === "npx-holdpty" ? "npx" : cli;
+      const args = cli === "npx-holdpty"
+        ? ["holdpty", "logs", session, "--follow"]
+        : ["logs", session, "--follow"];
+
+      const child = require("child_process").spawn(cmd, args, {
+        stdio: ["ignore", fs.openSync(outputFile, "a"), "ignore"],
+        detached: true,
+      });
       child.unref();
     } catch (err) {
       console.error(`[HoldptyController] Failed to start pipe for ${session}:`, err);
@@ -286,14 +310,14 @@ export class HoldptyController implements IPtyBackend {
   }
 
   /**
-   * Gets the PID of the process running in a session.
+   * Gets the PID of the process running in a session using session metadata.
    */
   async getPanePID(session: string): Promise<number | null> {
     try {
-      const output = await this.run("info", session);
-      // info returns JSON-like output with metadata
-      const info = JSON.parse(output);
-      return info.childPid || info.pid || null;
+      const sess = await getSessionModule();
+      const meta = sess.readMetadata(session);
+      if (meta) return meta.childPid || meta.pid || null;
+      return null;
     } catch {
       return null;
     }
@@ -304,16 +328,16 @@ export class HoldptyController implements IPtyBackend {
    * Uses `holdpty attach` which bridges stdin/stdout to the session's Unix socket.
    */
   getAttachCommand(session: string): { command: string; args: string[] } {
-    if (this.holdptyPath === "npx") {
+    if (this.cliPath === "npx-holdpty" || !this.cliPath) {
       return { command: "npx", args: ["holdpty", "attach", session] };
     }
-    return { command: this.holdptyPath, args: ["attach", session] };
+    return { command: this.cliPath, args: ["attach", session] };
   }
 
   /**
-   * Run a raw holdpty command (for resize and other direct operations).
+   * Run a raw holdpty CLI command (for resize and other direct operations).
    */
   async run_raw(...args: string[]): Promise<string> {
-    return this.run(...args);
+    return this.runCli(...args);
   }
 }
