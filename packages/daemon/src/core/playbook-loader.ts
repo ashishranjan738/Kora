@@ -80,7 +80,7 @@ export async function ensureBuiltinPlaybooks(globalConfigDir: string): Promise<v
         { name: "Architect", role: "master", model: "claude-opus-4-6", persona: "You are a senior architect. Decompose features into frontend, backend, and test tasks." },
         { name: "Frontend", role: "worker", model: "claude-sonnet-4-6", persona: "You are a frontend specialist. Focus on React/UI components." },
         { name: "Backend", role: "worker", model: "claude-sonnet-4-6", persona: "You are a backend specialist. Focus on API endpoints and database." },
-        { name: "Tests", role: "worker", provider: "codex", model: "o4-mini", persona: "You write comprehensive tests for all code changes." },
+        { name: "Tests", role: "worker", model: "claude-sonnet-4-6", persona: "You write comprehensive tests for all code changes." },
       ],
     },
   ];
