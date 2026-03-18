@@ -20,6 +20,7 @@ import {
   Box,
   Tooltip,
   Divider,
+  SegmentedControl,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { MarkdownText } from "./MarkdownText";
@@ -705,6 +706,7 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
           task={expandedTask}
           tasks={tasks}
           agents={agents}
+          sessionId={sessionId}
           isMobile={!!isMobile}
           modalStyles={modalStyles}
           commentText={commentText}
@@ -717,6 +719,7 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
           onAddComment={handleAddComment}
           onNavigateTask={setExpandedTaskId}
           inputStyles={inputStyles}
+          fetchTasks={fetchTasks}
         />
       )}
     </div>
@@ -913,6 +916,7 @@ function TaskDetailModal({
   task,
   tasks,
   agents,
+  sessionId,
   isMobile,
   modalStyles,
   commentText,
@@ -922,10 +926,12 @@ function TaskDetailModal({
   onAddComment,
   onNavigateTask,
   inputStyles,
+  fetchTasks,
 }: {
   task: Task;
   tasks: Task[];
   agents: { id: string; name: string }[];
+  sessionId: string;
   isMobile: boolean;
   modalStyles: any;
   commentText: string;
@@ -935,166 +941,341 @@ function TaskDetailModal({
   onAddComment: (taskId: string) => void;
   onNavigateTask: (taskId: string) => void;
   inputStyles: any;
+  fetchTasks: () => void;
 }) {
-  const assigneeName = task.assignedTo
-    ? agents.find((a) => a.id === task.assignedTo)?.name || task.assignedTo
-    : "Unassigned";
+  const api = useApi();
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [editTitle, setEditTitle] = useState(task.title);
+  const [editDesc, setEditDesc] = useState(task.description || "");
+  const [editAssignee, setEditAssignee] = useState(task.assignedTo || "");
+  const [saving, setSaving] = useState(false);
+
+  // Sync local state when task changes
+  useEffect(() => {
+    setEditTitle(task.title);
+    setEditDesc(task.description || "");
+    setEditAssignee(task.assignedTo || "");
+  }, [task.id, task.title, task.description, task.assignedTo]);
+
+  const agentSelectData = agents.map((a) => ({
+    value: a.id,
+    label: a.name,
+  }));
+
+  const saveField = async (field: string, value: string) => {
+    setSaving(true);
+    try {
+      await api.updateTask(sessionId, task.id, { [field]: value || undefined });
+      fetchTasks();
+    } catch {
+      // revert on failure
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTitleSave = () => {
+    if (editTitle.trim() && editTitle !== task.title) {
+      saveField("title", editTitle.trim());
+    }
+    setEditingTitle(false);
+  };
+
+  const handleDescSave = () => {
+    if (editDesc !== (task.description || "")) {
+      saveField("description", editDesc.trim());
+    }
+    setEditingDesc(false);
+  };
+
+  const handleAssigneeChange = (value: string | null) => {
+    const newVal = value || "";
+    setEditAssignee(newVal);
+    saveField("assignedTo", newVal);
+  };
+
+  const selectDropdownStyles = {
+    input: {
+      backgroundColor: "var(--bg-tertiary)",
+      borderColor: "var(--border-color)",
+      color: "var(--text-primary)",
+    },
+    dropdown: {
+      backgroundColor: "var(--bg-secondary)",
+      borderColor: "var(--border-color)",
+    },
+    option: { color: "var(--text-primary)" },
+  };
+
+  const SEGMENTED_DATA = COLUMNS.map((col) => ({
+    value: col,
+    label: COLUMN_LABELS[col],
+  }));
 
   return (
     <Modal
       opened
       onClose={onClose}
-      title={task.title}
       size="lg"
       fullScreen={isMobile}
       centered
-      styles={modalStyles}
-      scrollAreaComponent={ScrollArea.Autosize}
+      styles={{
+        ...modalStyles,
+        title: { display: "none" },
+        header: {
+          ...modalStyles.header,
+          padding: "12px 16px",
+          minHeight: "unset",
+        },
+        body: {
+          ...modalStyles.body,
+          padding: isMobile ? 16 : 24,
+          display: "flex",
+          flexDirection: "column" as const,
+        },
+        content: {
+          ...modalStyles.content,
+          display: "flex",
+          flexDirection: "column" as const,
+          maxHeight: isMobile ? "100vh" : "85vh",
+        },
+      }}
+      title=" "
     >
-      <Stack gap="md">
-        {/* Meta row */}
-        <Group gap={8} wrap="wrap">
+      <Stack gap="md" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        {/* ---- Header: Editable title ---- */}
+        <Box>
+          {editingTitle ? (
+            <TextInput
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.currentTarget.value)}
+              onBlur={handleTitleSave}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleTitleSave();
+                if (e.key === "Escape") {
+                  setEditTitle(task.title);
+                  setEditingTitle(false);
+                }
+              }}
+              autoFocus
+              size="lg"
+              styles={{
+                input: {
+                  backgroundColor: "var(--bg-tertiary)",
+                  borderColor: "var(--accent-blue)",
+                  color: "var(--text-primary)",
+                  fontWeight: 700,
+                  fontSize: 18,
+                },
+              }}
+            />
+          ) : (
+            <Group gap={8} align="flex-start" wrap="nowrap" style={{ cursor: "pointer" }} onClick={() => setEditingTitle(true)}>
+              <Text fw={700} size="lg" c="var(--text-primary)" style={{ flex: 1, lineHeight: 1.3 }}>
+                {task.title}
+              </Text>
+              <Tooltip label="Edit title">
+                <ActionIcon variant="subtle" size="sm" color="gray" style={{ flexShrink: 0, marginTop: 2 }}>
+                  <span style={{ fontSize: 13 }}>&#9998;</span>
+                </ActionIcon>
+              </Tooltip>
+            </Group>
+          )}
+        </Box>
+
+        {/* ---- Metadata row ---- */}
+        <Group gap="sm" wrap="wrap">
           <Tooltip label="Click to copy task ID">
             <Badge
               variant="light"
-              color="blue"
+              color="gray"
               size="sm"
-              style={{ cursor: "pointer", fontFamily: "var(--font-mono)" }}
+              style={{ cursor: "pointer", fontFamily: "var(--font-mono)", letterSpacing: "0.02em" }}
               onClick={() => navigator.clipboard.writeText(task.id)}
             >
               #{task.id.slice(0, 8)}
             </Badge>
           </Tooltip>
-          <Text size="xs" c="var(--text-muted)">
+          <Text size="xs" c="dimmed">
             Created {timeAgo(task.createdAt)} by {task.createdBy}
           </Text>
+          {saving && (
+            <Badge variant="light" color="blue" size="xs">
+              Saving...
+            </Badge>
+          )}
         </Group>
 
-        {/* Task details card */}
-        <Paper
-          p="sm"
-          style={{
-            backgroundColor: "var(--bg-tertiary)",
-            borderRadius: 8,
-          }}
-        >
-          <Stack gap={8}>
-            <Group gap={8}>
-              <Text size="xs" fw={600} c="var(--text-secondary)" w={80}>
-                Status:
-              </Text>
-              <Text
-                size="xs"
-                fw={600}
-                c={COLUMN_CSS_COLORS[task.status] || "var(--text-primary)"}
-              >
-                {COLUMN_LABELS[task.status] || task.status}
-              </Text>
-            </Group>
-            <Group gap={8}>
-              <Text size="xs" fw={600} c="var(--text-secondary)" w={80}>
-                Assigned to:
-              </Text>
-              <Text size="xs" c="var(--text-primary)">
-                {assigneeName}
-              </Text>
-            </Group>
-            {task.description && (
-              <Box>
-                <Text size="xs" fw={600} c="var(--text-secondary)">
-                  Description:
-                </Text>
-                <Box mt={4} style={{ fontSize: 13, lineHeight: 1.5 }}>
-                  <MarkdownText>{task.description}</MarkdownText>
-                </Box>
-              </Box>
-            )}
-          </Stack>
-        </Paper>
+        <Divider color="var(--border-color)" />
 
-        {/* Change status */}
-        <Box>
-          <Text size="xs" fw={600} mb={8}>
-            Change Status
+        {/* ---- Details grid ---- */}
+        <SimpleGrid cols={2} spacing="md" verticalSpacing="sm" style={{ maxWidth: 500 }}>
+          {/* Status */}
+          <Text size="sm" fw={500} c="dimmed" style={{ alignSelf: "center" }}>
+            Status
           </Text>
-          <Group gap={8} wrap="wrap">
-            {COLUMNS.map((col) => (
-              <Button
-                key={col}
-                size="xs"
-                variant={task.status === col ? "filled" : "outline"}
-                color={COLUMN_COLORS[col]}
-                onClick={() => onChangeStatus(task.id, col)}
-                disabled={task.status === col}
+          <SegmentedControl
+            value={task.status}
+            onChange={(val) => onChangeStatus(task.id, val)}
+            data={SEGMENTED_DATA}
+            size="xs"
+            styles={{
+              root: {
+                backgroundColor: "var(--bg-tertiary)",
+                border: "1px solid var(--border-color)",
+              },
+              label: {
+                color: "var(--text-primary)",
+                fontWeight: 500,
+                fontSize: 12,
+                padding: "4px 10px",
+              },
+              indicator: {
+                backgroundColor: COLUMN_CSS_COLORS[task.status] || "var(--accent-blue)",
+                boxShadow: "none",
+              },
+            }}
+          />
+
+          {/* Assignee */}
+          <Text size="sm" fw={500} c="dimmed" style={{ alignSelf: "center" }}>
+            Assignee
+          </Text>
+          <Select
+            placeholder="Unassigned"
+            data={agentSelectData}
+            value={editAssignee || null}
+            onChange={handleAssigneeChange}
+            clearable
+            size="xs"
+            styles={selectDropdownStyles}
+          />
+        </SimpleGrid>
+
+        {/* ---- Description ---- */}
+        <Box>
+          <Group gap={6} mb={6}>
+            <Text size="sm" fw={500} c="dimmed">
+              Description
+            </Text>
+            {!editingDesc && (
+              <Tooltip label="Edit description">
+                <ActionIcon variant="subtle" size="xs" color="gray" onClick={() => setEditingDesc(true)}>
+                  <span style={{ fontSize: 11 }}>&#9998;</span>
+                </ActionIcon>
+              </Tooltip>
+            )}
+          </Group>
+          {editingDesc ? (
+            <Stack gap="xs">
+              <Textarea
+                value={editDesc}
+                onChange={(e) => setEditDesc(e.currentTarget.value)}
+                autoFocus
+                autosize
+                minRows={3}
+                maxRows={8}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setEditDesc(task.description || "");
+                    setEditingDesc(false);
+                  }
+                }}
                 styles={{
-                  root: {
-                    minHeight: 36,
-                    fontWeight: 600,
+                  input: {
+                    backgroundColor: "var(--bg-tertiary)",
+                    borderColor: "var(--accent-blue)",
+                    color: "var(--text-primary)",
+                    fontSize: 13,
                   },
                 }}
-              >
-                {COLUMN_LABELS[col]}
-              </Button>
-            ))}
-          </Group>
+              />
+              <Group gap="xs">
+                <Button size="xs" variant="filled" color="blue" onClick={handleDescSave}>
+                  Save
+                </Button>
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  color="gray"
+                  onClick={() => {
+                    setEditDesc(task.description || "");
+                    setEditingDesc(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </Group>
+            </Stack>
+          ) : task.description ? (
+            <Paper
+              p="sm"
+              style={{
+                backgroundColor: "var(--bg-tertiary)",
+                borderRadius: 8,
+                cursor: "pointer",
+                fontSize: 13,
+                lineHeight: 1.6,
+              }}
+              onClick={() => setEditingDesc(true)}
+            >
+              <MarkdownText>{task.description}</MarkdownText>
+            </Paper>
+          ) : (
+            <Text
+              size="sm"
+              c="dimmed"
+              fs="italic"
+              style={{ cursor: "pointer" }}
+              onClick={() => setEditingDesc(true)}
+            >
+              Click to add a description...
+            </Text>
+          )}
         </Box>
 
-        {/* Dependencies */}
+        {/* ---- Dependencies ---- */}
         {task.dependencies && task.dependencies.length > 0 && (
           <Box>
-            <Text size="xs" fw={600} mb={8}>
+            <Text size="sm" fw={500} c="dimmed" mb={8}>
               Dependencies ({task.dependencies.length})
             </Text>
-            <Stack gap={6}>
+            <Stack gap={4}>
               {task.dependencies.map((depId) => {
                 const depTask = tasks.find((t) => t.id === depId);
                 const isDone = depTask?.status === "done";
                 return (
                   <Paper
                     key={depId}
-                    p="xs"
+                    px="sm"
+                    py={8}
                     style={{
                       backgroundColor: "var(--bg-tertiary)",
                       borderRadius: 6,
                       cursor: depTask ? "pointer" : "default",
-                      minHeight: 44,
-                      display: "flex",
-                      alignItems: "center",
                     }}
                     onClick={() => {
                       if (depTask) onNavigateTask(depId);
                     }}
                   >
-                    <Group gap={8} style={{ flex: 1 }}>
-                      <Text size="sm">{isDone ? "\u2705" : "\u23F3"}</Text>
+                    <Group gap={8}>
+                      <Text size="sm" style={{ lineHeight: 1 }}>{isDone ? "\u2705" : "\u23F3"}</Text>
                       <Text
                         size="xs"
-                        c={
-                          isDone
-                            ? "var(--accent-green)"
-                            : "var(--text-primary)"
-                        }
+                        c={isDone ? "var(--accent-green)" : "var(--text-primary)"}
                         td={isDone ? "line-through" : undefined}
                         style={{ flex: 1 }}
                       >
                         {depTask?.title || depId}
                       </Text>
-                      <Text
+                      <Badge
                         size="xs"
-                        fw={500}
-                        c={
-                          isDone
-                            ? "var(--accent-green)"
-                            : "var(--text-muted)"
-                        }
+                        variant="light"
+                        color={isDone ? "green" : COLUMN_COLORS[depTask?.status || "pending"] || "gray"}
                       >
-                        {isDone
-                          ? "Done"
-                          : depTask
-                            ? COLUMN_LABELS[depTask.status] ||
-                              depTask.status
-                            : "Unknown"}
-                      </Text>
+                        {isDone ? "Done" : depTask ? (COLUMN_LABELS[depTask.status] || depTask.status) : "Unknown"}
+                      </Badge>
                     </Group>
                   </Paper>
                 );
@@ -1103,94 +1284,133 @@ function TaskDetailModal({
           </Box>
         )}
 
-        {/* Blocked */}
+        {/* ---- Blocked alert ---- */}
         {task.blocked && (
           <Alert
             color="yellow"
             variant="light"
-            icon={<span style={{ fontSize: 16 }}>&#128274;</span>}
+            icon={<span style={{ fontSize: 14 }}>&#128274;</span>}
+            styles={{ message: { fontSize: 13 } }}
           >
-            {task.blockedReason ||
-              "This task is blocked by incomplete dependencies"}
+            {task.blockedReason || "This task is blocked by incomplete dependencies"}
           </Alert>
         )}
 
-        <Divider />
+        <Divider color="var(--border-color)" />
 
-        {/* Comments */}
-        <Box>
-          <Text size="sm" fw={600} mb="sm">
-            Comments{" "}
-            {task.comments && task.comments.length > 0
-              ? `(${task.comments.length})`
-              : ""}
-          </Text>
+        {/* ---- Comments section ---- */}
+        <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          <Group gap={8} mb="sm">
+            <Text size="sm" fw={600} c="var(--text-primary)">
+              Comments
+            </Text>
+            {task.comments && task.comments.length > 0 && (
+              <Badge variant="light" color="blue" size="xs" circle>
+                {task.comments.length}
+              </Badge>
+            )}
+          </Group>
 
-          <ScrollArea mah={300} mb="sm">
+          {/* Scrollable comments container */}
+          <ScrollArea
+            mah={300}
+            mb="sm"
+            type="auto"
+            offsetScrollbars
+            style={{
+              flex: 1,
+              minHeight: task.comments && task.comments.length > 0 ? 100 : 40,
+            }}
+          >
             {task.comments && task.comments.length > 0 ? (
-              <Stack gap="xs">
+              <Stack gap={8}>
                 {task.comments.map((comment) => (
                   <Paper
                     key={comment.id}
-                    p="xs"
+                    p="sm"
+                    radius="md"
                     style={{
                       backgroundColor: "var(--bg-tertiary)",
-                      borderRadius: 6,
+                      border: "1px solid var(--border-color)",
                     }}
                   >
-                    <Group justify="space-between" mb={4}>
-                      <Text size="xs" fw={600} c="var(--accent-blue)">
-                        {comment.authorName || comment.author}
-                      </Text>
-                      <Text size="xs" c="var(--text-muted)">
+                    <Group justify="space-between" mb={4} wrap="nowrap">
+                      <Group gap={6} wrap="nowrap">
+                        {/* Avatar circle */}
+                        <Box
+                          style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: "50%",
+                            backgroundColor: "var(--accent-blue)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Text size="xs" fw={700} c="white" style={{ fontSize: 10, lineHeight: 1 }}>
+                            {(comment.authorName || comment.author || "?").charAt(0).toUpperCase()}
+                          </Text>
+                        </Box>
+                        <Text size="xs" fw={600} c="var(--text-primary)">
+                          {comment.authorName || comment.author}
+                        </Text>
+                      </Group>
+                      <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
                         {timeAgo(comment.createdAt)}
                       </Text>
                     </Group>
-                    <Box style={{ fontSize: 13 }}>
+                    <Box ml={28} style={{ fontSize: 13, lineHeight: 1.5 }}>
                       <MarkdownText>{comment.text}</MarkdownText>
                     </Box>
                   </Paper>
                 ))}
               </Stack>
             ) : (
-              <Text
-                size="xs"
-                c="var(--text-muted)"
-                fs="italic"
-                ta="center"
-                py="lg"
-              >
-                No comments yet. Be the first to add one!
+              <Text size="xs" c="dimmed" fs="italic" ta="center" py="md">
+                No comments yet
               </Text>
             )}
           </ScrollArea>
 
-          <Stack gap="xs">
+          {/* Compact comment input */}
+          <Group gap={8} align="flex-end" wrap="nowrap">
             <Textarea
               value={commentText}
               onChange={(e) => setCommentText(e.currentTarget.value)}
               placeholder="Add a comment..."
-              rows={2}
               autosize
-              minRows={2}
-              maxRows={4}
-              styles={inputStyles}
-            />
-            <Button
-              fullWidth
-              onClick={() => onAddComment(task.id)}
-              disabled={!commentText.trim()}
+              minRows={1}
+              maxRows={3}
+              style={{ flex: 1 }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && commentText.trim()) {
+                  onAddComment(task.id);
+                }
+              }}
               styles={{
-                root: {
-                  backgroundColor: "var(--accent-blue)",
-                  borderColor: "var(--accent-blue)",
-                  minHeight: 44,
+                input: {
+                  backgroundColor: "var(--bg-tertiary)",
+                  borderColor: "var(--border-color)",
+                  color: "var(--text-primary)",
+                  fontSize: 13,
                 },
               }}
-            >
-              Add Comment
-            </Button>
-          </Stack>
+            />
+            <Tooltip label="Send (Cmd+Enter)">
+              <ActionIcon
+                variant="filled"
+                color="blue"
+                size="lg"
+                onClick={() => onAddComment(task.id)}
+                disabled={!commentText.trim()}
+                style={{ flexShrink: 0 }}
+              >
+                <span style={{ fontSize: 16, lineHeight: 1 }}>&#10148;</span>
+              </ActionIcon>
+            </Tooltip>
+          </Group>
         </Box>
       </Stack>
     </Modal>
