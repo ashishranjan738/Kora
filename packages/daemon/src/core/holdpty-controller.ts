@@ -56,14 +56,12 @@ export class HoldptyController implements IPtyBackend {
   private cliPath: string;
 
   constructor() {
-    // Pre-resolve CLI path synchronously at construction time
-    const localBin = path.resolve(__dirname, "../../../../node_modules/.bin/holdpty");
-    if (fs.existsSync(localBin)) {
-      this.cliPath = localBin;
-    } else {
-      // Fallback: try global holdpty, last resort npx
-      this.cliPath = "npx";
-    }
+    // Pre-resolve CLI path synchronously — check both dist/ and src/ relative paths
+    const candidates = [
+      path.resolve(__dirname, "../../../../../node_modules/.bin/holdpty"),  // from dist/core
+      path.resolve(__dirname, "../../../../node_modules/.bin/holdpty"),     // from src/core
+    ];
+    this.cliPath = candidates.find(p => fs.existsSync(p)) || "npx";
   }
 
   /**
