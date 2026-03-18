@@ -1863,10 +1863,10 @@ textarea:focus {
 }
 .kora-mosaic-theme .mosaic-window-body {
   background: var(--bg-primary) !important;
+  overflow: hidden !important;
 }
 .kora-mosaic-theme .mosaic-window-body-overlay {
   background: transparent !important;
-  pointer-events: none;
 }
 .kora-mosaic-theme .mosaic-split {
   background: var(--bg-tertiary);
@@ -2066,7 +2066,11 @@ textarea:focus {
 
 /* Ensure mosaic window body fills in fullscreen too */
 
-/* Ensure xterm.js fills its container */
+/* Ensure xterm.js fills its container without overflowing */
+.agent-panel-terminal {
+  position: relative;
+  overflow: hidden;
+}
 .agent-panel-terminal .xterm {
   height: 100% !important;
 }
