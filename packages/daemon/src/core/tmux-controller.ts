@@ -116,10 +116,24 @@ export class TmuxController {
     }
 
     args.push(keys);
-    await this.run(...args);
 
-    // Send Enter after the keys
-    await this.run("send-keys", "-t", session, "Enter");
+    try {
+      await this.run(...args);
+      // Send Enter after the keys
+      await this.run("send-keys", "-t", session, "Enter");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Gracefully handle stale/dead sessions — don't throw on these
+      if (
+        message.includes("no current client") ||
+        message.includes("session not found") ||
+        message.includes("can't find")
+      ) {
+        process.stderr.write(`[TmuxController] Ignoring stale session error for ${session}: ${message}\n`);
+        return;
+      }
+      throw error;
+    }
   }
 
   /**
