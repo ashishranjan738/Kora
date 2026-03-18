@@ -1,5 +1,19 @@
 import { useEffect, useState } from "react";
 import { useApi } from "../hooks/useApi";
+import {
+  Modal,
+  Button,
+  TextInput,
+  Select,
+  Stack,
+  Group,
+  Text,
+  Table,
+  Alert,
+  Card,
+  Box,
+} from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 
 interface SessionSettingsDialogProps {
   sessionId: string;
@@ -23,6 +37,7 @@ export function SessionSettingsDialog({
   onClose,
 }: SessionSettingsDialogProps) {
   const api = useApi();
+  const isMobile = useMediaQuery("(max-width: 48em)");
 
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(true);
@@ -33,7 +48,6 @@ export function SessionSettingsDialog({
   const [defaultModel, setDefaultModel] = useState("");
   const [worktreeMode, setWorktreeMode] = useState<string>("");
 
-  // Add custom model form state
   const [newProvider, setNewProvider] = useState("");
   const [newModelId, setNewModelId] = useState("");
   const [newLabel, setNewLabel] = useState("");
@@ -66,7 +80,6 @@ export function SessionSettingsDialog({
     };
   }, []);
 
-  // Load custom models for all providers
   useEffect(() => {
     if (providers.length === 0) return;
     let cancelled = false;
@@ -145,87 +158,86 @@ export function SessionSettingsDialog({
     }
   }
 
-  return (
-    <div className="dialog-overlay" onClick={onClose}>
-      <div
-        className="dialog"
-        style={{ maxWidth: "min(640px, 90vw)", minWidth: 0, width: "min(640px, calc(100vw - 32px))" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2>Session Settings</h2>
+  const providerSelectData = providers.map((p) => ({
+    value: p.id,
+    label: p.name || p.id,
+  }));
 
+  const inputStyles = {
+    input: {
+      backgroundColor: "var(--bg-tertiary)",
+      borderColor: "var(--border-color)",
+      color: "var(--text-primary)",
+    },
+    label: { color: "var(--text-secondary)", fontSize: 13 },
+    description: { color: "var(--text-muted)" },
+  };
+
+  const selectDropdownStyles = {
+    ...inputStyles,
+    dropdown: {
+      backgroundColor: "var(--bg-secondary)",
+      borderColor: "var(--border-color)",
+    },
+    option: { color: "var(--text-primary)" },
+  };
+
+  return (
+    <Modal
+      opened
+      onClose={onClose}
+      title="Session Settings"
+      size="lg"
+      fullScreen={isMobile}
+      centered
+      styles={{
+        header: {
+          backgroundColor: "var(--bg-secondary)",
+          borderBottom: "1px solid var(--border-color)",
+        },
+        body: { backgroundColor: "var(--bg-secondary)" },
+        content: { backgroundColor: "var(--bg-secondary)" },
+        title: { color: "var(--text-primary)", fontWeight: 600, fontSize: 18 },
+        close: { color: "var(--text-secondary)" },
+      }}
+    >
+      <Stack gap="md">
         {error && (
-          <div
-            style={{
-              padding: "8px 12px",
-              marginBottom: 12,
-              borderRadius: 6,
-              backgroundColor: "rgba(248, 81, 73, 0.1)",
-              border: "1px solid var(--accent-red)",
-              color: "var(--accent-red)",
-              fontSize: 13,
-            }}
-          >
+          <Alert color="red" variant="light">
             {error}
-          </div>
+          </Alert>
         )}
 
         {/* Default Provider */}
-        <div className="form-group">
-          <label>Default Provider</label>
-          {loadingProviders ? (
-            <div
-              style={{
-                fontSize: 13,
-                color: "var(--text-muted)",
-                padding: "6px 0",
-              }}
-            >
-              Loading providers...
-            </div>
-          ) : (
-            <select
-              value={defaultProvider}
-              onChange={(e) => setDefaultProvider(e.target.value)}
-            >
-              <option value="">Select provider...</option>
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name || p.id}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
+        <Select
+          label="Default Provider"
+          placeholder={loadingProviders ? "Loading providers..." : "Select provider..."}
+          data={providerSelectData}
+          value={defaultProvider || null}
+          onChange={(v) => setDefaultProvider(v || "")}
+          disabled={loadingProviders}
+          styles={selectDropdownStyles}
+        />
 
         {/* Default Model */}
-        <div className="form-group">
-          <label>Default Model</label>
-          <input
-            value={defaultModel}
-            onChange={(e) => setDefaultModel(e.target.value)}
-            placeholder="e.g. gpt-4o, claude-sonnet-4-20250514"
-          />
-          <div
-            style={{
-              fontSize: 12,
-              color: "var(--text-muted)",
-              marginTop: 4,
-            }}
-          >
-            Default model used when spawning new agents.
-          </div>
-        </div>
+        <TextInput
+          label="Default Model"
+          value={defaultModel}
+          onChange={(e) => setDefaultModel(e.currentTarget.value)}
+          placeholder="e.g. gpt-4o, claude-sonnet-4-20250514"
+          description="Default model used when spawning new agents."
+          styles={inputStyles}
+        />
 
-        {/* Worktree Mode (read-only) */}
-        <div className="form-group">
-          <label>Worktree Mode</label>
-          <div
+        {/* Worktree Mode */}
+        <Box>
+          <Text size="xs" c="var(--text-secondary)" mb={4}>
+            Worktree Mode
+          </Text>
+          <Group
+            gap={8}
+            p="sm"
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "8px 12px",
               backgroundColor: "var(--bg-tertiary)",
               borderRadius: 6,
               border: "1px solid var(--border-color)",
@@ -236,7 +248,13 @@ export function SessionSettingsDialog({
               height="14"
               viewBox="0 0 24 24"
               fill="none"
-              stroke={worktreeMode === "isolated" ? "var(--accent-blue)" : worktreeMode === "shared" ? "var(--accent-purple)" : "var(--text-muted)"}
+              stroke={
+                worktreeMode === "isolated"
+                  ? "var(--accent-blue)"
+                  : worktreeMode === "shared"
+                    ? "var(--accent-purple)"
+                    : "var(--text-muted)"
+              }
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -252,261 +270,204 @@ export function SessionSettingsDialog({
                 </>
               )}
             </svg>
-            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>
-              {worktreeMode === "isolated" ? "Isolated" : worktreeMode === "shared" ? "Shared" : "Not set"}
-            </span>
-          </div>
-          <div
-            style={{
-              fontSize: 12,
-              color: "var(--text-muted)",
-              marginTop: 4,
-            }}
-          >
+            <Text size="sm" fw={500} c="var(--text-primary)">
+              {worktreeMode === "isolated"
+                ? "Isolated"
+                : worktreeMode === "shared"
+                  ? "Shared"
+                  : "Not set"}
+            </Text>
+          </Group>
+          <Text size="xs" c="var(--text-muted)" mt={4}>
             {worktreeMode === "isolated"
               ? "Each agent has its own git worktree branch. Cannot be changed mid-session."
               : worktreeMode === "shared"
                 ? "All agents share the same working directory. Cannot be changed mid-session."
                 : "Worktree mode was not configured for this session."}
-          </div>
-        </div>
+          </Text>
+        </Box>
 
         {/* Custom Models Section */}
-        <div style={{ marginTop: 20 }}>
-          <h3
-            style={{
-              fontSize: 15,
-              fontWeight: 600,
-              color: "var(--text-primary)",
-              marginBottom: 12,
-            }}
-          >
+        <Box mt="sm">
+          <Text fw={600} size="sm" c="var(--text-primary)" mb="sm">
             Custom Models
-          </h3>
+          </Text>
 
-          {/* Existing custom models table */}
           {loadingModels ? (
-            <div
-              style={{
-                fontSize: 13,
-                color: "var(--text-muted)",
-                padding: "12px 0",
-              }}
-            >
+            <Text size="xs" c="var(--text-muted)" py="sm">
               Loading custom models...
-            </div>
+            </Text>
           ) : customModels.length === 0 ? (
-            <div
+            <Text
+              size="xs"
+              c="var(--text-muted)"
+              py="sm"
               style={{
-                fontSize: 13,
-                color: "var(--text-muted)",
-                padding: "12px 0",
                 borderBottom: "1px solid var(--border-color)",
                 marginBottom: 12,
               }}
             >
               No custom models configured.
-            </div>
+            </Text>
           ) : (
-            <div
+            <Box
               style={{
                 border: "1px solid var(--border-color)",
                 borderRadius: 6,
-                overflow: "hidden",
+                overflow: isMobile ? "auto" : "hidden",
                 marginBottom: 16,
               }}
             >
-              <table
-                style={{
-                  width: "100%",
-                  borderCollapse: "collapse",
-                  fontSize: 13,
+              <Table
+                withColumnBorders={false}
+                style={{ fontSize: 13 }}
+                styles={{
+                  th: {
+                    backgroundColor: "var(--bg-tertiary)",
+                    color: "var(--text-secondary)",
+                    fontWeight: 500,
+                    padding: "8px 12px",
+                  },
+                  td: {
+                    padding: "8px 12px",
+                    borderTop: "1px solid var(--border-color)",
+                  },
                 }}
               >
-                <thead>
-                  <tr
-                    style={{
-                      backgroundColor: "var(--bg-tertiary)",
-                      color: "var(--text-secondary)",
-                      textAlign: "left",
-                    }}
-                  >
-                    <th style={{ padding: "8px 12px", fontWeight: 500 }}>
-                      Provider
-                    </th>
-                    <th style={{ padding: "8px 12px", fontWeight: 500 }}>
-                      Model ID
-                    </th>
-                    <th style={{ padding: "8px 12px", fontWeight: 500 }}>
-                      Label
-                    </th>
-                    <th
-                      style={{
-                        padding: "8px 12px",
-                        fontWeight: 500,
-                        width: 60,
-                      }}
-                    />
-                  </tr>
-                </thead>
-                <tbody>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Provider</Table.Th>
+                    <Table.Th>Model ID</Table.Th>
+                    {!isMobile && <Table.Th>Label</Table.Th>}
+                    <Table.Th w={60} />
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
                   {customModels.map((m, i) => (
-                    <tr
-                      key={`${m.provider}-${m.id}-${i}`}
-                      style={{
-                        borderTop: "1px solid var(--border-color)",
-                      }}
-                    >
-                      <td
-                        style={{
-                          padding: "8px 12px",
-                          color: "var(--text-primary)",
-                        }}
-                      >
-                        {m.provider}
-                      </td>
-                      <td
-                        style={{
-                          padding: "8px 12px",
-                          fontFamily: "var(--font-mono)",
-                          color: "var(--text-primary)",
-                          fontSize: 12,
-                        }}
-                      >
-                        {m.id}
-                      </td>
-                      <td
-                        style={{
-                          padding: "8px 12px",
-                          color: "var(--text-secondary)",
-                        }}
-                      >
-                        {m.label}
-                      </td>
-                      <td style={{ padding: "8px 12px" }}>
-                        <button
-                          className="danger"
-                          style={{
-                            padding: "2px 8px",
-                            fontSize: 12,
-                          }}
-                          onClick={() =>
-                            handleDeleteModel(m.id, m.provider)
-                          }
+                    <Table.Tr key={`${m.provider}-${m.id}-${i}`}>
+                      <Table.Td>
+                        <Text c="var(--text-primary)" size="xs">
+                          {m.provider}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text
+                          c="var(--text-primary)"
+                          size="xs"
+                          ff="var(--font-mono)"
+                        >
+                          {m.id}
+                        </Text>
+                      </Table.Td>
+                      {!isMobile && (
+                        <Table.Td>
+                          <Text c="var(--text-secondary)" size="xs">
+                            {m.label}
+                          </Text>
+                        </Table.Td>
+                      )}
+                      <Table.Td>
+                        <Button
+                          color="red"
+                          variant="subtle"
+                          size="compact-xs"
+                          onClick={() => handleDeleteModel(m.id, m.provider)}
                         >
                           Delete
-                        </button>
-                      </td>
-                    </tr>
+                        </Button>
+                      </Table.Td>
+                    </Table.Tr>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </Table.Tbody>
+              </Table>
+            </Box>
           )}
 
           {/* Add Custom Model form */}
-          <div
+          <Card
+            withBorder
+            padding="md"
             style={{
-              border: "1px solid var(--border-color)",
-              borderRadius: 8,
-              padding: 16,
-              backgroundColor: "var(--bg-secondary)",
+              backgroundColor: "var(--bg-primary)",
+              borderColor: "var(--border-color)",
             }}
           >
-            <h4
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                color: "var(--text-primary)",
-                margin: "0 0 12px 0",
-              }}
-            >
+            <Text fw={600} size="xs" c="var(--text-primary)" mb="sm">
               Add Custom Model
-            </h4>
+            </Text>
 
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 1fr",
+                gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
                 gap: 12,
               }}
             >
-              {/* Provider dropdown */}
-              <div className="form-group" style={{ margin: 0 }}>
-                <label style={{ fontSize: 12 }}>Provider</label>
-                {loadingProviders ? (
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "var(--text-muted)",
-                      padding: "6px 0",
-                    }}
-                  >
-                    Loading...
-                  </div>
-                ) : (
-                  <select
-                    value={newProvider}
-                    onChange={(e) => setNewProvider(e.target.value)}
-                  >
-                    <option value="">Select provider...</option>
-                    {providers.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name || p.id}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {/* Model ID */}
-              <div className="form-group" style={{ margin: 0 }}>
-                <label style={{ fontSize: 12 }}>Model ID</label>
-                <input
-                  value={newModelId}
-                  onChange={(e) => setNewModelId(e.target.value)}
-                  placeholder="ft:gpt-4o:my-org:custom:abc123"
-                  style={{ fontSize: 13 }}
-                />
-              </div>
+              <Select
+                label="Provider"
+                size="sm"
+                placeholder={loadingProviders ? "Loading..." : "Select provider..."}
+                data={providerSelectData}
+                value={newProvider || null}
+                onChange={(v) => setNewProvider(v || "")}
+                disabled={loadingProviders}
+                styles={selectDropdownStyles}
+              />
+              <TextInput
+                label="Model ID"
+                size="sm"
+                value={newModelId}
+                onChange={(e) => setNewModelId(e.currentTarget.value)}
+                placeholder="ft:gpt-4o:my-org:custom:abc123"
+                styles={inputStyles}
+              />
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr auto",
-                gap: 12,
-                marginTop: 12,
-                alignItems: "end",
-              }}
-            >
-              {/* Label */}
-              <div className="form-group" style={{ margin: 0 }}>
-                <label style={{ fontSize: 12 }}>Label</label>
-                <input
-                  value={newLabel}
-                  onChange={(e) => setNewLabel(e.target.value)}
-                  placeholder="My Fine-tuned GPT-4o"
-                  style={{ fontSize: 13 }}
-                />
-              </div>
-
-              <button
-                className="primary"
+            <Group mt="sm" gap="sm" align="end" wrap={isMobile ? "wrap" : "nowrap"}>
+              <TextInput
+                label="Label"
+                size="sm"
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.currentTarget.value)}
+                placeholder="My Fine-tuned GPT-4o"
+                style={{ flex: 1 }}
+                styles={inputStyles}
+              />
+              <Button
                 onClick={handleAddModel}
                 disabled={adding || !newProvider || !newModelId.trim()}
-                style={{ height: 36, padding: "0 20px", fontSize: 13 }}
+                loading={adding}
+                styles={{
+                  root: {
+                    backgroundColor: "var(--accent-blue)",
+                    borderColor: "var(--accent-blue)",
+                    minHeight: 36,
+                  },
+                }}
               >
-                {adding ? "Adding..." : "Add"}
-              </button>
-            </div>
-          </div>
-        </div>
+                Add
+              </Button>
+            </Group>
+          </Card>
+        </Box>
 
-        <div className="form-actions" style={{ marginTop: 20 }}>
-          <button onClick={onClose}>Close</button>
-        </div>
-      </div>
-    </div>
+        <Group justify="flex-end" mt="md">
+          <Button
+            variant="default"
+            onClick={onClose}
+            styles={{
+              root: {
+                backgroundColor: "var(--bg-tertiary)",
+                borderColor: "var(--border-color)",
+                color: "var(--text-primary)",
+                minHeight: 44,
+              },
+            }}
+          >
+            Close
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
   );
 }

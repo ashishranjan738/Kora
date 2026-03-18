@@ -1,5 +1,19 @@
 import { useEffect, useState } from "react";
 import { useApi } from "../hooks/useApi";
+import {
+  Modal,
+  Button,
+  TextInput,
+  Select,
+  Textarea,
+  Stack,
+  Group,
+  Radio,
+  Text,
+  Badge,
+  Alert,
+} from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 
 interface SpawnAgentDialogProps {
   sessionId: string;
@@ -22,25 +36,29 @@ interface Provider {
   models: ProviderModel[];
 }
 
-function getTierBadgeClass(tier: string): string {
+function getTierBadgeColor(tier: string): string {
   switch (tier) {
     case "fast":
-      return "badge-blue";
+      return "blue";
     case "balanced":
-      return "badge-yellow";
+      return "yellow";
     case "capable":
-      return "badge-purple";
+      return "grape";
     default:
-      return "badge-blue";
+      return "blue";
   }
 }
 
 function getCliPlaceholder(provider: string): string {
   switch (provider) {
-    case "claude-code": return "e.g. --dangerously-skip-permissions --verbose";
-    case "aider": return "e.g. --no-auto-commits --yes --dark-mode";
-    case "kiro": return "e.g. --verbose --profile default";
-    default: return "e.g. --verbose";
+    case "claude-code":
+      return "e.g. --dangerously-skip-permissions --verbose";
+    case "aider":
+      return "e.g. --no-auto-commits --yes --dark-mode";
+    case "kiro":
+      return "e.g. --verbose --profile default";
+    default:
+      return "e.g. --verbose";
   }
 }
 
@@ -50,6 +68,7 @@ export function SpawnAgentDialog({
   onSpawned,
 }: SpawnAgentDialogProps) {
   const api = useApi();
+  const isMobile = useMediaQuery("(max-width: 48em)");
 
   const [name, setName] = useState("");
   const [role, setRole] = useState<"master" | "worker">("worker");
@@ -89,7 +108,6 @@ export function SpawnAgentDialog({
   const [loadingSessionModels, setLoadingSessionModels] = useState(false);
 
   const staticModels: ProviderModel[] = selectedProvider?.models || [];
-  // Merge static (built-in), discovered, and session (custom) models, avoiding duplicates
   const seenIds = new Set<string>();
   const builtInGroup: ProviderModel[] = [];
   const discoveredGroup: ProviderModel[] = [];
@@ -114,7 +132,11 @@ export function SpawnAgentDialog({
     }
   }
 
-  const models: ProviderModel[] = [...builtInGroup, ...discoveredGroup, ...customGroup];
+  const models: ProviderModel[] = [
+    ...builtInGroup,
+    ...discoveredGroup,
+    ...customGroup,
+  ];
 
   function handleProviderChange(id: string) {
     setProviderId(id);
@@ -124,7 +146,6 @@ export function SpawnAgentDialog({
     if (id) {
       setLoadingSessionModels(true);
 
-      // Fetch session (custom) models
       api
         .getSessionModels(sessionId, id)
         .then((data) => {
@@ -139,12 +160,9 @@ export function SpawnAgentDialog({
           );
           setSessionModels(fetched);
         })
-        .catch(() => {
-          // session models endpoint may not be available
-        })
+        .catch(() => {})
         .finally(() => setLoadingSessionModels(false));
 
-      // Discover models from CLI tools / env / config files
       api
         .discoverModels(id)
         .then((data) => {
@@ -157,9 +175,7 @@ export function SpawnAgentDialog({
           );
           setDiscoveredModels(fetched);
         })
-        .catch(() => {
-          // discovery endpoint may not be available
-        });
+        .catch(() => {});
     }
   }
 
@@ -178,7 +194,9 @@ export function SpawnAgentDialog({
         model: modelId || undefined,
         persona: persona.trim() || undefined,
         initialTask: initialTask.trim() || undefined,
-        extraCliArgs: extraCliArgs.trim() ? extraCliArgs.trim().split(/\s+/) : undefined,
+        extraCliArgs: extraCliArgs.trim()
+          ? extraCliArgs.trim().split(/\s+/)
+          : undefined,
       };
       const result = await api.spawnAgent(sessionId, payload);
       onSpawned(result);
@@ -189,274 +207,233 @@ export function SpawnAgentDialog({
     }
   }
 
-  return (
-    <div className="dialog-overlay" onClick={onClose}>
-      <div
-        className="dialog"
-        style={{ maxWidth: 520, minWidth: 440 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2>Spawn Agent</h2>
+  const providerSelectData = providers.map((p) => ({
+    value: p.id,
+    label: p.name || p.id,
+  }));
 
+  const modelSelectData = models.map((m) => ({
+    value: m.id,
+    label: m.custom
+      ? `[custom] ${m.name || m.id}`
+      : m.discovered
+        ? `[discovered] ${m.name || m.id}`
+        : m.name || m.id,
+  }));
+
+  const selectedModel = models.find((m) => m.id === modelId);
+
+  return (
+    <Modal
+      opened
+      onClose={onClose}
+      title="Spawn Agent"
+      size="lg"
+      fullScreen={isMobile}
+      centered
+      styles={{
+        header: {
+          backgroundColor: "var(--bg-secondary)",
+          borderBottom: "1px solid var(--border-color)",
+        },
+        body: { backgroundColor: "var(--bg-secondary)" },
+        content: { backgroundColor: "var(--bg-secondary)" },
+        title: { color: "var(--text-primary)", fontWeight: 600, fontSize: 18 },
+        close: { color: "var(--text-secondary)" },
+      }}
+    >
+      <Stack gap="sm">
         {error && (
-          <div
-            style={{
-              padding: "8px 12px",
-              marginBottom: 12,
-              borderRadius: 6,
-              backgroundColor: "rgba(248, 81, 73, 0.1)",
-              border: "1px solid var(--accent-red)",
-              color: "var(--accent-red)",
-              fontSize: 13,
-            }}
-          >
+          <Alert color="red" variant="light">
             {error}
-          </div>
+          </Alert>
         )}
 
-        {/* Name */}
-        <div className="form-group">
-          <label>Agent Name *</label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. css-expert"
-            autoFocus
-          />
-        </div>
+        <TextInput
+          label="Agent Name *"
+          value={name}
+          onChange={(e) => setName(e.currentTarget.value)}
+          placeholder="e.g. css-expert"
+          autoFocus
+          styles={{
+            input: {
+              backgroundColor: "var(--bg-tertiary)",
+              borderColor: "var(--border-color)",
+              color: "var(--text-primary)",
+            },
+            label: { color: "var(--text-secondary)", fontSize: 13 },
+          }}
+        />
 
-        {/* Role */}
-        <div className="form-group">
-          <label>Role</label>
-          <div style={{ display: "flex", gap: 16, marginTop: 4 }}>
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                fontSize: 14,
+        <Radio.Group label="Role" value={role} onChange={(v) => setRole(v as "master" | "worker")}>
+          <Group mt={4}>
+            <Radio value="master" label="Master" styles={{ label: { color: "var(--text-primary)" } }} />
+            <Radio value="worker" label="Worker" styles={{ label: { color: "var(--text-primary)" } }} />
+          </Group>
+        </Radio.Group>
+
+        <Select
+          label="Provider"
+          placeholder={loadingProviders ? "Loading providers..." : "Select provider..."}
+          data={providerSelectData}
+          value={providerId || null}
+          onChange={(v) => handleProviderChange(v || "")}
+          disabled={loadingProviders}
+          styles={{
+            input: {
+              backgroundColor: "var(--bg-tertiary)",
+              borderColor: "var(--border-color)",
+              color: "var(--text-primary)",
+            },
+            label: { color: "var(--text-secondary)", fontSize: 13 },
+            dropdown: {
+              backgroundColor: "var(--bg-secondary)",
+              borderColor: "var(--border-color)",
+            },
+            option: { color: "var(--text-primary)" },
+          }}
+        />
+
+        <Select
+          label="Model"
+          placeholder={
+            providerId
+              ? loadingSessionModels
+                ? "Loading models..."
+                : models.length === 0
+                  ? "No models available"
+                  : "Select model..."
+              : "Select a provider first"
+          }
+          data={modelSelectData}
+          value={modelId || null}
+          onChange={(v) => setModelId(v || "")}
+          disabled={!providerId || (models.length === 0 && !loadingSessionModels)}
+          searchable
+          styles={{
+            input: {
+              backgroundColor: "var(--bg-tertiary)",
+              borderColor: "var(--border-color)",
+              color: "var(--text-primary)",
+            },
+            label: { color: "var(--text-secondary)", fontSize: 13 },
+            dropdown: {
+              backgroundColor: "var(--bg-secondary)",
+              borderColor: "var(--border-color)",
+            },
+            option: { color: "var(--text-primary)" },
+          }}
+        />
+
+        {selectedModel && (
+          <Group gap={8}>
+            {selectedModel.custom && (
+              <Badge color="yellow" variant="light" size="sm">
+                custom
+              </Badge>
+            )}
+            {selectedModel.discovered && (
+              <Badge color="blue" variant="light" size="sm">
+                discovered
+              </Badge>
+            )}
+            {selectedModel.tier && (
+              <Badge color={getTierBadgeColor(selectedModel.tier)} variant="light" size="sm">
+                {selectedModel.tier}
+              </Badge>
+            )}
+            {selectedModel.pricing && (
+              <Text size="xs" c="var(--text-muted)">
+                ${selectedModel.pricing.input?.toFixed(2) ?? "?"}/1M in /{" "}
+                ${selectedModel.pricing.output?.toFixed(2) ?? "?"}/1M out
+              </Text>
+            )}
+          </Group>
+        )}
+
+        <TextInput
+          label="CLI Flags (optional)"
+          value={extraCliArgs}
+          onChange={(e) => setExtraCliArgs(e.currentTarget.value)}
+          placeholder={getCliPlaceholder(providerId)}
+          description="Space-separated flags passed directly to the CLI."
+          styles={{
+            input: {
+              backgroundColor: "var(--bg-tertiary)",
+              borderColor: "var(--border-color)",
+              color: "var(--text-primary)",
+              fontFamily: "var(--font-mono)",
+              fontSize: 13,
+            },
+            label: { color: "var(--text-secondary)", fontSize: 13 },
+            description: { color: "var(--text-muted)" },
+          }}
+        />
+
+        <Textarea
+          label="Persona (optional)"
+          value={persona}
+          onChange={(e) => setPersona(e.currentTarget.value)}
+          placeholder="Describe the agent's persona or system instructions..."
+          rows={3}
+          autosize
+          minRows={2}
+          maxRows={5}
+          styles={{
+            input: {
+              backgroundColor: "var(--bg-tertiary)",
+              borderColor: "var(--border-color)",
+              color: "var(--text-primary)",
+            },
+            label: { color: "var(--text-secondary)", fontSize: 13 },
+          }}
+        />
+
+        <Textarea
+          label="Initial Task (optional)"
+          value={initialTask}
+          onChange={(e) => setInitialTask(e.currentTarget.value)}
+          placeholder="First message to send after spawning..."
+          rows={2}
+          autosize
+          minRows={2}
+          maxRows={4}
+          styles={{
+            input: {
+              backgroundColor: "var(--bg-tertiary)",
+              borderColor: "var(--border-color)",
+              color: "var(--text-primary)",
+            },
+            label: { color: "var(--text-secondary)", fontSize: 13 },
+          }}
+        />
+
+        <Group justify="flex-end" mt="md">
+          <Button variant="default" onClick={onClose} disabled={spawning}
+            styles={{
+              root: {
+                backgroundColor: "var(--bg-tertiary)",
+                borderColor: "var(--border-color)",
                 color: "var(--text-primary)",
-                cursor: "pointer",
-              }}
-            >
-              <input
-                type="radio"
-                name="role"
-                value="master"
-                checked={role === "master"}
-                onChange={() => setRole("master")}
-              />
-              Master
-            </label>
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                fontSize: 14,
-                color: "var(--text-primary)",
-                cursor: "pointer",
-              }}
-            >
-              <input
-                type="radio"
-                name="role"
-                value="worker"
-                checked={role === "worker"}
-                onChange={() => setRole("worker")}
-              />
-              Worker
-            </label>
-          </div>
-        </div>
-
-        {/* Provider */}
-        <div className="form-group">
-          <label>Provider</label>
-          {loadingProviders ? (
-            <div
-              style={{
-                fontSize: 13,
-                color: "var(--text-muted)",
-                padding: "6px 0",
-              }}
-            >
-              Loading providers...
-            </div>
-          ) : (
-            <select
-              value={providerId}
-              onChange={(e) => handleProviderChange(e.target.value)}
-            >
-              <option value="">Select provider...</option>
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name || p.id}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        {/* Model */}
-        <div className="form-group">
-          <label>Model</label>
-          <select
-            value={modelId}
-            onChange={(e) => setModelId(e.target.value)}
-            disabled={!providerId || (models.length === 0 && !loadingSessionModels)}
+                minHeight: 44,
+              },
+            }}
           >
-            <option value="">
-              {providerId
-                ? loadingSessionModels
-                  ? "Loading models..."
-                  : models.length === 0
-                    ? "No models available"
-                    : "Select model..."
-                : "Select a provider first"}
-            </option>
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.custom ? `[custom] ${m.name || m.id}` : m.discovered ? `[discovered] ${m.name || m.id}` : (m.name || m.id)}
-              </option>
-            ))}
-          </select>
-
-          {/* Model details */}
-          {modelId && (
-            <div style={{ marginTop: 8 }}>
-              {(() => {
-                const model = models.find((m) => m.id === modelId);
-                if (!model) return null;
-                return (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    {model.custom && (
-                      <span
-                        className="badge"
-                        style={{
-                          background: "rgba(210, 153, 34, 0.15)",
-                          color: "var(--accent-orange, #d29922)",
-                          fontSize: 11,
-                          padding: "2px 6px",
-                        }}
-                      >
-                        custom
-                      </span>
-                    )}
-                    {model.discovered && (
-                      <span
-                        className="badge"
-                        style={{
-                          background: "rgba(56, 139, 253, 0.15)",
-                          color: "var(--accent-blue, #388bfd)",
-                          fontSize: 11,
-                          padding: "2px 6px",
-                        }}
-                      >
-                        discovered
-                      </span>
-                    )}
-                    {model.tier && (
-                      <span
-                        className={`badge ${getTierBadgeClass(model.tier)}`}
-                      >
-                        {model.tier}
-                      </span>
-                    )}
-                    {model.pricing && (
-                      <span
-                        style={{
-                          fontSize: 12,
-                          color: "var(--text-muted)",
-                        }}
-                      >
-                        ${model.pricing.input?.toFixed(2) ?? "?"}/1M in
-                        {" / "}${model.pricing.output?.toFixed(2) ?? "?"}/1M out
-                      </span>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-        </div>
-
-        {/* CLI Flags */}
-        <div className="form-group">
-          <label>CLI Flags (optional)</label>
-          <input
-            value={extraCliArgs}
-            onChange={(e) => setExtraCliArgs(e.target.value)}
-            placeholder={getCliPlaceholder(providerId)}
-            style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}
-          />
-          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-            Space-separated flags passed directly to the CLI. Example: --dangerously-skip-permissions --verbose
-          </div>
-        </div>
-
-        {/* Persona */}
-        <div className="form-group">
-          <label>Persona (optional)</label>
-          <textarea
-            value={persona}
-            onChange={(e) => setPersona(e.target.value)}
-            placeholder="Describe the agent's persona or system instructions..."
-            rows={3}
-            style={{
-              width: "100%",
-              fontFamily: "inherit",
-              fontSize: 14,
-              padding: "6px 12px",
-              border: "1px solid var(--border-color)",
-              borderRadius: 6,
-              backgroundColor: "var(--bg-tertiary)",
-              color: "var(--text-primary)",
-              outline: "none",
-              resize: "vertical",
-            }}
-          />
-        </div>
-
-        {/* Initial Task */}
-        <div className="form-group">
-          <label>Initial Task (optional)</label>
-          <textarea
-            value={initialTask}
-            onChange={(e) => setInitialTask(e.target.value)}
-            placeholder="First message to send after spawning..."
-            rows={2}
-            style={{
-              width: "100%",
-              fontFamily: "inherit",
-              fontSize: 14,
-              padding: "6px 12px",
-              border: "1px solid var(--border-color)",
-              borderRadius: 6,
-              backgroundColor: "var(--bg-tertiary)",
-              color: "var(--text-primary)",
-              outline: "none",
-              resize: "vertical",
-            }}
-          />
-        </div>
-
-        <div className="form-actions">
-          <button onClick={onClose} disabled={spawning}>
             Cancel
-          </button>
-          <button className="primary" onClick={handleSpawn} disabled={spawning}>
+          </Button>
+          <Button onClick={handleSpawn} disabled={spawning} loading={spawning}
+            styles={{
+              root: {
+                backgroundColor: "var(--accent-blue)",
+                borderColor: "var(--accent-blue)",
+                minHeight: 44,
+              },
+            }}
+          >
             {spawning ? "Spawning..." : "Spawn Agent"}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
   );
 }

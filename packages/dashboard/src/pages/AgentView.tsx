@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { AgentTerminal } from "../components/AgentTerminal";
 import { ReplaceAgentDialog } from "../components/ReplaceAgentDialog";
+import { useMediaQuery } from "@mantine/hooks";
 
 const AUTONOMY_LABELS = ["Manual", "Suggest", "Auto-confirm", "Full Auto"];
 
@@ -36,6 +37,7 @@ export function AgentView() {
   }>();
   const navigate = useNavigate();
   const api = useApi();
+  const isMobile = useMediaQuery("(max-width: 48em)");
   const [agent, setAgent] = useState<any>(null);
   const [session, setSession] = useState<any>(null);
   const [message, setMessage] = useState("");
@@ -230,38 +232,76 @@ export function AgentView() {
       </nav>
 
       {/* Agent Header Bar */}
-      <div className="agent-header-bar">
-        <span className={`agent-header-dot ${statusClass}`} />
-        <span className="agent-name-large">{agentName}</span>
-        <span className="badge-role-compact">{agentRole}</span>
-        <span className="provider-model">{agentProvider} / {agentModel}</span>
-        <span className="header-separator" />
-        <span className="activity-status">{agentStatus}</span>
-        <div className="header-stats">
-          <span className="header-stat" title="Uptime">&#9201; {uptime}</span>
-          <span className="header-stat" title="Tokens In">&#8595; {formatTokens(tokensIn)}</span>
-          <span className="header-stat" title="Tokens Out">&#8593; {formatTokens(tokensOut)}</span>
-          <span className="header-stat cost" title="Cost">${typeof totalCost === "number" ? totalCost.toFixed(2) : "0.00"}</span>
+      {isMobile ? (
+        <div className="agent-header-bar" style={{ flexDirection: "column", gap: 6, alignItems: "stretch" }}>
+          {/* Row 1: identity + activity + actions */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span className={`agent-header-dot ${statusClass}`} />
+            <span className="agent-name-large" style={{ fontSize: 15 }}>{agentName}</span>
+            <span className="badge-role-compact">{agentRole}</span>
+            <span className="activity-status">{agentStatus}</span>
+            <div style={{ flex: 1 }} />
+            <div className="header-actions">
+              <button
+                title="Open in VS Code"
+                onClick={async () => {
+                  showToast("Opening VS Code...");
+                  try { await api.openVscode(sessionId!, agentId!); } catch (err: any) { showToast(`Failed: ${err.message}`); }
+                }}
+              >&#128193;</button>
+              <button title="Replace Agent" onClick={() => setShowReplaceDialog(true)}>&#8635;</button>
+              <button
+                title="Toggle Info Panel (Ctrl+I)"
+                onClick={() => setShowInfo(!showInfo)}
+                className={showInfo ? "active" : ""}
+              >i</button>
+              <button title="Remove Agent" className="danger" onClick={() => setShowConfirmRemove(true)}>&#10005;</button>
+            </div>
+          </div>
+          {/* Row 2: provider/model + stats */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12 }}>
+            <span className="provider-model" style={{ fontSize: 11 }}>{agentProvider} / {agentModel}</span>
+            <span className="header-separator" />
+            <span className="header-stat" title="Uptime">&#9201; {uptime}</span>
+            <span className="header-stat" title="Tokens In">&#8595; {formatTokens(tokensIn)}</span>
+            <span className="header-stat" title="Tokens Out">&#8593; {formatTokens(tokensOut)}</span>
+            <span className="header-stat cost" title="Cost">${typeof totalCost === "number" ? totalCost.toFixed(2) : "0.00"}</span>
+          </div>
         </div>
-        <div className="header-actions">
-          <button
-            title="Open in VS Code"
-            onClick={async () => {
-              showToast("Opening VS Code...");
-              try { await api.openVscode(sessionId!, agentId!); } catch (err: any) { showToast(`Failed: ${err.message}`); }
-            }}
-          >&#128193;</button>
-          <button title="Replace Agent" onClick={() => setShowReplaceDialog(true)}>&#8635;</button>
-          <button
-            title="Toggle Info Panel (Ctrl+I)"
-            onClick={() => setShowInfo(!showInfo)}
-            className={showInfo ? "active" : ""}
-          >
-            i
-          </button>
-          <button title="Remove Agent" className="danger" onClick={() => setShowConfirmRemove(true)}>&#10005;</button>
+      ) : (
+        <div className="agent-header-bar">
+          <span className={`agent-header-dot ${statusClass}`} />
+          <span className="agent-name-large">{agentName}</span>
+          <span className="badge-role-compact">{agentRole}</span>
+          <span className="provider-model">{agentProvider} / {agentModel}</span>
+          <span className="header-separator" />
+          <span className="activity-status">{agentStatus}</span>
+          <div className="header-stats">
+            <span className="header-stat" title="Uptime">&#9201; {uptime}</span>
+            <span className="header-stat" title="Tokens In">&#8595; {formatTokens(tokensIn)}</span>
+            <span className="header-stat" title="Tokens Out">&#8593; {formatTokens(tokensOut)}</span>
+            <span className="header-stat cost" title="Cost">${typeof totalCost === "number" ? totalCost.toFixed(2) : "0.00"}</span>
+          </div>
+          <div className="header-actions">
+            <button
+              title="Open in VS Code"
+              onClick={async () => {
+                showToast("Opening VS Code...");
+                try { await api.openVscode(sessionId!, agentId!); } catch (err: any) { showToast(`Failed: ${err.message}`); }
+              }}
+            >&#128193;</button>
+            <button title="Replace Agent" onClick={() => setShowReplaceDialog(true)}>&#8635;</button>
+            <button
+              title="Toggle Info Panel (Ctrl+I)"
+              onClick={() => setShowInfo(!showInfo)}
+              className={showInfo ? "active" : ""}
+            >
+              i
+            </button>
+            <button title="Remove Agent" className="danger" onClick={() => setShowConfirmRemove(true)}>&#10005;</button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Terminal Section */}
       <div className="terminal-section" ref={terminalRef} tabIndex={-1}>

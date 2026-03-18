@@ -3,23 +3,42 @@ import { useSessionStore } from "../stores/sessionStore";
 import { useThemeStore } from "../stores/themeStore";
 import { useEffect, useCallback } from "react";
 import { useWebSocket } from "../hooks/useWebSocket";
+import {
+  Group,
+  Burger,
+  Drawer,
+  Stack,
+  Select,
+  ActionIcon,
+  Text,
+  Box,
+} from "@mantine/core";
+import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 
 export function Navbar() {
   const { sessions, fetchSessions } = useSessionStore();
   const { resolved, setMode, mode } = useThemeStore();
   const navigate = useNavigate();
   const location = useLocation();
+  const [drawerOpened, { toggle: toggleDrawer, close: closeDrawer }] =
+    useDisclosure(false);
+  const isMobile = useMediaQuery("(max-width: 48em)");
 
   // Derive selected session from URL path
   const pathMatch = location.pathname.match(/^\/session\/([^/]+)/);
   const selectedSession = pathMatch ? pathMatch[1] : "";
 
-  const handleWsEvent = useCallback((event: any) => {
-    // Handle real-time updates if needed
-    if (event.type === "session_created" || event.type === "session_removed") {
-      fetchSessions();
-    }
-  }, [fetchSessions]);
+  const handleWsEvent = useCallback(
+    (event: any) => {
+      if (
+        event.type === "session_created" ||
+        event.type === "session_removed"
+      ) {
+        fetchSessions();
+      }
+    },
+    [fetchSessions]
+  );
 
   const { connected } = useWebSocket(handleWsEvent);
 
@@ -27,82 +46,210 @@ export function Navbar() {
     fetchSessions();
   }, [fetchSessions]);
 
-  function onSessionChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const val = e.target.value;
+  function onSessionChange(val: string | null) {
     if (val) {
       navigate(`/session/${val}`);
     } else {
       navigate("/");
     }
+    closeDrawer();
   }
 
-  return (
-    <nav
+  function cycleTheme() {
+    const next =
+      mode === "system" ? "dark" : mode === "dark" ? "light" : "system";
+    setMode(next);
+  }
+
+  const sessionSelectData = sessions.map((s) => ({
+    value: s.id,
+    label: s.name || s.id,
+  }));
+
+  // Connection status indicator
+  const connectionStatus = (
+    <Group gap={6}>
+      <span className={`status-dot ${connected ? "green" : "red"}`} />
+      <Text size="xs" c="var(--text-secondary)">
+        {connected ? "Connected" : "Disconnected"}
+      </Text>
+    </Group>
+  );
+
+  // Theme toggle button
+  const themeToggle = (
+    <ActionIcon
+      variant="default"
+      onClick={cycleTheme}
+      title={`Theme: ${mode} (${resolved})`}
+      size="lg"
       style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "12px 24px",
-        backgroundColor: "var(--bg-secondary)",
-        borderBottom: "1px solid var(--border-color)",
+        border: "1px solid var(--border-color)",
+        backgroundColor: "var(--bg-tertiary)",
+        color: "var(--text-secondary)",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <Link
-          to="/"
-          style={{
-            fontSize: 18,
-            fontWeight: 600,
+      {resolved === "dark" ? "\u263E" : "\u2600"}
+    </ActionIcon>
+  );
+
+  // Session selector
+  const sessionSelector = (
+    <Select
+      placeholder="Select session..."
+      data={sessionSelectData}
+      value={selectedSession || null}
+      onChange={onSessionChange}
+      clearable
+      searchable
+      size={isMobile ? "md" : "sm"}
+      style={{ minWidth: isMobile ? "100%" : 200 }}
+      styles={{
+        input: {
+          backgroundColor: "var(--bg-tertiary)",
+          borderColor: "var(--border-color)",
+          color: "var(--text-primary)",
+        },
+        dropdown: {
+          backgroundColor: "var(--bg-secondary)",
+          borderColor: "var(--border-color)",
+        },
+        option: {
+          color: "var(--text-primary)",
+        },
+      }}
+    />
+  );
+
+  // Settings link
+  const settingsLink = (
+    <Link
+      to="/settings"
+      onClick={closeDrawer}
+      style={{ color: "var(--accent-blue)", textDecoration: "none" }}
+    >
+      Settings
+    </Link>
+  );
+
+  return (
+    <>
+      <nav
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: isMobile ? "10px 12px" : "12px 24px",
+          backgroundColor: "var(--bg-secondary)",
+          borderBottom: "1px solid var(--border-color)",
+          minHeight: 52,
+        }}
+      >
+        {/* Left side: Logo + session selector (desktop) */}
+        <Group gap={isMobile ? 8 : 16} align="center">
+          <Link
+            to="/"
+            style={{
+              fontSize: 18,
+              fontWeight: 600,
+              color: "var(--text-primary)",
+              textDecoration: "none",
+            }}
+          >
+            Kora
+          </Link>
+
+          {!isMobile && sessionSelector}
+        </Group>
+
+        {/* Right side: desktop nav items or mobile burger */}
+        {isMobile ? (
+          <Group gap={8} align="center">
+            {/* Show connection dot on mobile too */}
+            <span
+              className={`status-dot ${connected ? "green" : "red"}`}
+            />
+            {themeToggle}
+            <Burger
+              opened={drawerOpened}
+              onClick={toggleDrawer}
+              size="sm"
+              color="var(--text-primary)"
+            />
+          </Group>
+        ) : (
+          <Group gap={16} align="center">
+            {connectionStatus}
+            {themeToggle}
+            {settingsLink}
+          </Group>
+        )}
+      </nav>
+
+      {/* Mobile drawer */}
+      <Drawer
+        opened={drawerOpened}
+        onClose={closeDrawer}
+        title="Kora"
+        position="right"
+        size="280"
+        padding="md"
+        styles={{
+          header: {
+            backgroundColor: "var(--bg-secondary)",
+            borderBottom: "1px solid var(--border-color)",
+          },
+          body: {
+            backgroundColor: "var(--bg-primary)",
+          },
+          content: {
+            backgroundColor: "var(--bg-primary)",
+          },
+          title: {
             color: "var(--text-primary)",
-            textDecoration: "none",
-          }}
-        >
-          Kora
-        </Link>
-
-        <select
-          value={selectedSession}
-          onChange={onSessionChange}
-          style={{ minWidth: 180 }}
-        >
-          <option value="">Select session...</option>
-          {sessions.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name || s.id}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-          <span
-            className={`status-dot ${connected ? "green" : "red"}`}
-          />
-          {connected ? "Connected" : "Disconnected"}
-        </span>
-        <button
-          onClick={() => {
-            // Cycle: system -> dark -> light -> system
-            const next = mode === "system" ? "dark" : mode === "dark" ? "light" : "system";
-            setMode(next);
-          }}
-          title={`Theme: ${mode} (${resolved})`}
-          style={{
-            background: "none",
-            border: "1px solid var(--border-color)",
-            borderRadius: 6,
-            padding: "4px 8px",
-            cursor: "pointer",
-            fontSize: 16,
-            lineHeight: 1,
+            fontWeight: 600,
+          },
+          close: {
             color: "var(--text-secondary)",
-          }}
-        >
-          {resolved === "dark" ? "\u263E" : "\u2600"}
-        </button>
-        <Link to="/settings">Settings</Link>
-      </div>
-    </nav>
+          },
+        }}
+      >
+        <Stack gap="md">
+          <Box>
+            <Text size="xs" c="var(--text-muted)" mb={4}>
+              Session
+            </Text>
+            {sessionSelector}
+          </Box>
+
+          <Box>
+            <Text size="xs" c="var(--text-muted)" mb={4}>
+              Status
+            </Text>
+            {connectionStatus}
+          </Box>
+
+          <Box>
+            <Text size="xs" c="var(--text-muted)" mb={4}>
+              Theme
+            </Text>
+            <Group gap={8}>
+              {themeToggle}
+              <Text size="sm" c="var(--text-secondary)">
+                {mode === "system"
+                  ? "System"
+                  : mode === "dark"
+                    ? "Dark"
+                    : "Light"}
+              </Text>
+            </Group>
+          </Box>
+
+          <Box pt="sm" style={{ borderTop: "1px solid var(--border-color)" }}>
+            {settingsLink}
+          </Box>
+        </Stack>
+      </Drawer>
+    </>
   );
 }
