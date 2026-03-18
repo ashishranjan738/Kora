@@ -1,5 +1,28 @@
 import { useState, useEffect, useCallback } from "react";
 import { useApi } from "../hooks/useApi";
+import {
+  Modal,
+  Button,
+  TextInput,
+  Textarea,
+  Select,
+  Stack,
+  Group,
+  Text,
+  Badge,
+  Card,
+  Paper,
+  SimpleGrid,
+  ActionIcon,
+  ScrollArea,
+  Checkbox,
+  Alert,
+  Box,
+  Tooltip,
+  Divider,
+} from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
+import { MarkdownText } from "./MarkdownText";
 
 interface TaskComment {
   id: string;
@@ -27,14 +50,24 @@ interface TaskBoardProps {
   sessionId: string;
 }
 
-const COLUMNS = ["pending", "in-progress", "review", "done"];
+const COLUMNS = ["pending", "in-progress", "review", "done"] as const;
+type ColumnId = (typeof COLUMNS)[number];
+
 const COLUMN_LABELS: Record<string, string> = {
   pending: "Pending",
   "in-progress": "In Progress",
   review: "Review",
   done: "Done",
 };
+
 const COLUMN_COLORS: Record<string, string> = {
+  pending: "gray",
+  "in-progress": "blue",
+  review: "yellow",
+  done: "green",
+};
+
+const COLUMN_CSS_COLORS: Record<string, string> = {
   pending: "var(--text-muted)",
   "in-progress": "var(--accent-blue)",
   review: "var(--accent-yellow)",
@@ -54,8 +87,266 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
+/* ------------------------------------------------------------------ */
+/* Task Card                                                           */
+/* ------------------------------------------------------------------ */
+function TaskCard({
+  task,
+  agents,
+  isDragging,
+  onDragStart,
+  onClick,
+  onDelete,
+}: {
+  task: Task;
+  agents: { id: string; name: string }[];
+  isDragging: boolean;
+  onDragStart: () => void;
+  onClick: () => void;
+  onDelete: () => void;
+}) {
+  const assigneeName = task.assignedTo
+    ? agents.find((a) => a.id === task.assignedTo)?.name || task.assignedTo
+    : null;
+
+  return (
+    <Card
+      draggable
+      onDragStart={onDragStart}
+      onClick={(e) => {
+        if (!(e.target as HTMLElement).closest("button")) onClick();
+      }}
+      withBorder
+      padding="sm"
+      style={{
+        cursor: "pointer",
+        opacity: isDragging ? 0.5 : task.blocked ? 0.7 : 1,
+        borderColor: isDragging
+          ? "var(--accent-blue)"
+          : "var(--border-color)",
+        backgroundColor: "var(--bg-primary)",
+        transition: "border-color 0.15s, box-shadow 0.15s, opacity 0.15s",
+      }}
+      className="task-card-hover"
+    >
+      {/* Title + delete */}
+      <Group justify="space-between" align="flex-start" gap={4} wrap="nowrap">
+        <Text
+          fw={600}
+          size="sm"
+          c="var(--text-primary)"
+          lineClamp={2}
+          style={{ flex: 1 }}
+        >
+          {task.title}
+        </Text>
+        <ActionIcon
+          variant="subtle"
+          color="red"
+          size="xs"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          title="Delete task"
+          style={{ opacity: 0.4, flexShrink: 0 }}
+          className="task-delete-btn"
+        >
+          <span style={{ fontSize: 14, lineHeight: 1 }}>&times;</span>
+        </ActionIcon>
+      </Group>
+
+      {/* Blocked badge */}
+      {task.blocked && (
+        <Badge
+          color="yellow"
+          variant="light"
+          size="xs"
+          mt={4}
+          leftSection={<span style={{ fontSize: 10 }}>&#128274;</span>}
+        >
+          Blocked
+        </Badge>
+      )}
+
+      {/* Description — consistent 2-line clamp */}
+      {task.description && (
+        <Text size="xs" c="var(--text-secondary)" lineClamp={2} mt={4} lh={1.4}>
+          {task.description}
+        </Text>
+      )}
+
+      {/* Footer: assignee, comments, time */}
+      <Group justify="space-between" align="center" mt="xs" gap={4}>
+        {assigneeName ? (
+          <Badge variant="light" color="blue" size="xs">
+            {assigneeName}
+          </Badge>
+        ) : (
+          <Text size="xs" c="var(--text-muted)">
+            Unassigned
+          </Text>
+        )}
+        <Group gap={6}>
+          {task.comments && task.comments.length > 0 && (
+            <Badge variant="light" color="blue" size="xs">
+              {task.comments.length}
+            </Badge>
+          )}
+          <Text size="xs" c="var(--text-muted)">
+            {timeAgo(task.createdAt)}
+          </Text>
+        </Group>
+      </Group>
+
+      {/* Task ID — show on hover via CSS */}
+      <Tooltip label={`#${task.id}`} position="bottom">
+        <Text
+          size="xs"
+          ff="var(--font-mono)"
+          c="var(--text-muted)"
+          mt={4}
+          className="task-id-text"
+          style={{ fontSize: 10, opacity: 0 }}
+          onClick={(e) => {
+            e.stopPropagation();
+            navigator.clipboard.writeText(task.id);
+          }}
+        >
+          #{task.id.slice(0, 8)}
+        </Text>
+      </Tooltip>
+    </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Column                                                              */
+/* ------------------------------------------------------------------ */
+function TaskColumn({
+  column,
+  tasks,
+  agents,
+  draggedTaskId,
+  dragOverColumn,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onTaskClick,
+  onTaskDelete,
+  onAddClick,
+}: {
+  column: string;
+  tasks: Task[];
+  agents: { id: string; name: string }[];
+  draggedTaskId: string | null;
+  dragOverColumn: string | null;
+  onDragStart: (id: string) => void;
+  onDragOver: (e: React.DragEvent, col: string) => void;
+  onDragLeave: () => void;
+  onDrop: (e: React.DragEvent, col: string) => void;
+  onTaskClick: (id: string) => void;
+  onTaskDelete: (id: string) => void;
+  onAddClick: () => void;
+}) {
+  const isDragOver = dragOverColumn === column;
+
+  return (
+    <Paper
+      withBorder
+      p="sm"
+      style={{
+        backgroundColor: isDragOver
+          ? "rgba(88,166,255,0.06)"
+          : "var(--bg-secondary)",
+        borderColor: isDragOver ? "var(--accent-blue)" : "var(--border-color)",
+        borderStyle: isDragOver ? "dashed" : "solid",
+        borderWidth: isDragOver ? 2 : 1,
+        minHeight: 400,
+        display: "flex",
+        flexDirection: "column",
+        transition: "border-color 0.15s, background-color 0.15s",
+      }}
+      onDragOver={(e) => onDragOver(e, column)}
+      onDragLeave={onDragLeave}
+      onDrop={(e) => onDrop(e, column)}
+    >
+      {/* Column header */}
+      <Group
+        justify="space-between"
+        align="center"
+        mb="sm"
+        pb="xs"
+        style={{
+          borderBottom: `2px solid ${COLUMN_CSS_COLORS[column]}`,
+        }}
+      >
+        <Group gap={8} align="center">
+          <Box
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius: "50%",
+              background: COLUMN_CSS_COLORS[column],
+              flexShrink: 0,
+            }}
+          />
+          <Text fw={600} size="sm" c="var(--text-primary)">
+            {COLUMN_LABELS[column]}
+          </Text>
+          <Badge
+            size="sm"
+            variant="light"
+            color={COLUMN_COLORS[column]}
+          >
+            {tasks.length}
+          </Badge>
+        </Group>
+        {column === "pending" && (
+          <ActionIcon
+            variant="subtle"
+            size="sm"
+            onClick={onAddClick}
+            title="Add task"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            <span style={{ fontSize: 16 }}>+</span>
+          </ActionIcon>
+        )}
+      </Group>
+
+      {/* Cards */}
+      <Stack gap="xs" style={{ flex: 1 }}>
+        {tasks.map((task) => (
+          <TaskCard
+            key={task.id}
+            task={task}
+            agents={agents}
+            isDragging={draggedTaskId === task.id}
+            onDragStart={() => onDragStart(task.id)}
+            onClick={() => onTaskClick(task.id)}
+            onDelete={() => onTaskDelete(task.id)}
+          />
+        ))}
+        {tasks.length === 0 && (
+          <Text size="xs" c="var(--text-muted)" ta="center" py="xl" fs="italic">
+            No tasks
+          </Text>
+        )}
+      </Stack>
+    </Paper>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Main TaskBoard                                                      */
+/* ------------------------------------------------------------------ */
 export function TaskBoard({ sessionId }: TaskBoardProps) {
   const api = useApi();
+  const isMobile = useMediaQuery("(max-width: 48em)");
+  const isTablet = useMediaQuery("(max-width: 62em)");
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
@@ -67,6 +358,7 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const [newDependencies, setNewDependencies] = useState<string[]>([]);
+  const [activeCol, setActiveCol] = useState<ColumnId>("pending");
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -81,7 +373,10 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
     try {
       const data = await api.getAgents(sessionId);
       setAgents(
-        (data.agents || []).map((a: any) => ({ id: a.id, name: a.config?.name || a.name || a.id }))
+        (data.agents || []).map((a: any) => ({
+          id: a.id,
+          name: a.config?.name || a.name || a.id,
+        }))
       );
     } catch {}
   }, [sessionId]);
@@ -91,7 +386,6 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
     fetchAgents();
   }, [fetchTasks, fetchAgents]);
 
-  // Auto-refresh every 5s
   useEffect(() => {
     const interval = setInterval(fetchTasks, 5000);
     return () => clearInterval(interval);
@@ -109,15 +403,24 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
     setDragOverColumn(null);
     if (!draggedTaskId) return;
     const task = tasks.find((t) => t.id === draggedTaskId);
-    if (!task || task.status === column) { setDraggedTaskId(null); return; }
-
-    if (task.blocked && column === "in-progress") {
-      alert(`Cannot start: ${task.blockedReason || "This task has incomplete dependencies"}`);
+    if (!task || task.status === column) {
       setDraggedTaskId(null);
       return;
     }
 
-    setTasks((prev) => prev.map((t) => (t.id === draggedTaskId ? { ...t, status: column } : t)));
+    if (task.blocked && column === "in-progress") {
+      alert(
+        `Cannot start: ${task.blockedReason || "This task has incomplete dependencies"}`
+      );
+      setDraggedTaskId(null);
+      return;
+    }
+
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === draggedTaskId ? { ...t, status: column } : t
+      )
+    );
     try {
       await api.updateTask(sessionId, draggedTaskId, { status: column });
     } catch {
@@ -133,7 +436,8 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
         title: newTitle.trim(),
         description: newDescription.trim(),
         assignedTo: newAssignee || undefined,
-        dependencies: newDependencies.length > 0 ? newDependencies : undefined,
+        dependencies:
+          newDependencies.length > 0 ? newDependencies : undefined,
       });
       setNewTitle("");
       setNewDescription("");
@@ -167,10 +471,16 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
     const task = tasks.find((t) => t.id === taskId);
     if (!task || task.status === newStatus) return;
     if (task.blocked && newStatus === "in-progress") {
-      alert(`Cannot start: ${task.blockedReason || "This task has incomplete dependencies"}`);
+      alert(
+        `Cannot start: ${task.blockedReason || "This task has incomplete dependencies"}`
+      );
       return;
     }
-    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)));
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === taskId ? { ...t, status: newStatus } : t
+      )
+    );
     try {
       await api.updateTask(sessionId, taskId, { status: newStatus });
     } catch {
@@ -178,465 +488,711 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
     }
   };
 
-  const tasksByColumn = (column: string) => tasks.filter((t) => t.status === column);
-  const expandedTask = expandedTaskId ? tasks.find((t) => t.id === expandedTaskId) : null;
+  const tasksByColumn = (column: string) =>
+    tasks.filter((t) => t.status === column);
+  const expandedTask = expandedTaskId
+    ? tasks.find((t) => t.id === expandedTaskId)
+    : null;
 
+  const agentSelectData = agents.map((a) => ({
+    value: a.id,
+    label: a.name,
+  }));
+
+  const inputStyles = {
+    input: {
+      backgroundColor: "var(--bg-tertiary)",
+      borderColor: "var(--border-color)",
+      color: "var(--text-primary)",
+    },
+    label: { color: "var(--text-secondary)", fontSize: 13 },
+    description: { color: "var(--text-muted)" },
+  };
+
+  const selectDropdownStyles = {
+    ...inputStyles,
+    dropdown: {
+      backgroundColor: "var(--bg-secondary)",
+      borderColor: "var(--border-color)",
+    },
+    option: { color: "var(--text-primary)" },
+  };
+
+  const modalStyles = {
+    header: {
+      backgroundColor: "var(--bg-secondary)",
+      borderBottom: "1px solid var(--border-color)",
+    },
+    body: { backgroundColor: "var(--bg-secondary)" },
+    content: { backgroundColor: "var(--bg-secondary)" },
+    title: {
+      color: "var(--text-primary)",
+      fontWeight: 600 as const,
+      fontSize: 18,
+    },
+    close: { color: "var(--text-secondary)" },
+  };
+
+  /* ---- Empty state ---- */
+  if (tasks.length === 0 && !showAddDialog) {
+    return (
+      <Stack align="center" justify="center" py={60} gap="md">
+        <Text size="xl" c="var(--text-muted)">
+          No tasks yet
+        </Text>
+        <Text size="sm" c="var(--text-muted)" ta="center" maw={400}>
+          Create your first task to start organizing work for your agents.
+        </Text>
+        <Button
+          onClick={() => setShowAddDialog(true)}
+          styles={{
+            root: {
+              backgroundColor: "var(--accent-blue)",
+              borderColor: "var(--accent-blue)",
+              minHeight: 44,
+            },
+          }}
+        >
+          + Add Task
+        </Button>
+
+        {/* Add Task Dialog (for empty state) */}
+        <AddTaskModal
+          opened={showAddDialog}
+          onClose={() => {
+            setShowAddDialog(false);
+            setNewTitle("");
+            setNewDescription("");
+            setNewAssignee("");
+            setNewDependencies([]);
+          }}
+          isMobile={!!isMobile}
+          modalStyles={modalStyles}
+          inputStyles={inputStyles}
+          selectDropdownStyles={selectDropdownStyles}
+          newTitle={newTitle}
+          setNewTitle={setNewTitle}
+          newDescription={newDescription}
+          setNewDescription={setNewDescription}
+          newAssignee={newAssignee}
+          setNewAssignee={setNewAssignee}
+          agentSelectData={agentSelectData}
+          tasks={tasks}
+          newDependencies={newDependencies}
+          setNewDependencies={setNewDependencies}
+          onSubmit={handleAddTask}
+        />
+      </Stack>
+    );
+  }
+
+  /* ---- Board ---- */
   return (
     <div style={{ position: "relative" }}>
-      {tasks.length === 0 && !showAddDialog && (
-        <div style={{ textAlign: "center", padding: "60px 20px", color: "var(--text-muted)" }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>-- No tasks yet --</div>
-          <p style={{ fontSize: 16, marginBottom: 24 }}>
-            Create your first task to start organizing work for your agents.
-          </p>
-          <button className="primary" onClick={() => setShowAddDialog(true)}>
-            + Add Task
-          </button>
-        </div>
-      )}
-
-      {(tasks.length > 0 || showAddDialog) && (
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${COLUMNS.length}, 1fr)`, gap: 16, minHeight: 400 }}>
-          {COLUMNS.map((col) => (
-            <div
-              key={col}
-              onDragOver={(e) => handleDragOver(e, col)}
-              onDragLeave={() => setDragOverColumn(null)}
-              onDrop={(e) => handleDrop(e, col)}
-              style={{
-                background: dragOverColumn === col ? "rgba(88,166,255,0.06)" : "var(--bg-secondary)",
-                borderRadius: 8,
-                border: dragOverColumn === col ? "2px dashed var(--accent-blue)" : "1px solid var(--border-color)",
-                padding: 12,
-                minHeight: 300,
-                transition: "border 0.15s, background 0.15s",
-              }}
-            >
-              {/* Column Header */}
-              <div style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                marginBottom: 12, paddingBottom: 8,
-                borderBottom: `2px solid ${COLUMN_COLORS[col]}`,
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: COLUMN_COLORS[col], display: "inline-block" }} />
-                  <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14 }}>{COLUMN_LABELS[col]}</span>
-                  <span style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)", borderRadius: 10, padding: "1px 8px", fontSize: 12 }}>
-                    {tasksByColumn(col).length}
-                  </span>
-                </div>
-                {col === "pending" && (
-                  <button
-                    onClick={() => setShowAddDialog(true)}
-                    style={{
-                      background: "none", border: "1px solid var(--border-color)", color: "var(--text-secondary)",
-                      borderRadius: 4, padding: "2px 8px", fontSize: 12, cursor: "pointer",
-                    }}
-                  >
-                    + Add
-                  </button>
-                )}
-              </div>
-
-              {/* Task Cards */}
-              {tasksByColumn(col).map((task) => (
-                <div
-                  key={task.id}
-                  draggable
-                  onDragStart={() => handleDragStart(task.id)}
-                  onClick={(e) => { if (!(e.target as HTMLElement).closest("button")) setExpandedTaskId(task.id); }}
+      {/* Mobile: column selector + single column */}
+      {isMobile ? (
+        <Stack gap="sm">
+          {/* Column tabs */}
+          <ScrollArea type="never">
+            <Group gap="xs" wrap="nowrap">
+              {COLUMNS.map((col) => (
+                <Badge
+                  key={col}
+                  variant={activeCol === col ? "filled" : "outline"}
+                  color={COLUMN_COLORS[col]}
+                  size="lg"
+                  onClick={() => setActiveCol(col)}
                   style={{
-                    background: "var(--bg-primary)",
-                    border: draggedTaskId === task.id ? "1px solid var(--accent-blue)" : "1px solid var(--border-color)",
-                    borderRadius: 8,
-                    padding: 12,
-                    marginBottom: 8,
                     cursor: "pointer",
-                    opacity: draggedTaskId === task.id ? 0.5 : task.blocked ? 0.7 : 1,
-                    transition: "border 0.15s, box-shadow 0.15s",
+                    minHeight: 36,
+                    flexShrink: 0,
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 2 }}>
-                    <div style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 13, flex: 1 }}>{task.title}</div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }}
-                      style={{
-                        background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer",
-                        padding: "0 2px", fontSize: 12, opacity: 0.4, lineHeight: 1,
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.color = "var(--accent-red)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.4"; e.currentTarget.style.color = "var(--text-muted)"; }}
-                      title="Delete task"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", marginBottom: 4 }}>
-                    #{task.id}
-                  </div>
-                  {task.blocked && (
-                    <div
-                      title={task.blockedReason || "This task has incomplete dependencies"}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 4,
-                        fontSize: 11,
-                        color: "var(--accent-yellow)",
-                        backgroundColor: "rgba(210, 153, 34, 0.1)",
-                        borderRadius: 4,
-                        padding: "2px 8px",
-                        marginBottom: 6,
-                      }}
-                    >
-                      <span style={{ fontSize: 12 }}>&#128274;</span> Blocked
-                    </div>
-                  )}
-                  {task.description && (
-                    <div style={{ color: "var(--text-secondary)", fontSize: 12, marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {task.description.length > 80 ? task.description.slice(0, 80) + "..." : task.description}
-                    </div>
-                  )}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "var(--text-muted)" }}>
-                    <span>
-                      {task.assignedTo
-                        ? agents.find((a) => a.id === task.assignedTo)?.name || task.assignedTo
-                        : "Unassigned"}
-                    </span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      {task.comments && task.comments.length > 0 && (
-                        <span style={{ color: "var(--accent-blue)" }}>💬 {task.comments.length}</span>
-                      )}
-                      <span>{timeAgo(task.createdAt)}</span>
-                    </div>
-                  </div>
-                </div>
+                  {COLUMN_LABELS[col]} ({tasksByColumn(col).length})
+                </Badge>
               ))}
-            </div>
+              <ActionIcon
+                variant="light"
+                color="blue"
+                size="lg"
+                onClick={() => setShowAddDialog(true)}
+                style={{ flexShrink: 0 }}
+              >
+                <span style={{ fontSize: 18 }}>+</span>
+              </ActionIcon>
+            </Group>
+          </ScrollArea>
+
+          {/* Active column's cards */}
+          <Stack gap="xs">
+            {tasksByColumn(activeCol).map((task) => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                agents={agents}
+                isDragging={false}
+                onDragStart={() => {}}
+                onClick={() => setExpandedTaskId(task.id)}
+                onDelete={() => handleDeleteTask(task.id)}
+              />
+            ))}
+            {tasksByColumn(activeCol).length === 0 && (
+              <Text
+                size="sm"
+                c="var(--text-muted)"
+                ta="center"
+                py="xl"
+                fs="italic"
+              >
+                No {COLUMN_LABELS[activeCol].toLowerCase()} tasks
+              </Text>
+            )}
+          </Stack>
+        </Stack>
+      ) : (
+        /* Desktop / Tablet: grid columns */
+        <SimpleGrid cols={isTablet ? 2 : 4} spacing="md">
+          {COLUMNS.map((col) => (
+            <TaskColumn
+              key={col}
+              column={col}
+              tasks={tasksByColumn(col)}
+              agents={agents}
+              draggedTaskId={draggedTaskId}
+              dragOverColumn={dragOverColumn}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragLeave={() => setDragOverColumn(null)}
+              onDrop={handleDrop}
+              onTaskClick={setExpandedTaskId}
+              onTaskDelete={handleDeleteTask}
+              onAddClick={() => setShowAddDialog(true)}
+            />
           ))}
-        </div>
+        </SimpleGrid>
       )}
 
-      {/* Add Task Dialog */}
-      {showAddDialog && (
-        <div className="dialog-overlay" onClick={() => setShowAddDialog(false)}>
-          <div className="dialog" onClick={(e) => e.stopPropagation()}>
-            <h2>Add New Task</h2>
-            <div className="form-group">
-              <label>Title *</label>
-              <input
-                type="text"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                placeholder="Task title"
-                autoFocus
-                onKeyDown={(e) => { if (e.key === "Enter" && newTitle.trim()) handleAddTask(); }}
-              />
-            </div>
-            <div className="form-group">
-              <label>Description</label>
-              <textarea
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-                placeholder="Optional description"
-                rows={3}
-                style={{
-                  width: "100%", background: "var(--bg-tertiary)", border: "1px solid var(--border-color)",
-                  borderRadius: 6, padding: "8px 12px", color: "var(--text-primary)", fontSize: 14,
-                  outline: "none", resize: "vertical", fontFamily: "inherit", boxSizing: "border-box",
-                }}
-              />
-            </div>
-            <div className="form-group">
-              <label>Assign to Agent</label>
-              <select value={newAssignee} onChange={(e) => setNewAssignee(e.target.value)}>
-                <option value="">Unassigned</option>
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
-            </div>
-            {tasks.length > 0 && (
-              <div className="form-group">
-                <label>Dependencies (blocks this task)</label>
-                <div style={{
-                  maxHeight: 150,
-                  overflowY: "auto",
-                  border: "1px solid var(--border-color)",
-                  borderRadius: 6,
-                  background: "var(--bg-tertiary)",
-                }}>
-                  {tasks.filter((t) => t.status !== "done").map((t) => (
-                    <label
-                      key={t.id}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "8px 12px",
-                        fontSize: 13,
-                        cursor: "pointer",
-                        minHeight: 44,
-                        borderBottom: "1px solid var(--border-color)",
-                        color: "var(--text-primary)",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={newDependencies.includes(t.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setNewDependencies((prev) => [...prev, t.id]);
-                          } else {
-                            setNewDependencies((prev) => prev.filter((d) => d !== t.id));
-                          }
-                        }}
-                      />
-                      <span style={{ flex: 1 }}>{t.title}</span>
-                      <span style={{
-                        fontSize: 11,
-                        color: COLUMN_COLORS[t.status] || "var(--text-muted)",
-                        fontWeight: 500,
-                      }}>
-                        {COLUMN_LABELS[t.status] || t.status}
-                      </span>
-                    </label>
-                  ))}
-                  {tasks.filter((t) => t.status !== "done").length === 0 && (
-                    <div style={{ padding: "12px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                      No incomplete tasks to depend on.
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-            <div className="form-actions">
-              <button onClick={() => { setShowAddDialog(false); setNewTitle(""); setNewDescription(""); setNewAssignee(""); setNewDependencies([]); }}>
-                Cancel
-              </button>
-              <button className="primary" onClick={handleAddTask} disabled={!newTitle.trim()}>
-                Create Task
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Add Task Modal */}
+      <AddTaskModal
+        opened={showAddDialog}
+        onClose={() => {
+          setShowAddDialog(false);
+          setNewTitle("");
+          setNewDescription("");
+          setNewAssignee("");
+          setNewDependencies([]);
+        }}
+        isMobile={!!isMobile}
+        modalStyles={modalStyles}
+        inputStyles={inputStyles}
+        selectDropdownStyles={selectDropdownStyles}
+        newTitle={newTitle}
+        setNewTitle={setNewTitle}
+        newDescription={newDescription}
+        setNewDescription={setNewDescription}
+        newAssignee={newAssignee}
+        setNewAssignee={setNewAssignee}
+        agentSelectData={agentSelectData}
+        tasks={tasks}
+        newDependencies={newDependencies}
+        setNewDependencies={setNewDependencies}
+        onSubmit={handleAddTask}
+      />
 
-      {/* Task Detail Dialog */}
+      {/* Task Detail Modal */}
       {expandedTask && (
-        <div className="dialog-overlay" onClick={() => { setExpandedTaskId(null); setCommentText(""); }}>
-          <div className="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 600, width: "90%" }}>
-            {/* Header with title + ID */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-              <h2 style={{ margin: 0, flex: 1 }}>{expandedTask.title}</h2>
-              <button
-                onClick={() => { setExpandedTaskId(null); setCommentText(""); }}
-                style={{
-                  background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer",
-                  padding: "0 4px", fontSize: 20, lineHeight: 1,
-                }}
-              >
-                ×
-              </button>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--accent-blue)",
-                  background: "var(--bg-tertiary)", padding: "2px 8px", borderRadius: 4, cursor: "pointer",
-                  userSelect: "all",
-                }}
-                title="Click to copy task ID"
-                onClick={() => { navigator.clipboard.writeText(expandedTask.id); }}
-              >
-                #{expandedTask.id}
-              </span>
-              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                Created {timeAgo(expandedTask.createdAt)} by {expandedTask.createdBy}
-              </span>
-            </div>
-
-            {/* Task Details */}
-            <div style={{ marginBottom: 16, padding: 12, background: "var(--bg-tertiary)", borderRadius: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                <strong style={{ color: "var(--text-secondary)", minWidth: 80 }}>Status:</strong>
-                <span style={{ color: COLUMN_COLORS[expandedTask.status] || "var(--text-primary)", fontWeight: 600 }}>
-                  {COLUMN_LABELS[expandedTask.status] || expandedTask.status}
-                </span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                <strong style={{ color: "var(--text-secondary)", minWidth: 80 }}>Assigned to:</strong>
-                <span style={{ color: "var(--text-primary)" }}>
-                  {expandedTask.assignedTo
-                    ? agents.find((a) => a.id === expandedTask.assignedTo)?.name || expandedTask.assignedTo
-                    : "Unassigned"}
-                </span>
-              </div>
-              {expandedTask.description && (
-                <div style={{ fontSize: 13 }}>
-                  <strong style={{ color: "var(--text-secondary)" }}>Description:</strong>
-                  <div style={{ marginTop: 4, color: "var(--text-primary)", lineHeight: 1.5 }}>{expandedTask.description}</div>
-                </div>
-              )}
-            </div>
-
-            {/* Change Status */}
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: "block", marginBottom: 8, fontSize: 13, fontWeight: 600 }}>Change Status</label>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {COLUMNS.map((col) => (
-                  <button
-                    key={col}
-                    onClick={() => handleChangeStatus(expandedTask.id, col)}
-                    disabled={expandedTask.status === col}
-                    style={{
-                      padding: "6px 12px",
-                      fontSize: 12,
-                      borderRadius: 6,
-                      border: `1px solid ${COLUMN_COLORS[col]}`,
-                      background: expandedTask.status === col ? COLUMN_COLORS[col] : "var(--bg-secondary)",
-                      color: expandedTask.status === col ? "var(--bg-primary)" : COLUMN_COLORS[col],
-                      cursor: expandedTask.status === col ? "default" : "pointer",
-                      fontWeight: 600,
-                      opacity: expandedTask.status === col ? 1 : 0.8,
-                    }}
-                  >
-                    {COLUMN_LABELS[col]}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Dependencies Section */}
-            {expandedTask.dependencies && expandedTask.dependencies.length > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", marginBottom: 8, fontSize: 13, fontWeight: 600 }}>
-                  Dependencies ({expandedTask.dependencies.length})
-                </label>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {expandedTask.dependencies.map((depId) => {
-                    const depTask = tasks.find((t) => t.id === depId);
-                    const isDone = depTask?.status === "done";
-                    return (
-                      <div
-                        key={depId}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          padding: "6px 10px",
-                          background: "var(--bg-tertiary)",
-                          borderRadius: 6,
-                          fontSize: 13,
-                          minHeight: 44,
-                          cursor: depTask ? "pointer" : "default",
-                        }}
-                        onClick={() => {
-                          if (depTask) setExpandedTaskId(depId);
-                        }}
-                      >
-                        <span style={{ fontSize: 14 }}>{isDone ? "\u2705" : "\u23F3"}</span>
-                        <span style={{
-                          color: isDone ? "var(--accent-green)" : "var(--text-primary)",
-                          textDecoration: isDone ? "line-through" : "none",
-                          flex: 1,
-                        }}>
-                          {depTask?.title || depId}
-                        </span>
-                        <span style={{
-                          fontSize: 11,
-                          color: isDone ? "var(--accent-green)" : "var(--text-muted)",
-                          fontWeight: 500,
-                        }}>
-                          {isDone ? "Done" : depTask ? COLUMN_LABELS[depTask.status] || depTask.status : "Unknown"}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Blocked indicator in detail */}
-            {expandedTask.blocked && (
-              <div style={{
-                marginBottom: 16,
-                padding: "10px 12px",
-                borderRadius: 6,
-                backgroundColor: "rgba(210, 153, 34, 0.1)",
-                border: "1px solid var(--accent-yellow)",
-                color: "var(--accent-yellow)",
-                fontSize: 13,
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-              }}>
-                <span style={{ fontSize: 16 }}>&#128274;</span>
-                <span>{expandedTask.blockedReason || "This task is blocked by incomplete dependencies"}</span>
-              </div>
-            )}
-
-            {/* Comments Section */}
-            <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: 16 }}>
-              <h3 style={{ margin: "0 0 12px 0", fontSize: 15, fontWeight: 600 }}>
-                Comments {expandedTask.comments && expandedTask.comments.length > 0 && `(${expandedTask.comments.length})`}
-              </h3>
-
-              {/* Comments List */}
-              <div style={{ maxHeight: 300, overflowY: "auto", marginBottom: 12 }}>
-                {expandedTask.comments && expandedTask.comments.length > 0 ? (
-                  expandedTask.comments.map((comment) => (
-                    <div
-                      key={comment.id}
-                      style={{
-                        padding: 10,
-                        background: "var(--bg-tertiary)",
-                        borderRadius: 6,
-                        marginBottom: 8,
-                        fontSize: 13,
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                        <strong style={{ color: "var(--accent-blue)" }}>{comment.authorName || comment.author}</strong>
-                        <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{timeAgo(comment.createdAt)}</span>
-                      </div>
-                      <div style={{ color: "var(--text-primary)" }}>{comment.text}</div>
-                    </div>
-                  ))
-                ) : (
-                  <div style={{ color: "var(--text-muted)", fontSize: 13, fontStyle: "italic", padding: "20px 0" }}>
-                    No comments yet. Be the first to add one!
-                  </div>
-                )}
-              </div>
-
-              {/* Add Comment */}
-              <div>
-                <textarea
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  placeholder="Add a comment..."
-                  rows={2}
-                  style={{
-                    width: "100%", background: "var(--bg-tertiary)", border: "1px solid var(--border-color)",
-                    borderRadius: 6, padding: "8px 12px", color: "var(--text-primary)", fontSize: 13,
-                    outline: "none", resize: "vertical", fontFamily: "inherit", boxSizing: "border-box",
-                    marginBottom: 8,
-                  }}
-                />
-                <button
-                  className="primary"
-                  onClick={() => handleAddComment(expandedTask.id)}
-                  disabled={!commentText.trim()}
-                  style={{ width: "100%" }}
-                >
-                  Add Comment
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <TaskDetailModal
+          task={expandedTask}
+          tasks={tasks}
+          agents={agents}
+          isMobile={!!isMobile}
+          modalStyles={modalStyles}
+          commentText={commentText}
+          setCommentText={setCommentText}
+          onClose={() => {
+            setExpandedTaskId(null);
+            setCommentText("");
+          }}
+          onChangeStatus={handleChangeStatus}
+          onAddComment={handleAddComment}
+          onNavigateTask={setExpandedTaskId}
+          inputStyles={inputStyles}
+        />
       )}
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Add Task Modal                                                      */
+/* ------------------------------------------------------------------ */
+function AddTaskModal({
+  opened,
+  onClose,
+  isMobile,
+  modalStyles,
+  inputStyles,
+  selectDropdownStyles,
+  newTitle,
+  setNewTitle,
+  newDescription,
+  setNewDescription,
+  newAssignee,
+  setNewAssignee,
+  agentSelectData,
+  tasks,
+  newDependencies,
+  setNewDependencies,
+  onSubmit,
+}: {
+  opened: boolean;
+  onClose: () => void;
+  isMobile: boolean;
+  modalStyles: any;
+  inputStyles: any;
+  selectDropdownStyles: any;
+  newTitle: string;
+  setNewTitle: (v: string) => void;
+  newDescription: string;
+  setNewDescription: (v: string) => void;
+  newAssignee: string;
+  setNewAssignee: (v: string) => void;
+  agentSelectData: { value: string; label: string }[];
+  tasks: Task[];
+  newDependencies: string[];
+  setNewDependencies: (v: string[]) => void;
+  onSubmit: () => void;
+}) {
+  if (!opened) return null;
+
+  const incompleteTasks = tasks.filter((t) => t.status !== "done");
+
+  return (
+    <Modal
+      opened
+      onClose={onClose}
+      title="Add New Task"
+      size="md"
+      fullScreen={isMobile}
+      centered
+      styles={modalStyles}
+    >
+      <Stack gap="sm">
+        <TextInput
+          label="Title *"
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.currentTarget.value)}
+          placeholder="Task title"
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && newTitle.trim()) onSubmit();
+          }}
+          styles={inputStyles}
+        />
+
+        <Textarea
+          label="Description"
+          value={newDescription}
+          onChange={(e) => setNewDescription(e.currentTarget.value)}
+          placeholder="Optional description"
+          rows={3}
+          autosize
+          minRows={2}
+          maxRows={5}
+          styles={inputStyles}
+        />
+
+        <Select
+          label="Assign to Agent"
+          placeholder="Unassigned"
+          data={agentSelectData}
+          value={newAssignee || null}
+          onChange={(v) => setNewAssignee(v || "")}
+          clearable
+          styles={selectDropdownStyles}
+        />
+
+        {incompleteTasks.length > 0 && (
+          <Box>
+            <Text size="xs" c="var(--text-secondary)" mb={4}>
+              Dependencies (blocks this task)
+            </Text>
+            <ScrollArea
+              mah={150}
+              style={{
+                border: "1px solid var(--border-color)",
+                borderRadius: 6,
+                backgroundColor: "var(--bg-tertiary)",
+              }}
+            >
+              {incompleteTasks.map((t) => (
+                <Group
+                  key={t.id}
+                  gap={8}
+                  p="xs"
+                  style={{
+                    borderBottom: "1px solid var(--border-color)",
+                    cursor: "pointer",
+                    minHeight: 44,
+                  }}
+                  onClick={() => {
+                    if (newDependencies.includes(t.id)) {
+                      setNewDependencies(
+                        newDependencies.filter((d) => d !== t.id)
+                      );
+                    } else {
+                      setNewDependencies([...newDependencies, t.id]);
+                    }
+                  }}
+                >
+                  <Checkbox
+                    checked={newDependencies.includes(t.id)}
+                    onChange={() => {}}
+                    size="sm"
+                    styles={{
+                      input: {
+                        backgroundColor: "var(--bg-primary)",
+                        borderColor: "var(--border-color)",
+                      },
+                    }}
+                  />
+                  <Text size="xs" c="var(--text-primary)" style={{ flex: 1 }}>
+                    {t.title}
+                  </Text>
+                  <Text
+                    size="xs"
+                    fw={500}
+                    c={COLUMN_CSS_COLORS[t.status] || "var(--text-muted)"}
+                  >
+                    {COLUMN_LABELS[t.status] || t.status}
+                  </Text>
+                </Group>
+              ))}
+            </ScrollArea>
+          </Box>
+        )}
+
+        <Group justify="flex-end" mt="md">
+          <Button
+            variant="default"
+            onClick={onClose}
+            styles={{
+              root: {
+                backgroundColor: "var(--bg-tertiary)",
+                borderColor: "var(--border-color)",
+                color: "var(--text-primary)",
+                minHeight: 44,
+              },
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={onSubmit}
+            disabled={!newTitle.trim()}
+            styles={{
+              root: {
+                backgroundColor: "var(--accent-blue)",
+                borderColor: "var(--accent-blue)",
+                minHeight: 44,
+              },
+            }}
+          >
+            Create Task
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Task Detail Modal                                                   */
+/* ------------------------------------------------------------------ */
+function TaskDetailModal({
+  task,
+  tasks,
+  agents,
+  isMobile,
+  modalStyles,
+  commentText,
+  setCommentText,
+  onClose,
+  onChangeStatus,
+  onAddComment,
+  onNavigateTask,
+  inputStyles,
+}: {
+  task: Task;
+  tasks: Task[];
+  agents: { id: string; name: string }[];
+  isMobile: boolean;
+  modalStyles: any;
+  commentText: string;
+  setCommentText: (v: string) => void;
+  onClose: () => void;
+  onChangeStatus: (taskId: string, status: string) => void;
+  onAddComment: (taskId: string) => void;
+  onNavigateTask: (taskId: string) => void;
+  inputStyles: any;
+}) {
+  const assigneeName = task.assignedTo
+    ? agents.find((a) => a.id === task.assignedTo)?.name || task.assignedTo
+    : "Unassigned";
+
+  return (
+    <Modal
+      opened
+      onClose={onClose}
+      title={task.title}
+      size="lg"
+      fullScreen={isMobile}
+      centered
+      styles={modalStyles}
+      scrollAreaComponent={ScrollArea.Autosize}
+    >
+      <Stack gap="md">
+        {/* Meta row */}
+        <Group gap={8} wrap="wrap">
+          <Tooltip label="Click to copy task ID">
+            <Badge
+              variant="light"
+              color="blue"
+              size="sm"
+              style={{ cursor: "pointer", fontFamily: "var(--font-mono)" }}
+              onClick={() => navigator.clipboard.writeText(task.id)}
+            >
+              #{task.id.slice(0, 8)}
+            </Badge>
+          </Tooltip>
+          <Text size="xs" c="var(--text-muted)">
+            Created {timeAgo(task.createdAt)} by {task.createdBy}
+          </Text>
+        </Group>
+
+        {/* Task details card */}
+        <Paper
+          p="sm"
+          style={{
+            backgroundColor: "var(--bg-tertiary)",
+            borderRadius: 8,
+          }}
+        >
+          <Stack gap={8}>
+            <Group gap={8}>
+              <Text size="xs" fw={600} c="var(--text-secondary)" w={80}>
+                Status:
+              </Text>
+              <Text
+                size="xs"
+                fw={600}
+                c={COLUMN_CSS_COLORS[task.status] || "var(--text-primary)"}
+              >
+                {COLUMN_LABELS[task.status] || task.status}
+              </Text>
+            </Group>
+            <Group gap={8}>
+              <Text size="xs" fw={600} c="var(--text-secondary)" w={80}>
+                Assigned to:
+              </Text>
+              <Text size="xs" c="var(--text-primary)">
+                {assigneeName}
+              </Text>
+            </Group>
+            {task.description && (
+              <Box>
+                <Text size="xs" fw={600} c="var(--text-secondary)">
+                  Description:
+                </Text>
+                <Box mt={4} style={{ fontSize: 13, lineHeight: 1.5 }}>
+                  <MarkdownText>{task.description}</MarkdownText>
+                </Box>
+              </Box>
+            )}
+          </Stack>
+        </Paper>
+
+        {/* Change status */}
+        <Box>
+          <Text size="xs" fw={600} mb={8}>
+            Change Status
+          </Text>
+          <Group gap={8} wrap="wrap">
+            {COLUMNS.map((col) => (
+              <Button
+                key={col}
+                size="xs"
+                variant={task.status === col ? "filled" : "outline"}
+                color={COLUMN_COLORS[col]}
+                onClick={() => onChangeStatus(task.id, col)}
+                disabled={task.status === col}
+                styles={{
+                  root: {
+                    minHeight: 36,
+                    fontWeight: 600,
+                  },
+                }}
+              >
+                {COLUMN_LABELS[col]}
+              </Button>
+            ))}
+          </Group>
+        </Box>
+
+        {/* Dependencies */}
+        {task.dependencies && task.dependencies.length > 0 && (
+          <Box>
+            <Text size="xs" fw={600} mb={8}>
+              Dependencies ({task.dependencies.length})
+            </Text>
+            <Stack gap={6}>
+              {task.dependencies.map((depId) => {
+                const depTask = tasks.find((t) => t.id === depId);
+                const isDone = depTask?.status === "done";
+                return (
+                  <Paper
+                    key={depId}
+                    p="xs"
+                    style={{
+                      backgroundColor: "var(--bg-tertiary)",
+                      borderRadius: 6,
+                      cursor: depTask ? "pointer" : "default",
+                      minHeight: 44,
+                      display: "flex",
+                      alignItems: "center",
+                    }}
+                    onClick={() => {
+                      if (depTask) onNavigateTask(depId);
+                    }}
+                  >
+                    <Group gap={8} style={{ flex: 1 }}>
+                      <Text size="sm">{isDone ? "\u2705" : "\u23F3"}</Text>
+                      <Text
+                        size="xs"
+                        c={
+                          isDone
+                            ? "var(--accent-green)"
+                            : "var(--text-primary)"
+                        }
+                        td={isDone ? "line-through" : undefined}
+                        style={{ flex: 1 }}
+                      >
+                        {depTask?.title || depId}
+                      </Text>
+                      <Text
+                        size="xs"
+                        fw={500}
+                        c={
+                          isDone
+                            ? "var(--accent-green)"
+                            : "var(--text-muted)"
+                        }
+                      >
+                        {isDone
+                          ? "Done"
+                          : depTask
+                            ? COLUMN_LABELS[depTask.status] ||
+                              depTask.status
+                            : "Unknown"}
+                      </Text>
+                    </Group>
+                  </Paper>
+                );
+              })}
+            </Stack>
+          </Box>
+        )}
+
+        {/* Blocked */}
+        {task.blocked && (
+          <Alert
+            color="yellow"
+            variant="light"
+            icon={<span style={{ fontSize: 16 }}>&#128274;</span>}
+          >
+            {task.blockedReason ||
+              "This task is blocked by incomplete dependencies"}
+          </Alert>
+        )}
+
+        <Divider />
+
+        {/* Comments */}
+        <Box>
+          <Text size="sm" fw={600} mb="sm">
+            Comments{" "}
+            {task.comments && task.comments.length > 0
+              ? `(${task.comments.length})`
+              : ""}
+          </Text>
+
+          <ScrollArea mah={300} mb="sm">
+            {task.comments && task.comments.length > 0 ? (
+              <Stack gap="xs">
+                {task.comments.map((comment) => (
+                  <Paper
+                    key={comment.id}
+                    p="xs"
+                    style={{
+                      backgroundColor: "var(--bg-tertiary)",
+                      borderRadius: 6,
+                    }}
+                  >
+                    <Group justify="space-between" mb={4}>
+                      <Text size="xs" fw={600} c="var(--accent-blue)">
+                        {comment.authorName || comment.author}
+                      </Text>
+                      <Text size="xs" c="var(--text-muted)">
+                        {timeAgo(comment.createdAt)}
+                      </Text>
+                    </Group>
+                    <Box style={{ fontSize: 13 }}>
+                      <MarkdownText>{comment.text}</MarkdownText>
+                    </Box>
+                  </Paper>
+                ))}
+              </Stack>
+            ) : (
+              <Text
+                size="xs"
+                c="var(--text-muted)"
+                fs="italic"
+                ta="center"
+                py="lg"
+              >
+                No comments yet. Be the first to add one!
+              </Text>
+            )}
+          </ScrollArea>
+
+          <Stack gap="xs">
+            <Textarea
+              value={commentText}
+              onChange={(e) => setCommentText(e.currentTarget.value)}
+              placeholder="Add a comment..."
+              rows={2}
+              autosize
+              minRows={2}
+              maxRows={4}
+              styles={inputStyles}
+            />
+            <Button
+              fullWidth
+              onClick={() => onAddComment(task.id)}
+              disabled={!commentText.trim()}
+              styles={{
+                root: {
+                  backgroundColor: "var(--accent-blue)",
+                  borderColor: "var(--accent-blue)",
+                  minHeight: 44,
+                },
+              }}
+            >
+              Add Comment
+            </Button>
+          </Stack>
+        </Box>
+      </Stack>
+    </Modal>
   );
 }

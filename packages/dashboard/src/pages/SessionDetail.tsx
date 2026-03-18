@@ -14,6 +14,8 @@ import { SideTerminalPanel } from "../components/SideTerminalPanel";
 import { EditorTile } from "../components/EditorTile";
 import { GitChanges } from "../components/GitChanges";
 import type { TerminalTab } from "../components/SideTerminalPanel";
+import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
+import { ActionIcon, Indicator, Tooltip } from "@mantine/core";
 
 type TabId = "editor" | "agents" | "tasks" | "timeline" | "changes";
 
@@ -899,20 +901,8 @@ function AgentsTab({
               {(a.provider || a.model) && (
                 <span className="ac2-model">{[a.provider, a.model].filter(Boolean).join(" / ")}</span>
               )}
-              {a.config?.channels && (a.config.channels as string[]).length > 0 && (
-                <div className="ac2-tags">
-                  {(a.config.channels as string[]).map((ch: string) => (
-                    <span key={ch} className="ac2-tag">{ch}</span>
-                  ))}
-                </div>
-              )}
-              {a.config?.extraCliArgs && (a.config.extraCliArgs as string[]).length > 0 && (
-                <div className="ac2-tags">
-                  {(a.config.extraCliArgs as string[]).map((flag: string, fi: number) => (
-                    <span key={fi} className="ac2-tag ac2-tag-flag">{flag}</span>
-                  ))}
-                </div>
-              )}
+              <ChannelIndicator channels={(a.config?.channels as string[]) || []} />
+              <FlagIndicator flags={(a.config?.extraCliArgs as string[]) || []} />
             </div>
 
             {/* Activity */}
@@ -996,6 +986,22 @@ function AgentsTab({
                   <button className="ac2-btn ac2-btn-primary" onClick={() => onNavigate(`/session/${sessionId}/agent/${a.id}`)}>Chat</button>
                   <button className="ac2-btn" onClick={() => onOpenTerminal(a.id, a.config?.name || a.name || "Agent")}>Terminal</button>
                   <button className="ac2-btn" onClick={async () => { try { await api.openVscode(sessionId, a.id); } catch {} }}>VS Code</button>
+                  <Tooltip label={`${a.unreadMessages || 0} unread — nudge agent`}>
+                    <Indicator disabled={!a.unreadMessages} label={a.unreadMessages || 0} size={14} color="red" offset={2}>
+                      <ActionIcon
+                        variant="subtle"
+                        size="sm"
+                        onClick={async () => {
+                          try { await api.nudgeAgent(sessionId, a.id); } catch {}
+                        }}
+                        style={{ color: a.unreadMessages ? "var(--accent-yellow)" : "var(--text-muted)" }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                        </svg>
+                      </ActionIcon>
+                    </Indicator>
+                  </Tooltip>
                   <div style={{ flex: 1 }} />
                   <div style={{ position: "relative" }}>
                     <button className="ac2-btn ac2-btn-settings" onClick={() => setGearOpen(gearOpen === a.id ? null : a.id)}>

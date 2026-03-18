@@ -148,5 +148,7 @@ export function useApi() {
       apiFetch<{ branch: string; changes: any[]; repos?: any[] }>(`/sessions/${sid}/git/status`),
     getGitDiff: (sid: string, filePath: string, repo?: string) =>
       apiFetch<{ diff: string; original: string; modified: string; path: string }>(`/sessions/${sid}/git/diff?path=${encodeURIComponent(filePath)}&repo=${encodeURIComponent(repo || ".")}`),
+    nudgeAgent: (sid: string, aid: string) =>
+      apiFetch<{ nudged: boolean; unreadCount: number }>(`/sessions/${sid}/agents/${aid}/nudge`, { method: "POST" }),
   };
 }
