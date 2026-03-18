@@ -119,11 +119,18 @@ export class HoldptyController implements IPtyBackend {
     const Holder = await getHolder();
     const shell = process.env.SHELL || "/bin/zsh";
 
+    // Apply any env vars stored via setEnvironment() before session creation
+    const storedEnv = this.envVars.get(name);
+    const env = storedEnv
+      ? { ...process.env, ...Object.fromEntries(storedEnv) }
+      : undefined;
+
     const holder = await Holder.start({
       command: [shell],
       name,
       cols: width,
       rows: height,
+      ...(env ? { env } : {}),
     });
 
     this.holders.set(name, holder);
@@ -236,12 +243,55 @@ export class HoldptyController implements IPtyBackend {
   }
 
   /**
-   * Captures terminal output from a holdpty session via CLI logs command.
+   * Captures terminal output from a holdpty session via socket-based logs replay.
+   * Avoids spawning a subprocess (which was causing 25-50 processes during prompt-wait polling).
    */
   async capturePane(session: string, lines: number = 1000, _escapeSequences: boolean = false): Promise<string> {
     try {
-      const output = await this.runCli("logs", session, "--tail", String(lines));
-      return output;
+      const proto = await getProtocol();
+      const socketPath = await this.getSocketPath(session);
+
+      return await new Promise<string>((resolve) => {
+        const chunks: Buffer[] = [];
+        const decoder = new proto.FrameDecoder();
+        let resolved = false;
+
+        const socket = net.createConnection(socketPath, () => {
+          const hello = proto.encodeHello({ mode: "logs", protocolVersion: 1 });
+          socket.write(hello);
+        });
+
+        socket.on("data", (chunk: Buffer) => {
+          for (const frame of decoder.decode(chunk)) {
+            if (frame.type === proto.MSG.DATA_OUT) {
+              chunks.push(frame.payload);
+            } else if (frame.type === proto.MSG.REPLAY_END) {
+              // Replay done — disconnect and return buffered data
+              resolved = true;
+              socket.destroy();
+              const full = Buffer.concat(chunks).toString("utf-8");
+              // Tail to requested line count
+              const allLines = full.split("\n");
+              const tailed = allLines.slice(-lines).join("\n");
+              resolve(tailed);
+            }
+          }
+        });
+
+        socket.on("error", () => {
+          if (!resolved) resolve("");
+        });
+
+        // Timeout — logs mode replay should be fast
+        setTimeout(() => {
+          if (!resolved) {
+            socket.destroy();
+            const full = Buffer.concat(chunks).toString("utf-8");
+            const allLines = full.split("\n");
+            resolve(allLines.slice(-lines).join("\n"));
+          }
+        }, 3000);
+      });
     } catch {
       return "";
     }
@@ -270,6 +320,11 @@ export class HoldptyController implements IPtyBackend {
   async setEnvironment(session: string, key: string, value: string): Promise<void> {
     if (!this.envVars.has(session)) this.envVars.set(session, new Map());
     this.envVars.get(session)!.set(key, value);
+
+    // If session already exists, inject env var via export command
+    if (this.holders.has(session)) {
+      await this.sendKeys(session, `export ${key}="${value}"`, { literal: false });
+    }
   }
 
   /**

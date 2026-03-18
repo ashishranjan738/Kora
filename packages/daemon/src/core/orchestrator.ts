@@ -435,7 +435,7 @@ export class Orchestrator extends EventEmitter {
    */
   async replaceAgent(
     agentId: string,
-    options?: { contextLines?: number; extraContext?: string; freshStart?: boolean },
+    options?: { contextLines?: number; extraContext?: string; freshStart?: boolean; shutdownTimeoutMs?: number },
   ): Promise<AgentState | null> {
     const oldAgent = this.agentManager.getAgent(agentId);
     if (!oldAgent) return null;
@@ -475,7 +475,7 @@ export class Orchestrator extends EventEmitter {
     const oldConfig = { ...oldAgent.config };
 
     // Kill old agent
-    await this.agentManager.stopAgent(agentId, freshStart ? "fresh restart by user" : "replaced by user");
+    await this.agentManager.stopAgent(agentId, freshStart ? "fresh restart by user" : "replaced by user", options?.shutdownTimeoutMs);
 
     // Resolve provider
     const provider = this.config.providerRegistry.get(oldConfig.cliProvider);

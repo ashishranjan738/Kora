@@ -546,15 +546,14 @@ export function createApiRouter(deps: {
       if (!orch) { res.status(404).json({ error: "Session not found" }); return; }
 
       const agents = orch.agentManager.listAgents().filter(a => a.status === "running");
-      const results = [];
-      for (const agent of agents) {
+      const results = await Promise.all(agents.map(async (agent) => {
         try {
-          const newAgent = await orch.replaceAgent(agent.id, { freshStart: true });
-          results.push({ oldId: agent.id, newId: newAgent?.id, name: agent.config.name, success: true });
+          const newAgent = await orch.replaceAgent(agent.id, { freshStart: true, shutdownTimeoutMs: 3000 });
+          return { oldId: agent.id, newId: newAgent?.id, name: agent.config.name, success: true };
         } catch (err) {
-          results.push({ oldId: agent.id, name: agent.config.name, success: false, error: String(err) });
+          return { oldId: agent.id, name: agent.config.name, success: false, error: String(err) };
         }
-      }
+      }));
       res.json({ restarted: results.length, results });
     } catch (err) {
       res.status(500).json({ error: String(err) });
@@ -1447,28 +1446,26 @@ export function createApiRouter(deps: {
         }
       }
 
-      // Sort: masters first, then workers
-      const sorted = [...playbook.agents].sort((a, b) => {
-        if (a.role === "master" && b.role !== "master") return -1;
-        if (a.role !== "master" && b.role === "master") return 1;
-        return 0;
-      });
+      // Split into masters and workers (playbook, session, am validated above)
+      const pb = playbook!;
+      const sess = session!;
+      const agentMgr = am!;
+      const masters = pb.agents.filter(a => a.role === "master");
+      const workers = pb.agents.filter(a => a.role !== "master");
 
       const spawned: Array<{ id: string; name: string; role: string; status: string }> = [];
 
-      for (const pa of sorted) {
-        const providerId = pa.provider ?? session.config.defaultProvider;
+      // Helper to spawn a single playbook agent
+      async function spawnPlaybookAgent(pa: typeof pb.agents[0]) {
+        const providerId = pa.provider ?? sess.config.defaultProvider;
         const provider = providerRegistry.get(providerId);
-        if (!provider) {
-          // Skip agents with unknown providers, but continue spawning others
-          continue;
-        }
+        if (!provider) return null;
 
         const permissions = pa.role === "master"
           ? { ...DEFAULT_MASTER_PERMISSIONS }
           : { ...DEFAULT_WORKER_PERMISSIONS };
 
-        const currentAgents = am.listAgents().filter(a => a.status === "running");
+        const currentAgents = agentMgr.listAgents().filter(a => a.status === "running");
         const peers = currentAgents.map(a => ({
           id: a.id,
           name: a.config.name,
@@ -1483,30 +1480,41 @@ export function createApiRouter(deps: {
           userPersona: pa.persona,
           permissions,
           sessionId: sid,
-          runtimeDir: session.runtimeDir,
+          runtimeDir: sess.runtimeDir,
           peers,
         });
 
-        // Use the task param as initialTask for the master agent only
         const initialTask = pa.role === "master" && task ? task : pa.initialTask;
 
-        const agentState = await am.spawnAgent({
+        const agentState = await agentMgr.spawnAgent({
           sessionId: sid,
           name: pa.name,
           role: pa.role,
           provider,
           model: pa.model,
           persona: fullPersona,
-          workingDirectory: session.config.projectPath,
-          runtimeDir: session.runtimeDir,
+          workingDirectory: sess.config.projectPath,
+          runtimeDir: sess.runtimeDir,
           extraCliArgs: pa.extraCliArgs,
           initialTask,
-          messagingMode: session.config.messagingMode || "mcp",
-          worktreeMode: session.config.worktreeMode,
+          messagingMode: sess.config.messagingMode || "mcp",
+          worktreeMode: sess.config.worktreeMode,
         });
 
         broadcastEvent({ event: "agent-spawned", sessionId: sid, agentId: agentState.id });
-        spawned.push({ id: agentState.id, name: pa.name, role: pa.role, status: agentState.status });
+        return { id: agentState.id, name: pa.name, role: pa.role, status: agentState.status };
+      }
+
+      // Spawn masters first (sequential — they need to be ready before workers)
+      for (const master of masters) {
+        const result = await spawnPlaybookAgent(master);
+        if (result) spawned.push(result);
+      }
+
+      // Spawn all workers in parallel
+      const workerResults = await Promise.all(workers.map(w => spawnPlaybookAgent(w)));
+      for (const result of workerResults) {
+        if (result) spawned.push(result);
       }
 
       res.status(201).json({ spawned, total: spawned.length });
