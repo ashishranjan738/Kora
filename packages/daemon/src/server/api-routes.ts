@@ -1021,6 +1021,18 @@ export function createApiRouter(deps: {
       if (!oldTask) { res.status(404).json({ error: "Task not found" }); return; }
 
       const body = req.body as UpdateTaskRequest;
+
+      // Validate inputs
+      if (body.title !== undefined && (typeof body.title !== "string" || body.title.trim() === "")) {
+        res.status(400).json({ error: "title must be a non-empty string" });
+        return;
+      }
+      const validStatuses = ["pending", "in-progress", "review", "done"];
+      if (body.status !== undefined && !validStatuses.includes(body.status)) {
+        res.status(400).json({ error: `status must be one of: ${validStatuses.join(", ")}` });
+        return;
+      }
+
       const task = db.updateTask(tid, {
         title: body.title,
         description: body.description,
@@ -1389,6 +1401,115 @@ export function createApiRouter(deps: {
       }
       await savePlaybook(globalConfigDir, body);
       res.status(201).json(body);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // ─── Launch Playbook into Existing Session ─────────────────────────
+
+  router.post("/sessions/:sid/playbook", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const { playbook: playbookName, task } = req.body as { playbook?: string; task?: string };
+
+      if (!playbookName) {
+        res.status(400).json({ error: "playbook name is required" });
+        return;
+      }
+
+      const session = sessionManager.getSession(sid);
+      if (!session) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const orch = orchestrators.get(sid);
+      const am = orch?.agentManager;
+      if (!am) {
+        res.status(500).json({ error: `No Orchestrator found for session "${sid}"` });
+        return;
+      }
+
+      const playbook = await loadPlaybook(globalConfigDir, playbookName);
+      if (!playbook) {
+        res.status(404).json({ error: `Playbook "${playbookName}" not found` });
+        return;
+      }
+
+      // Check for name conflicts with existing agents
+      const existingNames = new Set(am.listAgents().map(a => a.config.name.toLowerCase()));
+      for (const pa of playbook.agents) {
+        if (existingNames.has(pa.name.toLowerCase())) {
+          res.status(409).json({ error: `Agent name "${pa.name}" conflicts with an existing agent in this session` });
+          return;
+        }
+      }
+
+      // Sort: masters first, then workers
+      const sorted = [...playbook.agents].sort((a, b) => {
+        if (a.role === "master" && b.role !== "master") return -1;
+        if (a.role !== "master" && b.role === "master") return 1;
+        return 0;
+      });
+
+      const spawned: Array<{ id: string; name: string; role: string; status: string }> = [];
+
+      for (const pa of sorted) {
+        const providerId = pa.provider ?? session.config.defaultProvider;
+        const provider = providerRegistry.get(providerId);
+        if (!provider) {
+          // Skip agents with unknown providers, but continue spawning others
+          continue;
+        }
+
+        const permissions = pa.role === "master"
+          ? { ...DEFAULT_MASTER_PERMISSIONS }
+          : { ...DEFAULT_WORKER_PERMISSIONS };
+
+        const currentAgents = am.listAgents().filter(a => a.status === "running");
+        const peers = currentAgents.map(a => ({
+          id: a.id,
+          name: a.config.name,
+          role: a.config.role,
+          provider: a.config.cliProvider,
+          model: a.config.model,
+        }));
+
+        const fullPersona = buildPersona({
+          agentId: "pending",
+          role: pa.role,
+          userPersona: pa.persona,
+          permissions,
+          sessionId: sid,
+          runtimeDir: session.runtimeDir,
+          peers,
+        });
+
+        // Use the task param as initialTask for the master agent only
+        const initialTask = pa.role === "master" && task ? task : pa.initialTask;
+
+        const agentState = await am.spawnAgent({
+          sessionId: sid,
+          name: pa.name,
+          role: pa.role,
+          provider,
+          model: pa.model,
+          persona: fullPersona,
+          workingDirectory: session.config.projectPath,
+          runtimeDir: session.runtimeDir,
+          extraCliArgs: pa.extraCliArgs,
+          initialTask,
+          messagingMode: session.config.messagingMode || "mcp",
+          worktreeMode: session.config.worktreeMode,
+        });
+
+        broadcastEvent({ event: "agent-spawned", sessionId: sid, agentId: agentState.id });
+        spawned.push({ id: agentState.id, name: pa.name, role: pa.role, status: agentState.status });
+      }
+
+      res.status(201).json({ spawned, total: spawned.length });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
