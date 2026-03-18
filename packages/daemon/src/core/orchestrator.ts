@@ -24,6 +24,8 @@ import { AutoRelay } from "./auto-relay.js";
 import { MessageQueue } from "./message-queue.js";
 import { notifications } from "./notifications.js";
 import { saveAgentStates, loadAgentStates } from "./state-persistence.js";
+import fs from "fs";
+import { HoldptyController } from "./holdpty-controller.js";
 
 export interface OrchestratorConfig {
   sessionId: string;
@@ -375,17 +377,30 @@ export class Orchestrator extends EventEmitter {
       let alive = false;
 
       try {
-        // Check if tmux session exists
+        // Check if session exists (metadata + process alive)
         alive = await this.config.tmux.hasSession(tmuxSession);
 
-        // Double-check: verify the pane is actually accessible
+        // For holdpty: also verify the socket file exists on disk
+        if (alive && this.config.tmux instanceof HoldptyController) {
+          try {
+            const socketPath = await this.config.tmux.getSocketPathForSession(tmuxSession);
+            if (!fs.existsSync(socketPath)) {
+              alive = false;
+              console.log(`[restore] Agent ${agent.config.name} (${agent.id}): socket file missing — marking as crashed`);
+            }
+          } catch {
+            alive = false;
+          }
+        }
+
+        // Double-check: verify the pane/socket is actually accessible
         if (alive) {
           await this.config.tmux.capturePane(tmuxSession, 1, false);
         }
       } catch {
-        // capturePane failed — session exists but pane is dead
+        // capturePane failed — session metadata exists but socket/pane is dead
         alive = false;
-        console.log(`[restore] Agent ${agent.config.name} (${agent.id}): tmux session exists but pane is dead — marking as crashed`);
+        console.log(`[restore] Agent ${agent.config.name} (${agent.id}): session exists but pane/socket is dead — marking as crashed`);
       }
 
       if (alive) {
@@ -565,12 +580,13 @@ export class Orchestrator extends EventEmitter {
   }
 
   /**
-   * Clean up orphaned tmux sessions that no longer have corresponding active agents.
+   * Clean up orphaned sessions that no longer have corresponding active agents.
    * This handles stale sessions from crashed agents or incomplete cleanup.
+   * Works with both tmux and holdpty backends (uses listSessions + killSession interface).
    */
   async cleanup(): Promise<void> {
     try {
-      // Get all tmux sessions
+      // Get all sessions from the backend (tmux or holdpty)
       const allSessions = await this.config.tmux.listSessions();
 
       // Get active agents from this orchestrator's session
@@ -583,11 +599,15 @@ export class Orchestrator extends EventEmitter {
         session => session.startsWith(sessionPrefix) && !activeSessionNames.has(session)
       );
 
+      if (orphanedSessions.length > 0) {
+        console.log(`[orchestrator] Found ${orphanedSessions.length} orphaned session(s) for cleanup`);
+      }
+
       // Kill each orphaned session
       for (const session of orphanedSessions) {
         try {
           await this.config.tmux.killSession(session);
-          console.log(`[orchestrator] Cleaned up orphaned tmux session: ${session}`);
+          console.log(`[orchestrator] Cleaned up orphaned session: ${session}`);
         } catch (err) {
           console.error(`[orchestrator] Failed to kill orphaned session ${session}:`, err);
         }

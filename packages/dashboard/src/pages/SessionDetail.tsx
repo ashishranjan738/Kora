@@ -338,13 +338,13 @@ export function SessionDetail() {
             }}
             onClick={() => navigate(`/session/${sessionId}/overview`)}
           >
-            Command Center
+            &#127918; Command Center
           </button>
           <button
             className="primary"
             onClick={() => setShowSpawnDialog(true)}
           >
-            + Add Agent
+            &#10133; Add Agent
           </button>
           <button
             onClick={() => setShowPlaybookLauncher(true)}
@@ -366,7 +366,7 @@ export function SessionDetail() {
               }
             }}
           >
-            Open in VS Code
+            &#128187; Open in VS Code
           </button>
           <button
             onClick={async () => {
@@ -385,12 +385,12 @@ export function SessionDetail() {
               }
             }}
           >
-            + Terminal
+            &#128421; Terminal
           </button>
           <button onClick={() => setShowSettingsDialog(true)}>
-            Settings
+            &#9881; Settings
           </button>
-          <button onClick={handlePauseSession}>Pause Session</button>
+          <button onClick={handlePauseSession}>&#9208; Pause Session</button>
           <button
             onClick={() => {
               setShowRestartAll(true);
@@ -408,10 +408,10 @@ export function SessionDetail() {
               cursor: "pointer",
             }}
           >
-            Restart All
+            &#128260; Restart All
           </button>
           <button className="danger" onClick={() => setShowStopConfirm(true)}>
-            Stop Session
+            &#9724; Stop Session
           </button>
         </div>
       </div>

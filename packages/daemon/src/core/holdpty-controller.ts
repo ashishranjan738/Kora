@@ -1,15 +1,13 @@
 /**
  * HoldptyController — drop-in replacement for TmuxController using holdpty.
  *
- * Uses holdpty's Node.js API (Holder, session, client) for session management
- * and the binary protocol over Unix sockets for sendKeys/capturePane.
+ * Uses `holdpty launch --bg` for detached session creation (survives daemon restart).
+ * Routes sendKeys through PtyManager when a dashboard terminal is connected,
+ * falling back to direct socket attach when no dashboard is open.
  *
  * holdpty provides persistent PTY sessions accessible via Unix domain sockets.
  * Protocol: binary frames [1B type][4B length BE][payload]
  * Socket location: /tmp/dt-{UID}/{name}.sock (or HOLDPTY_DIR env override)
- *
- * Modes: attach (read+write, exclusive), view (read-only), logs (replay+follow/disconnect)
- * DATA_IN only accepted in attach mode.
  */
 
 import { execFile as execFileCb } from "child_process";
@@ -17,19 +15,11 @@ import { promisify } from "util";
 import * as net from "net";
 import * as fs from "fs";
 import type { IPtyBackend } from "./pty-backend.js";
+import type { PtyManager } from "./pty-manager.js";
 
 const execFile = promisify(execFileCb);
 
 // Lazy-loaded holdpty modules (ESM)
-let _Holder: any = null;
-async function getHolder() {
-  if (!_Holder) {
-    const mod = await import("holdpty/dist/holder.js");
-    _Holder = mod.Holder;
-  }
-  return _Holder;
-}
-
 let _session: any = null;
 async function getSessionModule() {
   if (!_session) {
@@ -55,18 +45,16 @@ async function getPlatform() {
 }
 
 export class HoldptyController implements IPtyBackend {
-  /** Track holders we started (for kill). Not all sessions may be here if daemon restarted. */
-  private holders = new Map<string, any>();
+  /** PtyManager reference for routing sendKeys through dashboard terminal connections */
+  private ptyManager: PtyManager | null = null;
 
   /**
-   * Resolve the holdpty CLI path for commands that still need CLI (logs, attach).
-   * Cached after first call.
+   * Resolve the holdpty CLI path. Cached after first call.
    */
   private cliPath: string | null = null;
   private async getCliPath(): Promise<string> {
     if (this.cliPath) return this.cliPath;
 
-    // Try direct holdpty first (faster)
     try {
       const { stdout } = await execFile("holdpty", ["--version"]);
       if (stdout.includes("holdpty")) {
@@ -75,13 +63,12 @@ export class HoldptyController implements IPtyBackend {
       }
     } catch { /* fall through */ }
 
-    // Fallback to npx
     this.cliPath = "npx-holdpty";
     return this.cliPath;
   }
 
   /**
-   * Run a holdpty CLI command (for operations without a Node.js API equivalent).
+   * Run a holdpty CLI command.
    */
   private async runCli(...args: string[]): Promise<string> {
     const cli = await this.getCliPath();
@@ -109,24 +96,82 @@ export class HoldptyController implements IPtyBackend {
   }
 
   /**
-   * Creates a new holdpty session using the Node.js Holder API.
+   * Set PtyManager reference for routing sendKeys through active dashboard connections.
+   */
+  setPtyManager(pm: PtyManager): void {
+    this.ptyManager = pm;
+  }
+
+  /**
+   * Creates a new holdpty session via `holdpty launch --bg` (detached mode).
+   * The session runs as a separate background process that survives daemon restart.
    */
   async newSession(
     name: string,
     width: number = 200,
     height: number = 50,
   ): Promise<void> {
-    const Holder = await getHolder();
     const shell = process.env.SHELL || "/bin/zsh";
 
-    const holder = await Holder.start({
-      command: [shell],
-      name,
-      cols: width,
-      rows: height,
-    });
+    // Apply stored env vars by prefixing with env command
+    const storedEnv = this.envVars.get(name);
+    const envArgs: string[] = [];
+    if (storedEnv) {
+      for (const [key, value] of storedEnv) {
+        envArgs.push(`${key}=${value}`);
+      }
+    }
 
-    this.holders.set(name, holder);
+    // Launch detached holdpty session
+    if (envArgs.length > 0) {
+      // Use env command to set variables
+      await this.runCli("launch", "--bg", "--name", name, "--", "env", ...envArgs, shell);
+    } else {
+      await this.runCli("launch", "--bg", "--name", name, "--", shell);
+    }
+
+    // Wait for socket to be ready (poll 50ms intervals, 3s timeout)
+    const socketPath = await this.getSocketPath(name);
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      try {
+        await fs.promises.access(socketPath);
+        break;
+      } catch {
+        await new Promise(r => setTimeout(r, 50));
+      }
+    }
+
+    // Resize to requested dimensions via socket
+    await this.resize(name, width, height);
+  }
+
+  /**
+   * Resize a holdpty session via the binary protocol.
+   */
+  async resize(name: string, cols: number, rows: number): Promise<void> {
+    const proto = await getProtocol();
+    const socketPath = await this.getSocketPath(name);
+
+    return new Promise<void>((resolve) => {
+      const socket = net.createConnection(socketPath, () => {
+        const hello = proto.encodeHello({ mode: "attach", protocolVersion: 1 });
+        socket.write(hello);
+      });
+
+      let gotAck = false;
+      socket.on("data", (chunk: Buffer) => {
+        if (!gotAck && chunk.length >= 5 && chunk[0] === proto.MSG.HELLO_ACK) {
+          gotAck = true;
+          const resizeFrame = proto.encodeResize(cols, rows);
+          socket.write(resizeFrame);
+          setTimeout(() => { socket.destroy(); resolve(); }, 50);
+        }
+      });
+
+      socket.on("error", () => { resolve(); });
+      setTimeout(() => { socket.destroy(); resolve(); }, 3000);
+    });
   }
 
   /**
@@ -142,113 +187,144 @@ export class HoldptyController implements IPtyBackend {
   }
 
   /**
-   * Kills a holdpty session.
+   * Kills a holdpty session via CLI stop command.
+   * Forces cleanup of socket + metadata files even if holdpty stop fails.
    */
   async killSession(name: string): Promise<void> {
     try {
-      // Try in-process holder first
-      const holder = this.holders.get(name);
-      if (holder) {
-        holder.kill();
-        this.holders.delete(name);
-        return;
-      }
-      // Fallback to CLI for sessions we didn't start (e.g. after daemon restart)
       await this.runCli("stop", name);
     } catch {
       // Already dead — that's fine
     }
+
+    // Force cleanup socket + metadata (respects HOLDPTY_DIR)
+    try {
+      const socketPath = await this.getSocketPath(name);
+      const metadataPath = socketPath.replace(/\.sock$/, ".json");
+      try { fs.unlinkSync(socketPath); } catch { /* may not exist */ }
+      try { fs.unlinkSync(metadataPath); } catch { /* may not exist */ }
+    } catch { /* getSocketPath may fail */ }
+
+    this.envVars.delete(name);
   }
 
   /**
-   * Send keystrokes to a holdpty session via the binary protocol.
-   * Connects in attach mode, sends DATA_IN frame, then disconnects.
+   * Public accessor for socket path — used by orchestrator for restore verification.
+   */
+  async getSocketPathForSession(name: string): Promise<string> {
+    return this.getSocketPath(name);
+  }
+
+  /**
+   * Send keystrokes to a holdpty session.
+   * Routes through PtyManager if a dashboard terminal is connected (avoids
+   * exclusive attach mode conflict). Falls back to direct socket attach.
    */
   async sendKeys(
     session: string,
     keys: string,
     options?: { literal?: boolean },
   ): Promise<void> {
+    // PTY terminals use \r (carriage return) for Enter, not \n
+    const data = options?.literal ? keys : keys + "\r";
+
+    // Fast path: route through PtyManager if dashboard terminal is connected
+    if (this.ptyManager?.hasActiveSession(session)) {
+      this.ptyManager.write(session, data);
+      return;
+    }
+
+    // Fallback: direct socket attach (no dashboard terminal open)
     const proto = await getProtocol();
     const socketPath = await this.getSocketPath(session);
 
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<void>((resolve) => {
       const socket = net.createConnection(socketPath, () => {
-        // Send HELLO with attach mode
-        const hello = proto.encodeHello({
-          mode: "attach",
-          protocolVersion: 1,
-        });
+        const hello = proto.encodeHello({ mode: "attach", protocolVersion: 1 });
         socket.write(hello);
       });
 
       let gotAck = false;
-
       socket.on("data", (chunk: Buffer) => {
-        if (!gotAck) {
-          // First response should be HELLO_ACK — parse header
-          if (chunk.length >= 5 && chunk[0] === proto.MSG.HELLO_ACK) {
-            gotAck = true;
-
-            // Send DATA_IN with the keys
-            const dataFrame = proto.encodeDataIn(Buffer.from(keys, "utf-8"));
-            socket.write(dataFrame);
-
-            // If not literal, also send Enter
-            if (!options?.literal) {
-              const enterFrame = proto.encodeDataIn(Buffer.from("\n", "utf-8"));
-              socket.write(enterFrame);
-            }
-
-            // Disconnect after a brief delay to let data flush
-            setTimeout(() => {
-              socket.destroy();
-              resolve();
-            }, 50);
-          }
+        if (!gotAck && chunk.length >= 5 && chunk[0] === proto.MSG.HELLO_ACK) {
+          gotAck = true;
+          const dataFrame = proto.encodeDataIn(Buffer.from(data, "utf-8"));
+          socket.write(dataFrame);
+          setTimeout(() => { socket.destroy(); resolve(); }, 50);
         }
       });
 
       socket.on("error", (err) => {
         const msg = err.message;
-        // Gracefully handle stale/dead sessions
-        if (msg.includes("ENOENT") || msg.includes("ECONNREFUSED") || msg.includes("no such file")) {
-          process.stderr.write(`[HoldptyController] Ignoring stale session error for ${session}: ${msg}\n`);
-          resolve();
-          return;
+        if (msg.includes("ENOENT") || msg.includes("ECONNREFUSED") || msg.includes("no such file")
+            || msg.includes("ECONNRESET") || msg.includes("already attached")) {
+          process.stderr.write(`[HoldptyController] Ignoring sendKeys error for ${session}: ${msg}\n`);
         }
-        reject(err);
+        resolve();
       });
 
-      // Timeout after 5s
-      setTimeout(() => {
-        socket.destroy();
-        resolve(); // Don't fail on timeout — best effort
-      }, 5000);
+      setTimeout(() => { socket.destroy(); resolve(); }, 5000);
     });
   }
 
   /**
-   * Send raw terminal input (no Enter appended). For interactive terminal streaming.
+   * Send raw terminal input (no Enter appended).
    */
   async sendRawInput(session: string, data: string): Promise<void> {
     await this.sendKeys(session, data, { literal: true });
   }
 
   /**
-   * Captures terminal output from a holdpty session via CLI logs command.
+   * Captures terminal output via socket-based logs replay.
+   * Avoids spawning a subprocess per call.
    */
   async capturePane(session: string, lines: number = 1000, _escapeSequences: boolean = false): Promise<string> {
     try {
-      const output = await this.runCli("logs", session, "--tail", String(lines));
-      return output;
+      const proto = await getProtocol();
+      const socketPath = await this.getSocketPath(session);
+
+      return await new Promise<string>((resolve) => {
+        const chunks: Buffer[] = [];
+        const decoder = new proto.FrameDecoder();
+        let resolved = false;
+
+        const socket = net.createConnection(socketPath, () => {
+          const hello = proto.encodeHello({ mode: "logs", protocolVersion: 1 });
+          socket.write(hello);
+        });
+
+        socket.on("data", (chunk: Buffer) => {
+          for (const frame of decoder.decode(chunk)) {
+            if (frame.type === proto.MSG.DATA_OUT) {
+              chunks.push(frame.payload);
+            } else if (frame.type === proto.MSG.REPLAY_END) {
+              resolved = true;
+              socket.destroy();
+              const full = Buffer.concat(chunks).toString("utf-8");
+              const allLines = full.split("\n");
+              resolve(allLines.slice(-lines).join("\n"));
+            }
+          }
+        });
+
+        socket.on("error", () => { if (!resolved) resolve(""); });
+
+        setTimeout(() => {
+          if (!resolved) {
+            socket.destroy();
+            const full = Buffer.concat(chunks).toString("utf-8");
+            const allLines = full.split("\n");
+            resolve(allLines.slice(-lines).join("\n"));
+          }
+        }, 3000);
+      });
     } catch {
       return "";
     }
   }
 
   /**
-   * Lists all active holdpty sessions using the session module.
+   * Lists all active holdpty sessions.
    */
   async listSessions(): Promise<string[]> {
     try {
@@ -261,15 +337,19 @@ export class HoldptyController implements IPtyBackend {
   }
 
   /**
-   * Sets an environment variable for a session.
-   * Note: holdpty doesn't have a direct setEnvironment — env must be set before launch.
-   * This stores env vars to be applied on next spawn.
+   * Stored env vars — applied during newSession via env command prefix.
+   * Also injected via sendKeys export for already-running sessions.
    */
   private envVars = new Map<string, Map<string, string>>();
 
   async setEnvironment(session: string, key: string, value: string): Promise<void> {
     if (!this.envVars.has(session)) this.envVars.set(session, new Map());
     this.envVars.get(session)!.set(key, value);
+
+    // If session already exists, inject env var via export command
+    if (await this.hasSession(session)) {
+      await this.sendKeys(session, `export ${key}="${value}"`, { literal: false });
+    }
   }
 
   /**
@@ -303,14 +383,14 @@ export class HoldptyController implements IPtyBackend {
   }
 
   /**
-   * Stop piping (no-op for holdpty — the detached process dies when session stops).
+   * Stop piping (no-op — the detached logs process dies when session stops).
    */
   async pipePaneStop(_session: string): Promise<void> {
-    // No-op: the logs --follow process will end when session stops
+    // No-op
   }
 
   /**
-   * Gets the PID of the process running in a session using session metadata.
+   * Gets the PID of the process running in a session via metadata.
    */
   async getPanePID(session: string): Promise<number | null> {
     try {
@@ -324,8 +404,7 @@ export class HoldptyController implements IPtyBackend {
   }
 
   /**
-   * Returns the command + args needed to attach to a holdpty session via node-pty.
-   * Uses `holdpty attach` which bridges stdin/stdout to the session's Unix socket.
+   * Returns the command + args to attach to a session via node-pty (for PtyManager).
    */
   getAttachCommand(session: string): { command: string; args: string[] } {
     if (this.cliPath === "npx-holdpty" || !this.cliPath) {
@@ -335,7 +414,7 @@ export class HoldptyController implements IPtyBackend {
   }
 
   /**
-   * Run a raw holdpty CLI command (for resize and other direct operations).
+   * Run a raw holdpty CLI command.
    */
   async run_raw(...args: string[]): Promise<string> {
     return this.runCli(...args);

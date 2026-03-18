@@ -12,6 +12,7 @@ import type { IPtyBackend } from "../core/pty-backend.js";
 import type { WSEvent } from "@kora/shared";
 import { getRuntimeTmuxPrefix } from "@kora/shared";
 import { PtyManager } from "../core/pty-manager.js";
+import { HoldptyController } from "../core/holdpty-controller.js";
 
 export interface ServerDeps {
   sessionManager: SessionManager;
@@ -36,6 +37,11 @@ export function createServer(options: ServerOptions) {
 
   // Configure PTY manager with the active terminal backend
   ptyManager.setBackend(deps.tmux);
+
+  // Wire PtyManager into HoldptyController for sendKeys routing
+  if (deps.tmux instanceof HoldptyController) {
+    deps.tmux.setPtyManager(ptyManager);
+  }
 
   // Serve the built React dashboard
   const dashboardDistPath = path.resolve(
@@ -130,7 +136,7 @@ export function createServer(options: ServerOptions) {
     });
   });
 
-  return { app, server, wss };
+  return { app, server, wss, ptyManager };
 }
 
 // Shared PTY manager — uses node-pty for real terminal I/O via the configured backend
