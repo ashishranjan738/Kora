@@ -130,20 +130,53 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
 
       ws.onopen = () => {
         setConnected(true);
-        // Send initial resize so tmux adjusts to our terminal size
-        ws.send(JSON.stringify({
-          type: "resize",
-          cols: term.cols,
-          rows: term.rows,
-        }));
+        // Delay initial resize to avoid racing with first data from tmux
+        setTimeout(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            fitAddon.fit();
+            ws.send(JSON.stringify({
+              type: "resize",
+              cols: term.cols,
+              rows: term.rows,
+            }));
+          }
+        }, 50);
       };
 
       // Raw data from node-pty — write directly to xterm
+      // Track whether we need to re-sync size after first chunk
+      let firstChunkReceived = false;
+      let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
       ws.onmessage = (event) => {
+        const writeData = (text: string) => {
+          term.write(text);
+
+          // After first data chunk, re-send resize to ensure tmux and xterm agree on size
+          if (!firstChunkReceived) {
+            firstChunkReceived = true;
+            setTimeout(() => {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: "resize",
+                  cols: term.cols,
+                  rows: term.rows,
+                }));
+              }
+            }, 100);
+          }
+
+          // Debounced refresh after rapid output bursts to fix garbled rendering
+          if (refreshTimer) clearTimeout(refreshTimer);
+          refreshTimer = setTimeout(() => {
+            term.refresh(0, term.rows - 1);
+          }, 150);
+        };
+
         if (typeof event.data === "string") {
-          term.write(event.data);
+          writeData(event.data);
         } else if (event.data instanceof Blob) {
-          event.data.text().then((text) => term.write(text));
+          event.data.text().then(writeData);
         }
       };
 
