@@ -880,23 +880,17 @@ function AgentsTab({
 
   // Playbook launcher state
   const [showPlaybookDialog, setShowPlaybookDialogInner] = useState(false);
-  const setShowPlaybookDialog = (v: boolean) => {
-    setShowPlaybookDialogInner(v);
-    if (!v && onClosePlaybookLauncher) onClosePlaybookLauncher();
-  };
-
-  // Respond to external trigger from header button
-  useEffect(() => {
-    if (showPlaybookLauncher) {
-      openPlaybookDialog();
-    }
-  }, [showPlaybookLauncher]);
   const [playbookNames, setPlaybookNames] = useState<string[]>([]);
   const [playbookDetails, setPlaybookDetails] = useState<Record<string, any>>({});
   const [selectedPlaybookName, setSelectedPlaybookName] = useState<string | null>(null);
   const [playbookTask, setPlaybookTask] = useState("");
   const [launchingPlaybook, setLaunchingPlaybook] = useState(false);
   const [loadingPlaybooks, setLoadingPlaybooks] = useState(false);
+
+  const setShowPlaybookDialog = (v: boolean) => {
+    setShowPlaybookDialogInner(v);
+    if (!v && onClosePlaybookLauncher) onClosePlaybookLauncher();
+  };
 
   const openPlaybookDialog = async () => {
     setShowPlaybookDialog(true);
@@ -905,7 +899,6 @@ function AgentsTab({
       const data = await api.getPlaybooks();
       const names = data.playbooks || [];
       setPlaybookNames(names);
-      // Load details for each playbook
       const details: Record<string, any> = {};
       for (const name of names) {
         try {
@@ -917,6 +910,13 @@ function AgentsTab({
       setLoadingPlaybooks(false);
     }
   };
+
+  // Respond to external trigger from header button
+  useEffect(() => {
+    if (showPlaybookLauncher) {
+      openPlaybookDialog();
+    }
+  }, [showPlaybookLauncher]);
 
   const handleLaunchPlaybook = async () => {
     if (!selectedPlaybookName) return;

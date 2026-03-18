@@ -117,8 +117,8 @@ export function AllSessions() {
   const totalSessions = sessions.length;
   const totalAgentsRunning = sessions.reduce((sum, s) => {
     const running =
-      typeof s.runningAgentCount === "number"
-        ? s.runningAgentCount
+      typeof s.activeAgentCount === "number"
+        ? s.activeAgentCount
         : s.agentCount ?? 0;
     return sum + running;
   }, 0);
@@ -505,9 +505,10 @@ export function AllSessions() {
                 <div className="session-card-meta">
                   <span>
                     {(() => {
-                      const running = s.runningAgentCount ?? 0;
+                      const total = s.agentCount ?? 0;
                       const crashed = s.crashedAgentCount ?? 0;
                       const stopped = s.stoppedAgentCount ?? 0;
+                      const running = s.activeAgentCount ?? Math.max(0, total - crashed - stopped);
                       const parts: React.ReactNode[] = [];
                       if (running > 0)
                         parts.push(
@@ -1257,7 +1258,7 @@ export function AllSessions() {
             id: stopConfirmSession.id,
             name: stopConfirmSession.name || "Unnamed Session",
             agentCount: stopConfirmSession.agentCount ?? 0,
-            activeAgentCount: stopConfirmSession.runningAgentCount ?? stopConfirmSession.agentCount ?? 0,
+            activeAgentCount: stopConfirmSession.activeAgentCount ?? stopConfirmSession.agentCount ?? 0,
           }}
           onCancel={() => {
             if (!stopping) {

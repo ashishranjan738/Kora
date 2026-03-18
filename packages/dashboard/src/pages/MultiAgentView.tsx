@@ -322,24 +322,6 @@ export function MultiAgentView() {
     }
   }, [mosaicValue]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fix: mosaic overlay intercepts wheel events — forward them to xterm underneath
-  useEffect(() => {
-    function handleOverlayWheel(e: WheelEvent) {
-      const target = e.target as HTMLElement;
-      if (!target?.classList?.contains("mosaic-window-body-overlay")) return;
-      // Find the xterm viewport beneath the overlay
-      const parent = target.closest(".mosaic-window-body");
-      const xtermViewport = parent?.querySelector(".xterm-viewport") as HTMLElement | null;
-      if (xtermViewport) {
-        e.preventDefault();
-        e.stopPropagation();
-        xtermViewport.scrollTop += e.deltaY;
-      }
-    }
-    document.addEventListener("wheel", handleOverlayWheel, { passive: false });
-    return () => document.removeEventListener("wheel", handleOverlayWheel);
-  }, []);
-
   // Keyboard shortcuts
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -868,6 +850,40 @@ export function MultiAgentView() {
               >
                 &larr; Exit Fullscreen
               </button>
+              {/* Gear menu in fullscreen */}
+              <div style={{ position: "relative" }}>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === agent.id ? null : agent.id); }}
+                  style={{
+                    background: 'none', border: '1px solid var(--border-color)', color: 'var(--text-secondary)',
+                    width: 32, height: 32, borderRadius: 6, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+                  </svg>
+                </button>
+                {menuOpen === agent.id && (
+                  <div
+                    style={{
+                      position: "absolute", top: "100%", right: 0,
+                      background: "var(--bg-secondary)", border: "1px solid var(--border-color)",
+                      borderRadius: 6, padding: 4, zIndex: 51, minWidth: 140,
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button style={menuItemStyle} onMouseEnter={menuHoverIn} onMouseLeave={menuHoverOut} onClick={async () => { setMenuOpen(null); showToast("Opening VS Code..."); try { await api.openVscode(sessionId!, agent.id); } catch (err: any) { showToast(`Failed: ${err.message}`); } }}>Open in VS Code</button>
+                    <div style={{ height: 1, background: "var(--border-color)", margin: "4px 0" }} />
+                    <button style={menuItemStyle} onMouseEnter={menuHoverIn} onMouseLeave={menuHoverOut} onClick={() => handleOpenSendMessage(agent.id)}>Send Message</button>
+                    <button style={menuItemStyle} onMouseEnter={menuHoverIn} onMouseLeave={menuHoverOut} onClick={() => handleOpenReplace(agent)}>Replace</button>
+                    <button style={menuItemStyle} onMouseEnter={menuHoverIn} onMouseLeave={menuHoverOut} onClick={() => handleRestart(agent.id)}>Restart</button>
+                    <div style={{ height: 1, background: "var(--border-color)", margin: "4px 0" }} />
+                    <button style={{ ...menuItemStyle, color: "var(--accent-red)" }} onMouseEnter={menuHoverIn} onMouseLeave={menuHoverOut} onClick={() => handleRemove(agent.id)}>Remove</button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

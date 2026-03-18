@@ -25,7 +25,7 @@ export function useWebSocket(onEvent: (event: any) => void) {
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const host = window.location.host;
       const token = getToken();
-      const url = `${protocol}//${host}/?token=${encodeURIComponent(token)}`;
+      const url = `${protocol}//${host}/ws/events?token=${encodeURIComponent(token)}`;
 
       const ws = new WebSocket(url);
       wsRef.current = ws;
