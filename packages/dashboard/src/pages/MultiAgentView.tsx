@@ -540,11 +540,7 @@ export function MultiAgentView() {
       >
         <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
           <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-            {tmuxSession ? (
-              <AgentTerminal sessionId={sessionId!} agentId={termId} height="100%" />
-            ) : (
-              <div style={{ padding: 16, color: "var(--text-secondary)" }}>Connecting...</div>
-            )}
+            <AgentTerminal sessionId={sessionId!} agentId={termId} height="100%" />
           </div>
         </div>
       </MosaicWindow>
