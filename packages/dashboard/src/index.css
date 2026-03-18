@@ -1863,10 +1863,10 @@ textarea:focus {
 }
 .kora-mosaic-theme .mosaic-window-body {
   background: var(--bg-primary) !important;
+  overflow: hidden !important;
 }
 .kora-mosaic-theme .mosaic-window-body-overlay {
   background: transparent !important;
-  pointer-events: none;
 }
 .kora-mosaic-theme .mosaic-split {
   background: var(--bg-tertiary);
@@ -2037,14 +2037,16 @@ textarea:focus {
    Fullscreen panel (legacy + split-pane)
    =========================== */
 .agent-panel-fullscreen {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 50 !important;
   border-radius: 0;
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
   animation: agentPanelFadeIn 0.15s ease-out;
+  width: 100vw !important;
+  height: 100vh !important;
 }
 @keyframes agentPanelFadeIn {
   from { opacity: 0; }
@@ -2057,9 +2059,18 @@ textarea:focus {
   overflow: hidden;
 }
 
+/* Hide the mosaic panel input bar when fullscreen — the fullscreen header has its own controls */
+.agent-panel-fullscreen .mosaic-panel-input {
+  padding: 8px 16px;
+}
+
 /* Ensure mosaic window body fills in fullscreen too */
 
-/* Ensure xterm.js fills its container */
+/* Ensure xterm.js fills its container without overflowing */
+.agent-panel-terminal {
+  position: relative;
+  overflow: hidden;
+}
 .agent-panel-terminal .xterm {
   height: 100% !important;
 }
