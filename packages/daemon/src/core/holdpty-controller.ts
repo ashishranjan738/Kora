@@ -14,6 +14,7 @@ import { execFile as execFileCb } from "child_process";
 import { promisify } from "util";
 import * as net from "net";
 import * as fs from "fs";
+import * as path from "path";
 import type { IPtyBackend } from "./pty-backend.js";
 import type { PtyManager } from "./pty-manager.js";
 
@@ -49,35 +50,30 @@ export class HoldptyController implements IPtyBackend {
   private ptyManager: PtyManager | null = null;
 
   /**
-   * Resolve the holdpty CLI path. Cached after first call.
+   * Resolved holdpty CLI path — pre-resolved on construction for fast access.
+   * Uses local node_modules/.bin/holdpty (67ms) instead of npx (273ms+).
    */
-  private cliPath: string | null = null;
-  private async getCliPath(): Promise<string> {
-    if (this.cliPath) return this.cliPath;
+  private cliPath: string;
 
-    try {
-      const { stdout } = await execFile("holdpty", ["--version"]);
-      if (stdout.includes("holdpty")) {
-        this.cliPath = "holdpty";
-        return this.cliPath;
-      }
-    } catch { /* fall through */ }
-
-    this.cliPath = "npx-holdpty";
-    return this.cliPath;
+  constructor() {
+    // Pre-resolve CLI path synchronously — check both dist/ and src/ relative paths
+    const candidates = [
+      path.resolve(__dirname, "../../../../../node_modules/.bin/holdpty"),  // from dist/core
+      path.resolve(__dirname, "../../../../node_modules/.bin/holdpty"),     // from src/core
+    ];
+    this.cliPath = candidates.find(p => fs.existsSync(p)) || "npx";
   }
 
   /**
-   * Run a holdpty CLI command.
+   * Run a holdpty CLI command using the pre-resolved path.
    */
   private async runCli(...args: string[]): Promise<string> {
-    const cli = await this.getCliPath();
     try {
-      if (cli === "npx-holdpty") {
+      if (this.cliPath === "npx") {
         const { stdout } = await execFile("npx", ["holdpty", ...args]);
         return stdout;
       }
-      const { stdout } = await execFile(cli, args);
+      const { stdout } = await execFile(this.cliPath, args);
       return stdout;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -366,9 +362,8 @@ export class HoldptyController implements IPtyBackend {
    */
   async pipePaneStart(session: string, outputFile: string): Promise<void> {
     try {
-      const cli = await this.getCliPath();
-      const cmd = cli === "npx-holdpty" ? "npx" : cli;
-      const args = cli === "npx-holdpty"
+      const cmd = this.cliPath === "npx" ? "npx" : this.cliPath;
+      const args = this.cliPath === "npx"
         ? ["holdpty", "logs", session, "--follow"]
         : ["logs", session, "--follow"];
 
@@ -407,7 +402,7 @@ export class HoldptyController implements IPtyBackend {
    * Returns the command + args to attach to a session via node-pty (for PtyManager).
    */
   getAttachCommand(session: string): { command: string; args: string[] } {
-    if (this.cliPath === "npx-holdpty" || !this.cliPath) {
+    if (this.cliPath === "npx") {
       return { command: "npx", args: ["holdpty", "attach", session] };
     }
     return { command: this.cliPath, args: ["attach", session] };

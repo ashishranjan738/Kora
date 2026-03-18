@@ -16,6 +16,8 @@ vi.mock("fs", () => ({
     access: vi.fn(),
   },
   openSync: vi.fn().mockReturnValue(3),
+  existsSync: vi.fn().mockReturnValue(false),
+  unlinkSync: vi.fn(),
 }));
 
 vi.mock("net", () => {
@@ -127,8 +129,8 @@ describe("HoldptyController detached mode", () => {
 
     // Verify holdpty launch --bg was called
     expect(mockExecFile).toHaveBeenCalledWith(
-      "holdpty",
-      expect.arrayContaining(["launch", "--bg", "--name", "my-session"]),
+      "npx",
+      expect.arrayContaining(["holdpty", "launch", "--bg", "--name", "my-session"]),
       expect.any(Function)
     );
   });
@@ -175,8 +177,8 @@ describe("HoldptyController detached mode", () => {
 
     // Verify holdpty stop was called
     expect(mockExecFile).toHaveBeenCalledWith(
-      "holdpty",
-      ["stop", "my-session"],
+      "npx",
+      ["holdpty", "stop", "my-session"],
       expect.any(Function)
     );
   });
@@ -269,9 +271,9 @@ describe("HoldptyController detached mode", () => {
 
     // Verify env command was used
     expect(mockExecFile).toHaveBeenCalledWith(
-      "holdpty",
+      "npx",
       expect.arrayContaining([
-        "launch", "--bg", "--name", "my-session", "--",
+        "holdpty", "launch", "--bg", "--name", "my-session", "--",
         "env", "FOO=bar", "BAZ=qux"
       ]),
       expect.any(Function)
