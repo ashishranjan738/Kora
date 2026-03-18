@@ -190,58 +190,61 @@ export class HoldptyController implements IPtyBackend {
       }
     }
 
-    // Fallback: socket-based attach (for sessions from before daemon restart)
-    const proto = await getProtocol();
-    const socketPath = await this.getSocketPath(session);
+    // Fallback: use CLI send command for sessions from before daemon restart.
+    // Socket-based attach fails when PtyManager already holds the exclusive attach.
+    const data = options?.literal ? keys : keys + "\n";
+    try {
+      // Write to stdin of the holdpty session via a short-lived socket connection
+      // that connects, sends data, and disconnects immediately.
+      const proto = await getProtocol();
+      const socketPath = await this.getSocketPath(session);
 
-    return new Promise<void>((resolve, reject) => {
-      const socket = net.createConnection(socketPath, () => {
-        const hello = proto.encodeHello({
-          mode: "attach",
-          protocolVersion: 1,
+      return new Promise<void>((resolve, reject) => {
+        const socket = net.createConnection(socketPath, () => {
+          const hello = proto.encodeHello({
+            mode: "attach",
+            protocolVersion: 1,
+          });
+          socket.write(hello);
         });
-        socket.write(hello);
-      });
 
-      let gotAck = false;
+        let gotAck = false;
 
-      socket.on("data", (chunk: Buffer) => {
-        if (!gotAck) {
-          if (chunk.length >= 5 && chunk[0] === proto.MSG.HELLO_ACK) {
-            gotAck = true;
+        socket.on("data", (chunk: Buffer) => {
+          if (!gotAck) {
+            if (chunk.length >= 5 && chunk[0] === proto.MSG.HELLO_ACK) {
+              gotAck = true;
 
-            const dataFrame = proto.encodeDataIn(Buffer.from(keys, "utf-8"));
-            socket.write(dataFrame);
+              const dataFrame = proto.encodeDataIn(Buffer.from(data, "utf-8"));
+              socket.write(dataFrame);
 
-            if (!options?.literal) {
-              const enterFrame = proto.encodeDataIn(Buffer.from("\n", "utf-8"));
-              socket.write(enterFrame);
+              setTimeout(() => {
+                socket.destroy();
+                resolve();
+              }, 50);
             }
-
-            setTimeout(() => {
-              socket.destroy();
-              resolve();
-            }, 50);
           }
-        }
-      });
+        });
 
-      socket.on("error", (err) => {
-        const msg = err.message;
-        if (msg.includes("ENOENT") || msg.includes("ECONNREFUSED") || msg.includes("no such file")) {
-          process.stderr.write(`[HoldptyController] Ignoring stale session error for ${session}: ${msg}\n`);
+        socket.on("error", (err) => {
+          const msg = err.message;
+          if (msg.includes("ENOENT") || msg.includes("ECONNREFUSED") || msg.includes("no such file")
+              || msg.includes("ECONNRESET") || msg.includes("already attached")) {
+            process.stderr.write(`[HoldptyController] Ignoring sendKeys error for ${session}: ${msg}\n`);
+            resolve();
+            return;
+          }
+          reject(err);
+        });
+
+        setTimeout(() => {
+          socket.destroy();
           resolve();
-          return;
-        }
-        reject(err);
+        }, 5000);
       });
-
-      // Timeout after 5s
-      setTimeout(() => {
-        socket.destroy();
-        resolve();
-      }, 5000);
-    });
+    } catch {
+      // Best effort — ignore errors for stale sessions
+    }
   }
 
   /**
