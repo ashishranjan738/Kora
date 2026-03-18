@@ -104,6 +104,16 @@ export function getOrCreateTerminal(
     const entry = registry.get(key)!;
     // Update theme if changed
     entry.term.options.theme = theme;
+    // Reconnect if WebSocket is dead
+    if (!entry.ws || entry.ws.readyState === WebSocket.CLOSED || entry.ws.readyState === WebSocket.CLOSING) {
+      if (!entry.disposed) {
+        if (entry.reconnectTimer) {
+          clearTimeout(entry.reconnectTimer);
+          entry.reconnectTimer = null;
+        }
+        connectWs(entry);
+      }
+    }
     return entry;
   }
 
