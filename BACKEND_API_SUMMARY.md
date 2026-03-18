@@ -1,15 +1,30 @@
 # Backend API Endpoints Summary
 
 ## Base URL
-- API: `http://localhost:7890/api/v1`
-- WebSocket: `ws://localhost:7890/terminal/{sessionId}/{agentId}`
+- API: `http://localhost:7890/api/v1` (prod) / `http://localhost:7891/api/v1` (dev)
+- WebSocket (events): `ws://localhost:7890/ws/events?token={TOKEN}`
+- WebSocket (terminal): `ws://localhost:7890/terminal/{sessionId}/{agentId}?token={TOKEN}`
 
 ## Authentication
 All API endpoints require Bearer token authentication:
 ```
 Authorization: Bearer {TOKEN}
 ```
-Token is read from `~/.agent-orchestrator/daemon.token` and auto-injected into the dashboard via `window.__AO_TOKEN__`.
+Token is read from `~/.kora/daemon.token` (or `~/.kora-dev/daemon.token`) and auto-injected into the dashboard via `window.__KORA_TOKEN__`.
+
+## New Endpoints (Sprint 3)
+
+### POST /api/v1/sessions/:sid/playbook
+Launch a playbook into an existing session.
+```json
+{ "playbook": "full-stack-team", "task": "Build the login feature" }
+```
+
+### GET /api/v1/suggestions (Designed, Not Yet Implemented)
+Get recent/suggested values for autocomplete.
+```
+GET /api/v1/suggestions?types=paths,models,flags,personas,providers
+```
 
 ---
 

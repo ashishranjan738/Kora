@@ -24,7 +24,7 @@ Kora is a multi-agent orchestration platform for AI coding CLI agents. It runs m
 │   │   │   └── index.ts            # Re-exports everything
 │   │   └── tsconfig.json           # outDir: dist, composite: true
 │   │
-│   ├── daemon/                     # @kora/daemon — Express + WS + SQLite + tmux
+│   ├── daemon/                     # @kora/daemon — Express + WS + SQLite + holdpty/tmux
 │   │   ├── src/
 │   │   │   ├── cli.ts              # CLI entry point (start/stop/status, --dev flag)
 │   │   │   ├── daemon-lifecycle.ts # PID/port/token file management, getGlobalConfigDir()
@@ -35,26 +35,30 @@ Kora is a multi-agent orchestration platform for AI coding CLI agents. It runs m
 │   │   │   │   └── auth.ts         # Bearer token middleware
 │   │   │   ├── core/
 │   │   │   │   ├── orchestrator.ts # Main orchestrator — ties everything together
-│   │   │   │   ├── agent-manager.ts # Spawn/stop/restore agents via tmux
+│   │   │   │   ├── agent-manager.ts # Spawn/stop/restore agents via holdpty/tmux
 │   │   │   │   ├── database.ts     # SQLite (better-sqlite3) — events, tasks, comments
 │   │   │   │   ├── event-log.ts    # Event logging → SQLite (JSONL fallback)
+│   │   │   │   ├── logger.ts       # Pino structured JSON logger singleton
 │   │   │   │   ├── message-queue.ts # Rate-limited message delivery (MCP + terminal modes)
 │   │   │   │   ├── auto-relay.ts   # @mention detection in terminal output
 │   │   │   │   ├── persona-builder.ts # Builds system prompts with team awareness
-│   │   │   │   ├── tmux-controller.ts # tmux wrapper (newSession, sendKeys, capturePane, etc.)
-│   │   │   │   ├── pty-manager.ts  # node-pty for terminal streaming
+│   │   │   │   ├── tmux-controller.ts # tmux wrapper (fallback backend)
+│   │   │   │   ├── holdpty-controller.ts # holdpty wrapper (default backend, detached mode)
+│   │   │   │   ├── pty-backend.ts  # IPtyBackend interface for terminal provider abstraction
+│   │   │   │   ├── pty-manager.ts  # node-pty for terminal streaming + sendKeys bridge
 │   │   │   │   ├── session-manager.ts # Session CRUD, persistence
 │   │   │   │   ├── worktree.ts     # Git worktree manager
 │   │   │   │   ├── state-persistence.ts # Save/load agent state to disk
 │   │   │   │   ├── cost-tracker.ts # Token/cost tracking
 │   │   │   │   ├── usage-monitor.ts # Polls terminal for token usage
-│   │   │   │   ├── agent-health.ts # Health monitoring via tmux
+│   │   │   │   ├── agent-health.ts # Health monitoring via holdpty/tmux
 │   │   │   │   ├── agent-control-plane.ts # File-based command system
 │   │   │   │   ├── message-bus.ts  # File-based message system
 │   │   │   │   ├── notifications.ts # In-memory event bus
 │   │   │   │   ├── project-config.ts # .kora.yml parser
 │   │   │   │   ├── playbook-loader.ts # Built-in playbook templates
-│   │   │   │   └── terminal-stream.ts # Terminal output ring buffer
+│   │   │   │   ├── model-discovery.ts # Dynamic model discovery via provider CLI
+│   │   │   │   └── terminal-stream.ts # Terminal output ring buffer (100K lines)
 │   │   │   ├── mcp/
 │   │   │   │   └── agent-mcp-server.ts # MCP JSON-RPC server (send/check/list/broadcast/tasks)
 │   │   │   └── cli-providers/
@@ -129,15 +133,33 @@ Uses path-to-regexp v8 — no `*` wildcard for SPA fallback. Uses middleware ins
 Bearer token generated on daemon start, injected into HTML as `<script>window.__KORA_TOKEN__="..."</script>` BEFORE module scripts. GET non-API routes skip auth (serves dashboard HTML).
 
 ### Agent Spawning Flow
-1. Create tmux session
-2. Set env vars (including `KORA_DEV` for dev mode)
-3. Wait for shell prompt (poll every 200ms, max 10s)
-4. Generate MCP config with `--project-path` = `path.resolve(runtimeDir, "..")` (NOT worktree)
-5. Build CLI command via provider's `buildCommand()` (returns `string[]`, not shell string)
-6. Send command to tmux via `sendKeys`
-7. Append `--mcp-config` and `--allowedTools` for claude-code provider
-8. Create git worktree for code isolation
-9. Start health monitoring + pipe-pane logging
+1. Generate agent ID, write persona file
+2. Create git worktree for code isolation (if isolated mode + git repo)
+3. Generate MCP config with `--project-path` = `path.resolve(runtimeDir, "..")` (NOT worktree)
+4. Build CLI command via provider's `buildCommand()` (returns `string[]`, not shell string)
+5. Append `--mcp-config` and `--allowedTools` for MCP-capable providers
+6. Create holdpty session (`holdpty launch --bg` for detached persistence)
+7. Wait for shell prompt (poll capturePane every 200ms, max 3s)
+8. Set env vars via `sendKeys("export K=V")` (KORA_DEV, KORA_CONFIG_DIR, user envVars)
+9. `cd` to working directory, wait for prompt
+10. Send CLI command via `sendKeys`
+11. If initialTask: wait 5s then send via sendKeys
+12. Start health monitoring + pipe-pane logging
+
+### Terminal Backend: Holdpty (Default) vs Tmux (Fallback)
+- **holdpty** (default): Uses `holdpty launch --bg` for detached PTY sessions that survive daemon restart. Communication via Unix socket binary protocol. Sessions discovered via metadata files at `/tmp/dt-{UID}/`.
+- **tmux** (fallback): Uses tmux sessions with `mouse off`. Selected via `--terminal-backend tmux`.
+- **IPtyBackend interface**: Both backends implement `newSession`, `hasSession`, `killSession`, `sendKeys`, `capturePane`, `setEnvironment`, `listSessions`, `pipePaneStart/Stop`, `getPanePID`, `getAttachCommand`.
+- **PtyManager bridge**: When dashboard terminal holds exclusive holdpty attach, `sendKeys` routes through PtyManager's existing PTY connection.
+- **Session persistence**: holdpty `--bg` sessions survive daemon restart. On startup, `orchestrator.restore()` checks `isSessionActive()` (PID-based) and re-registers alive agents.
+
+### Structured Logging (pino)
+- Logger singleton at `packages/daemon/src/core/logger.ts`
+- Structured JSON output with timestamps
+- Log levels via `KORA_LOG_LEVEL` env var (default: info)
+- Dev mode: `pino-pretty` for colored output
+- Express request logging via `pino-http` middleware
+- `make logs-dev` pipes through `pino-pretty`
 
 ### MCP Inter-Agent Messaging
 - MCP server runs per-agent as a child process (JSON-RPC over stdio)
@@ -214,13 +236,19 @@ cd packages/dashboard && npm install && npm run build && cd ../..
 ## How to Run
 
 ```bash
-# Production
+# Production (holdpty default backend)
 node packages/daemon/dist/cli.js start
 # → http://localhost:7890, config ~/.kora/
 
 # Dev mode
 node packages/daemon/dist/cli.js start --dev
 # → http://localhost:7891, config ~/.kora-dev/
+
+# With tmux fallback backend
+node packages/daemon/dist/cli.js start --dev --terminal-backend tmux
+
+# With debug logging
+KORA_LOG_LEVEL=debug node packages/daemon/dist/cli.js start --dev
 
 # Stop
 node packages/daemon/dist/cli.js stop
@@ -230,24 +258,26 @@ node packages/daemon/dist/cli.js stop
 
 ### Priority 1 — Ship Blockers
 1. **npm packaging** — Need prepublish script to bundle dashboard dist into daemon for `npx kora start`
-2. **Complete holdpty migration** — TerminalProvider interface exists; finish holdpty integration as tmux replacement
-3. **Messages still file-based** — 14K+ inbox files accumulate. Should move to SQLite like tasks/events
-4. **Disaster recovery** — No daemon auto-restart, no agent work checkpointing. See `DISASTER_RECOVERY.md` for full plan.
+2. **Messages still file-based** — 14K+ inbox files accumulate. Should move to SQLite like tasks/events
+3. **Disaster recovery** — No daemon auto-restart, no agent work checkpointing. See `DISASTER_RECOVERY.md` for full plan.
+4. **Holdpty exclusive attach conflict** — sendKeys via socket fails when PtyManager holds dashboard terminal attach. PtyManager bridge routes sendKeys through existing connection as workaround.
 
 ### Priority 2 — Quality
 5. **Event routing (Tier 1+2)** — Session-scoped WS filtering + event-type filtering. See `ORCHESTRATOR_EVENT_ROUTING.md`
 6. **Cost tracking shows $0** — UsageMonitor code exists but doesn't parse actual token usage from CLI output
 7. **Bundle size optimization** — Dashboard JS is ~1.2MB (Mantine + Monaco + xterm). Needs code-splitting.
-8. **Unit tests** — 54 tests in place (vitest): worktree-mode (21), message-queue (18), MCP tools (15). Run: `npm run test -w packages/daemon`
+8. **Unit tests** — 100 tests passing (vitest): worktree-mode (21), message-queue (18), MCP tools (15), terminal-stream (14), holdpty (12), spawn-performance (6), message-notification (8), playbook-config (6). Run: `npm run test -w packages/daemon`
 9. **API rate limiting** — No Express rate-limiter middleware
+10. **YAML playbook import** — Design complete (YAML_PLAYBOOK_DESIGN.md), not yet implemented. Needs `js-yaml` dependency.
 
 ### Priority 3 — Features
-10. **VS Code extension** — Phase 4. Empty package exists at `packages/vscode-extension/`
-11. **Jira/Asana integration** — External task management sync
-12. **Agent templates marketplace** — Pre-built personas for common roles
-13. **PM2 integration** — Process supervisor for daemon auto-restart on crash
-14. **Agent auto-checkpoint** — Periodic git commit in agent worktrees to prevent code loss
-15. **Multi-user support** — Single-user only, no role-based access
+11. **VS Code extension** — Phase 4. Empty package exists at `packages/vscode-extension/`
+12. **Jira/Asana integration** — External task management sync
+13. **Agent templates marketplace** — Pre-built personas for common roles
+14. **PM2 integration** — Process supervisor for daemon auto-restart on crash
+15. **Agent auto-checkpoint** — Periodic git commit in agent worktrees to prevent code loss
+16. **Multi-user support** — Single-user only, no role-based access
+17. **Recent suggestions** — Autocomplete for paths/flags/models from past usage (design done, not implemented)
 
 ## Important Patterns
 
@@ -268,12 +298,14 @@ All colors must use CSS variables (no hardcoded `#hex`). Check both `[data-theme
 
 ## Codebase Stats
 
-- **90+ source files** across 3 packages
-- **~22,000 lines** of TypeScript/TSX/CSS
+- **100+ source files** across 3 packages
+- **~25,000 lines** of TypeScript/TSX/CSS
 - **Shared**: 5 files, ~500 LOC
-- **Daemon**: 40+ files, ~8,500 LOC
-- **Dashboard**: 45+ files, ~13,000 LOC
+- **Daemon**: 45+ files, ~10,000 LOC
+- **Dashboard**: 45+ files, ~14,000 LOC
+- **Tests**: 100 passing (vitest)
 - **New deps (Sprint 2)**: @mantine/core, @mantine/hooks, postcss-preset-mantine, postcss-simple-vars, marked, dompurify
+- **New deps (Sprint 3)**: holdpty, pino, pino-pretty, pino-http
 
 ## Session History & Recovery Log
 
@@ -408,21 +440,64 @@ PR #1  feat: frontend worktree mode + UI
 - `CONFIG_AUDIT.md` — 4 P0 + multiple P1 findings across all config files
 - `MOBILE_BUGS.md` — 40 issues tracked, 30+ fixed
 
-#### In Progress
-- HoldptyController — tmux replacement with TerminalProvider interface (configurable backend)
-- holdpty `send` mode — upstream contribution planned
-- Acknowledge-based message delivery with escalating notifications
-- Nudge button backend endpoint
+### Session: KaroDev Sprint 3 (March 18, 2026)
+
+**Session ID**: `karodev`
+**Project Path**: `/Users/ashishranjan738/Projects/Kora`
+**Mode**: Dev (port 7891, config `~/.kora-dev/`)
+**Agents**: Architect, Frontend, Backend, Tests, Researcher, Reviewer (6 agents)
+
+#### PRs Merged
+| PR | Title | Key Changes |
+|----|-------|-------------|
+| #23 | feat: HoldptyController + IPtyBackend interface | HoldptyController as tmux replacement, Holder.start() API, node-pty override for macOS ARM |
+| #24 | fix: standalone terminal bypasses IPtyBackend | getAttachCommand() on IPtyBackend, PtyManager uses configured backend |
+| #25 | fix: terminal tiles show 'Connecting...' after reload | Terminal reconnection fix |
+| #26 | feat: optimistic terminal rendering | Command Center terminal tile rendering improvements |
+| #28 | feat: terminal-stream ring buffer tests | 14 terminal-stream tests, TERMINAL_RING_BUFFER_LINES=100K verified |
+| #29 | sprint3/frontend-fixes | Agent card v2 compact redesign, stats row, model inline display |
+| #30 | fix: HoldptyController uses Node.js API | Holder.start() instead of CLI for session management |
+| #31 | fix: postinstall to remove holdpty's bundled broken node-pty | npm override for node-pty compatibility |
+| #32 | fix: command center fullscreen + scroll | mosaic-window-body-overlay pointer-events fix, JS wheel forwarding, CSS fullscreen via class |
+| #33 | fix: fullscreen useCallback deps | fullscreenAgentId added to renderTile useCallback dependencies |
+
+#### Architecture Decisions (Sprint 3)
+- **Holdpty detached mode**: `holdpty launch --bg` spawns detached holder processes that survive daemon restart. `Holder.start()` is in-process only (dies with daemon). Metadata at `/tmp/dt-{UID}/{name}.json`, socket at `/tmp/dt-{UID}/{name}.sock`.
+- **PtyManager bridge**: sendKeys routes through PtyManager's existing PTY when dashboard holds exclusive holdpty attach. Avoids exclusive attach conflict.
+- **Env vars via export**: `setEnvironment()` is a no-op under holdpty. Env vars set via `sendKeys("export K=V")` after shell prompt detected.
+- **Structured logging**: pino JSON logger with levels (KORA_LOG_LEVEL env), pino-http for Express, pino-pretty for dev.
+- **Notifications use \r**: `literal: false` mode appends `\r` (carriage return) not `\n` for PTY Enter key.
+- **Fullscreen via CSS class**: `.agent-panel-fullscreen` with `position: fixed` on the mosaic tile content div (no separate overlay component). `terminalSlideIn` animation uses opacity only (no transform).
+
+#### Key Bugs Found & Fixed
+1. sendKeys `\n` vs `\r` — PTY terminals need `\r` for Enter, not `\n`
+2. Exclusive holdpty attach conflict — PtyManager bridge for sendKeys
+3. Broadcast slow delivery — parallel processQueues
+4. Fullscreen CSS broken by transform — removed transform from terminalSlideIn
+5. mosaic-window-body-overlay blocking events — pointer-events:none (then reverted, JS wheel forwarding instead)
+6. Standalone terminal bypasses IPtyBackend — getAttachCommand() added
+7. holdpty Holder.start() is in-process — confirmed via source, must use --bg for persistence
+8. setEnvironment no-op under holdpty — env vars stored in Map but never applied to PTY
+9. Sequential restart-all — agents stopped/spawned one at a time (bottleneck)
+10. capturePane under holdpty spawns subprocess per poll — ~25-50 subprocess spawns per agent
+
+#### Research & Design Docs Created
+- `YAML_PLAYBOOK_DESIGN.md` — Full YAML playbook schema, import mechanism, storage, API endpoints, dashboard UI, validation (~20 hrs implementation)
+- Logging implementation plan — 65 log statements across 10 files with exact line numbers
+- Holdpty detached mode implementation plan — 8 code changes with exact diffs
+- Recent suggestions design — JSON file + GET /suggestions endpoint + frontend autocomplete
+- Agent spawn performance analysis — full timeline, 3 bottlenecks identified
+- Session persistence analysis — Holder.start() vs --bg verified empirically
 
 #### Pending Work (Next Sprint)
-1. Complete holdpty integration + provider pattern
-2. Implement event routing Tier 1+2 (session-scoped + event-type WS filtering)
-3. Upstream PR: holdpty `send` command
-4. Upstream PR: holdpty macOS ARM node-pty fix
-5. P1 config fixes (health check intervals, scrollback limit, MAX_AGENTS_PER_SESSION)
-6. pty-manager prompt/stall/completion detection integration
+1. YAML playbook import implementation (js-yaml, multi-directory discovery)
+2. Holdpty detached mode migration (--bg for session persistence)
+3. Parallel restart-all (Promise.all instead of sequential for-loop)
+4. Socket-based capturePane (replace CLI subprocess per poll)
+5. Event routing Tier 1+2 (session-scoped + event-type WS filtering)
+6. Recent suggestions implementation (paths/flags/models autocomplete)
 7. Bundle size optimization (code splitting for Mantine)
-8. Remaining mobile cosmetic issues (editor height, timeline layout, mosaic touch)
+8. Upstream PR: holdpty non-exclusive write mode
 
 ### How to Resume Development
 
@@ -438,14 +513,14 @@ npx tsc -p packages/daemon/tsconfig.json
 cd packages/dashboard && npm install && npm run build && cd ../..
 
 # 3. Run tests
-npm run test -w packages/daemon  # 54 tests should pass
+npm run test -w packages/daemon  # 100 tests should pass
 
 # 4. Start dev daemon
 node packages/daemon/dist/cli.js start --dev
 # -> http://localhost:7891, config ~/.kora-dev/, runtime .kora-dev/
 
-# 4b. With holdpty terminal backend (experimental)
-node packages/daemon/dist/cli.js start --dev --terminal-backend holdpty
+# 4b. With tmux fallback backend
+node packages/daemon/dist/cli.js start --dev --terminal-backend tmux
 
 # 5. Start prod daemon (if needed)
 node packages/daemon/dist/cli.js start
