@@ -378,6 +378,16 @@ export class Orchestrator extends EventEmitter {
         // Check if session exists (metadata + process alive)
         alive = await this.config.tmux.hasSession(tmuxSession);
 
+        // For holdpty: also verify the socket file exists on disk
+        if (alive) {
+          const uid = process.getuid?.() ?? 501;
+          const socketPath = require("path").join(`/tmp/dt-${uid}`, `${tmuxSession}.sock`);
+          if (!require("fs").existsSync(socketPath)) {
+            alive = false;
+            console.log(`[restore] Agent ${agent.config.name} (${agent.id}): socket file missing — marking as crashed`);
+          }
+        }
+
         // Double-check: verify the pane/socket is actually accessible
         if (alive) {
           await this.config.tmux.capturePane(tmuxSession, 1, false);

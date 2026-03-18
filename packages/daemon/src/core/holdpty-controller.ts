@@ -188,6 +188,7 @@ export class HoldptyController implements IPtyBackend {
 
   /**
    * Kills a holdpty session via CLI stop command.
+   * Forces cleanup of socket + metadata files even if holdpty stop fails.
    */
   async killSession(name: string): Promise<void> {
     try {
@@ -195,6 +196,14 @@ export class HoldptyController implements IPtyBackend {
     } catch {
       // Already dead — that's fine
     }
+
+    // Ensure cleanup even if holdpty stop didn't remove files
+    const uid = process.getuid?.() ?? 501;
+    const sessionDir = `/tmp/dt-${uid}`;
+    try { fs.unlinkSync(`${sessionDir}/${name}.sock`); } catch { /* may not exist */ }
+    try { fs.unlinkSync(`${sessionDir}/${name}.json`); } catch { /* may not exist */ }
+
+    this.envVars.delete(name);
   }
 
   /**
