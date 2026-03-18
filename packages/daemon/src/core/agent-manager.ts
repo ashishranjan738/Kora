@@ -225,22 +225,7 @@ export class AgentManager extends EventEmitter {
     // 4. Create tmux session
     await this.tmux.newSession(tmuxSession);
 
-    // 5. Set environment variables via tmux set-environment
-    if (options.envVars) {
-      for (const [key, value] of Object.entries(options.envVars)) {
-        await this.tmux.setEnvironment(tmuxSession, key, value);
-      }
-    }
-
-    // Propagate dev mode to agent's MCP server so it finds the right config dir
-    if (process.env.KORA_DEV === "1") {
-      await this.tmux.setEnvironment(tmuxSession, "KORA_DEV", "1");
-    }
-    if (process.env.KORA_CONFIG_DIR) {
-      await this.tmux.setEnvironment(tmuxSession, "KORA_CONFIG_DIR", process.env.KORA_CONFIG_DIR);
-    }
-
-    // Wait for shell to be ready by polling capturePane for a prompt character
+    // 5. Wait for shell to be ready by polling capturePane for a prompt character
     const maxWait = 10000; // 10 seconds max
     const pollInterval = 200; // check every 200ms
     let startTime = Date.now();
@@ -252,7 +237,26 @@ export class AgentManager extends EventEmitter {
       await new Promise(r => setTimeout(r, pollInterval));
     }
 
-    // 6. cd to workingDirectory (use worktree if available)
+    // 6. Set environment variables via export commands (works for both tmux and holdpty)
+    const envEntries: [string, string][] = [];
+    if (options.envVars) {
+      envEntries.push(...Object.entries(options.envVars));
+    }
+    if (process.env.KORA_DEV === "1") {
+      envEntries.push(["KORA_DEV", "1"]);
+    }
+    if (process.env.KORA_CONFIG_DIR) {
+      envEntries.push(["KORA_CONFIG_DIR", process.env.KORA_CONFIG_DIR]);
+    }
+
+    // Batch as single export command to minimize delays
+    if (envEntries.length > 0) {
+      const exportCmd = envEntries.map(([k, v]) => `${k}="${v}"`).join(" ");
+      await this.tmux.sendKeys(tmuxSession, `export ${exportCmd}`, { literal: false });
+      await new Promise(r => setTimeout(r, 200)); // brief pause for shell to process
+    }
+
+    // 7. cd to workingDirectory (use worktree if available)
     await this.tmux.sendKeys(tmuxSession, `cd ${agentWorkDir}`, { literal: false });
 
     // Wait for cd to complete — poll for prompt to reappear
@@ -265,23 +269,23 @@ export class AgentManager extends EventEmitter {
       await new Promise(r => setTimeout(r, pollInterval));
     }
 
-    // 7. Send the command to tmux via sendKeys (join args with spaces)
+    // 8. Send the command to tmux via sendKeys (join args with spaces)
     await this.tmux.sendKeys(tmuxSession, command.join(" "), { literal: false });
 
-    // 8. If initialTask, wait 5 seconds then send it via sendKeys
+    // 9. If initialTask, wait 5 seconds then send it via sendKeys
     //    (Claude Code needs time to fully start up)
     if (options.initialTask) {
       await new Promise((resolve) => setTimeout(resolve, 5000));
       await this.tmux.sendKeys(tmuxSession, options.initialTask, { literal: true });
     }
 
-    // 9. Start health monitoring
+    // 10. Start health monitoring
     this.healthMonitor.startMonitoring(agentId, tmuxSession);
 
-    // 10. Start pipe-pane for terminal streaming
+    // 11. Start pipe-pane for terminal streaming
     await this.tmux.pipePaneStart(tmuxSession, path.join(options.runtimeDir, `${agentId}.log`));
 
-    // 11. Create AgentState, store in map
+    // 12. Create AgentState, store in map
     const permissions: AgentPermissions = options.role === "master"
       ? { ...DEFAULT_MASTER_PERMISSIONS }
       : { ...DEFAULT_WORKER_PERMISSIONS };
@@ -332,7 +336,7 @@ export class AgentManager extends EventEmitter {
 
     this.agents.set(agentId, agentState);
 
-    // 12. Emit "agent-spawned"
+    // 13. Emit "agent-spawned"
     this.emit("agent-spawned", agentState);
 
     return agentState;

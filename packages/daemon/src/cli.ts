@@ -101,7 +101,7 @@ async function handleStart(): Promise<void> {
   }
 
   // 5. Create the HTTP + WebSocket server
-  const { server } = createServer({
+  const { server, ptyManager } = createServer({
     token: info.token,
     deps: {
       sessionManager,
@@ -153,7 +153,7 @@ async function handleStart(): Promise<void> {
   }, 5 * 60 * 1000); // 5 minutes
 
   // 6. Graceful shutdown on SIGINT / SIGTERM
-  //    Persist state but DON'T kill tmux agents — they survive for restore on next start
+  //    Persist state but DON'T kill agents — holdpty --bg sessions persist independently
   const shutdown = async () => {
     console.log("\nShutting down daemon...");
 
@@ -174,6 +174,10 @@ async function handleStart(): Promise<void> {
 
     await sessionManager.save();
     await shutdownDaemon();
+
+    // Close PtyManager connections cleanly (disconnect dashboard terminals)
+    ptyManager.destroyAll();
+
     server.close(() => {
       process.exit(0);
     });
