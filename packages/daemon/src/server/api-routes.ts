@@ -1532,7 +1532,7 @@ export function createApiRouter(deps: {
       await tmux.newSession(tmuxSessionName);
 
       // Wait for shell prompt before sending cd (shell may not be ready yet)
-      const maxWait = 10000;
+      const maxWait = 3000;
       const pollInterval = 200;
       let waited = 0;
       while (waited < maxWait) {
