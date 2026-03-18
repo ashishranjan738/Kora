@@ -334,6 +334,11 @@ const TOOL_DEFINITIONS = [
           type: "string",
           description: "Initial task to send after spawning (optional)",
         },
+        extraCliArgs: {
+          type: "array",
+          items: { type: "string" },
+          description: "Extra CLI arguments to pass to the agent (e.g. ['--dangerously-skip-permissions'])",
+        },
       },
       required: ["name", "model"],
     },
@@ -741,6 +746,7 @@ async function handleToolCall(
         model: toolArgs.model,
         persona: toolArgs.persona || "",
         initialTask: toolArgs.task,
+        extraCliArgs: toolArgs.extraCliArgs,
       });
       return result;
     }
