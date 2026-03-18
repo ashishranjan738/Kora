@@ -30,6 +30,7 @@ export class AppDatabase {
     this.db.pragma("synchronous = NORMAL");   // Faster writes, still safe with WAL
     this.db.pragma("cache_size = -8000");     // 8MB cache
     this.db.pragma("busy_timeout = 5000");    // Wait up to 5s if DB is locked
+    this.db.pragma("foreign_keys = ON");     // Enable cascade deletes (tasks → comments)
 
     this.migrate();
   }
