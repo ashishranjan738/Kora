@@ -1,5 +1,6 @@
 import * as os from "os";
 import * as fs from "fs/promises";
+import * as fsSync from "fs";
 import * as path from "path";
 import * as http from "http";
 import * as net from "net";
@@ -49,6 +50,21 @@ export function getGlobalConfigDir(): string {
  */
 export function generateToken(): string {
   return crypto.randomBytes(32).toString("hex");
+}
+
+/**
+ * Get an existing persisted token or generate a new one.
+ * Reusing the token across restarts ensures MCP configs with baked-in
+ * --token CLI args continue to work after daemon restart.
+ */
+export function getOrCreateToken(): string {
+  const dir = getGlobalConfigDir();
+  const tokenPath = path.join(dir, TOKEN_FILE);
+  try {
+    const existing = fsSync.readFileSync(tokenPath, "utf-8").trim();
+    if (existing.length > 0) return existing;
+  } catch { /* file doesn't exist — generate new */ }
+  return generateToken();
 }
 
 // ---------------------------------------------------------------------------
@@ -156,13 +172,15 @@ export async function writeDaemonInfo(info: DaemonInfo): Promise<void> {
 }
 
 /**
- * Removes the PID, port, and token files from the global config directory.
+ * Removes PID and port files from the global config directory.
+ * Token file is preserved so it survives daemon restarts — MCP configs
+ * bake the token into --token CLI args and need it to stay the same.
  */
 export async function cleanupDaemonInfo(): Promise<void> {
   const dir = getGlobalConfigDir();
 
   await Promise.all(
-    [PID_FILE, PORT_FILE, TOKEN_FILE].map((file) =>
+    [PID_FILE, PORT_FILE].map((file) =>
       fs.unlink(path.join(dir, file)).catch(() => {
         /* ignore missing */
       }),
@@ -198,8 +216,8 @@ export async function startDaemon(
   // 2. Find an available port
   const port = await findAvailablePort(options?.port ?? DEFAULT_PORT);
 
-  // 3. Generate a bearer token
-  const token = generateToken();
+  // 3. Reuse existing token or generate a new one (survives restarts)
+  const token = getOrCreateToken();
 
   // 4. Build DaemonInfo
   const info: DaemonInfo = {
