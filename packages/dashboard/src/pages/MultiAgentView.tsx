@@ -992,7 +992,7 @@ export function MultiAgentView() {
         </div>
       </MosaicWindow>
     );
-  }, [sessionId, agents, focusedPanel, menuOpen, inlineMsgOpen, messages, sendingMap, sendAsMap]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionId, agents, focusedPanel, menuOpen, inlineMsgOpen, messages, sendingMap, sendAsMap, fullscreenAgentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Fullscreen is now handled via CSS class .agent-panel-fullscreen on the mosaic tile content */
 
