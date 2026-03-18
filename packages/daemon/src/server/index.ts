@@ -80,13 +80,15 @@ export function createServer(options: ServerOptions) {
     const termMatch = url.pathname.match(/^\/terminal\/([^/]+)\/([^/]+)$/);
 
     if (termMatch) {
-      // Terminal streaming connection
+      // Terminal streaming connection — tag so broadcastEvent skips it
+      (ws as any).wsType = 'terminal';
       const [, sessionId, agentId] = termMatch;
       handleTerminalConnection(ws, sessionId, agentId, deps);
       return;
     }
 
-    // Regular event forwarding connection
+    // Regular event forwarding connection — tag as dashboard
+    (ws as any).wsType = 'dashboard';
     const listeners: Array<{ emitter: Orchestrator; event: string; handler: (...args: any[]) => void }> = [];
 
     const subscribe = (sessionId: string, orchestrator: Orchestrator) => {
