@@ -99,6 +99,11 @@ export function useApi() {
         method: "POST",
         body: JSON.stringify(data),
       }),
+    launchPlaybook: (sid: string, playbook: string, task?: string) =>
+      apiFetch(`/sessions/${sid}/playbook`, {
+        method: "POST",
+        body: JSON.stringify({ playbook, task }),
+      }),
     pauseResumeAgent: (sid: string, aid: string, action: "pause" | "resume") =>
       apiFetch(`/sessions/${sid}/agents/${aid}/${action}`, {
         method: "POST",
