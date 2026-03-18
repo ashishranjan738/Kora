@@ -170,6 +170,14 @@ async function handleStart(): Promise<void> {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
+  // SIGHUP: reload config/dashboard — do NOT exit
+  // (Previous incident: kill -HUP killed the daemon, breaking all sessions)
+  process.on("SIGHUP", () => {
+    console.log("[daemon] SIGHUP received — reloading (not exiting)");
+    // Future: re-read index.html, reload config files
+    // For now, just log and ignore to prevent accidental daemon death
+  });
+
   // 7. If --project flag provided, auto-create a session for that project
   if (projectPath) {
     const resolvedPath = path.resolve(projectPath);
