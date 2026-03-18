@@ -300,6 +300,17 @@ export class HoldptyController implements IPtyBackend {
   }
 
   /**
+   * Returns the command + args needed to attach to a holdpty session via node-pty.
+   * Uses `holdpty attach` which bridges stdin/stdout to the session's Unix socket.
+   */
+  getAttachCommand(session: string): { command: string; args: string[] } {
+    if (this.holdptyPath === "npx") {
+      return { command: "npx", args: ["holdpty", "attach", session] };
+    }
+    return { command: this.holdptyPath, args: ["attach", session] };
+  }
+
+  /**
    * Run a raw holdpty command (for resize and other direct operations).
    */
   async run_raw(...args: string[]): Promise<string> {

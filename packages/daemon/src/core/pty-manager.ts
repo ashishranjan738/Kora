@@ -1,20 +1,12 @@
 // ============================================================
-// PTY Manager — spawns node-pty attached to tmux sessions
+// PTY Manager — spawns node-pty attached to backend sessions
 // for real terminal I/O over WebSocket (binary, not JSON)
 // ============================================================
 
 import * as pty from "node-pty";
 import type { WebSocket } from "ws";
-import { execFileSync } from "child_process";
 import { MAX_TERMINAL_CONNECTIONS_PER_AGENT } from "@kora/shared";
-
-// Resolve tmux path once at module load
-let tmuxPath = "tmux";
-try {
-  tmuxPath = execFileSync("which", ["tmux"], { encoding: "utf-8" }).trim();
-} catch {
-  // Will fail later when trying to spawn
-}
+import type { IPtyBackend } from "./pty-backend.js";
 
 interface PtySession {
   ptyProcess: pty.IPty;
@@ -23,20 +15,35 @@ interface PtySession {
 
 export class PtyManager {
   private sessions = new Map<string, PtySession>();
+  private backend: IPtyBackend | null = null;
 
   /**
-   * Attach a WebSocket client to a tmux session via node-pty.
-   * Spawns `tmux attach -t {tmuxSession}` in a PTY if not already running.
-   * Returns false if max connections reached.
+   * Set the terminal backend so attach() can use backend-specific commands.
    */
-  attach(tmuxSession: string, ws: WebSocket, cols: number = 120, rows: number = 40): boolean {
-    let session = this.sessions.get(tmuxSession);
+  setBackend(backend: IPtyBackend): void {
+    this.backend = backend;
+  }
+
+  /**
+   * Attach a WebSocket client to a terminal session via node-pty.
+   * Uses the configured backend's getAttachCommand() to spawn the right process.
+   * Returns false if max connections reached or no backend configured.
+   */
+  attach(sessionName: string, ws: WebSocket, cols: number = 120, rows: number = 40): boolean {
+    if (!this.backend) {
+      console.error("[pty-manager] No backend configured — call setBackend() first");
+      return false;
+    }
+
+    let session = this.sessions.get(sessionName);
 
     if (!session) {
-      // Spawn a PTY running `tmux attach -t {tmuxSession}`
+      // Get the backend-specific command to attach to the session
+      const { command, args } = this.backend.getAttachCommand(sessionName);
+
       let ptyProcess: pty.IPty;
       try {
-        ptyProcess = pty.spawn(tmuxPath, ["attach-session", "-t", tmuxSession], {
+        ptyProcess = pty.spawn(command, args, {
           name: "xterm-256color",
           cols,
           rows,
@@ -44,12 +51,12 @@ export class PtyManager {
           env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
         });
       } catch (err) {
-        console.error(`[pty-manager] Failed to spawn PTY for ${tmuxSession}:`, err);
+        console.error(`[pty-manager] Failed to spawn PTY for ${sessionName}:`, err);
         return false;
       }
 
       session = { ptyProcess, clients: new Set() };
-      this.sessions.set(tmuxSession, session);
+      this.sessions.set(sessionName, session);
 
       // Fan out PTY output to all connected WebSocket clients
       ptyProcess.onData((data: string) => {
@@ -65,7 +72,7 @@ export class PtyManager {
         for (const client of session!.clients) {
           client.close(1000, "PTY exited");
         }
-        this.sessions.delete(tmuxSession);
+        this.sessions.delete(sessionName);
       });
     }
 
@@ -110,10 +117,10 @@ export class PtyManager {
     // Remove client on close
     ws.on("close", () => {
       session!.clients.delete(ws);
-      // If no more clients, kill the PTY (detaches from tmux, doesn't kill the session)
+      // If no more clients, kill the PTY (detaches from session, doesn't kill the session itself)
       if (session!.clients.size === 0) {
         session!.ptyProcess.kill();
-        this.sessions.delete(tmuxSession);
+        this.sessions.delete(sessionName);
       }
     });
 
@@ -121,10 +128,10 @@ export class PtyManager {
   }
 
   /**
-   * Resize the PTY for a tmux session (affects all connected clients).
+   * Resize the PTY for a session (affects all connected clients).
    */
-  resize(tmuxSession: string, cols: number, rows: number): void {
-    const session = this.sessions.get(tmuxSession);
+  resize(sessionName: string, cols: number, rows: number): void {
+    const session = this.sessions.get(sessionName);
     if (session) {
       session.ptyProcess.resize(cols, rows);
     }
@@ -143,5 +150,3 @@ export class PtyManager {
     }
   }
 }
-
-export const ptyManager = new PtyManager();
