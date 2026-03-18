@@ -15,8 +15,8 @@ export class EventLog extends EventEmitter {
     super();
   }
 
-  /** Attach a database instance for SQLite-backed storage */
-  setDatabase(db: AppDatabase): void {
+  /** Attach (or detach) a database instance for SQLite-backed storage */
+  setDatabase(db: AppDatabase | null): void {
     this.database = db;
   }
 
@@ -31,7 +31,7 @@ export class EventLog extends EventEmitter {
       timestamp: now.toISOString(),
     };
 
-    if (this.database) {
+    if (this.database?.isOpen) {
       try {
         this.database.insertEvent({
           id: fullEvent.id,
@@ -59,7 +59,7 @@ export class EventLog extends EventEmitter {
     type?: EventType;
     sessionId?: string;
   }): Promise<OrchestratorEvent[]> {
-    if (this.database) {
+    if (this.database?.isOpen) {
       try {
         const rows = this.database.queryEvents({
           sessionId: params.sessionId,
