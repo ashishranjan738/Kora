@@ -180,9 +180,9 @@ describe("ensureBuiltinPlaybooks", () => {
     // Run again
     await ensureBuiltinPlaybooks(tmpDir);
 
-    // Should preserve modification
+    // Built-ins are always overwritten to pick up fixes (provider, model, args)
     const afterSecondRun = JSON.parse(await fs.readFile(filePath, "utf-8"));
-    expect(afterSecondRun.description).toBe("MODIFIED");
+    expect(afterSecondRun.description).toBe("Single master agent for simple tasks");
   });
 
   it("built-in Full Stack Team has a master agent", async () => {

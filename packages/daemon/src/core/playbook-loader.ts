@@ -87,11 +87,7 @@ export async function ensureBuiltinPlaybooks(globalConfigDir: string): Promise<v
 
   for (const pb of builtins) {
     const filePath = path.join(dir, `${slugify(pb.name)}.json`);
-    try {
-      await fs.access(filePath);
-      // Already exists, skip
-    } catch {
-      await fs.writeFile(filePath, JSON.stringify(pb, null, 2), "utf-8");
-    }
+    // Always overwrite built-in playbooks to pick up fixes (provider, model, args)
+    await fs.writeFile(filePath, JSON.stringify(pb, null, 2), "utf-8");
   }
 }
