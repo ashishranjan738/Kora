@@ -226,7 +226,7 @@ export class AgentManager extends EventEmitter {
     await this.tmux.newSession(tmuxSession);
 
     // 5. Wait for shell to be ready by polling capturePane for a prompt character
-    const maxWait = 10000; // 10 seconds max
+    const maxWait = 3000; // 3 seconds max (fresh shells start fast)
     const pollInterval = 200; // check every 200ms
     let startTime = Date.now();
     while (Date.now() - startTime < maxWait) {
@@ -345,7 +345,7 @@ export class AgentManager extends EventEmitter {
   }
 
   /** Stop an agent gracefully */
-  async stopAgent(agentId: string, reason: string): Promise<void> {
+  async stopAgent(agentId: string, reason: string, timeoutMs?: number): Promise<void> {
     const agent = this.agents.get(agentId);
     if (!agent) throw new Error(`Agent ${agentId} not found`);
 
@@ -361,8 +361,8 @@ export class AgentManager extends EventEmitter {
 
       try { await this.tmux.sendKeys(tmuxSession, "/exit", { literal: false }); } catch {}
 
-      // Wait up to GRACEFUL_SHUTDOWN_TIMEOUT_MS for exit
-      const deadline = Date.now() + GRACEFUL_SHUTDOWN_TIMEOUT_MS;
+      // Wait up to timeout for exit
+      const deadline = Date.now() + (timeoutMs ?? GRACEFUL_SHUTDOWN_TIMEOUT_MS);
       while (Date.now() < deadline) {
         const alive = await this.tmux.hasSession(tmuxSession);
         if (!alive) break;

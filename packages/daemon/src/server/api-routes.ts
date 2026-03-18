@@ -546,15 +546,14 @@ export function createApiRouter(deps: {
       if (!orch) { res.status(404).json({ error: "Session not found" }); return; }
 
       const agents = orch.agentManager.listAgents().filter(a => a.status === "running");
-      const results = [];
-      for (const agent of agents) {
+      const results = await Promise.all(agents.map(async (agent) => {
         try {
-          const newAgent = await orch.replaceAgent(agent.id, { freshStart: true });
-          results.push({ oldId: agent.id, newId: newAgent?.id, name: agent.config.name, success: true });
+          const newAgent = await orch.replaceAgent(agent.id, { freshStart: true, shutdownTimeoutMs: 3000 });
+          return { oldId: agent.id, newId: newAgent?.id, name: agent.config.name, success: true };
         } catch (err) {
-          results.push({ oldId: agent.id, name: agent.config.name, success: false, error: String(err) });
+          return { oldId: agent.id, name: agent.config.name, success: false, error: String(err) };
         }
-      }
+      }));
       res.json({ restarted: results.length, results });
     } catch (err) {
       res.status(500).json({ error: String(err) });
