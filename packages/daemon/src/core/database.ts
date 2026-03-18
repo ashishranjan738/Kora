@@ -12,6 +12,12 @@ const SCHEMA_VERSION = 1;
 
 export class AppDatabase {
   public db: Database.Database;
+  private _open = true;
+
+  /** Check if the database connection is still open */
+  get isOpen(): boolean {
+    return this._open && this.db.open;
+  }
 
   constructor(runtimeDir: string) {
     const dbPath = path.join(runtimeDir, "data.db");
@@ -87,6 +93,9 @@ export class AppDatabase {
     data: Record<string, unknown>;
     timestamp: string;
   }): void {
+    if (!this.isOpen) {
+      throw new TypeError("The database connection is not open");
+    }
     const stmt = this.db.prepare(
       `INSERT INTO events (id, session_id, type, data, timestamp) VALUES (?, ?, ?, ?, ?)`
     );
@@ -254,6 +263,7 @@ export class AppDatabase {
   }
 
   close(): void {
+    this._open = false;
     this.db.close();
   }
 }
