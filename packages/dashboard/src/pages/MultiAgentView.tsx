@@ -978,13 +978,13 @@ export function MultiAgentView() {
             <button
               onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === agent.id ? null : agent.id); }}
               style={{
-                background: 'none', border: '1px solid var(--border-color)', color: 'var(--text-secondary)',
+                background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)',
                 width: 32, height: 32, borderRadius: 6, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                <circle cx="12" cy="5" r="2.5" /><circle cx="12" cy="12" r="2.5" /><circle cx="12" cy="19" r="2.5" />
               </svg>
             </button>
             {menuOpen === agent.id && (
