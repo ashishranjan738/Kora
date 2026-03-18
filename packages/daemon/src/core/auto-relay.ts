@@ -1,4 +1,4 @@
-import { TmuxController } from "./tmux-controller.js";
+import type { IPtyBackend } from "./pty-backend.js";
 import { AgentManager } from "./agent-manager.js";
 import { EventLog } from "./event-log.js";
 import { MessageQueue } from "./message-queue.js";
@@ -21,7 +21,7 @@ export class AutoRelay {
   private _messageQueue: MessageQueue | null = null;
 
   constructor(
-    private tmux: TmuxController,
+    private tmux: IPtyBackend,
     private agentManager: AgentManager,
     private eventLog: EventLog,
     private sessionId: string,

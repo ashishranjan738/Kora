@@ -1,4 +1,4 @@
-import { TmuxController } from "./tmux-controller.js";
+import type { IPtyBackend } from "./pty-backend.js";
 import { CostTracker } from "./cost-tracker.js";
 import type { CLIProvider } from "@kora/shared";
 import type { AgentState } from "@kora/shared";
@@ -9,7 +9,7 @@ export class UsageMonitor {
   private lastOutput = new Map<string, string>();
 
   constructor(
-    private tmux: TmuxController,
+    private tmux: IPtyBackend,
     private costTracker: CostTracker,
     private providerResolver: (agentId: string) => CLIProvider | undefined,
   ) {}

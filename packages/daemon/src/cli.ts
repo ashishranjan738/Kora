@@ -13,8 +13,11 @@ import { createServer } from "./server/index.js";
 import { SessionManager } from "./core/session-manager.js";
 import { Orchestrator } from "./core/orchestrator.js";
 import { registry } from "./cli-providers/index.js";
-import tmux from "./core/tmux-controller.js";
-import { DEFAULT_PORT, APP_VERSION, getRuntimeTmuxPrefix, getRuntimeDaemonDir } from "@kora/shared";
+import tmuxDefault from "./core/tmux-controller.js";
+import { HoldptyController } from "./core/holdpty-controller.js";
+import type { IPtyBackend } from "./core/pty-backend.js";
+import { DEFAULT_PORT, APP_VERSION, DEFAULT_PTY_BACKEND, getRuntimeTmuxPrefix, getRuntimeDaemonDir } from "@kora/shared";
+import type { PtyBackendType } from "@kora/shared";
 import { ensureBuiltinPlaybooks } from "./core/playbook-loader.js";
 
 const args = process.argv.slice(2);
@@ -35,6 +38,17 @@ async function handleStart(): Promise<void> {
   const defaultPort = isDev ? devPort : DEFAULT_PORT;
   const port = parseInt(parseFlag("--port") ?? String(defaultPort), 10);
   const projectPath = parseFlag("--project");
+  const backendFlag = (parseFlag("--backend") || process.env.KORA_PTY_BACKEND || DEFAULT_PTY_BACKEND) as PtyBackendType;
+
+  // Select PTY backend: "tmux" (default) or "holdpty"
+  let ptyBackend: IPtyBackend;
+  if (backendFlag === "holdpty") {
+    ptyBackend = new HoldptyController();
+    console.log(`  [pty backend] holdpty`);
+  } else {
+    ptyBackend = tmuxDefault;
+    console.log(`  [pty backend] tmux`);
+  }
 
   if (isDev) {
     process.env.KORA_DEV = "1"; // Ensure getGlobalConfigDir picks it up
@@ -70,7 +84,7 @@ async function handleStart(): Promise<void> {
         projectPath: config.projectPath,
         runtimeDir,
         defaultProvider: config.defaultProvider,
-        tmux,
+        tmux: ptyBackend,
         providerRegistry: registry,
         messagingMode: config.messagingMode || "mcp",
         worktreeMode: config.worktreeMode,
@@ -93,7 +107,7 @@ async function handleStart(): Promise<void> {
       sessionManager,
       orchestrators,
       providerRegistry: registry,
-      tmux,
+      tmux: ptyBackend,
       startTime: Date.now(),
       globalConfigDir,
     },
@@ -113,7 +127,7 @@ async function handleStart(): Promise<void> {
   // 5a. Global tmux cleanup on startup — kill orphaned Kora sessions not matching any active session
   try {
     const tmuxPrefix = getRuntimeTmuxPrefix(process.env.KORA_DEV === "1");
-    const allTmux = await tmux.listSessions();
+    const allTmux = await ptyBackend.listSessions();
     const activeSessionIds = new Set(sessionManager.listSessions().map(s => s.id));
     let cleaned = 0;
     for (const s of allTmux) {
@@ -121,7 +135,7 @@ async function handleStart(): Promise<void> {
       if (!s.startsWith(tmuxPrefix)) continue;
       const belongsToActive = Array.from(activeSessionIds).some(sid => s.startsWith(`${tmuxPrefix}${sid}-`));
       if (!belongsToActive) {
-        try { await tmux.killSession(s); cleaned++; } catch {}
+        try { await ptyBackend.killSession(s); cleaned++; } catch {}
       }
     }
     if (cleaned > 0) console.log(`  Cleaned up ${cleaned} orphaned tmux sessions`);

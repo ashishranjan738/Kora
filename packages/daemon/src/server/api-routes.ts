@@ -25,7 +25,7 @@ import type { EventType } from "@kora/shared";
 import type { SessionManager } from "../core/session-manager.js";
 import { Orchestrator } from "../core/orchestrator.js";
 import type { CLIProviderRegistry } from "../cli-providers/provider-registry.js";
-import type { TmuxController } from "../core/tmux-controller.js";
+import type { IPtyBackend } from "../core/pty-backend.js";
 import { EventLog } from "../core/event-log.js";
 import { listPlaybooks, loadPlaybook, savePlaybook } from "../core/playbook-loader.js";
 import { buildPersona } from "../core/persona-builder.js";
@@ -36,7 +36,7 @@ export function createApiRouter(deps: {
   sessionManager: SessionManager;
   orchestrators: Map<string, Orchestrator>;  // sessionId -> Orchestrator
   providerRegistry: CLIProviderRegistry;
-  tmux: TmuxController;
+  tmux: IPtyBackend;
   startTime: number;  // Date.now() at daemon start
   globalConfigDir: string;
 }, wss: WebSocketServer): Router {

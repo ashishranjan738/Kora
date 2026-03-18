@@ -1,9 +1,10 @@
 import { execFile as execFileCb } from "child_process";
 import { promisify } from "util";
+import type { IPtyBackend } from "./pty-backend.js";
 
 const execFile = promisify(execFileCb);
 
-export class TmuxController {
+export class TmuxController implements IPtyBackend {
   private tmuxChecked = false;
   private tmuxPath = "tmux";
 
