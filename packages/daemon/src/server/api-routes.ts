@@ -1021,6 +1021,18 @@ export function createApiRouter(deps: {
       if (!oldTask) { res.status(404).json({ error: "Task not found" }); return; }
 
       const body = req.body as UpdateTaskRequest;
+
+      // Validate inputs
+      if (body.title !== undefined && (typeof body.title !== "string" || body.title.trim() === "")) {
+        res.status(400).json({ error: "title must be a non-empty string" });
+        return;
+      }
+      const validStatuses = ["pending", "in-progress", "review", "done"];
+      if (body.status !== undefined && !validStatuses.includes(body.status)) {
+        res.status(400).json({ error: `status must be one of: ${validStatuses.join(", ")}` });
+        return;
+      }
+
       const task = db.updateTask(tid, {
         title: body.title,
         description: body.description,
