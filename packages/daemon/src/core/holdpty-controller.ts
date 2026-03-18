@@ -182,7 +182,8 @@ export class HoldptyController implements IPtyBackend {
     const holder = this.holders.get(session);
     if (holder && holder.ptyProcess) {
       try {
-        const data = options?.literal ? keys : keys + "\n";
+        // PTY terminals use \r (carriage return) for Enter, not \n
+        const data = options?.literal ? keys : keys + "\r";
         holder.ptyProcess.write(data);
         return;
       } catch {
@@ -192,7 +193,7 @@ export class HoldptyController implements IPtyBackend {
 
     // Fallback: use CLI send command for sessions from before daemon restart.
     // Socket-based attach fails when PtyManager already holds the exclusive attach.
-    const data = options?.literal ? keys : keys + "\n";
+    const data = options?.literal ? keys : keys + "\r";
     try {
       // Write to stdin of the holdpty session via a short-lived socket connection
       // that connects, sends data, and disconnects immediately.
