@@ -41,4 +41,7 @@ export interface IPtyBackend {
 
   /** Run a raw backend command */
   run_raw(...args: string[]): Promise<string>;
+
+  /** Get the command + args to spawn for attaching to a session (for terminal streaming via node-pty) */
+  getAttachCommand(session: string): { command: string; args: string[] };
 }

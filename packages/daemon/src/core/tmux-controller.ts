@@ -239,6 +239,13 @@ export class TmuxController implements IPtyBackend {
    * Gets the PID of the process running in the pane of the given session.
    * Returns null if the session does not exist or the PID cannot be determined.
    */
+  /**
+   * Returns the command + args needed to attach to a tmux session via node-pty.
+   */
+  getAttachCommand(session: string): { command: string; args: string[] } {
+    return { command: this.tmuxPath, args: ["attach-session", "-t", session] };
+  }
+
   async getPanePID(session: string): Promise<number | null> {
     try {
       const output = await this.run(
