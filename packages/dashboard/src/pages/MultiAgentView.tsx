@@ -322,6 +322,24 @@ export function MultiAgentView() {
     }
   }, [mosaicValue]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Fix: mosaic overlay intercepts wheel events — forward them to xterm underneath
+  useEffect(() => {
+    function handleOverlayWheel(e: WheelEvent) {
+      const target = e.target as HTMLElement;
+      if (!target?.classList?.contains("mosaic-window-body-overlay")) return;
+      // Find the xterm viewport beneath the overlay
+      const parent = target.closest(".mosaic-window-body");
+      const xtermViewport = parent?.querySelector(".xterm-viewport") as HTMLElement | null;
+      if (xtermViewport) {
+        e.preventDefault();
+        e.stopPropagation();
+        xtermViewport.scrollTop += e.deltaY;
+      }
+    }
+    document.addEventListener("wheel", handleOverlayWheel, { passive: false });
+    return () => document.removeEventListener("wheel", handleOverlayWheel);
+  }, []);
+
   // Keyboard shortcuts
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
