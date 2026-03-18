@@ -16,6 +16,7 @@ dist/
 
 # Claude
 CLAUDE.md
+CLAUDE_CONTEXT.md
 .claude/
 .kora/
 .kora-dev/
