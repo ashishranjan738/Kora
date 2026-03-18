@@ -1,5 +1,6 @@
 .PHONY: build build-shared build-daemon build-dashboard \
        dev prod stop-dev stop-prod restart-dev restart-prod \
+       dev-bg prod-bg logs-dev logs-prod \
        test typecheck lint check \
        clean clean-dev clean-prod clean-dist clean-all \
        install status
@@ -27,19 +28,24 @@ dev: build ## Build and start dev daemon
 	fi
 	node packages/daemon/dist/cli.js start --dev
 
-dev-bg: build ## Build and start dev daemon in background
+dev-bg: build ## Build and start dev daemon in background (logs to ~/.kora-dev/daemon.log)
 	@if lsof -ti :7891 >/dev/null 2>&1; then \
 		echo "Stopping existing dev daemon..."; \
 		lsof -ti :7891 | xargs kill 2>/dev/null; \
 		sleep 1; \
 	fi
-	@node packages/daemon/dist/cli.js start --dev &
-	@sleep 2 && echo "Dev daemon running on http://localhost:7891"
+	@mkdir -p ~/.kora-dev
+	@if [ -f ~/.kora-dev/daemon.log ]; then mv ~/.kora-dev/daemon.log ~/.kora-dev/daemon.log.prev; fi
+	@node packages/daemon/dist/cli.js start --dev >> ~/.kora-dev/daemon.log 2>&1 &
+	@sleep 2 && echo "Dev daemon running on http://localhost:7891 (logs: ~/.kora-dev/daemon.log)"
 
 stop-dev: ## Stop dev daemon
 	@lsof -ti :7891 | xargs kill 2>/dev/null && echo "Dev daemon stopped" || echo "Dev daemon not running"
 
 restart-dev: stop-dev dev-bg ## Rebuild and restart dev daemon
+
+logs-dev: ## Tail dev daemon logs
+	@tail -f ~/.kora-dev/daemon.log 2>/dev/null || echo "No dev daemon log found at ~/.kora-dev/daemon.log"
 
 # ─── Prod (port 7890) ─────────────────────────────────────
 
@@ -51,19 +57,24 @@ prod: build ## Build and start prod daemon
 	fi
 	node packages/daemon/dist/cli.js start
 
-prod-bg: build ## Build and start prod daemon in background
+prod-bg: build ## Build and start prod daemon in background (logs to ~/.kora/daemon.log)
 	@if lsof -ti :7890 >/dev/null 2>&1; then \
 		echo "Stopping existing prod daemon..."; \
 		lsof -ti :7890 | xargs kill 2>/dev/null; \
 		sleep 1; \
 	fi
-	@node packages/daemon/dist/cli.js start &
-	@sleep 2 && echo "Prod daemon running on http://localhost:7890"
+	@mkdir -p ~/.kora
+	@if [ -f ~/.kora/daemon.log ]; then mv ~/.kora/daemon.log ~/.kora/daemon.log.prev; fi
+	@node packages/daemon/dist/cli.js start >> ~/.kora/daemon.log 2>&1 &
+	@sleep 2 && echo "Prod daemon running on http://localhost:7890 (logs: ~/.kora/daemon.log)"
 
 stop-prod: ## Stop prod daemon
 	@lsof -ti :7890 | xargs kill 2>/dev/null && echo "Prod daemon stopped" || echo "Prod daemon not running"
 
 restart-prod: stop-prod prod-bg ## Rebuild and restart prod daemon
+
+logs-prod: ## Tail prod daemon logs
+	@tail -f ~/.kora/daemon.log 2>/dev/null || echo "No prod daemon log found at ~/.kora/daemon.log"
 
 # ─── Quality ──────────────────────────────────────────────
 

@@ -356,6 +356,45 @@ const TOOL_DEFINITIONS = [
       required: ["agentId"],
     },
   },
+  {
+    name: "peek_agent",
+    description:
+      "View the last N lines of another agent's terminal output. Use this to check if an agent is stuck, see their progress, or verify they're working.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        agentId: {
+          type: "string",
+          description: "Agent name or ID to peek at",
+        },
+        lines: {
+          type: "number",
+          description: "Number of lines to return (default 15, max 50)",
+        },
+      },
+      required: ["agentId"],
+    },
+  },
+  {
+    name: "nudge_agent",
+    description:
+      "Send an instant notification to another agent, bypassing message queue delays. Use for urgent pokes like 'check your messages' or 'are you stuck?'. The notification appears immediately in their terminal.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        agentId: {
+          type: "string",
+          description: "Agent name or ID to nudge",
+        },
+        message: {
+          type: "string",
+          description:
+            "Optional short message (default: 'You have pending messages. Run check_messages now.')",
+        },
+      },
+      required: ["agentId"],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -398,6 +437,9 @@ interface EventsResponse {
 const sendMessageLog: { timestamp: number }[] = [];
 const CIRCUIT_BREAKER_MAX = 10;
 const CIRCUIT_BREAKER_WINDOW_MS = 2 * 60 * 1000; // 2 minutes
+
+// Rate limiter for nudge_agent: 5 per minute per target agent
+const nudgeRateLimit = new Map<string, { count: number; windowStart: number }>();
 
 function isSendRateLimited(): boolean {
   const now = Date.now();
@@ -706,6 +748,76 @@ async function handleToolCall(
     case "remove_agent": {
       await apiCall("DELETE", `/api/v1/sessions/${SESSION_ID}/agents/${toolArgs.agentId}`);
       return { success: true, removed: toolArgs.agentId, reason: toolArgs.reason };
+    }
+
+    case "peek_agent": {
+      // Resolve agent name → ID
+      const agents = (await apiCall(
+        "GET",
+        `/api/v1/sessions/${SESSION_ID}/agents`,
+      )) as AgentsResponse;
+
+      const search = (toolArgs.agentId || "").toLowerCase();
+      const target = (agents.agents || []).find((a) => {
+        const name = (a.config?.name || "").toLowerCase();
+        return name === search || name.includes(search) || a.id.toLowerCase().includes(search);
+      });
+
+      if (!target) {
+        return { error: `Agent "${toolArgs.agentId}" not found` };
+      }
+
+      const lines = Math.min(parseInt(toolArgs.lines) || 15, 50);
+      const outputResp = (await apiCall(
+        "GET",
+        `/api/v1/sessions/${SESSION_ID}/agents/${target.id}/output?lines=${lines}`,
+      )) as { output?: string[] };
+
+      return {
+        agentName: target.config?.name || target.id,
+        agentStatus: target.status,
+        lines: lines,
+        output: (outputResp.output || []).join("\n"),
+      };
+    }
+
+    case "nudge_agent": {
+      // Rate limit: 5 nudges per minute
+      const nudgeNow = Date.now();
+      const nudgeWindow = nudgeRateLimit.get(toolArgs.agentId);
+      if (nudgeWindow && nudgeNow - nudgeWindow.windowStart < 60000 && nudgeWindow.count >= 5) {
+        return { success: false, error: "Rate limited: max 5 nudges per minute per agent" };
+      }
+
+      // Resolve agent name → ID
+      const agents2 = (await apiCall(
+        "GET",
+        `/api/v1/sessions/${SESSION_ID}/agents`,
+      )) as AgentsResponse;
+
+      const search2 = (toolArgs.agentId || "").toLowerCase();
+      const target2 = (agents2.agents || []).find((a) => {
+        const name = (a.config?.name || "").toLowerCase();
+        return name === search2 || name.includes(search2) || a.id.toLowerCase().includes(search2);
+      });
+
+      if (!target2) {
+        return { success: false, error: `Agent "${toolArgs.agentId}" not found` };
+      }
+
+      const msg = toolArgs.message || "You have pending messages. Run check_messages now.";
+      await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents/${target2.id}/nudge`, {
+        message: msg,
+      });
+
+      // Track nudge rate limit
+      if (!nudgeWindow || nudgeNow - nudgeWindow.windowStart > 60000) {
+        nudgeRateLimit.set(toolArgs.agentId, { count: 1, windowStart: nudgeNow });
+      } else {
+        nudgeWindow.count++;
+      }
+
+      return { success: true, nudged: target2.config?.name || target2.id };
     }
 
     default:

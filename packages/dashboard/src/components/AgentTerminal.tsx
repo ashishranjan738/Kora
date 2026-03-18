@@ -77,6 +77,16 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
       }
     });
 
+    // Auto-copy to clipboard on text selection (before mouse release clears it)
+    // tmux mouse mode intercepts mouse-release which clears xterm.js selection,
+    // so we copy as soon as the selection changes
+    const selectionDisposable = term.onSelectionChange(() => {
+      const selection = term.getSelection();
+      if (selection) {
+        navigator.clipboard.writeText(selection).catch(() => {});
+      }
+    });
+
     fitAddon.fit();
     terminalRef.current = term;
 
@@ -206,6 +216,7 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
       resizeObserver.disconnect();
       window.removeEventListener("resize", onWindowResize);
       dataDisposable.dispose();
+      selectionDisposable.dispose();
       wsRef.current?.close();
       term.dispose();
     };
