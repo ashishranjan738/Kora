@@ -128,6 +128,24 @@ export class PtyManager {
   }
 
   /**
+   * Write data directly to a session's PTY process.
+   * Used by HoldptyController to route sendKeys through the active dashboard connection.
+   */
+  write(sessionName: string, data: string): void {
+    const session = this.sessions.get(sessionName);
+    if (session) {
+      session.ptyProcess.write(data);
+    }
+  }
+
+  /**
+   * Check if a session has an active PTY process (dashboard terminal connected).
+   */
+  hasActiveSession(sessionName: string): boolean {
+    return this.sessions.has(sessionName);
+  }
+
+  /**
    * Resize the PTY for a session (affects all connected clients).
    */
   resize(sessionName: string, cols: number, rows: number): void {
