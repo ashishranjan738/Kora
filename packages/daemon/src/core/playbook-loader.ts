@@ -56,31 +56,33 @@ export async function ensureBuiltinPlaybooks(globalConfigDir: string): Promise<v
   const dir = path.join(globalConfigDir, "playbooks");
   await fs.mkdir(dir, { recursive: true });
 
+  const skipPerms = ["--dangerously-skip-permissions"];
+
   const builtins: Playbook[] = [
     {
       name: "Solo Agent",
       description: "Single master agent for simple tasks",
       agents: [
-        { name: "Agent", role: "master", model: "claude-sonnet-4-6", persona: "You are a helpful coding assistant." },
+        { name: "Agent", role: "master", model: "claude-sonnet-4-6", persona: "You are a helpful coding assistant.", extraCliArgs: skipPerms },
       ],
     },
     {
       name: "Master + 2 Workers",
       description: "One master that delegates to two workers",
       agents: [
-        { name: "Orchestrator", role: "master", model: "claude-opus-4-6", persona: "You are a master orchestrator. Decompose tasks and delegate to workers." },
-        { name: "Worker A", role: "worker", model: "claude-sonnet-4-6", persona: "You are a coding worker. Follow the master's instructions." },
-        { name: "Worker B", role: "worker", model: "claude-sonnet-4-6", persona: "You are a coding worker. Follow the master's instructions." },
+        { name: "Orchestrator", role: "master", model: "claude-opus-4-6", persona: "You are a master orchestrator. Decompose tasks and delegate to workers.", extraCliArgs: skipPerms },
+        { name: "Worker A", role: "worker", model: "claude-sonnet-4-6", persona: "You are a coding worker. Follow the master's instructions.", extraCliArgs: skipPerms },
+        { name: "Worker B", role: "worker", model: "claude-sonnet-4-6", persona: "You are a coding worker. Follow the master's instructions.", extraCliArgs: skipPerms },
       ],
     },
     {
       name: "Full Stack Team",
       description: "Architect + Frontend + Backend + Tests",
       agents: [
-        { name: "Architect", role: "master", model: "claude-opus-4-6", persona: "You are a senior architect. Decompose features into frontend, backend, and test tasks." },
-        { name: "Frontend", role: "worker", model: "claude-sonnet-4-6", persona: "You are a frontend specialist. Focus on React/UI components." },
-        { name: "Backend", role: "worker", model: "claude-sonnet-4-6", persona: "You are a backend specialist. Focus on API endpoints and database." },
-        { name: "Tests", role: "worker", model: "claude-sonnet-4-6", persona: "You write comprehensive tests for all code changes." },
+        { name: "Architect", role: "master", model: "claude-opus-4-6", persona: "You are a senior architect. Decompose features into frontend, backend, and test tasks.", extraCliArgs: skipPerms },
+        { name: "Frontend", role: "worker", model: "claude-sonnet-4-6", persona: "You are a frontend specialist. Focus on React/UI components.", extraCliArgs: skipPerms },
+        { name: "Backend", role: "worker", model: "claude-sonnet-4-6", persona: "You are a backend specialist. Focus on API endpoints and database.", extraCliArgs: skipPerms },
+        { name: "Tests", role: "worker", model: "claude-sonnet-4-6", persona: "You write comprehensive tests for all code changes.", extraCliArgs: skipPerms },
       ],
     },
   ];
