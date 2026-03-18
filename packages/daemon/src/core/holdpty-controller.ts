@@ -17,6 +17,7 @@ import { promisify } from "util";
 import * as net from "net";
 import * as fs from "fs";
 import type { IPtyBackend } from "./pty-backend.js";
+import { logger } from "./logger.js";
 
 const execFile = promisify(execFileCb);
 
@@ -178,6 +179,7 @@ export class HoldptyController implements IPtyBackend {
     keys: string,
     options?: { literal?: boolean },
   ): Promise<void> {
+    logger.debug({ session, literal: options?.literal }, 'Sending keys to holdpty session');
     // Fast path: write directly to the in-process holder's PTY
     const holder = this.holders.get(session);
     if (holder && holder.ptyProcess) {
@@ -260,6 +262,7 @@ export class HoldptyController implements IPtyBackend {
    * Avoids spawning a subprocess (which was causing 25-50 processes during prompt-wait polling).
    */
   async capturePane(session: string, lines: number = 1000, _escapeSequences: boolean = false): Promise<string> {
+    logger.debug({ session, lines }, 'Capturing pane from holdpty session');
     try {
       const proto = await getProtocol();
       const socketPath = await this.getSocketPath(session);
@@ -366,7 +369,7 @@ export class HoldptyController implements IPtyBackend {
       });
       child.unref();
     } catch (err) {
-      console.error(`[HoldptyController] Failed to start pipe for ${session}:`, err);
+      logger.error({ session, error: err }, 'Failed to start holdpty pipe');
     }
   }
 

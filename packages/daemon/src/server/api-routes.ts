@@ -31,6 +31,7 @@ import { listPlaybooks, loadPlaybook, savePlaybook } from "../core/playbook-load
 import { buildPersona } from "../core/persona-builder.js";
 import { discoverModels } from "../core/model-discovery.js";
 import { DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS } from "@kora/shared";
+import { logger } from "../core/logger.js";
 
 export function createApiRouter(deps: {
   sessionManager: SessionManager;
@@ -48,11 +49,14 @@ export function createApiRouter(deps: {
   // raw JSON from appearing in agent terminal output.
   const broadcastEvent = (event: any) => {
     const message = JSON.stringify(event);
+    let recipientCount = 0;
     wss.clients.forEach((client) => {
       if (client.readyState === 1 && (client as any).wsType !== 'terminal') {
         client.send(message);
+        recipientCount++;
       }
     });
+    logger.debug({ event: event.event, recipientCount }, 'Broadcast event to dashboard clients');
   };
 
   // ─── Status ──────────────────────────────────────────────────────────
@@ -135,12 +139,15 @@ export function createApiRouter(deps: {
   });
 
   router.post("/sessions", async (req: Request, res: Response) => {
+    const startTime = Date.now();
     try {
       const body = req.body as CreateSessionRequest;
       if (!body.name || !body.projectPath) {
         res.status(400).json({ error: "name and projectPath are required" });
         return;
       }
+
+      logger.info({ name: body.name, projectPath: body.projectPath, provider: body.defaultProvider }, 'Creating session');
 
       const config = await sessionManager.createSession({
         name: body.name,
@@ -164,6 +171,9 @@ export function createApiRouter(deps: {
       });
       await orch.start();
       orchestrators.set(config.id, orch);
+
+      const duration = Date.now() - startTime;
+      logger.info({ sessionId: config.id, name: config.name, duration }, 'Session created');
 
       const agents = orch.agentManager.listAgents();
 
@@ -399,6 +409,7 @@ export function createApiRouter(deps: {
   });
 
   router.post("/sessions/:sid/agents", async (req: Request, res: Response) => {
+    const startTime = Date.now();
     try {
       const sid = String(req.params.sid);
       const body = req.body as SpawnAgentRequest;
@@ -428,6 +439,8 @@ export function createApiRouter(deps: {
         res.status(400).json({ error: `Provider "${providerId}" not found` });
         return;
       }
+
+      logger.info({ sessionId: sid, name: body.name, role: body.role, provider: providerId, model: body.model }, 'Spawning agent');
 
       // Model IDs are passed through to the CLI as-is.
       // We don't reject unknown models — users may use custom/fine-tuned model names
@@ -476,6 +489,9 @@ export function createApiRouter(deps: {
         worktreeMode: session.config.worktreeMode,
       });
 
+      const duration = Date.now() - startTime;
+      logger.info({ sessionId: sid, agentId: agentState.id, name: body.name, duration }, 'Agent spawned');
+
       // Broadcast agent-spawned event via WebSocket
       broadcastEvent({ event: "agent-spawned", sessionId: sid, agentId: agentState.id });
 
@@ -511,6 +527,7 @@ export function createApiRouter(deps: {
   });
 
   router.delete("/sessions/:sid/agents/:aid", async (req: Request, res: Response) => {
+    const startTime = Date.now();
     try {
       const { sid, aid } = req.params;
 
@@ -526,7 +543,10 @@ export function createApiRouter(deps: {
         return;
       }
 
+      logger.info({ sessionId: String(sid), agentId: String(aid), name: agent.config.name }, 'Stopping agent');
       await am.stopAgent(String(aid), "user removed");
+      const duration = Date.now() - startTime;
+      logger.info({ sessionId: String(sid), agentId: String(aid), duration }, 'Agent stopped');
 
       // Broadcast agent-removed event via WebSocket
       broadcastEvent({ event: "agent-removed", sessionId: String(sid), agentId: String(aid) });
@@ -664,6 +684,7 @@ export function createApiRouter(deps: {
       }
 
       const agents = orch.agentManager.listAgents().filter((a) => a.status === "running");
+      logger.info({ sessionId: sid, recipientCount: agents.length }, 'Broadcasting message to agents');
       const results: Array<{ agentId: string; name: string; sent: boolean; error?: string }> = [];
 
       for (const agent of agents) {
@@ -985,6 +1006,7 @@ export function createApiRouter(deps: {
         updatedAt: now,
       };
       db.insertTask(task);
+      logger.info({ sessionId: sid, taskId: task.id, title: task.title, assignedTo: task.assignedTo }, 'Task created');
 
       // Notify assigned agent
       if (task.assignedTo) {
@@ -1038,6 +1060,7 @@ export function createApiRouter(deps: {
         status: body.status,
         assignedTo: body.assignedTo,
       });
+      logger.info({ sessionId: sid, taskId: tid, status: task.status, assignedTo: task.assignedTo }, 'Task updated');
 
       // Notify if assignedTo changed
       if (body.assignedTo && task.assignedTo !== oldTask.assignedTo) {

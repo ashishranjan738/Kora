@@ -7,6 +7,7 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import { logger } from "./logger.js";
 
 const SCHEMA_VERSION = 1;
 

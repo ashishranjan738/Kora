@@ -3,6 +3,7 @@ import type { MessagingMode } from "@kora/shared";
 import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
+import { logger } from "./logger.js";
 
 interface QueuedMessage {
   agentId: string;
@@ -78,7 +79,7 @@ export class MessageQueue {
       } else {
         conv.count++;
         if (conv.count > 8) {
-          console.warn(`[MessageQueue] Loop detected: ${pairKey} exchanged ${conv.count} messages in 2min — dropping`);
+          logger.warn({ conversationKey: pairKey, count: conv.count }, 'Message loop detected, dropping message');
           return false;
         }
       }
@@ -93,7 +94,7 @@ export class MessageQueue {
     });
     // Try to deliver immediately instead of waiting for next poll cycle
     this.processQueues().catch((err) => {
-      console.error(`[MessageQueue] processQueues error:`, err);
+      logger.error({ error: err }, 'MessageQueue processQueues error');
     });
     return true;
   }
@@ -146,7 +147,7 @@ export class MessageQueue {
 
     if (isNotification) {
       queue.shift();
-      console.log(`[MessageQueue] INSTANT delivery: notification to ${msg.agentId} (${msg.tmuxSession})`);
+      logger.debug({ agentId: msg.agentId, tmuxSession: msg.tmuxSession }, 'Instant delivery: notification');
       await this.deliver(msg);
       return;
     }
@@ -210,7 +211,7 @@ export class MessageQueue {
   private async deliver(msg: QueuedMessage): Promise<void> {
     // Rate limit check — drop message if agent is receiving too many
     if (this.isRateLimited(msg.agentId)) {
-      console.warn(`[MessageQueue] Rate limited: dropping message for agent ${msg.agentId} — too many messages in 60s`);
+      logger.warn({ agentId: msg.agentId }, 'Rate limited: dropping message, too many in 60s');
       return;
     }
 

@@ -3,6 +3,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import http from "http";
 import path from "path";
 import fs from "fs";
+import pinoHttp from "pino-http";
 import { createAuthMiddleware, validateWsToken } from "./auth.js";
 import { createApiRouter } from "./api-routes.js";
 import type { SessionManager } from "../core/session-manager.js";
@@ -12,6 +13,7 @@ import type { IPtyBackend } from "../core/pty-backend.js";
 import type { WSEvent } from "@kora/shared";
 import { getRuntimeTmuxPrefix } from "@kora/shared";
 import { PtyManager } from "../core/pty-manager.js";
+import { logger } from "../core/logger.js";
 
 export interface ServerDeps {
   sessionManager: SessionManager;
@@ -59,6 +61,7 @@ export function createServer(options: ServerOptions) {
   app.use(express.static(dashboardDistPath, { index: false }));
 
   app.use(express.json());
+  app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url?.startsWith('/api/v1/status') } }));
   app.use(createAuthMiddleware(token));
   app.use("/api/v1", createApiRouter(deps, wss));
 
@@ -75,6 +78,7 @@ export function createServer(options: ServerOptions) {
   // WebSocket with auth
   wss.on("connection", (ws, req) => {
     if (!validateWsToken(req.url || "", token)) {
+      logger.warn({ url: req.url }, 'WebSocket connection rejected: unauthorized');
       ws.close(4001, "Unauthorized");
       return;
     }
@@ -86,12 +90,14 @@ export function createServer(options: ServerOptions) {
       // Terminal streaming connection — tag so broadcastEvent skips it
       (ws as any).wsType = 'terminal';
       const [, sessionId, agentId] = termMatch;
+      logger.info({ sessionId, agentId, type: 'terminal' }, 'WebSocket connected: terminal');
       handleTerminalConnection(ws, sessionId, agentId, deps);
       return;
     }
 
     // Regular event forwarding connection — tag as dashboard
     (ws as any).wsType = 'dashboard';
+    logger.info({ type: 'dashboard' }, 'WebSocket connected: dashboard');
     const listeners: Array<{ emitter: Orchestrator; event: string; handler: (...args: any[]) => void }> = [];
 
     const subscribe = (sessionId: string, orchestrator: Orchestrator) => {
@@ -122,6 +128,7 @@ export function createServer(options: ServerOptions) {
     }
 
     ws.on("close", () => {
+      logger.info({ type: 'dashboard' }, 'WebSocket disconnected: dashboard');
       // Unsubscribe from all events
       for (const { emitter, event, handler } of listeners) {
         emitter.removeListener(event, handler);
@@ -147,11 +154,13 @@ function handleTerminalConnection(
     const tmuxSession = `${getRuntimeTmuxPrefix(process.env.KORA_DEV === "1")}${sessionId}-${agentId}`;
     deps.tmux.hasSession(tmuxSession).then((exists) => {
       if (!exists) {
+        logger.warn({ sessionId, agentId, tmuxSession }, 'Terminal session not found');
         ws.close(4004, "Terminal session not found");
         return;
       }
       const attached = ptyManager.attach(tmuxSession, ws);
       if (!attached) {
+        logger.error({ sessionId, agentId, tmuxSession }, 'Failed to attach to terminal: too many connections or PTY spawn failed');
         ws.close(4029, "Too many terminal connections or PTY spawn failed");
       }
     });
@@ -161,12 +170,14 @@ function handleTerminalConnection(
   // Agent terminal — existing behaviour
   const orchestrator = deps.orchestrators.get(sessionId);
   if (!orchestrator) {
+    logger.warn({ sessionId, agentId }, 'Session not found for agent terminal');
     ws.close(4004, `Session "${sessionId}" not found`);
     return;
   }
 
   const agent = orchestrator.agentManager.getAgent(agentId);
   if (!agent) {
+    logger.warn({ sessionId, agentId }, 'Agent not found for terminal connection');
     ws.close(4004, `Agent "${agentId}" not found in session "${sessionId}"`);
     return;
   }
@@ -174,6 +185,7 @@ function handleTerminalConnection(
   // Attach via node-pty: full keyboard, real-time streaming, proper resize
   const attached = ptyManager.attach(agent.config.tmuxSession, ws);
   if (!attached) {
+    logger.error({ sessionId, agentId, tmuxSession: agent.config.tmuxSession }, 'Failed to attach to agent terminal');
     ws.close(4029, "Too many terminal connections or PTY spawn failed");
   }
 }

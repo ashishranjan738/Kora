@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from "uuid";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+import { logger } from "./logger.js";
 
 export interface SpawnAgentOptions {
   sessionId: string;
@@ -54,10 +55,13 @@ export class AgentManager extends EventEmitter {
 
   /** Spawn a new agent */
   async spawnAgent(options: SpawnAgentOptions): Promise<AgentState> {
+    const startTime = Date.now();
     // 1. Generate agent ID (slugify name)
     const agentId = slugify(options.name) + "-" + uuidv4().slice(0, 8);
     const isDev = process.env.KORA_DEV === "1";
     const tmuxSession = `${getRuntimeTmuxPrefix(isDev)}${options.sessionId}-${agentId}`;
+
+    logger.info({ agentId, name: options.name, role: options.role, provider: options.provider.id, model: options.model, sessionId: options.sessionId }, 'Starting agent spawn');
 
     // 2. Write persona to file: {runtimeDir}/personas/{agentId}-prompt.md
     //    Replace placeholder "pending" agent ID with the real one
@@ -86,7 +90,7 @@ export class AgentManager extends EventEmitter {
           runtimeDir: options.runtimeDir,
         });
       } catch (err) {
-        console.error(`[agent-manager] Failed to create worktree for ${agentId}, using main directory:`, err);
+        logger.error({ agentId, error: err }, 'Failed to create worktree, using main directory');
       }
     }
 
@@ -164,7 +168,7 @@ export class AgentManager extends EventEmitter {
         };
         await fs.writeFile(mcpConfigPath, JSON.stringify(mcpConfig, null, 2), "utf-8");
       } catch (err) {
-        console.error(`[agent-manager] Failed to generate MCP config for ${agentId}:`, err);
+        logger.error({ agentId, error: err }, 'Failed to generate MCP config');
         mcpConfigPath = undefined;
       }
     }
@@ -243,8 +247,8 @@ export class AgentManager extends EventEmitter {
     // Wait for shell to be ready by polling capturePane for a prompt character
     const maxWait = 3000; // 3 seconds max (fresh shells start fast)
     const pollInterval = 200; // check every 200ms
-    let startTime = Date.now();
-    while (Date.now() - startTime < maxWait) {
+    let pollStart = Date.now();
+    while (Date.now() - pollStart < maxWait) {
       const output = await this.tmux.capturePane(tmuxSession, 5, false);
       const lines = output.trim().split('\n').filter(l => l.trim());
       const lastLine = lines[lines.length - 1] || '';
@@ -256,8 +260,8 @@ export class AgentManager extends EventEmitter {
     await this.tmux.sendKeys(tmuxSession, `cd ${agentWorkDir}`, { literal: false });
 
     // Wait for cd to complete — poll for prompt to reappear
-    startTime = Date.now();
-    while (Date.now() - startTime < maxWait) {
+    pollStart = Date.now();
+    while (Date.now() - pollStart < maxWait) {
       const output = await this.tmux.capturePane(tmuxSession, 5, false);
       const lines = output.trim().split('\n').filter(l => l.trim());
       const lastLine = lines[lines.length - 1] || '';
@@ -335,20 +339,26 @@ export class AgentManager extends EventEmitter {
     // 12. Emit "agent-spawned"
     this.emit("agent-spawned", agentState);
 
+    const duration = Date.now() - startTime;
+    logger.info({ agentId, name: options.name, duration }, 'Agent spawn completed');
+
     return agentState;
   }
 
   /** Stop an agent gracefully. Optional timeoutMs overrides GRACEFUL_SHUTDOWN_TIMEOUT_MS. */
   async stopAgent(agentId: string, reason: string, timeoutMs?: number): Promise<void> {
+    const startTime = Date.now();
     const agent = this.agents.get(agentId);
     if (!agent) throw new Error(`Agent ${agentId} not found`);
 
+    logger.info({ agentId, name: agent.config.name, reason }, 'Stopping agent');
     const tmuxSession = agent.config.tmuxSession;
 
     // 1. Stop health monitoring
     this.healthMonitor.stopMonitoring(agentId);
 
     // 2. Gracefully stop tmux session (if it still exists)
+    let stillAlive = false;
     const sessionExists = await this.tmux.hasSession(tmuxSession);
     if (sessionExists) {
       try { await this.tmux.pipePaneStop(tmuxSession); } catch {}
@@ -364,7 +374,7 @@ export class AgentManager extends EventEmitter {
       }
 
       // Force kill if still alive
-      const stillAlive = await this.tmux.hasSession(tmuxSession);
+      stillAlive = await this.tmux.hasSession(tmuxSession);
       if (stillAlive) {
         try { await this.tmux.killSession(tmuxSession); } catch {}
       }
@@ -376,13 +386,17 @@ export class AgentManager extends EventEmitter {
       try {
         await this.worktreeManager.removeWorktree(wtInfo.projectPath, wtInfo.runtimeDir, agentId);
       } catch (err) {
-        console.error(`[agent-manager] Failed to remove worktree for ${agentId}:`, err);
+        logger.error({ agentId, error: err }, 'Failed to remove worktree');
       }
       this.worktreeInfo.delete(agentId);
     }
 
     // 7. Remove from agents map
     this.agents.delete(agentId);
+
+    const duration = Date.now() - startTime;
+    const forceKilled = stillAlive;
+    logger.info({ agentId, reason, duration, forceKilled }, 'Agent stopped');
 
     // 8. Emit "agent-removed"
     this.emit("agent-removed", agentId, reason);
@@ -497,7 +511,7 @@ export class AgentManager extends EventEmitter {
           await this.worktreeManager.removeWorktree(wtInfo.projectPath, wtInfo.runtimeDir, agentId);
           this.worktreeInfo.delete(agentId);
         } catch (err) {
-          console.error(`[agent-manager] Failed to cleanup worktree for ${agentId}:`, err);
+          logger.error({ agentId, error: err }, 'Failed to cleanup worktree');
         }
       }
     }
@@ -527,9 +541,9 @@ export class AgentManager extends EventEmitter {
             const orphanedPath = path.join(worktreesDir, dirName);
             try {
               await fs.rm(orphanedPath, { recursive: true, force: true });
-              console.log(`[agent-manager] Removed orphaned worktree directory: ${orphanedPath}`);
+              logger.info({ path: orphanedPath }, 'Removed orphaned worktree directory');
             } catch (err) {
-              console.error(`[agent-manager] Failed to remove orphaned worktree directory ${orphanedPath}:`, err);
+              logger.error({ path: orphanedPath, error: err }, 'Failed to remove orphaned worktree directory');
             }
           }
         }
@@ -537,7 +551,7 @@ export class AgentManager extends EventEmitter {
     } catch (err) {
       // Directory might not exist, which is fine
       if ((err as any).code !== 'ENOENT') {
-        console.error(`[agent-manager] Failed to scan worktrees directory:`, err);
+        logger.error({ error: err }, 'Failed to scan worktrees directory');
       }
     }
   }

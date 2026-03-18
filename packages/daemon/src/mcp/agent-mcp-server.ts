@@ -876,9 +876,12 @@ rl.on("line", async (line: string) => {
       case "tools/call": {
         const toolName = msg.params?.name as string;
         const toolArgs = (msg.params?.arguments || {}) as Record<string, string>;
+        const startTime = Date.now();
 
         try {
           const result = await handleToolCall(toolName, toolArgs);
+          const duration = Date.now() - startTime;
+          process.stderr.write(`[MCP] Tool call: ${toolName} for agent ${AGENT_ID} (${duration}ms)\n`);
 
           // === MCP PUSH: Inject pending messages into response ===
           const pendingMessages = (toolName !== "check_messages") ? readAndConsumePendingMessages() : [];

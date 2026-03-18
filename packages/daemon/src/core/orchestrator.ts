@@ -24,6 +24,7 @@ import { AutoRelay } from "./auto-relay.js";
 import { MessageQueue } from "./message-queue.js";
 import { notifications } from "./notifications.js";
 import { saveAgentStates, loadAgentStates } from "./state-persistence.js";
+import { logger } from "./logger.js";
 
 export interface OrchestratorConfig {
   sessionId: string;
@@ -354,7 +355,7 @@ export class Orchestrator extends EventEmitter {
     try {
       await saveAgentStates(this.config.runtimeDir, this.agentManager.listAgents());
     } catch (err) {
-      console.error(`[orchestrator] Failed to persist state:`, err);
+      logger.error({ error: err }, 'Failed to persist agent state');
     }
   }
 
@@ -385,7 +386,7 @@ export class Orchestrator extends EventEmitter {
       } catch {
         // capturePane failed — session exists but pane is dead
         alive = false;
-        console.log(`[restore] Agent ${agent.config.name} (${agent.id}): tmux session exists but pane is dead — marking as crashed`);
+        logger.info({ agentId: agent.id, name: agent.config.name }, 'Agent restore: tmux session exists but pane is dead, marking as crashed');
       }
 
       if (alive) {
@@ -554,7 +555,7 @@ export class Orchestrator extends EventEmitter {
           await this.config.tmux.killSession(tmuxSession);
         }
       } catch (err) {
-        console.error(`[orchestrator] Failed to kill tmux session for agent ${agent.id}:`, err);
+        logger.error({ agentId: agent.id, error: err }, 'Failed to kill tmux session');
       }
     }
 
@@ -587,13 +588,13 @@ export class Orchestrator extends EventEmitter {
       for (const session of orphanedSessions) {
         try {
           await this.config.tmux.killSession(session);
-          console.log(`[orchestrator] Cleaned up orphaned tmux session: ${session}`);
+          logger.info({ session }, 'Cleaned up orphaned tmux session');
         } catch (err) {
-          console.error(`[orchestrator] Failed to kill orphaned session ${session}:`, err);
+          logger.error({ session, error: err }, 'Failed to kill orphaned session');
         }
       }
     } catch (err) {
-      console.error(`[orchestrator] Failed to run cleanup:`, err);
+      logger.error({ error: err }, 'Failed to run cleanup');
     }
   }
 
@@ -610,12 +611,12 @@ export class Orchestrator extends EventEmitter {
         const content = await fs.readFile(logPath, "utf-8");
         const truncated = content.slice(-1024 * 1024); // last 1MB
         await fs.writeFile(logPath, truncated, "utf-8");
-        console.log(`[orchestrator] Rotated log file: ${logPath} (was ${Math.round(stats.size / 1024 / 1024)}MB)`);
+        logger.info({ logPath, sizeMB: Math.round(stats.size / 1024 / 1024) }, 'Rotated log file');
       }
     } catch (err) {
       // File may not exist or be inaccessible — this is not a critical error
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.error(`[orchestrator] Failed to rotate log file ${logPath}:`, err);
+        logger.error({ logPath, error: err }, 'Failed to rotate log file');
       }
     }
   }
