@@ -63,7 +63,7 @@ describe("Terminal scrollback constants", () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const sourceFile = path.resolve(
-      import.meta.dirname,
+      __dirname,
       "..",
       "terminal-stream.ts",
     );
@@ -73,7 +73,7 @@ describe("Terminal scrollback constants", () => {
     } catch {
       // Fallback: check .js dist file
       const distFile = path.resolve(
-        import.meta.dirname,
+        __dirname,
         "..",
         "terminal-stream.js",
       );
