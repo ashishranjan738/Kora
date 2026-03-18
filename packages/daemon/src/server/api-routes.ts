@@ -1410,6 +1410,21 @@ export function createApiRouter(deps: {
       const tmuxSessionName = `${getRuntimeTmuxPrefix(process.env.KORA_DEV === "1")}${sid}-${termId}`;
 
       await tmux.newSession(tmuxSessionName);
+
+      // Wait for shell prompt before sending cd (shell may not be ready yet)
+      const maxWait = 10000;
+      const pollInterval = 200;
+      let waited = 0;
+      while (waited < maxWait) {
+        try {
+          const output = await tmux.capturePane(tmuxSessionName, 5);
+          const lastLine = output.trim().split('\n').pop() || '';
+          if (lastLine.match(/[$%>❯]\s*$/)) break;
+        } catch { /* pane may not be ready */ }
+        await new Promise(r => setTimeout(r, pollInterval));
+        waited += pollInterval;
+      }
+
       // cd to the project directory
       await tmux.sendKeys(tmuxSessionName, `cd ${session.config.projectPath}`, { literal: false });
 

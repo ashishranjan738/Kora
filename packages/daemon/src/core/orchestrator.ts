@@ -372,7 +372,21 @@ export class Orchestrator extends EventEmitter {
 
     for (const agent of savedAgents) {
       const tmuxSession = agent.config.tmuxSession;
-      const alive = await this.config.tmux.hasSession(tmuxSession);
+      let alive = false;
+
+      try {
+        // Check if tmux session exists
+        alive = await this.config.tmux.hasSession(tmuxSession);
+
+        // Double-check: verify the pane is actually accessible
+        if (alive) {
+          await this.config.tmux.capturePane(tmuxSession, 1, false);
+        }
+      } catch {
+        // capturePane failed — session exists but pane is dead
+        alive = false;
+        console.log(`[restore] Agent ${agent.config.name} (${agent.id}): tmux session exists but pane is dead — marking as crashed`);
+      }
 
       if (alive) {
         // Tmux session still running — restore the agent
@@ -392,8 +406,10 @@ export class Orchestrator extends EventEmitter {
 
         restored++;
       } else {
-        // Tmux session is gone — mark as stopped
-        agent.status = "stopped";
+        // Tmux session is gone — mark as crashed so dashboard shows restart button
+        agent.status = "crashed";
+        // Still register so it appears in the dashboard
+        this.agentManager.restoreAgent(agent);
         dead++;
       }
     }
