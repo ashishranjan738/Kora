@@ -134,10 +134,8 @@ export function MultiAgentView() {
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
   const [replaceTarget, setReplaceTarget] = useState<{ id: string; name: string } | null>(null);
 
-  // Fullscreen state — uses mosaic layout swap (save layout, replace with single node)
+  // Fullscreen state — CSS position:fixed on tile content (transform removed from terminalSlideIn)
   const [fullscreenAgentId, setFullscreenAgentId] = useState<string | null>(null);
-  const savedLayoutRef = useRef<MosaicNode<string> | null>(null);
-  const restoringLayoutRef = useRef(false);
 
   // Plain terminal sessions: termId -> tmuxSession name
   const [terminalSessions, setTerminalSessions] = useState<Map<string, string>>(new Map());
@@ -317,9 +315,9 @@ export function MultiAgentView() {
   }, [agents]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
-  // Save mosaic layout on change (skip when fullscreen — single-node layout is temporary)
+  // Save mosaic layout on change
   useEffect(() => {
-    if (mosaicValue && sessionId && !fullscreenAgentId) {
+    if (mosaicValue && sessionId) {
       localStorage.setItem(MOSAIC_KEY, JSON.stringify(mosaicValue));
     }
   }, [mosaicValue]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -522,26 +520,8 @@ export function MultiAgentView() {
   }
 
   function toggleFullscreen(agentId: string) {
-    setFullscreenAgentId((prev) => {
-      if (prev === agentId) {
-        // Exit fullscreen — restore saved layout
-        if (savedLayoutRef.current) {
-          restoringLayoutRef.current = true;
-          setMosaicValue(savedLayoutRef.current);
-          savedLayoutRef.current = null;
-        }
-        setTimeout(() => window.dispatchEvent(new Event('resize')), 300);
-        return null;
-      } else {
-        // Enter fullscreen — save current layout only if not already fullscreen
-        if (!prev) {
-          savedLayoutRef.current = mosaicValue;
-        }
-        setMosaicValue(agentId);
-        setTimeout(() => window.dispatchEvent(new Event('resize')), 300);
-        return agentId;
-      }
-    });
+    setFullscreenAgentId((prev) => (prev === agentId ? null : agentId));
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 300);
   }
 
   // Compute running / crashed counts
@@ -831,6 +811,7 @@ export function MultiAgentView() {
         )}
       >
         <div
+          className={fullscreenAgentId === agent.id ? "agent-panel-fullscreen" : undefined}
           style={{ display: "flex", flexDirection: "column", height: "100%" }}
           onClick={() => setFocusedPanel(agent.id)}
         >
@@ -1229,12 +1210,6 @@ export function MultiAgentView() {
           <Mosaic<string>
             value={mosaicValue}
             onChange={(newValue) => {
-              // Skip lost-tile protection during fullscreen layout restore
-              if (restoringLayoutRef.current) {
-                restoringLayoutRef.current = false;
-                setMosaicValue(newValue);
-                return;
-              }
               // Protect terminal tiles from being lost during drag operations
               // If the new value lost a terminal tile that existed before, something went wrong
               if (newValue && mosaicValue) {
