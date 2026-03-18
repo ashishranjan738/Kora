@@ -1,7 +1,7 @@
 import type { AgentConfig, AgentState, AgentRole, AgentPermissions, AgentCost, MessagingMode, WorktreeMode } from "@kora/shared";
 import { AutonomyLevel, DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS, DEFAULT_MAX_RESTARTS, PERSONAS_DIR, GRACEFUL_SHUTDOWN_TIMEOUT_MS, getRuntimeTmuxPrefix, MCP_SERVER_NAME } from "@kora/shared";
 import type { CLIProvider } from "@kora/shared";
-import { TmuxController } from "./tmux-controller.js";
+import type { IPtyBackend } from "./pty-backend.js";
 import { AgentHealthMonitor } from "./agent-health.js";
 import { WorktreeManager } from "./worktree.js";
 import { EventEmitter } from "events";
@@ -43,7 +43,7 @@ export class AgentManager extends EventEmitter {
   private worktreeInfo = new Map<string, { projectPath: string; runtimeDir: string }>();
 
   constructor(
-    private tmux: TmuxController,
+    private tmux: IPtyBackend,
     private healthMonitor: AgentHealthMonitor,
     private worktreeManager: WorktreeManager = new WorktreeManager(),
   ) {

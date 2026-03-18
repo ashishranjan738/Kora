@@ -17,7 +17,7 @@ import { EventLog } from "./event-log.js";
 import { AppDatabase } from "./database.js";
 import { CostTracker } from "./cost-tracker.js";
 import { AgentHealthMonitor } from "./agent-health.js";
-import { TmuxController } from "./tmux-controller.js";
+import type { IPtyBackend } from "./pty-backend.js";
 import type { CLIProviderRegistry } from "../cli-providers/provider-registry.js";
 import { UsageMonitor } from "./usage-monitor.js";
 import { AutoRelay } from "./auto-relay.js";
@@ -30,7 +30,7 @@ export interface OrchestratorConfig {
   projectPath: string;
   runtimeDir: string;
   defaultProvider: string;
-  tmux: TmuxController;
+  tmux: IPtyBackend;
   providerRegistry: CLIProviderRegistry;
   messagingMode?: MessagingMode;
   worktreeMode?: WorktreeMode;
