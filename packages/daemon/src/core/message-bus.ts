@@ -265,6 +265,30 @@ export class MessageBus extends EventEmitter {
   }
 
   // ----------------------------------------------------------
+  // Unread count
+  // ----------------------------------------------------------
+
+  /** Count unread messages in an agent's inbox (files not yet moved to processed/) */
+  async getUnreadCount(agentId: string): Promise<number> {
+    let count = 0;
+
+    // Count .md files in inbox (legacy MCP mode)
+    try {
+      const inboxEntries = await fs.readdir(this.inboxDir(agentId));
+      count += inboxEntries.filter(f => f.endsWith(".md")).length;
+    } catch { /* inbox may not exist */ }
+
+    // Count .json files in mcp-pending (current MCP mode)
+    try {
+      const pendingDir = path.join(this.runtimeDir, "mcp-pending", agentId);
+      const pendingEntries = await fs.readdir(pendingDir);
+      count += pendingEntries.filter(f => f.endsWith(".json")).length;
+    } catch { /* pending dir may not exist */ }
+
+    return count;
+  }
+
+  // ----------------------------------------------------------
   // Routing
   // ----------------------------------------------------------
 

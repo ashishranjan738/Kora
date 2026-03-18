@@ -352,10 +352,20 @@ export function createApiRouter(deps: {
       const am = orchestrators.get(sid)?.agentManager;
       const agents = am ? am.listAgents() : [];
 
+      const orch = orchestrators.get(sid);
+
       // Enrich each running agent with activity detection from terminal output
       const enrichedAgents = await Promise.all(agents.map(async (agent) => {
+        // Get unread message count
+        let unreadMessages = 0;
+        if (orch) {
+          try {
+            unreadMessages = await orch.messageBus.getUnreadCount(agent.id);
+          } catch { /* ignore */ }
+        }
+
         if (agent.status !== "running") {
-          return { ...agent, activity: agent.status };
+          return { ...agent, activity: agent.status, unreadMessages };
         }
         try {
           const output = await tmux.capturePane(agent.config.tmuxSession, 5, false);
@@ -375,9 +385,9 @@ export function createApiRouter(deps: {
             activity = "running-command";
           }
 
-          return { ...agent, activity };
+          return { ...agent, activity, unreadMessages };
         } catch {
-          return { ...agent, activity: "unknown" };
+          return { ...agent, activity: "unknown", unreadMessages };
         }
       }));
 
@@ -877,6 +887,50 @@ export function createApiRouter(deps: {
       // Mark the agent as running (resumed)
       agent.status = "running";
       res.json({ status: "running" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // ─── Nudge + Ack-Read ──────────────────────────────────────────────
+
+  /** Send an immediate nudge notification to an agent about unread messages */
+  router.post("/sessions/:sid/agents/:aid/nudge", async (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const orch = orchestrators.get(String(sid));
+      if (!orch) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const agent = orch.agentManager.getAgent(String(aid));
+      if (!agent) {
+        res.status(404).json({ error: `Agent "${aid}" not found in session "${sid}"` });
+        return;
+      }
+
+      const unread = await orch.messageQueue.nudgeAgent(String(aid), agent.config.tmuxSession);
+      res.json({ nudged: true, unreadCount: unread });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  /** Called by MCP server when agent reads messages — reset re-notification attempts */
+  router.post("/sessions/:sid/agents/:aid/ack-read", (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const orch = orchestrators.get(String(sid));
+      if (!orch) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      orch.messageQueue.resetNotificationAttempts(String(aid));
+      res.json({ success: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });

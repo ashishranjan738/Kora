@@ -74,6 +74,15 @@ export class Orchestrator extends EventEmitter {
     this.messageQueue = new MessageQueue(config.tmux, config.runtimeDir, config.messagingMode || "mcp");
     this.autoRelay.setMessageQueue(this.messageQueue);
 
+    // Wire re-notification callbacks so MessageQueue can check unread counts
+    this.messageQueue.setRenotifyCallbacks(
+      (agentId: string) => this.messageBus.getUnreadCount(agentId),
+      (agentId: string) => {
+        const agent = this.agentManager.getAgent(agentId);
+        return agent?.config.tmuxSession || null;
+      },
+    );
+
     this.wireEvents();
   }
 
