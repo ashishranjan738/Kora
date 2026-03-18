@@ -56,7 +56,7 @@ export function getRuntimeTmuxPrefix(isDev: boolean): string {
 }
 
 // Terminal streaming
-export const TERMINAL_RING_BUFFER_LINES = 1000;
+export const TERMINAL_RING_BUFFER_LINES = 100_000;
 export const MAX_TERMINAL_CONNECTIONS_PER_AGENT = 3;
 
 // Cost tracking
