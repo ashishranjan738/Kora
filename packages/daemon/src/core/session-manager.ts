@@ -64,6 +64,11 @@ export class SessionManager {
       if (isNodeError(err) && err.code === "ENOENT") {
         return;
       }
+      // Empty or corrupt JSON — log warning and start fresh
+      if (err instanceof SyntaxError) {
+        console.warn(`[SessionManager] Corrupt sessions file — starting with empty registry`);
+        return;
+      }
       const message = err instanceof Error ? err.message : String(err);
       throw new Error(`Failed to load sessions registry: ${message}`);
     }
