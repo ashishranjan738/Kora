@@ -375,17 +375,17 @@ export class Orchestrator extends EventEmitter {
       let alive = false;
 
       try {
-        // Check if tmux session exists
+        // Check if session exists (metadata + process alive)
         alive = await this.config.tmux.hasSession(tmuxSession);
 
-        // Double-check: verify the pane is actually accessible
+        // Double-check: verify the pane/socket is actually accessible
         if (alive) {
           await this.config.tmux.capturePane(tmuxSession, 1, false);
         }
       } catch {
-        // capturePane failed — session exists but pane is dead
+        // capturePane failed — session metadata exists but socket/pane is dead
         alive = false;
-        console.log(`[restore] Agent ${agent.config.name} (${agent.id}): tmux session exists but pane is dead — marking as crashed`);
+        console.log(`[restore] Agent ${agent.config.name} (${agent.id}): session exists but pane/socket is dead — marking as crashed`);
       }
 
       if (alive) {
