@@ -243,7 +243,7 @@ export class MessageQueue {
       || msg.message.match(/\[Message from (.+?)\]/)?.[1]
       || "teammate";
     const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
-    await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: false });
+    await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
   }
 
   /** MCP pending mode: write to mcp-pending store + send tmux notification */
@@ -262,7 +262,7 @@ export class MessageQueue {
     // 2. Also send tmux notification as fallback
     const senderName = payload.from;
     const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
-    await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: false });
+    await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
   }
 
   /** Terminal mode: send directly via tmux with 500 char limit */
@@ -283,7 +283,7 @@ export class MessageQueue {
       cleanMsg = cleanMsg.substring(0, 497) + "...";
     }
 
-    await this.tmux.sendKeys(msg.tmuxSession, cleanMsg, { literal: false });
+    await this.tmux.sendKeys(msg.tmuxSession, cleanMsg, { literal: true });
   }
 
   /** Add structured prefix to relay messages based on content patterns */
@@ -358,7 +358,7 @@ export class MessageQueue {
 
     const notification = `\n>>> 📬 YOU HAVE ${unread} UNREAD MESSAGE(S) — run check_messages NOW <<<\n`;
     try {
-      await this.tmux.sendKeys(tmuxSession, notification, { literal: false });
+      await this.tmux.sendKeys(tmuxSession, notification, { literal: true });
     } catch { /* agent may be dead */ }
     return unread;
   }
@@ -413,7 +413,7 @@ export class MessageQueue {
           notification = `\n🔴 URGENT: ${unread} unread message(s)! Run check_messages NOW.\n`;
         }
 
-        await this.tmux.sendKeys(tmuxSession, notification, { literal: false });
+        await this.tmux.sendKeys(tmuxSession, notification, { literal: true });
         this.notificationAttempts.set(agentId, attempts + 1);
         this.lastNotificationTime.set(agentId, Date.now());
       } catch {
