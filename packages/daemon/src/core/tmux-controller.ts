@@ -78,6 +78,14 @@ export class TmuxController {
     await this.run("set-option", "-t", name, "visual-activity", "off");
     await this.run("set-option", "-t", name, "visual-bell", "off");
     await this.run("set-option", "-t", name, "visual-silence", "off");
+
+    // Natural scroll/copy — make tmux behave like a real terminal
+    await this.run("set-option", "-t", name, "set-clipboard", "on");         // system clipboard integration
+    await this.run("set-option", "-t", name, "mode-keys", "vi");             // vi keys in copy mode
+    await this.run("set-option", "-t", name, "scroll-on-clear", "off");      // don't reset scroll position on clear
+    await this.run("set-option", "-t", name, "default-terminal", "xterm-256color"); // proper terminal type
+    await this.run("set-option", "-t", name, "aggressive-resize", "on");     // resize to smallest connected client
+    await this.run("set-option", "-t", name, "word-separators", " -_@./");   // smarter word selection
   }
 
   /**
