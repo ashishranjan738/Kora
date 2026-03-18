@@ -18,6 +18,11 @@
     "lint": "eslint packages/*/src/**/*.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
+  "overrides": {
+    "holdpty": {
+      "node-pty": "$node-pty"
+    }
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0",
