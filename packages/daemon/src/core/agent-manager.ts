@@ -424,7 +424,7 @@ export class AgentManager extends EventEmitter {
     const agent = this.agents.get(agentId);
     if (!agent) throw new Error(`Agent ${agentId} not found`);
     const tmuxSession = agent.config.tmuxSession;
-    await this.tmux.sendKeys(tmuxSession, message, { literal: true });
+    await this.tmux.sendKeys(tmuxSession, message, { literal: false });
   }
 
   /** Change agent model (restarts the agent) */
