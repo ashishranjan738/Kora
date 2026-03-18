@@ -34,6 +34,9 @@ export function createServer(options: ServerOptions) {
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server });
 
+  // Configure PTY manager with the active terminal backend
+  ptyManager.setBackend(deps.tmux);
+
   // Serve the built React dashboard
   const dashboardDistPath = path.resolve(
     __dirname,
@@ -130,7 +133,7 @@ export function createServer(options: ServerOptions) {
   return { app, server, wss };
 }
 
-// Shared PTY manager — uses node-pty for real terminal I/O
+// Shared PTY manager — uses node-pty for real terminal I/O via the configured backend
 const ptyManager = new PtyManager();
 
 function handleTerminalConnection(

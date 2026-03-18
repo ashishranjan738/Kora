@@ -3,21 +3,40 @@ import { TERMINAL_RING_BUFFER_LINES, MAX_TERMINAL_CONNECTIONS_PER_AGENT } from "
 import fs from "fs";
 import path from "path";
 
-/** Simple ring buffer for terminal lines */
+/** Circular ring buffer for terminal lines — O(1) push, avoids shift() cost at large sizes */
 class RingBuffer {
-  private buffer: string[] = [];
+  private buffer: string[];
   private maxLines: number;
+  private head = 0;   // next write index
+  private count = 0;  // current number of stored lines
 
-  constructor(maxLines: number = TERMINAL_RING_BUFFER_LINES) { this.maxLines = maxLines; }
-
-  push(line: string): void {
-    this.buffer.push(line);
-    if (this.buffer.length > this.maxLines) this.buffer.shift();
+  constructor(maxLines: number = TERMINAL_RING_BUFFER_LINES) {
+    this.maxLines = maxLines;
+    this.buffer = new Array(maxLines);
   }
 
-  getAll(): string { return this.buffer.join("\n"); }
+  push(line: string): void {
+    this.buffer[this.head] = line;
+    this.head = (this.head + 1) % this.maxLines;
+    if (this.count < this.maxLines) this.count++;
+  }
 
-  clear(): void { this.buffer = []; }
+  getAll(): string {
+    if (this.count === 0) return "";
+    if (this.count < this.maxLines) {
+      // Buffer hasn't wrapped yet — lines are at indices 0..count-1
+      return this.buffer.slice(0, this.count).join("\n");
+    }
+    // Buffer has wrapped — oldest line is at head, newest at head-1
+    const older = this.buffer.slice(this.head, this.maxLines);
+    const newer = this.buffer.slice(0, this.head);
+    return older.concat(newer).join("\n");
+  }
+
+  clear(): void {
+    this.head = 0;
+    this.count = 0;
+  }
 }
 
 export class TerminalStream {
