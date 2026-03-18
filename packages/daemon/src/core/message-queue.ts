@@ -136,6 +136,18 @@ export class MessageQueue {
   /** Process a single agent's queue */
   private async processOneQueue(queue: QueuedMessage[]): Promise<void> {
     const msg = queue[0];
+
+    // Notifications (MCP inbox/pending alerts) are small non-disruptive text — deliver immediately
+    const isNotification = msg.message.includes("[New message from") || msg.message.includes("[Message from")
+      || msg.message.includes("check_messages") || msg.message.includes("[Task assigned]")
+      || msg.message.includes("[Broadcast]");
+
+    if (isNotification) {
+      queue.shift();
+      await this.deliver(msg);
+      return;
+    }
+
     const ready = await this.isAgentReady(msg.tmuxSession);
     if (ready) {
       queue.shift();
@@ -231,7 +243,7 @@ export class MessageQueue {
       || msg.message.match(/\[Message from (.+?)\]/)?.[1]
       || "teammate";
     const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
-    await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
+    await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: false });
   }
 
   /** MCP pending mode: write to mcp-pending store + send tmux notification */
@@ -250,7 +262,7 @@ export class MessageQueue {
     // 2. Also send tmux notification as fallback
     const senderName = payload.from;
     const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
-    await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
+    await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: false });
   }
 
   /** Terminal mode: send directly via tmux with 500 char limit */
@@ -271,7 +283,7 @@ export class MessageQueue {
       cleanMsg = cleanMsg.substring(0, 497) + "...";
     }
 
-    await this.tmux.sendKeys(msg.tmuxSession, cleanMsg, { literal: true });
+    await this.tmux.sendKeys(msg.tmuxSession, cleanMsg, { literal: false });
   }
 
   /** Add structured prefix to relay messages based on content patterns */
@@ -346,7 +358,7 @@ export class MessageQueue {
 
     const notification = `\n>>> 📬 YOU HAVE ${unread} UNREAD MESSAGE(S) — run check_messages NOW <<<\n`;
     try {
-      await this.tmux.sendKeys(tmuxSession, notification, { literal: true });
+      await this.tmux.sendKeys(tmuxSession, notification, { literal: false });
     } catch { /* agent may be dead */ }
     return unread;
   }
@@ -388,10 +400,8 @@ export class MessageQueue {
         const tmuxSession = this.getAgentTmuxSessionFn(agentId);
         if (!tmuxSession) continue;
 
-        // Check if agent is at a prompt (ready to receive)
-        const ready = await this.isAgentReady(tmuxSession);
-        if (!ready) continue;
-
+        // Deliver re-notifications immediately — they are small non-disruptive text.
+        // The readiness check via capturePane is unreliable under holdpty (may return empty).
         const attempts = this.notificationAttempts.get(agentId) || 0;
         let notification: string;
 
@@ -403,7 +413,7 @@ export class MessageQueue {
           notification = `\n🔴 URGENT: ${unread} unread message(s)! Run check_messages NOW.\n`;
         }
 
-        await this.tmux.sendKeys(tmuxSession, notification, { literal: true });
+        await this.tmux.sendKeys(tmuxSession, notification, { literal: false });
         this.notificationAttempts.set(agentId, attempts + 1);
         this.lastNotificationTime.set(agentId, Date.now());
       } catch {

@@ -17,7 +17,7 @@
     "dev:dashboard": "npm run dev -w packages/dashboard",
     "lint": "eslint packages/*/src/**/*.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "postinstall": "rm -rf node_modules/holdpty/node_modules/node-pty"
+    "postinstall": "rm -rf node_modules/holdpty/node_modules/node-pty node_modules/pty-manager/node_modules/node-pty"
   },
   "overrides": {
     "holdpty": {

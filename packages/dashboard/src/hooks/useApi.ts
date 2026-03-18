@@ -18,6 +18,8 @@ function getToken(): string {
 }
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const method = options?.method || "GET";
+  console.debug(`[api] ${method} ${path}`);
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
@@ -27,6 +29,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     },
   });
   if (!res.ok) {
+    console.error(`[api] ${method} ${path} failed:`, res.status);
     throw new Error(`API ${res.status}: ${await res.text()}`);
   }
   // Handle 204 No Content (e.g. DELETE responses)
