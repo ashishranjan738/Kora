@@ -27,11 +27,13 @@ export function useWebSocket(onEvent: (event: any) => void) {
       const token = getToken();
       const url = `${protocol}//${host}/ws/events?token=${encodeURIComponent(token)}`;
 
+      console.debug('[ws] connecting to', url);
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => {
         if (unmounted) return;
+        console.debug('[ws] connected');
         setConnected(true);
         setReconnecting(false);
         retriesRef.current = 0;
@@ -49,12 +51,14 @@ export function useWebSocket(onEvent: (event: any) => void) {
 
       ws.onclose = () => {
         if (unmounted) return;
+        console.debug('[ws] disconnected, scheduling reconnect');
         setConnected(false);
         scheduleReconnect();
       };
 
       ws.onerror = () => {
         if (unmounted) return;
+        console.warn('[ws] connection error');
         ws.close();
       };
     }
