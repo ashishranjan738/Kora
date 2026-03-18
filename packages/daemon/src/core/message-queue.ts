@@ -92,7 +92,9 @@ export class MessageQueue {
       timestamp: Date.now(),
     });
     // Try to deliver immediately instead of waiting for next poll cycle
-    this.processQueues().catch(() => {});
+    this.processQueues().catch((err) => {
+      console.error(`[MessageQueue] processQueues error:`, err);
+    });
     return true;
   }
 
@@ -144,6 +146,7 @@ export class MessageQueue {
 
     if (isNotification) {
       queue.shift();
+      console.log(`[MessageQueue] INSTANT delivery: notification to ${msg.agentId} (${msg.tmuxSession})`);
       await this.deliver(msg);
       return;
     }
