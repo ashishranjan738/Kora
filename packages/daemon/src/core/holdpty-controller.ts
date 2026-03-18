@@ -197,13 +197,22 @@ export class HoldptyController implements IPtyBackend {
       // Already dead — that's fine
     }
 
-    // Ensure cleanup even if holdpty stop didn't remove files
-    const uid = process.getuid?.() ?? 501;
-    const sessionDir = `/tmp/dt-${uid}`;
-    try { fs.unlinkSync(`${sessionDir}/${name}.sock`); } catch { /* may not exist */ }
-    try { fs.unlinkSync(`${sessionDir}/${name}.json`); } catch { /* may not exist */ }
+    // Force cleanup socket + metadata (respects HOLDPTY_DIR)
+    try {
+      const socketPath = await this.getSocketPath(name);
+      const metadataPath = socketPath.replace(/\.sock$/, ".json");
+      try { fs.unlinkSync(socketPath); } catch { /* may not exist */ }
+      try { fs.unlinkSync(metadataPath); } catch { /* may not exist */ }
+    } catch { /* getSocketPath may fail */ }
 
     this.envVars.delete(name);
+  }
+
+  /**
+   * Public accessor for socket path — used by orchestrator for restore verification.
+   */
+  async getSocketPathForSession(name: string): Promise<string> {
+    return this.getSocketPath(name);
   }
 
   /**

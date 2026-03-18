@@ -24,6 +24,8 @@ import { AutoRelay } from "./auto-relay.js";
 import { MessageQueue } from "./message-queue.js";
 import { notifications } from "./notifications.js";
 import { saveAgentStates, loadAgentStates } from "./state-persistence.js";
+import fs from "fs";
+import { HoldptyController } from "./holdpty-controller.js";
 
 export interface OrchestratorConfig {
   sessionId: string;
@@ -379,12 +381,15 @@ export class Orchestrator extends EventEmitter {
         alive = await this.config.tmux.hasSession(tmuxSession);
 
         // For holdpty: also verify the socket file exists on disk
-        if (alive) {
-          const uid = process.getuid?.() ?? 501;
-          const socketPath = require("path").join(`/tmp/dt-${uid}`, `${tmuxSession}.sock`);
-          if (!require("fs").existsSync(socketPath)) {
+        if (alive && this.config.tmux instanceof HoldptyController) {
+          try {
+            const socketPath = await this.config.tmux.getSocketPathForSession(tmuxSession);
+            if (!fs.existsSync(socketPath)) {
+              alive = false;
+              console.log(`[restore] Agent ${agent.config.name} (${agent.id}): socket file missing — marking as crashed`);
+            }
+          } catch {
             alive = false;
-            console.log(`[restore] Agent ${agent.config.name} (${agent.id}): socket file missing — marking as crashed`);
           }
         }
 
