@@ -811,76 +811,9 @@ export function MultiAgentView() {
         )}
       >
         <div
-          className={fullscreenAgentId === agent.id ? "agent-panel-fullscreen" : undefined}
           style={{ display: "flex", flexDirection: "column", height: "100%" }}
           onClick={() => setFocusedPanel(agent.id)}
         >
-          {/* Fullscreen header bar (only shown when this tile is fullscreen) */}
-          {fullscreenAgentId === agent.id && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '8px 16px',
-              background: 'var(--bg-secondary)',
-              borderBottom: '1px solid var(--border-color)',
-              flexShrink: 0,
-            }}>
-              <span className={`agent-status-dot ${getStatusDotClass(agent.status)}`} style={{ width: 10, height: 10 }} />
-              <span style={{ fontWeight: 600, fontSize: 16 }}>{agent.config?.name || agent.name || "Agent"}</span>
-              <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{agent.provider}/{agent.model}</span>
-              <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
-                In: {formatTokenCount(tokenIn)} | Out: {formatTokenCount(tokenOut)} | {formatCost(cost)}
-              </span>
-              <span style={{ color: agent.status === 'running' ? '#3fb950' : '#8b949e', fontSize: 12 }}>
-                {agent.status}
-              </span>
-              <div style={{ flex: 1 }} />
-              <button
-                onClick={() => toggleFullscreen(agent.id)}
-                style={{
-                  background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)',
-                  color: 'var(--text-primary)', padding: '6px 16px', borderRadius: 6,
-                  cursor: 'pointer', fontSize: 13, fontWeight: 500,
-                }}
-              >
-                &larr; Exit Fullscreen
-              </button>
-              {/* Gear menu in fullscreen */}
-              <div style={{ position: "relative" }}>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === agent.id ? null : agent.id); }}
-                  style={{
-                    background: 'none', border: '1px solid var(--border-color)', color: 'var(--text-secondary)',
-                    width: 32, height: 32, borderRadius: 6, cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="19" r="1.5" />
-                  </svg>
-                </button>
-                {menuOpen === agent.id && (
-                  <div
-                    style={{
-                      position: "absolute", top: "100%", right: 0,
-                      background: "var(--bg-secondary)", border: "1px solid var(--border-color)",
-                      borderRadius: 6, padding: 4, zIndex: 51, minWidth: 140,
-                      boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button style={menuItemStyle} onMouseEnter={menuHoverIn} onMouseLeave={menuHoverOut} onClick={async () => { setMenuOpen(null); showToast("Opening VS Code..."); try { await api.openVscode(sessionId!, agent.id); } catch (err: any) { showToast(`Failed: ${err.message}`); } }}>Open in VS Code</button>
-                    <div style={{ height: 1, background: "var(--border-color)", margin: "4px 0" }} />
-                    <button style={menuItemStyle} onMouseEnter={menuHoverIn} onMouseLeave={menuHoverOut} onClick={() => handleOpenSendMessage(agent.id)}>Send Message</button>
-                    <button style={menuItemStyle} onMouseEnter={menuHoverIn} onMouseLeave={menuHoverOut} onClick={() => handleOpenReplace(agent)}>Replace</button>
-                    <button style={menuItemStyle} onMouseEnter={menuHoverIn} onMouseLeave={menuHoverOut} onClick={() => handleRestart(agent.id)}>Restart</button>
-                    <div style={{ height: 1, background: "var(--border-color)", margin: "4px 0" }} />
-                    <button style={{ ...menuItemStyle, color: "var(--accent-red)" }} onMouseEnter={menuHoverIn} onMouseLeave={menuHoverOut} onClick={() => handleRemove(agent.id)}>Remove</button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
           {/* Inline send message input */}
           {inlineMsgOpen === agent.id && (
             <div className="mosaic-panel-inline-msg">
@@ -1004,7 +937,115 @@ export function MultiAgentView() {
     );
   }, [sessionId, agents, focusedPanel, menuOpen, inlineMsgOpen, messages, sendingMap, sendAsMap, fullscreenAgentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* Fullscreen is now handled via CSS class .agent-panel-fullscreen on the mosaic tile content */
+  /* ---- Fullscreen overlay (rendered OUTSIDE mosaic as sibling) ---- */
+  function renderFullscreenPanel() {
+    if (!fullscreenAgentId) return null;
+    const agent = agents.find((a) => a.id === fullscreenAgentId);
+    if (!agent) return null;
+
+    const tokenIn = agent.tokenUsage?.input ?? agent.tokensIn ?? agent.tokens_in ?? agent.cost?.totalTokensIn;
+    const tokenOut = agent.tokenUsage?.output ?? agent.tokensOut ?? agent.tokens_out ?? agent.cost?.totalTokensOut;
+    const cost = agent.tokenUsage?.cost ?? (typeof agent.cost === "number" ? agent.cost : agent.cost?.totalCostUsd);
+
+    return (
+      <div className="agent-panel-fullscreen">
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '8px 16px', background: 'var(--bg-secondary)',
+          borderBottom: '1px solid var(--border-color)', flexShrink: 0,
+        }}>
+          <span className={`agent-status-dot ${getStatusDotClass(agent.status)}`} style={{ width: 10, height: 10 }} />
+          <span style={{ fontWeight: 600, fontSize: 16 }}>{agent.config?.name || agent.name || "Agent"}</span>
+          <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{agent.provider}/{agent.model}</span>
+          <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+            In: {formatTokenCount(tokenIn)} | Out: {formatTokenCount(tokenOut)} | {formatCost(cost)}
+          </span>
+          <span style={{ color: agent.status === 'running' ? '#3fb950' : '#8b949e', fontSize: 12 }}>{agent.status}</span>
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={() => toggleFullscreen(agent.id)}
+            style={{
+              background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)',
+              color: 'var(--text-primary)', padding: '6px 16px', borderRadius: 6,
+              cursor: 'pointer', fontSize: 13, fontWeight: 500,
+            }}
+          >
+            &larr; Exit Fullscreen
+          </button>
+          {/* Gear menu */}
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === agent.id ? null : agent.id); }}
+              style={{
+                background: 'none', border: '1px solid var(--border-color)', color: 'var(--text-secondary)',
+                width: 32, height: 32, borderRadius: 6, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+              </svg>
+            </button>
+            {menuOpen === agent.id && (
+              <div
+                style={{
+                  position: "absolute", top: "100%", right: 0,
+                  background: "var(--bg-secondary)", border: "1px solid var(--border-color)",
+                  borderRadius: 6, padding: 4, zIndex: 51, minWidth: 140,
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button style={menuItemStyle} onMouseEnter={menuHoverIn} onMouseLeave={menuHoverOut} onClick={async () => { setMenuOpen(null); showToast("Opening VS Code..."); try { await api.openVscode(sessionId!, agent.id); } catch (err: any) { showToast(`Failed: ${err.message}`); } }}>Open in VS Code</button>
+                <div style={{ height: 1, background: "var(--border-color)", margin: "4px 0" }} />
+                <button style={menuItemStyle} onMouseEnter={menuHoverIn} onMouseLeave={menuHoverOut} onClick={() => handleOpenSendMessage(agent.id)}>Send Message</button>
+                <button style={menuItemStyle} onMouseEnter={menuHoverIn} onMouseLeave={menuHoverOut} onClick={() => handleOpenReplace(agent)}>Replace</button>
+                <button style={menuItemStyle} onMouseEnter={menuHoverIn} onMouseLeave={menuHoverOut} onClick={() => handleRestart(agent.id)}>Restart</button>
+                <div style={{ height: 1, background: "var(--border-color)", margin: "4px 0" }} />
+                <button style={{ ...menuItemStyle, color: "var(--accent-red)" }} onMouseEnter={menuHoverIn} onMouseLeave={menuHoverOut} onClick={() => handleRemove(agent.id)}>Remove</button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Terminal */}
+        <div className="agent-panel-terminal" style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          <AgentTerminal sessionId={sessionId!} agentId={agent.id} height="100%" />
+        </div>
+
+        {/* Chat input */}
+        <div className="mosaic-panel-input" style={{ padding: '8px 16px' }}>
+          <select
+            style={{ fontSize: 11, padding: "3px 4px", background: "var(--bg-tertiary)", border: "1px solid var(--border-color)", borderRadius: 4, color: "var(--text-secondary)", cursor: "pointer", maxWidth: 110 }}
+            title="Send as"
+            value={sendAsMap[agent.id] || ""}
+            onChange={(e) => setSendAsMap((prev) => ({ ...prev, [agent.id]: e.target.value }))}
+          >
+            <option value="">User</option>
+            {agents.filter((a) => a.id !== agent.id && (a.status === "running" || a.status === "idle" || a.status === "waiting")).map((a) => (
+              <option key={a.id} value={a.id}>{a.config?.name || a.name || a.id}</option>
+            ))}
+          </select>
+          <input
+            style={{ flex: 1, padding: '8px 12px', fontSize: 13, background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: 6, color: 'var(--text-primary)' }}
+            placeholder="Type message..."
+            value={messages[agent.id] || ""}
+            onChange={(e) => setMessages((prev) => ({ ...prev, [agent.id]: e.target.value }))}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleSendMessage(agent.id); } }}
+            disabled={sendingMap[agent.id]}
+          />
+          <button
+            style={{ fontSize: 14, padding: '6px 14px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: 6, color: 'var(--text-primary)', cursor: 'pointer' }}
+            onClick={() => handleSendMessage(agent.id)}
+            disabled={sendingMap[agent.id] || !messages[agent.id]?.trim()}
+          >
+            {sendingMap[agent.id] ? "..." : "\u23CE"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -1245,7 +1286,8 @@ export function MultiAgentView() {
         )}
       </div>
 
-      {/* Fullscreen is now handled via CSS class on the mosaic tile itself */}
+      {/* Fullscreen overlay — rendered OUTSIDE mosaic DOM tree */}
+      {fullscreenAgentId && renderFullscreenPanel()}
 
       {/* Toast notification */}
       {toast && (
