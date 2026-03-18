@@ -8,7 +8,7 @@ export const APP_VERSION = "0.1.0";
 
 /** Terminal backend: "tmux" (stable default) or "holdpty" (new, experimental) */
 export type PtyBackendType = "tmux" | "holdpty";
-export const DEFAULT_PTY_BACKEND: PtyBackendType = "tmux";
+export const DEFAULT_PTY_BACKEND: PtyBackendType = "holdpty";
 
 export const DAEMON_DIR = ".kora";
 export const GLOBAL_CONFIG_DIR = "~/.kora";
