@@ -87,6 +87,10 @@ export class TmuxController {
     await this.run("set-option", "-t", name, "word-separators", " -_@.");    // smarter word selection
     await this.run("set-option", "-t", name, "default-terminal", "xterm-256color"); // proper terminal type
     await this.run("set-window-option", "-t", name, "aggressive-resize", "on"); // resize to smallest connected client
+
+    // Unbind tmux right-click menu so xterm.js contextmenu handler works for copy
+    await this.run("unbind", "-n", "MouseDown3Pane");
+    await this.run("unbind", "-n", "M-MouseDown3Pane");
   }
 
   /**
