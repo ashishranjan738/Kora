@@ -77,6 +77,30 @@ function removeMosaicLeaf(node: MosaicNode<string>, leafId: string): MosaicNode<
   return node;
 }
 
+/** Replace a leaf ID in the mosaic tree with a new ID. */
+function replaceMosaicLeaf(node: MosaicNode<string> | null, oldId: string, newId: string): MosaicNode<string> | null {
+  if (!node) return null;
+  if (typeof node === "string") {
+    return node === oldId ? newId : node;
+  }
+  const n = node as any;
+  if (Array.isArray(n.children)) {
+    return {
+      ...n,
+      children: (n.children as MosaicNode<string>[]).map((child) => replaceMosaicLeaf(child, oldId, newId)),
+    } as MosaicNode<string>;
+  }
+  if ("first" in n && "second" in n) {
+    return {
+      direction: n.direction,
+      first: replaceMosaicLeaf(n.first, oldId, newId),
+      second: replaceMosaicLeaf(n.second, oldId, newId),
+      splitPercentage: n.splitPercentage,
+    } as any;
+  }
+  return node;
+}
+
 export function MultiAgentView() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const api = useApi();
@@ -434,6 +458,14 @@ export function MultiAgentView() {
 
   async function handleAddTerminal() {
     if (!sessionId) return;
+
+    // Optimistic: add tile immediately with pending ID
+    const tempId = `term-pending-${Date.now()}`;
+    setMosaicValue((prev) => {
+      if (!prev) return tempId;
+      return { type: "split", direction: "row", children: [prev, tempId], splitPercentages: [70, 30] };
+    });
+
     try {
       const result = await api.openTerminal(sessionId);
       setTerminalSessions((prev) => {
@@ -441,13 +473,11 @@ export function MultiAgentView() {
         m.set(result.id, result.tmuxSession);
         return m;
       });
-      // Add to the mosaic
-      setMosaicValue((prev) => {
-        if (!prev) return result.id;
-        return { type: "split", direction: "row", children: [prev, result.id], splitPercentages: [70, 30] };
-      });
-      showToast("Terminal opened");
+      // Replace temp tile with real terminal
+      setMosaicValue((prev) => replaceMosaicLeaf(prev, tempId, result.id));
     } catch (err: any) {
+      // Remove optimistic tile on failure
+      setMosaicValue((prev) => prev ? removeMosaicLeaf(prev, tempId) : prev);
       showToast(`Failed to open terminal: ${err.message}`);
     }
   }
@@ -509,7 +539,30 @@ export function MultiAgentView() {
   /* ---- Render a single mosaic tile ---- */
 
   function renderTerminalTile(termId: string, path: MosaicPath) {
-    const tmuxSession = terminalSessions.get(termId);
+    // Pending terminal — show loading state
+    if (termId.startsWith("term-pending-")) {
+      return (
+        <MosaicWindow<string>
+          path={path}
+          title=""
+          toolbarControls={<span />}
+          renderToolbar={() => (
+            <div className="mosaic-panel-header" style={{ borderLeft: "3px solid #39d2c0" }}>
+              <span className="mosaic-agent-name">Terminal</span>
+              <span className="mosaic-agent-meta" style={{ fontStyle: "italic" }}>Opening...</span>
+            </div>
+          )}
+        >
+          <div style={{
+            display: "flex", flexDirection: "column", alignItems: "center",
+            justifyContent: "center", height: "100%", background: "#0d1117", gap: 12,
+          }}>
+            <div className="spinner" />
+            <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Starting terminal...</span>
+          </div>
+        </MosaicWindow>
+      );
+    }
 
     return (
       <MosaicWindow<string>
