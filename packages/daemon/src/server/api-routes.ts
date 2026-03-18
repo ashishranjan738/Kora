@@ -895,10 +895,11 @@ export function createApiRouter(deps: {
 
   // ─── Nudge + Ack-Read ──────────────────────────────────────────────
 
-  /** Send an immediate nudge notification to an agent about unread messages */
+  /** Send an immediate nudge notification to an agent. Supports custom message or defaults to unread count. */
   router.post("/sessions/:sid/agents/:aid/nudge", async (req: Request, res: Response) => {
     try {
       const { sid, aid } = req.params;
+      const customMessage = req.body?.message as string | undefined;
       const orch = orchestrators.get(String(sid));
       if (!orch) {
         res.status(404).json({ error: `Session "${sid}" not found` });
@@ -911,8 +912,15 @@ export function createApiRouter(deps: {
         return;
       }
 
-      const unread = await orch.messageQueue.nudgeAgent(String(aid), agent.config.tmuxSession);
-      res.json({ nudged: true, unreadCount: unread });
+      if (customMessage) {
+        // Direct custom message via tmux — bypass queue entirely
+        await tmux.sendKeys(agent.config.tmuxSession, `\n[Nudge]: ${customMessage}\n`, { literal: true });
+        res.json({ nudged: true, customMessage: true });
+      } else {
+        // Default: nudge with unread count
+        const unread = await orch.messageQueue.nudgeAgent(String(aid), agent.config.tmuxSession);
+        res.json({ nudged: true, unreadCount: unread });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });

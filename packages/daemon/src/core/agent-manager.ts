@@ -199,6 +199,9 @@ export class AgentManager extends EventEmitter {
           "mcp__kora__list_tasks",
           "mcp__kora__update_task",
           "mcp__kora__create_task",
+          // Observation + nudge tools — check worker status and send urgent pokes
+          "mcp__kora__peek_agent",
+          "mcp__kora__nudge_agent",
         );
         // Master agents get agent management tools
         if (options.role === "master") {
