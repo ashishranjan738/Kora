@@ -66,7 +66,7 @@ export class TmuxController {
     );
 
     // Make tmux completely invisible — user should never know they're in tmux
-    await this.run("set-option", "-t", name, "mouse", "on");           // mouse wheel scroll + click
+    await this.run("set-option", "-t", name, "mouse", "off");          // let xterm.js handle mouse (scroll, selection, copy)
     await this.run("set-option", "-t", name, "status", "off");         // hide tmux status bar
     await this.run("set-option", "-t", name, "history-limit", "50000");// large scrollback
     await this.run("set-option", "-t", name, "escape-time", "0");     // no escape key delay
@@ -88,9 +88,7 @@ export class TmuxController {
     await this.run("set-option", "-t", name, "default-terminal", "xterm-256color"); // proper terminal type
     await this.run("set-window-option", "-t", name, "aggressive-resize", "on"); // resize to smallest connected client
 
-    // Unbind tmux right-click menu so xterm.js contextmenu handler works for copy
-    await this.run("unbind", "-n", "MouseDown3Pane");
-    await this.run("unbind", "-n", "M-MouseDown3Pane");
+    // Note: mouse is off, so no need to unbind MouseDown3Pane — xterm.js handles all mouse events
   }
 
   /**
