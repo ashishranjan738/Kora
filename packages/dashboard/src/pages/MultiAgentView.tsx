@@ -879,14 +879,14 @@ export function MultiAgentView() {
           <div className="mosaic-panel-input">
             <select
               style={{
-                fontSize: 11,
-                padding: "3px 4px",
+                fontSize: 12,
+                padding: "4px 8px",
                 background: "var(--bg-tertiary)",
                 border: "1px solid var(--border-color)",
                 borderRadius: 4,
-                color: "var(--text-secondary)",
+                color: "var(--text-primary)",
                 cursor: "pointer",
-                maxWidth: 110,
+                maxWidth: 120,
               }}
               title="Send as"
               value={sendAsMap[agent.id] || ""}
