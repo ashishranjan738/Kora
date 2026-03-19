@@ -266,6 +266,36 @@ Add to `packages/daemon/src/server/api-routes.ts`. Use `broadcastEvent()` after 
 ### CSS theming
 All colors must use CSS variables (no hardcoded `#hex`). Check both `[data-theme="dark"]` and `[data-theme="light"]` work. Terminal preview areas (`.agent-terminal-preview`) stay dark always.
 
+### Per-project configuration (.kora.yml)
+
+Place a `.kora.yml` (or `.kora.json` fallback) in your project root to customize agent behavior per project.
+
+**Supported fields:**
+- `default_provider` — CLI provider for all agents (`claude-code`, `aider`, `codex`, `kiro`, `goose`)
+- `default_model` — Model override (e.g., `claude-sonnet-4-6`)
+- `knowledge` — String array of project facts injected into all agent personas
+- `rules` — String array of rules all agents must follow
+- `agents.master` — Override `model`, `persona`, `autonomy` for the master agent
+- `agents.default_worker` — Default overrides for all worker agents
+
+**Example:**
+```yaml
+default_provider: claude-code
+default_model: claude-sonnet-4-6
+knowledge:
+  - "Monorepo with 3 packages: shared, daemon, dashboard"
+rules:
+  - "Never push directly to main"
+agents:
+  master:
+    model: claude-sonnet-4-6
+    autonomy: 5
+```
+
+**Implementation:** `packages/daemon/src/core/project-config.ts` — uses a built-in YAML-subset parser (no external dependency). Supports 2 levels of nesting, lists, comments, and scalar types (strings, numbers, booleans, null).
+
+**Full reference:** See `docs/kora-yml-config.md`.
+
 ## Codebase Stats
 
 - **120+ source files** across 3 packages

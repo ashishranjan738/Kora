@@ -1,0 +1,32 @@
+# CI Pipeline .kora.yml — automated testing and review configuration
+#
+# Optimized for CI/CD workflows where agents run tests,
+# review code, and prepare releases.
+
+default_provider: claude-code
+default_model: claude-sonnet-4-6
+
+knowledge:
+  - "CI pipeline runs on GitHub Actions"
+  - "Test suite: vitest for unit tests, supertest for integration tests"
+  - "Linting: ESLint + Prettier"
+  - "Build artifacts go to dist/ directories"
+  - "Deployment: npm publish for packages"
+
+rules:
+  - "Never skip tests — all tests must pass before approving"
+  - "Check for security vulnerabilities in dependencies"
+  - "Verify no secrets or credentials in committed files"
+  - "All changes must have corresponding test coverage"
+  - "Use semantic versioning for releases"
+  - "Never force-push to main or release branches"
+
+agents:
+  master:
+    model: claude-sonnet-4-6
+    persona: "You are the CI Lead. Coordinate test runs, code reviews, and release preparation. Ensure all quality gates pass before approving merges."
+    autonomy: 4
+  default_worker:
+    model: claude-sonnet-4-6
+    persona: "You are a CI worker. Run assigned test suites, report results with pass/fail counts, and flag any regressions or security issues."
+    autonomy: 2
