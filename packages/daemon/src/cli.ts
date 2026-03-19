@@ -211,6 +211,28 @@ async function handleStart(): Promise<void> {
     // For now, just log and ignore to prevent accidental daemon death
   });
 
+  // Crash resilience — catch unhandled errors and keep daemon alive
+  process.on("uncaughtException", (err) => {
+    logger.error({ err }, "[daemon] UNCAUGHT EXCEPTION — daemon staying alive");
+    // Write to crash log for forensics
+    try {
+      const crashLog = path.join(getGlobalConfigDir(), "crash.log");
+      const entry = `[${new Date().toISOString()}] uncaughtException: ${err.stack || err.message}\n`;
+      require("fs").appendFileSync(crashLog, entry);
+    } catch { /* best effort */ }
+  });
+
+  process.on("unhandledRejection", (reason, promise) => {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    logger.error({ err }, "[daemon] UNHANDLED REJECTION — daemon staying alive");
+    // Write to crash log for forensics
+    try {
+      const crashLog = path.join(getGlobalConfigDir(), "crash.log");
+      const entry = `[${new Date().toISOString()}] unhandledRejection: ${err.stack || err.message}\n`;
+      require("fs").appendFileSync(crashLog, entry);
+    } catch { /* best effort */ }
+  });
+
   // 7. If --project flag provided, auto-create a session for that project
   if (projectPath) {
     const resolvedPath = path.resolve(projectPath);

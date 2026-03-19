@@ -632,9 +632,10 @@ export class Orchestrator extends EventEmitter {
         logger.info(`[orchestrator] Rotated log file: ${logPath} (was ${Math.round(stats.size / 1024 / 1024)}MB)`);
       }
     } catch (err) {
-      // File may not exist or be inaccessible — this is not a critical error
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        logger.error({ err: err }, `[orchestrator] Failed to rotate log file ${logPath}:`);
+      // Catch ALL errors — never let log rotation crash the daemon
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") {
+        logger.warn({ err, logPath }, "[orchestrator] Log rotation failed (non-fatal)");
       }
     }
   }
@@ -642,14 +643,29 @@ export class Orchestrator extends EventEmitter {
   /**
    * Check all agent log files and rotate any that exceed 2MB.
    * Called periodically (every 20 seconds) by the log rotation interval.
+   * Uses Promise.allSettled for parallel rotation — one failure doesn't block others.
    */
   private async rotateAgentLogs(): Promise<void> {
-    const agents = this.agentManager.listAgents();
-    const path = await import("path");
+    try {
+      const agents = this.agentManager.listAgents();
+      const path = await import("path");
 
-    for (const agent of agents) {
-      const logPath = path.default.join(this.config.runtimeDir, `${agent.id}.log`);
-      await this.rotateLogFile(logPath);
+      const results = await Promise.allSettled(
+        agents.map(agent => {
+          const logPath = path.default.join(this.config.runtimeDir, `${agent.id}.log`);
+          return this.rotateLogFile(logPath);
+        })
+      );
+
+      // Log any unexpected failures (individual rotateLogFile already catches, but belt+suspenders)
+      for (const r of results) {
+        if (r.status === "rejected") {
+          logger.warn({ err: r.reason }, "[orchestrator] Unexpected log rotation failure (non-fatal)");
+        }
+      }
+    } catch (err) {
+      // Catch-all — log rotation must NEVER crash the daemon
+      logger.warn({ err }, "[orchestrator] rotateAgentLogs failed (non-fatal)");
     }
   }
 }
