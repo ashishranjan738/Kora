@@ -587,7 +587,7 @@ export class MessageQueue {
 
     // Send short notification to tmux (always, even for broadcasts)
     const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
-    await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: false });
+    await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
   }
 
   /** MCP pending mode: write to mcp-pending store + send tmux notification */
@@ -634,7 +634,7 @@ export class MessageQueue {
 
     // 2. Send tmux notification (always, even for broadcasts)
     const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
-    await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: false });
+    await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
   }
 
   /** Terminal mode: send directly via tmux with 500 char limit */
@@ -655,7 +655,7 @@ export class MessageQueue {
       cleanMsg = cleanMsg.substring(0, 497) + "...";
     }
 
-    await this.tmux.sendKeys(msg.tmuxSession, cleanMsg, { literal: false });
+    await this.tmux.sendKeys(msg.tmuxSession, cleanMsg, { literal: true });
   }
 
   /** Classify message type based on content patterns */
