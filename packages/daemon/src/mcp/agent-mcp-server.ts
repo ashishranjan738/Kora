@@ -33,6 +33,39 @@ function getArg(name: string): string {
 const AGENT_ID = getArg("agent-id");
 const SESSION_ID = getArg("session-id");
 const PROJECT_PATH = getArg("project-path");
+const AGENT_ROLE = getArg("agent-role") || "worker"; // default to worker (most restrictive)
+
+// ---------------------------------------------------------------------------
+// Tool access control — restrict which MCP tools each role can use.
+// Tools not in the allow list for a role are hidden from tools/list
+// and rejected in tools/call.
+// ---------------------------------------------------------------------------
+
+/** All available tool names */
+const ALL_TOOLS = [
+  "send_message", "check_messages", "list_agents", "broadcast",
+  "list_tasks", "get_task", "update_task", "create_task",
+  "spawn_agent", "remove_agent", "peek_agent", "nudge_agent",
+  "prepare_pr", "report_idle", "request_task",
+] as const;
+
+/** Tools allowed per role. Master gets everything, workers get subsets. */
+const ROLE_TOOL_ACCESS: Record<string, Set<string>> = {
+  master: new Set(ALL_TOOLS),
+  worker: new Set([
+    "send_message", "check_messages", "list_agents", "broadcast",
+    "list_tasks", "get_task", "update_task", "create_task",
+    "prepare_pr", "report_idle", "request_task",
+  ]),
+  // Deny: spawn_agent, remove_agent, peek_agent, nudge_agent (master-only)
+};
+
+/** Check if the current agent role is allowed to use a tool */
+function isToolAllowed(toolName: string): boolean {
+  const allowed = ROLE_TOOL_ACCESS[AGENT_ROLE];
+  if (!allowed) return true; // unknown role — allow all (safe default for custom roles)
+  return allowed.has(toolName);
+}
 
 // Read daemon URL + token dynamically from files (survives daemon restarts)
 function getConfigDir(): string {
@@ -1191,12 +1224,23 @@ rl.on("line", async (line: string) => {
         break;
 
       case "tools/list":
-        sendResponse(id, { tools: TOOL_DEFINITIONS });
+        // Filter tools based on agent role permissions
+        sendResponse(id, { tools: TOOL_DEFINITIONS.filter(t => isToolAllowed(t.name)) });
         break;
 
       case "tools/call": {
         const toolName = msg.params?.name as string;
         const toolArgs = (msg.params?.arguments || {}) as Record<string, string>;
+
+        // Enforce tool access control
+        if (!isToolAllowed(toolName)) {
+          sendResponse(id, {
+            content: [{ type: "text", text: JSON.stringify({
+              error: `Tool "${toolName}" is not available for ${AGENT_ROLE} agents. This tool is restricted to master/orchestrator roles.`,
+            }) }],
+          });
+          break;
+        }
 
         try {
           const result = await handleToolCall(toolName, toolArgs);
