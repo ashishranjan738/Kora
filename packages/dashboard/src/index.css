@@ -3566,9 +3566,7 @@ textarea:focus {
 @media (max-width: 768px) {
   .bottom-nav { display: flex; }
   /* Add padding at bottom of page content so it's not hidden behind nav */
-  .page { padding-bottom: 72px !important; }
-  /* Hide top navbar on mobile when bottom nav is active */
-  .mantine-AppShell-navbar { display: none; }
+  body .page { padding-bottom: 72px; }
 }
 
 /* ============================================================

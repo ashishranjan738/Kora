@@ -1,8 +1,9 @@
-// Kora Dashboard Service Worker — shell caching for offline support
+// Kora Dashboard Service Worker — shell-only caching for offline support
+// IMPORTANT: Only cache the HTML shell. Vite-hashed JS/CSS are always fresh.
 const CACHE_NAME = "kora-shell-v1";
 const SHELL_URLS = ["/", "/index.html"];
 
-// Install: cache the app shell
+// Install: cache only the app shell HTML
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_URLS))
@@ -20,27 +21,21 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Fetch: network-first for API, cache-first for shell
+// Fetch: network-first, offline fallback to cached shell only
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // Skip non-GET requests and API/WebSocket calls
+  // Skip non-GET, API, WebSocket, and terminal requests
   if (event.request.method !== "GET") return;
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/ws/") || url.pathname.startsWith("/terminal/")) return;
 
+  // Only intercept navigation requests (HTML pages) — let Vite-hashed assets go direct
+  if (event.request.mode !== "navigate") return;
+
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        // Cache successful responses for shell assets
-        if (response.ok && (url.pathname === "/" || url.pathname.endsWith(".html") || url.pathname.endsWith(".js") || url.pathname.endsWith(".css"))) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-        }
-        return response;
-      })
-      .catch(() => {
-        // Offline fallback: serve from cache
-        return caches.match(event.request).then((cached) => cached || caches.match("/"));
-      })
+    fetch(event.request).catch(() => {
+      // Offline: serve cached shell (SPA will handle routing)
+      return caches.match("/").then((cached) => cached || new Response("Offline", { status: 503 }));
+    })
   );
 });

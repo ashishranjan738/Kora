@@ -15,16 +15,10 @@ const NAV_ITEMS: NavItem[] = [
     match: (p) => p === "/" || p === "",
   },
   {
-    path: "/sessions",
+    path: "/",
     label: "Sessions",
-    icon: "\u25A0", // square
+    icon: "\u25A0", // square — points to home (session list)
     match: (p) => p.startsWith("/session"),
-  },
-  {
-    path: "/tasks",
-    label: "Tasks",
-    icon: "\u2611", // checkbox
-    match: (p) => p.startsWith("/task"),
   },
   {
     path: "/settings",
@@ -48,7 +42,7 @@ export function BottomNav() {
         const active = item.match(location.pathname);
         return (
           <button
-            key={item.path}
+            key={item.label}
             className={`bottom-nav-item${active ? " active" : ""}`}
             onClick={() => navigate(item.path)}
           >
