@@ -13,6 +13,7 @@ import { SessionManager } from "../../core/session-manager.js";
 import { registry } from "../../cli-providers/index.js";
 import { MockPtyBackend } from "../../testing/mock-pty-backend.js";
 import { SuggestionsDatabase } from "../../core/suggestions-db.js";
+import { PlaybookDatabase } from "../../core/playbook-database.js";
 
 export interface TestContext {
   app: Application;
@@ -38,6 +39,7 @@ export function setupTestApp(): TestContext {
   const orchestrators = new Map();
 
   const suggestionsDb = new SuggestionsDatabase(true);
+  const playbookDb = new PlaybookDatabase(testDir);
 
   const app = createApp({
     token,
@@ -49,6 +51,7 @@ export function setupTestApp(): TestContext {
       startTime: Date.now(),
       globalConfigDir: testDir,
       suggestionsDb,
+      playbookDb,
     },
     skipDashboard: true,
   });

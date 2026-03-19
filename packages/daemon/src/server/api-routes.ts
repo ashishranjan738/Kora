@@ -28,8 +28,11 @@ import { Orchestrator } from "../core/orchestrator.js";
 import type { CLIProviderRegistry } from "../cli-providers/provider-registry.js";
 import type { IPtyBackend } from "../core/pty-backend.js";
 import type { SuggestionsDatabase } from "../core/suggestions-db.js";
+import type { PlaybookDatabase } from "../core/playbook-database.js";
 import { EventLog } from "../core/event-log.js";
 import { listPlaybooks, loadPlaybook, savePlaybook } from "../core/playbook-loader.js";
+import { validateYAMLPlaybook } from "../core/playbook-validator.js";
+import * as yaml from "js-yaml";
 import { buildPersona } from "../core/persona-builder.js";
 import { discoverModels } from "../core/model-discovery.js";
 import { DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS } from "@kora/shared";
@@ -45,8 +48,9 @@ export function createApiRouter(deps: {
   startTime: number;  // Date.now() at daemon start
   globalConfigDir: string;
   suggestionsDb: SuggestionsDatabase;
+  playbookDb: PlaybookDatabase;
 }, wss: WebSocketServer): Router {
-  const { sessionManager, orchestrators, providerRegistry, tmux, startTime, globalConfigDir, suggestionsDb } = deps;
+  const { sessionManager, orchestrators, providerRegistry, tmux, startTime, globalConfigDir, suggestionsDb, playbookDb } = deps;
   const router = Router();
 
   // Track standalone terminal sessions per session (id → terminal info)
@@ -1616,22 +1620,36 @@ export function createApiRouter(deps: {
 
   // ─── Playbooks ──────────────────────────────────────────────────────
 
-  router.get("/playbooks", async (_req: Request, res: Response) => {
+  // GET /playbooks - list all playbooks with pagination
+  router.get("/playbooks", async (req: Request, res: Response) => {
     try {
-      const names = await listPlaybooks(globalConfigDir);
-      res.json({ playbooks: names });
+      const limit = req.query.limit ? Number(req.query.limit) : 100;
+      const offset = req.query.offset ? Number(req.query.offset) : 0;
+
+      const playbooks = playbookDb.listPlaybooks({ limit, offset });
+      const total = playbookDb.countPlaybooks();
+
+      res.json({
+        playbooks,
+        pagination: {
+          total,
+          limit,
+          offset,
+        },
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
     }
   });
 
-  router.get("/playbooks/:name", async (req: Request, res: Response) => {
+  // GET /playbooks/:id - get single playbook
+  router.get("/playbooks/:id", async (req: Request, res: Response) => {
     try {
-      const name = String(req.params.name);
-      const playbook = await loadPlaybook(globalConfigDir, name);
+      const id = String(req.params.id);
+      const playbook = playbookDb.getPlaybook(id);
       if (!playbook) {
-        res.status(404).json({ error: `Playbook "${name}" not found` });
+        res.status(404).json({ error: `Playbook "${id}" not found` });
         return;
       }
       res.json(playbook);
@@ -1641,19 +1659,83 @@ export function createApiRouter(deps: {
     }
   });
 
+  // POST /playbooks - upload/import YAML playbook
   router.post("/playbooks", async (req: Request, res: Response) => {
     try {
-      const body = req.body;
-      if (!body.name || !body.agents || !Array.isArray(body.agents)) {
-        res.status(400).json({ error: "name and agents array are required" });
+      const yamlContent = typeof req.body === "string" ? req.body : req.body.yaml;
+
+      if (!yamlContent || typeof yamlContent !== "string") {
+        res.status(400).json({ error: "YAML content is required (send as string or { yaml: '...' })" });
         return;
       }
-      await savePlaybook(globalConfigDir, body);
-      res.status(201).json(body);
+
+      // Validate YAML
+      const validation = validateYAMLPlaybook(yamlContent);
+      if (!validation.valid) {
+        res.status(400).json({
+          error: "Playbook validation failed",
+          errors: validation.errors,
+          warnings: validation.warnings,
+        });
+        return;
+      }
+
+      // Check for duplicate name
+      const existing = playbookDb.getPlaybookByName(validation.parsed.name);
+      if (existing) {
+        res.status(409).json({ error: `Playbook with name "${validation.parsed.name}" already exists` });
+        return;
+      }
+
+      // Save to database
+      const id = randomUUID();
+      const now = new Date().toISOString();
+      playbookDb.insertPlaybook({
+        id,
+        name: validation.parsed.name,
+        description: validation.parsed.description || "",
+        yamlContent,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const saved = playbookDb.getPlaybook(id);
+      res.status(201).json({
+        ...saved,
+        warnings: validation.warnings,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
     }
+  });
+
+  // DELETE /playbooks/:id - delete playbook
+  router.delete("/playbooks/:id", async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      const deleted = playbookDb.deletePlaybook(id);
+      if (!deleted) {
+        res.status(404).json({ error: `Playbook "${id}" not found` });
+        return;
+      }
+      res.json({ success: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // POST /playbooks/:id/run - execute playbook (spawn agents)
+  // TODO: Implementation paused pending architecture review
+  // Research questions:
+  // - Should we adopt an existing workflow format (GitHub Actions, Ansible)?
+  // - Should execution use an existing workflow engine?
+  // - Is SQLite the right storage long-term?
+  router.post("/playbooks/:id/run", async (req: Request, res: Response) => {
+    res.status(501).json({
+      error: "Playbook execution not yet implemented - architecture review in progress",
+    });
   });
 
   // ─── Launch Playbook into Existing Session ─────────────────────────
