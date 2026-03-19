@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { useWebSocket } from "../hooks/useWebSocket";
@@ -105,7 +105,8 @@ export function SessionDetail() {
   const [terminalHeight, setTerminalHeight] = useState(300);
 
   // Use terminal session store for tabs
-  const terminalSessions = useTerminalSessionStore((state) => state.getSessions());
+  const terminalSessionsMap = useTerminalSessionStore((state) => state.sessions);
+  const terminalSessions = useMemo(() => Array.from(terminalSessionsMap.values()), [terminalSessionsMap]);
   const openTabIds = useTerminalSessionStore((state) => state.openTabs);
   const openTab = useTerminalSessionStore((state) => state.openTab);
   const closeTab = useTerminalSessionStore((state) => state.closeTab);
@@ -1140,7 +1141,8 @@ function AgentsTab({
   }
 
   // Terminal session store
-  const terminalSessions = useTerminalSessionStore((state) => state.getSessions());
+  const terminalSessionsMap = useTerminalSessionStore((state) => state.sessions);
+  const terminalSessions = useMemo(() => Array.from(terminalSessionsMap.values()), [terminalSessionsMap]);
   const addSession = useTerminalSessionStore((state) => state.addSession);
   const removeSession = useTerminalSessionStore((state) => state.removeSession);
   const openTab = useTerminalSessionStore((state) => state.openTab);
