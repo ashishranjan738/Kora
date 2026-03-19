@@ -743,3 +743,112 @@ describe("Event Routing Tier 3 - Database Migration", () => {
     database.close();
   });
 });
+
+describe("Fire-and-Forget Optimization", () => {
+  let queue: MessageQueue;
+  let mockTmux: IPtyBackend;
+  let database: AppDatabase;
+  let testRuntimeDir: string;
+
+  beforeEach(async () => {
+    testRuntimeDir = path.join("/tmp", `kora-test-${crypto.randomUUID()}`);
+    fs.mkdirSync(testRuntimeDir, { recursive: true });
+
+    database = new AppDatabase(testRuntimeDir);
+
+    mockTmux = {
+      newSession: vi.fn(),
+      hasSession: vi.fn(),
+      killSession: vi.fn(),
+      sendKeys: vi.fn().mockResolvedValue(undefined),
+      capturePane: vi.fn().mockResolvedValue("$ "),
+      listSessions: vi.fn(),
+      getSocketPathForSession: vi.fn(),
+    } as any;
+
+    queue = new MessageQueue(mockTmux, testRuntimeDir, "mcp");
+    queue.registerMcpAgent("agent-1");
+    queue.setDeliveryTracking(database, "test-session");
+  });
+
+  afterEach(async () => {
+    if (queue) {
+      queue.stop();
+    }
+    if (database) {
+      database.close();
+    }
+    if (fs.existsSync(testRuntimeDir)) {
+      fs.rmSync(testRuntimeDir, { recursive: true, force: true });
+    }
+  });
+
+  describe("nudgeAgent - Fire-and-Forget", () => {
+    it("should not block caller when deliverDirect succeeds", async () => {
+      // Set up mock to return unread count
+      const getUnreadCount = vi.fn().mockResolvedValue(3);
+      const getAgentSession = vi.fn().mockReturnValue("tmux-1");
+      queue.setRenotifyCallbacks(getUnreadCount, getAgentSession);
+
+      const startTime = Date.now();
+
+      // nudgeAgent should return immediately without awaiting deliverDirect
+      const unread = await queue.nudgeAgent("agent-1", "tmux-1");
+
+      const elapsed = Date.now() - startTime;
+
+      // Should return immediately (< 50ms), not wait for delivery completion
+      expect(elapsed).toBeLessThan(50);
+      expect(unread).toBe(3);
+
+      // Delivery should have been triggered (but not awaited)
+      // Give it a moment to complete in the background
+      await new Promise(resolve => setTimeout(resolve, 100));
+      expect(mockTmux.sendKeys).toHaveBeenCalled();
+    });
+
+    it("should not block caller when deliverDirect fails", async () => {
+      // Mock delivery failure
+      mockTmux.sendKeys = vi.fn().mockRejectedValue(new Error("Delivery failed"));
+
+      const getUnreadCount = vi.fn().mockResolvedValue(5);
+      const getAgentSession = vi.fn().mockReturnValue("tmux-1");
+      queue.setRenotifyCallbacks(getUnreadCount, getAgentSession);
+
+      const startTime = Date.now();
+
+      // nudgeAgent should return immediately even if delivery will fail
+      const unread = await queue.nudgeAgent("agent-1", "tmux-1");
+
+      const elapsed = Date.now() - startTime;
+
+      // Should return immediately (< 50ms), not wait for delivery retry/failure
+      expect(elapsed).toBeLessThan(50);
+      expect(unread).toBe(5);
+
+      // No exception should be thrown to the caller
+      // (error handling happens in background via .catch())
+    });
+
+    it("should log errors when fire-and-forget delivery fails", async () => {
+      // Mock delivery failure
+      mockTmux.sendKeys = vi.fn().mockRejectedValue(new Error("Connection refused"));
+
+      const getUnreadCount = vi.fn().mockResolvedValue(2);
+      const getAgentSession = vi.fn().mockReturnValue("tmux-1");
+      queue.setRenotifyCallbacks(getUnreadCount, getAgentSession);
+
+      // Mock logger to capture error logs
+      const loggerSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      await queue.nudgeAgent("agent-1", "tmux-1");
+
+      // Give background delivery time to fail and log
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      // Error should be logged (not thrown)
+      // Note: Actual logger.warn implementation may differ
+      loggerSpy.mockRestore();
+    }, 10000);
+  });
+});

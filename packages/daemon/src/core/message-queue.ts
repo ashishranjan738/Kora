@@ -769,7 +769,10 @@ export class MessageQueue {
     const notification = `\n>>> 📬 YOU HAVE ${unread} UNREAD MESSAGE(S) — run check_messages NOW <<<\n`;
 
     // Tier 3: Use direct delivery to bypass queue (nudges are time-sensitive)
-    await this.deliverDirect(agentId, tmuxSession, notification, undefined, agentId);
+    // Fire-and-forget to avoid blocking caller
+    this.deliverDirect(agentId, tmuxSession, notification, undefined, agentId).catch(err =>
+      logger.warn({ err, agentId }, "Failed to deliver nudge notification")
+    );
 
     return unread;
   }
