@@ -4,7 +4,7 @@ import type { IPtyBackend } from "./pty-backend.js";
 import { EventEmitter } from "events";
 
 /** Shell prompt patterns that indicate the agent is idle at a command prompt */
-const IDLE_PROMPT_PATTERNS = [
+export const IDLE_PROMPT_PATTERNS = [
   /[$%>#]\s*$/,                    // Generic shell prompts (❯, $, %, >, #)
   /\s+[$%>]\s*$/,                  // Shell prompts with leading whitespace
   /\w+@\w+\s+[$%>]\s*$/,           // user@host style (user@host $ )
