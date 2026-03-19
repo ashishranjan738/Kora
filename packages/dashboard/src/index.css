@@ -3457,6 +3457,66 @@ textarea:focus {
     align-items: flex-start;
     gap: 8px;
   }
+
+  /* ── Session Detail tab bar — horizontal scroll on mobile ── */
+  .tab-bar {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; /* Firefox */
+    flex-wrap: nowrap !important;
+    gap: 4px !important;
+    padding-bottom: 4px;
+  }
+  .tab-bar::-webkit-scrollbar { display: none; }
+  .tab-bar button {
+    flex-shrink: 0;
+    font-size: 12px !important;
+    padding: 6px 10px !important;
+    white-space: nowrap;
+  }
+
+  /* ── Hide Command Center mosaic on mobile — show agent list instead ── */
+  .mosaic-window,
+  .mosaic-root,
+  .mosaic {
+    display: none !important;
+  }
+  .mobile-agent-list { display: block !important; }
+
+  /* ── Compact agent cards on mobile ── */
+  .agent-card-v2 {
+    padding: 8px 10px !important;
+  }
+  .ac2-header { gap: 6px !important; }
+  .ac2-name { font-size: 13px !important; }
+  .ac2-stats-row { font-size: 10px !important; gap: 4px !important; }
+  .ac2-activity { margin-top: 4px !important; }
+  .ac2-uptime { font-size: 10px !important; }
+
+  /* ── Mobile log viewer (replaces xterm on mobile) ── */
+  .mobile-log-viewer {
+    height: 200px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: #0d1117;
+    border-radius: 6px;
+    padding: 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.4;
+    color: #8b949e;
+  }
+  .mobile-log-line {
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .mobile-log-loading,
+  .mobile-log-empty {
+    color: var(--text-muted);
+    text-align: center;
+    padding: 24px;
+    font-size: 13px;
+  }
 }
 
 /* ===========================
