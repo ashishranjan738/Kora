@@ -132,8 +132,25 @@ export class MessageQueue {
     this.broadcastFn = cb;
   }
 
+  /** Batch-enqueue messages without triggering processQueues for each one.
+   *  Call flushQueues() after batch to trigger single delivery pass. */
+  enqueueBatch(agentId: string, tmuxSession: string, message: string, fromAgentId?: string): boolean {
+    return this._enqueue(agentId, tmuxSession, message, fromAgentId, false);
+  }
+
+  /** Trigger a single delivery pass for all queues. Call after enqueueBatch(). */
+  flushQueues(): void {
+    this.processQueues().catch((err) => {
+      logger.debug({ err }, "[MessageQueue] flushQueues error");
+    });
+  }
+
   /** Queue a message for delivery to an agent. Returns false if dropped (loop). */
   enqueue(agentId: string, tmuxSession: string, message: string, fromAgentId?: string): boolean {
+    return this._enqueue(agentId, tmuxSession, message, fromAgentId, true);
+  }
+
+  private _enqueue(agentId: string, tmuxSession: string, message: string, fromAgentId: string | undefined, immediateFlush: boolean): boolean {
     // Conversation loop detection — max 8 messages between same pair in 2 minutes
     if (fromAgentId) {
       const pairKey = [fromAgentId, agentId].sort().join(":");
@@ -191,10 +208,12 @@ export class MessageQueue {
       return a.timestamp - b.timestamp;
     });
 
-    // Try to deliver immediately instead of waiting for next poll cycle
-    this.processQueues().catch((err) => {
-      logger.debug({ err }, "[MessageQueue] processQueues error");
-    });
+    // Try to deliver immediately (skip for batch mode — caller will call flushQueues)
+    if (immediateFlush) {
+      this.processQueues().catch((err) => {
+        logger.debug({ err }, "[MessageQueue] processQueues error");
+      });
+    }
     return true;
   }
 
