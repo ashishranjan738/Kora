@@ -3541,6 +3541,37 @@ textarea:focus {
 .msg-expiry-toast:hover { background: rgba(248,81,73,0.18); }
 
 /* ============================================================
+   Bottom Navigation (Mobile)
+   ============================================================ */
+.bottom-nav {
+  display: none; /* Hidden on desktop */
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  padding: 4px 0 env(safe-area-inset-bottom, 4px) 0;
+  justify-content: space-around;
+}
+.bottom-nav-item {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 2px; padding: 6px 12px; border: none; background: none;
+  color: var(--text-muted); cursor: pointer; font-size: 10px;
+  transition: color 0.15s; min-width: 60px;
+}
+.bottom-nav-item:hover, .bottom-nav-item.active {
+  color: var(--accent-blue);
+}
+.bottom-nav-icon { font-size: 20px; line-height: 1; }
+.bottom-nav-label { font-weight: 500; }
+
+@media (max-width: 768px) {
+  .bottom-nav { display: flex; }
+  /* Add padding at bottom of page content so it's not hidden behind nav */
+  .page { padding-bottom: 72px !important; }
+  /* Hide top navbar on mobile when bottom nav is active */
+  .mantine-AppShell-navbar { display: none; }
+}
+
+/* ============================================================
    Agent Activity Badge
    ============================================================ */
 .activity-dot-sm {
