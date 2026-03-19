@@ -134,6 +134,15 @@ export interface ProviderResponse {
 
 // --- WebSocket Events ---
 
+export interface ApprovalRequest {
+  id: string;
+  agentId: string;
+  action: string;
+  description: string;
+  timestamp: number;
+  status: "pending" | "approved" | "rejected";
+}
+
 export type WSEvent =
   | { event: "agent-update"; sessionId: string; agent: AgentState }
   | { event: "agent-spawned"; sessionId: string; agent: AgentState }
@@ -145,4 +154,5 @@ export type WSEvent =
   | { event: "terminal-data"; sessionId: string; agentId: string; data: string }
   | { event: "cost-update"; sessionId: string; agentId: string; costUsd: number }
   | { event: "notification"; sessionId: string; notification: { id: string; type: string; title: string; body: string; agentId?: string; timestamp: number } }
+  | { event: "approval-request"; sessionId: string; request: ApprovalRequest }
   | { event: "error"; message: string };

@@ -22,6 +22,8 @@ import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
 import { MobileLogViewer } from "../components/MobileLogViewer";
 import { useMessageBufferEvents, MessageBufferBadge } from "../components/MessageBufferIndicator";
 import { SessionCostSummary, extractCostData, formatCostSmart, hasCostData } from "../components/CostSummary";
+import { useApprovalRequests, type ApprovalRequest } from "../hooks/useApprovalRequests";
+import { ApprovalPrompt } from "../components/ApprovalPrompt";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
 import { hasTerminal } from "../stores/terminalRegistry";
 import { formatCost, formatTokens, formatUptime } from "../utils/formatters";
@@ -78,6 +80,9 @@ export function SessionDetail() {
 
   // Listen for message buffer/expiry WebSocket events
   useMessageBufferEvents();
+
+  // Approval requests for autonomy enforcement
+  const { requests: approvalRequests, approve, reject, getPendingForAgent } = useApprovalRequests(sessionId);
 
   const [session, setSession] = useState<any>(null);
   const [agents, setAgents] = useState<any[]>([]);
@@ -664,6 +669,9 @@ export function SessionDetail() {
           getRoleCardClass={getRoleCardClass}
           showPlaybookLauncher={showPlaybookLauncher}
           onClosePlaybookLauncher={() => setShowPlaybookLauncher(false)}
+          getPendingForAgent={getPendingForAgent}
+          approve={approve}
+          reject={reject}
         />
       )}
 
@@ -858,6 +866,9 @@ interface AgentsTabProps {
   getRoleCardClass: (role: string) => string;
   showPlaybookLauncher?: boolean;
   onClosePlaybookLauncher?: () => void;
+  getPendingForAgent: (agentId: string) => any[];
+  approve: (agentId: string, requestId: string) => Promise<void>;
+  reject: (agentId: string, requestId: string) => Promise<void>;
 }
 
 function AgentsTab({
@@ -880,6 +891,9 @@ function AgentsTab({
   getRoleCardClass,
   showPlaybookLauncher,
   onClosePlaybookLauncher,
+  getPendingForAgent,
+  approve,
+  reject,
 }: AgentsTabProps) {
   const api = useApi();
   const [agentActivities, setAgentActivities] = useState<Record<string, AgentActivity>>({});
@@ -1286,6 +1300,8 @@ function AgentsTab({
         const isCrashed = a.status === "crashed" || a.status === "error";
         const isStopped = a.status === "stopped";
         const stateClass = isCrashed ? "state-crashed" : isStopped ? "state-stopped" : activity === "idle" ? "state-idle" : "state-working";
+        const pendingRequests = getPendingForAgent(a.id);
+        const pendingCount = pendingRequests.length;
 
         return (
           <div
@@ -1303,6 +1319,16 @@ function AgentsTab({
                 <ChannelIndicator channels={(a.config?.channels as string[]) || []} />
                 <FlagIndicator flags={(a.config?.extraCliArgs as string[]) || []} />
                 <MessageBufferBadge agentId={a.id} />
+                {pendingCount > 0 && (
+                  <Badge
+                    size="xs"
+                    color="yellow"
+                    variant="filled"
+                    style={{ marginLeft: 4 }}
+                  >
+                    {pendingCount} approval{pendingCount > 1 ? "s" : ""}
+                  </Badge>
+                )}
               </div>
               <span className="ac2-uptime">{formatUptime(a.startedAt)}</span>
             </div>
@@ -1441,6 +1467,22 @@ function AgentsTab({
                 </div>
               </Collapse>
             </div>
+
+            {/* Approval Prompts — show pending requests for autonomyLevel = 0 (Suggest) */}
+            {pendingRequests.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <Stack gap={8}>
+                  {pendingRequests.map((request: ApprovalRequest) => (
+                    <ApprovalPrompt
+                      key={request.id}
+                      request={request}
+                      onApprove={() => approve(a.id, request.id)}
+                      onReject={() => reject(a.id, request.id)}
+                    />
+                  ))}
+                </Stack>
+              </div>
+            )}
 
             {/* Inline message input (slides down) */}
             {sendingTo === a.id && (
