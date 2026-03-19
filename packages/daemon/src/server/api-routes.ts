@@ -1362,6 +1362,24 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ─── Autonomy Enforcement (Stubs) ───────────────────────────────────────
+
+  /** Approve an agent action request. Stub endpoint — full implementation in Sprint 5. */
+  router.post("/sessions/:sid/agents/:aid/approve", (req: Request, res: Response) => {
+    res.status(501).json({
+      error: "Not implemented",
+      message: "Autonomy enforcement coming in Sprint 5. This is a UI scaffold endpoint.",
+    });
+  });
+
+  /** Reject an agent action request. Stub endpoint — full implementation in Sprint 5. */
+  router.post("/sessions/:sid/agents/:aid/reject", (req: Request, res: Response) => {
+    res.status(501).json({
+      error: "Not implemented",
+      message: "Autonomy enforcement coming in Sprint 5. This is a UI scaffold endpoint.",
+    });
+  });
+
   // ─── Knowledge Persistence ─────────────────────────────────────────────
 
   router.post("/sessions/:sid/knowledge", (req: Request, res: Response) => {

@@ -5,10 +5,12 @@ import { AgentTerminal } from "../components/AgentTerminal";
 import { ReplaceAgentDialog } from "../components/ReplaceAgentDialog";
 import { useMediaQuery } from "@mantine/hooks";
 import { formatUptime, formatTokens } from "../utils/formatters";
+import { useApprovalRequests } from "../hooks/useApprovalRequests";
+import { ApprovalHistory } from "../components/ApprovalHistory";
 
 const AUTONOMY_LABELS = ["Manual", "Suggest", "Auto-confirm", "Full Auto"];
 
-type InfoTab = "details" | "cost" | "actions";
+type InfoTab = "details" | "cost" | "actions" | "approvals";
 
 export function AgentView() {
   const { sessionId, agentId } = useParams<{
@@ -18,6 +20,7 @@ export function AgentView() {
   const navigate = useNavigate();
   const api = useApi();
   const isMobile = useMediaQuery("(max-width: 48em)");
+  const { getHistoryForAgent } = useApprovalRequests(sessionId);
   const [agent, setAgent] = useState<any>(null);
   const [session, setSession] = useState<any>(null);
   const [message, setMessage] = useState("");
@@ -355,6 +358,12 @@ export function AgentView() {
             >
               Actions
             </div>
+            <div
+              className={`info-panel-tab ${infoTab === "approvals" ? "active" : ""}`}
+              onClick={() => setInfoTab("approvals")}
+            >
+              Approvals
+            </div>
           </div>
 
           <div className="info-panel-content">
@@ -482,6 +491,13 @@ export function AgentView() {
                     Remove Agent
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* Approvals Tab */}
+            {infoTab === "approvals" && agentId && (
+              <div className="approvals-tab-content" style={{ padding: "12px" }}>
+                <ApprovalHistory requests={getHistoryForAgent(agentId)} />
               </div>
             )}
           </div>

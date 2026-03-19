@@ -181,5 +181,15 @@ export function useApi() {
       apiFetch<{ entries: Array<{ text: string; source: string; timestamp?: string }> }>(`/sessions/${sid}/knowledge`),
     clearKnowledge: (sid: string) =>
       apiFetch<{ cleared: boolean }>(`/sessions/${sid}/knowledge`, { method: "DELETE" }),
+    approveRequest: (sid: string, aid: string, requestId: string) =>
+      apiFetch<{ approved: boolean }>(`/sessions/${sid}/agents/${aid}/approve`, {
+        method: "POST",
+        body: JSON.stringify({ requestId }),
+      }),
+    rejectRequest: (sid: string, aid: string, requestId: string) =>
+      apiFetch<{ rejected: boolean }>(`/sessions/${sid}/agents/${aid}/reject`, {
+        method: "POST",
+        body: JSON.stringify({ requestId }),
+      }),
   };
 }
