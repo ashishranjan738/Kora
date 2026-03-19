@@ -38,6 +38,7 @@ interface Task {
   title: string;
   description: string;
   status: string;
+  priority?: string;
   assignedTo?: string;
   createdBy: string;
   createdAt: string;
@@ -73,6 +74,13 @@ const COLUMN_CSS_COLORS: Record<string, string> = {
   "in-progress": "var(--accent-blue)",
   review: "var(--accent-yellow)",
   done: "var(--accent-green)",
+};
+
+const PRIORITY_COLORS: Record<string, string> = {
+  P0: "red",
+  P1: "orange",
+  P2: "blue",
+  P3: "gray",
 };
 
 function timeAgo(dateStr: string): string {
@@ -169,6 +177,16 @@ function TaskCard({
           Blocked
         </Badge>
       )}
+
+      {/* Priority badge */}
+      <Badge
+        color={PRIORITY_COLORS[task.priority || "P2"]}
+        variant="filled"
+        size="xs"
+        mt={4}
+      >
+        {task.priority || "P2"}
+      </Badge>
 
       {/* Description — consistent 2-line clamp */}
       {task.description && (
@@ -356,6 +374,7 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
   const [newTitle, setNewTitle] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newAssignee, setNewAssignee] = useState("");
+  const [newPriority, setNewPriority] = useState("P2");
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const [newDependencies, setNewDependencies] = useState<string[]>([]);
@@ -437,12 +456,14 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
         title: newTitle.trim(),
         description: newDescription.trim(),
         assignedTo: newAssignee || undefined,
+        priority: newPriority,
         dependencies:
           newDependencies.length > 0 ? newDependencies : undefined,
       });
       setNewTitle("");
       setNewDescription("");
       setNewAssignee("");
+      setNewPriority("P2");
       setNewDependencies([]);
       setShowAddDialog(false);
       fetchTasks();
@@ -489,8 +510,17 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
     }
   };
 
-  const tasksByColumn = (column: string) =>
-    tasks.filter((t) => t.status === column);
+  const tasksByColumn = (column: string) => {
+    const priOrder: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
+    return tasks
+      .filter((t) => t.status === column)
+      .sort((a, b) => {
+        const aPri = priOrder[a.priority || "P2"] ?? 2;
+        const bPri = priOrder[b.priority || "P2"] ?? 2;
+        if (aPri !== bPri) return aPri - bPri;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+  };
   const expandedTask = expandedTaskId
     ? tasks.find((t) => t.id === expandedTaskId)
     : null;
@@ -565,6 +595,7 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
             setNewTitle("");
             setNewDescription("");
             setNewAssignee("");
+            setNewPriority("P2");
             setNewDependencies([]);
           }}
           isMobile={!!isMobile}
@@ -577,6 +608,8 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
           setNewDescription={setNewDescription}
           newAssignee={newAssignee}
           setNewAssignee={setNewAssignee}
+          newPriority={newPriority}
+          setNewPriority={setNewPriority}
           agentSelectData={agentSelectData}
           tasks={tasks}
           newDependencies={newDependencies}
@@ -681,6 +714,7 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
           setNewTitle("");
           setNewDescription("");
           setNewAssignee("");
+          setNewPriority("P2");
           setNewDependencies([]);
         }}
         isMobile={!!isMobile}
@@ -693,6 +727,8 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
         setNewDescription={setNewDescription}
         newAssignee={newAssignee}
         setNewAssignee={setNewAssignee}
+        newPriority={newPriority}
+        setNewPriority={setNewPriority}
         agentSelectData={agentSelectData}
         tasks={tasks}
         newDependencies={newDependencies}
@@ -742,6 +778,8 @@ function AddTaskModal({
   setNewDescription,
   newAssignee,
   setNewAssignee,
+  newPriority,
+  setNewPriority,
   agentSelectData,
   tasks,
   newDependencies,
@@ -760,6 +798,8 @@ function AddTaskModal({
   setNewDescription: (v: string) => void;
   newAssignee: string;
   setNewAssignee: (v: string) => void;
+  newPriority: string;
+  setNewPriority: (v: string) => void;
   agentSelectData: { value: string; label: string }[];
   tasks: Task[];
   newDependencies: string[];
@@ -814,6 +854,42 @@ function AddTaskModal({
           clearable
           styles={selectDropdownStyles}
         />
+
+        <Box>
+          <Text size="xs" c="var(--text-secondary)" mb={6}>
+            Priority
+          </Text>
+          <SegmentedControl
+            value={newPriority}
+            onChange={setNewPriority}
+            data={[
+              { value: "P0", label: "P0 Critical" },
+              { value: "P1", label: "P1 High" },
+              { value: "P2", label: "P2 Medium" },
+              { value: "P3", label: "P3 Low" },
+            ]}
+            size="sm"
+            styles={{
+              root: {
+                backgroundColor: "var(--bg-tertiary)",
+                border: "1px solid var(--border-color)",
+              },
+              label: {
+                color: "var(--text-primary)",
+                fontWeight: 500,
+                fontSize: 12,
+                padding: "6px 12px",
+              },
+              indicator: {
+                backgroundColor: PRIORITY_COLORS[newPriority] === "red" ? "var(--mantine-color-red-6)" :
+                                 PRIORITY_COLORS[newPriority] === "orange" ? "var(--mantine-color-orange-6)" :
+                                 PRIORITY_COLORS[newPriority] === "blue" ? "var(--accent-blue)" :
+                                 "var(--text-muted)",
+                boxShadow: "none",
+              },
+            }}
+          />
+        </Box>
 
         {incompleteTasks.length > 0 && (
           <Box>
@@ -1150,6 +1226,41 @@ function TaskDetailModal({
             clearable
             size="xs"
             styles={selectDropdownStyles}
+          />
+
+          {/* Priority */}
+          <Text size="sm" fw={500} c="dimmed" style={{ alignSelf: "center" }}>
+            Priority
+          </Text>
+          <SegmentedControl
+            value={task.priority || "P2"}
+            onChange={(val) => saveField("priority", val)}
+            data={[
+              { value: "P0", label: "P0" },
+              { value: "P1", label: "P1" },
+              { value: "P2", label: "P2" },
+              { value: "P3", label: "P3" },
+            ]}
+            size="xs"
+            styles={{
+              root: {
+                backgroundColor: "var(--bg-tertiary)",
+                border: "1px solid var(--border-color)",
+              },
+              label: {
+                color: "var(--text-primary)",
+                fontWeight: 500,
+                fontSize: 12,
+                padding: "4px 10px",
+              },
+              indicator: {
+                backgroundColor: PRIORITY_COLORS[task.priority || "P2"] === "red" ? "var(--mantine-color-red-6)" :
+                                 PRIORITY_COLORS[task.priority || "P2"] === "orange" ? "var(--mantine-color-orange-6)" :
+                                 PRIORITY_COLORS[task.priority || "P2"] === "blue" ? "var(--accent-blue)" :
+                                 "var(--text-muted)",
+                boxShadow: "none",
+              },
+            }}
           />
         </SimpleGrid>
 
