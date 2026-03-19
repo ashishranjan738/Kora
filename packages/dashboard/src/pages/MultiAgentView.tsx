@@ -10,6 +10,7 @@ import "react-mosaic-component/react-mosaic-component.css";
 import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
 import { Indicator, Tooltip } from "@mantine/core";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
+import { formatCost, formatTokens } from "../utils/formatters";
 
 const PANEL_BORDER_COLORS = [
   "#58a6ff",
@@ -25,17 +26,6 @@ const PANEL_BORDER_COLORS = [
 ];
 
 /* ---- Helpers ---- */
-
-function formatTokenCount(n: number | undefined): string {
-  if (n == null || n === 0) return "0";
-  if (n >= 1000) return (n / 1000).toFixed(1) + "k";
-  return String(n);
-}
-
-function formatCost(c: number | undefined): string {
-  if (c == null || c === 0) return "$0.00";
-  return "$" + c.toFixed(2);
-}
 
 function buildInitialMosaic(ids: string[]): MosaicNode<string> | null {
   if (ids.length === 0) return null;
@@ -774,8 +764,8 @@ export function MultiAgentView() {
             <FlagIndicator flags={(agent.config?.extraCliArgs as string[]) || []} />
             <ChannelIndicator channels={(agent.config?.channels as string[]) || []} />
             <span className="mosaic-token-usage">
-              <span>In: {formatTokenCount(tokenIn)}</span>
-              <span>Out: {formatTokenCount(tokenOut)}</span>
+              <span>In: {formatTokens(tokenIn)}</span>
+              <span>Out: {formatTokens(tokenOut)}</span>
               <span className="cost">{formatCost(cost)}</span>
             </span>
 
@@ -1058,7 +1048,7 @@ export function MultiAgentView() {
           <span style={{ fontWeight: 600, fontSize: 16 }}>{agent.config?.name || agent.name || "Agent"}</span>
           <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{agent.provider}/{agent.model}</span>
           <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
-            In: {formatTokenCount(tokenIn)} | Out: {formatTokenCount(tokenOut)} | {formatCost(cost)}
+            In: {formatTokens(tokenIn)} | Out: {formatTokens(tokenOut)} | {formatCost(cost)}
           </span>
           <span style={{ color: agent.status === 'running' ? '#3fb950' : '#8b949e', fontSize: 12 }}>{agent.status}</span>
           <div style={{ flex: 1 }} />

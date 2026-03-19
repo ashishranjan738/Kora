@@ -17,6 +17,7 @@ import type { TerminalTab } from "../components/SideTerminalPanel";
 import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
 import { hasTerminal } from "../stores/terminalRegistry";
+import { formatCost, formatTokens, formatUptime } from "../utils/formatters";
 import {
   ActionIcon,
   Indicator,
@@ -41,30 +42,6 @@ function getInitialTab(): TabId {
   const hash = window.location.hash.replace("#", "");
   if (["agents", "tasks", "timeline", "changes"].includes(hash)) return hash as TabId;
   return "editor";
-}
-
-function formatCost(cost: unknown): string {
-  if (typeof cost === "number") return cost.toFixed(4);
-  return "0.00";
-}
-
-function formatUptime(startedAt: unknown): string {
-  if (!startedAt || typeof startedAt !== "string") return "--";
-  const ms = Date.now() - new Date(startedAt).getTime();
-  if (isNaN(ms) || ms < 0) return "--";
-  const totalSec = Math.floor(ms / 1000);
-  if (totalSec < 60) return `${totalSec}s`;
-  const min = Math.floor(totalSec / 60);
-  if (min < 60) return `${min}m`;
-  const hrs = Math.floor(min / 60);
-  const remainMin = min % 60;
-  return `${hrs}h ${remainMin}m`;
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
-  if (n >= 1000) return (n / 1000).toFixed(1) + "k";
-  return String(n);
 }
 
 const activityLabels: Record<AgentActivity, string> = {
