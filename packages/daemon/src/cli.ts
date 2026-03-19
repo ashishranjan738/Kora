@@ -292,6 +292,204 @@ async function handleStatus(): Promise<void> {
   logger.info(`  Active agents:   ${status.activeAgents}`);
 }
 
+async function handleRun(): Promise<void> {
+  const playbookName = args[1];
+  const task = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
+  const isHeadless = args.includes("--headless");
+  const timeoutMs = parseInt(parseFlag("--timeout") ?? "1800000", 10); // Default 30 minutes
+  const projectPath = parseFlag("--project") || process.cwd();
+  const isDev = args.includes("--dev") || process.env.KORA_DEV === "1";
+
+  if (!playbookName) {
+    logger.error("Error: playbook name is required");
+    logger.info("Usage: kora run <playbook> [task] [--project PATH] [--headless] [--timeout MS]");
+    process.exit(1);
+  }
+
+  if (!isHeadless) {
+    logger.error("Error: non-headless mode not yet implemented. Use --headless flag.");
+    process.exit(1);
+  }
+
+  // Headless mode: run without dashboard
+  const backendFlag = (parseFlag("--backend") || process.env.KORA_PTY_BACKEND || DEFAULT_PTY_BACKEND) as PtyBackendType;
+  let ptyBackend: IPtyBackend;
+  if (backendFlag === "holdpty") {
+    ptyBackend = new HoldptyController();
+  } else {
+    ptyBackend = tmuxDefault;
+  }
+
+  if (isDev) {
+    process.env.KORA_DEV = "1";
+  }
+
+  const globalConfigDir = getGlobalConfigDir();
+  const sessionManager = new SessionManager(globalConfigDir);
+  await sessionManager.load();
+
+  // Ensure built-in playbooks exist
+  await ensureBuiltinPlaybooks(globalConfigDir);
+
+  // Load the playbook
+  const playbook = await (await import("./core/playbook-loader.js")).loadPlaybook(globalConfigDir, playbookName);
+  if (!playbook) {
+    logger.error(`Error: playbook "${playbookName}" not found`);
+    process.exit(1);
+  }
+
+  logger.info(`Running playbook: ${playbook.name}`);
+  if (task) {
+    logger.info(`Task: ${task}`);
+  }
+
+  // Create a session for this run
+  const sessionName = `${playbook.name.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`;
+  const session = await sessionManager.createSession({
+    name: sessionName,
+    projectPath: path.resolve(projectPath),
+    defaultProvider: playbook.agents[0]?.provider || "claude-code",
+  });
+
+  const runtimeDir = path.join(session.projectPath, getRuntimeDaemonDir(isDev));
+  const orch = new Orchestrator({
+    sessionId: session.id,
+    projectPath: session.projectPath,
+    runtimeDir,
+    defaultProvider: session.defaultProvider,
+    tmux: ptyBackend,
+    providerRegistry: registry,
+    messagingMode: session.messagingMode || "mcp",
+    worktreeMode: session.worktreeMode,
+  });
+
+  await orch.start();
+
+  // Spawn agents from playbook
+  const { buildPersona } = await import("./core/persona-builder.js");
+  const { DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS } = await import("@kora/shared");
+
+  // Sort: masters first, then workers
+  const sorted = [...playbook.agents].sort((a, b) => {
+    if (a.role === "master" && b.role !== "master") return -1;
+    if (a.role !== "master" && b.role === "master") return 1;
+    return 0;
+  });
+
+  const spawnedAgents: string[] = [];
+
+  for (const pa of sorted) {
+    const providerId = pa.provider ?? session.defaultProvider;
+    const provider = registry.get(providerId);
+    if (!provider) {
+      logger.warn(`Skipping agent "${pa.name}" — provider "${providerId}" not found`);
+      continue;
+    }
+
+    const permissions = pa.role === "master"
+      ? { ...DEFAULT_MASTER_PERMISSIONS }
+      : { ...DEFAULT_WORKER_PERMISSIONS };
+
+    const currentAgents = orch.agentManager.listAgents().filter(a => a.status === "running");
+    const peers = currentAgents.map(a => ({
+      id: a.id,
+      name: a.config.name,
+      role: a.config.role,
+      provider: a.config.cliProvider,
+      model: a.config.model,
+    }));
+
+    const fullPersona = buildPersona({
+      agentId: "pending",
+      role: pa.role,
+      userPersona: pa.persona,
+      permissions,
+      sessionId: session.id,
+      runtimeDir,
+      peers,
+    });
+
+    // Use the task param as initialTask for the master agent only
+    const initialTask = pa.role === "master" && task ? task : pa.initialTask;
+
+    const agentState = await orch.agentManager.spawnAgent({
+      sessionId: session.id,
+      name: pa.name,
+      role: pa.role,
+      provider,
+      model: pa.model,
+      persona: fullPersona,
+      workingDirectory: session.projectPath,
+      runtimeDir,
+      extraCliArgs: pa.extraCliArgs,
+      initialTask,
+      messagingMode: session.messagingMode || "mcp",
+      worktreeMode: session.worktreeMode,
+    });
+
+    spawnedAgents.push(agentState.id);
+    logger.info(`  Spawned: ${pa.name} (${pa.role})`);
+  }
+
+  if (spawnedAgents.length === 0) {
+    logger.error("Error: no agents spawned");
+    await orch.cleanup();
+    process.exit(1);
+  }
+
+  // Monitor agents and stream output
+  let exitCode = 0;
+  const startTime = Date.now();
+  let outputInterval: NodeJS.Timeout | null = null;
+
+  // Stream output from master agent to stdout
+  const masterAgent = orch.agentManager.listAgents().find(a => a.config.role === "master");
+  if (masterAgent) {
+    outputInterval = setInterval(async () => {
+      try {
+        const output = await ptyBackend.capturePane(masterAgent.config.tmuxSession, 10, false);
+        if (output.trim()) {
+          process.stdout.write(output);
+        }
+      } catch {
+        // Agent may have exited
+      }
+    }, 1000);
+  }
+
+  const checkInterval = setInterval(async () => {
+    const elapsed = Date.now() - startTime;
+    if (elapsed > timeoutMs) {
+      logger.error(`\nTimeout reached (${timeoutMs}ms)`);
+      if (outputInterval) clearInterval(outputInterval);
+      clearInterval(checkInterval);
+      await orch.cleanup();
+      process.exit(2);
+    }
+
+    // Check if all agents are done
+    const agents = orch.agentManager.listAgents();
+    const active = agents.filter(a => spawnedAgents.includes(a.id) && a.status === "running");
+
+    if (active.length === 0) {
+      if (outputInterval) clearInterval(outputInterval);
+      clearInterval(checkInterval);
+
+      // Check for failures
+      const failed = agents.filter(a => spawnedAgents.includes(a.id) && (a.status === "error" || a.status === "crashed"));
+      if (failed.length > 0) {
+        logger.error(`\nAgents failed: ${failed.map(a => a.config.name).join(", ")}`);
+        exitCode = 1;
+      } else {
+        logger.info("\nAll agents completed successfully");
+      }
+
+      await orch.cleanup();
+      process.exit(exitCode);
+    }
+  }, 2000);
+}
+
 if (command === "start") {
   handleStart().catch((err) => {
     logger.error({ err: err }, "Failed to start daemon:");
@@ -307,10 +505,16 @@ if (command === "start") {
     logger.error({ err: err }, "Failed to get status:");
     process.exit(1);
   });
+} else if (command === "run") {
+  handleRun().catch((err) => {
+    logger.error({ err: err }, "Failed to run playbook:");
+    process.exit(1);
+  });
 } else {
   logger.info(`Kora v${APP_VERSION}\n`);
   logger.info("Usage:");
-  logger.info("  kora start [--port PORT] [--project PATH]");
+  logger.info("  kora start [--port PORT] [--project PATH] [--dev]");
   logger.info("  kora stop");
   logger.info("  kora status");
+  logger.info("  kora run <playbook> [task] [--project PATH] [--headless] [--timeout MS]");
 }
