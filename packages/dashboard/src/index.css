@@ -3815,3 +3815,6 @@ textarea:focus {
 .tl-new-events-banner:hover { background: rgba(88,166,255,0.15); }
 
 /* ---- Drag-and-drop reorder styles (handled by react-mosaic) ---- */
+
+/* Mobile Responsive Fixes - Additional Improvements */
+@import './mobile-responsive-fixes.css';

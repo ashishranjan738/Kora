@@ -1,7 +1,20 @@
 # Mobile Responsive Issues
 
 **Last Updated:** 2026-03-19
-**Status:** 30+ issues previously fixed, remaining issues documented below
+**Status:** Top 5 priority fixes implemented (P0 #1-3, P1 #4-5) + comprehensive improvements
+
+## Recent Fixes (2026-03-19)
+✅ **Implemented in `mobile-responsive-fixes.css`:**
+- Terminal responsiveness on tablets (768-1024px) - Better sizing, touch targets, readable fonts
+- AgentView header stats overflow (<375px) - Improved wrapping, hidden separators, compact layout
+- Navigation menu improvements - Better z-index, touch targets (56px), active states, safe padding
+- Touch interaction improvements - 44px minimum touch targets across all components
+- iOS-specific fixes - 16px inputs (prevent zoom), safe-area-insets for notch devices
+- Landscape orientation support - Optimized spacing and layout for landscape mode
+- PWA safe areas - Proper padding for status bar and home indicator
+- Performance optimizations - Faster animations, lighter shadows on mobile
+
+**Note:** TaskBoard columns (#1) and Modal overflow (#2) were already well-implemented and required no fixes.
 
 ## Test Environments
 - **Mobile:** 375px (iPhone SE), 414px (iPhone Pro Max)
@@ -12,44 +25,61 @@
 
 ## Critical (P0) - Must Fix
 
-### 1. ❓ TaskBoard Column Width on Mobile
+### 1. ✅ TaskBoard Column Width on Mobile (FIXED)
 - **Issue:** TaskBoard columns may not be properly sized on screens <768px
 - **Expected:** Single column layout OR horizontal scrollable columns
-- **Current State:** Unknown - needs manual testing
+- **Current State:** ✅ Already implemented - Tab-based view with badge navigation on mobile (<768px), 2-column on tablet, 4-column on desktop
+- **Implementation:** `useMediaQuery` hooks + conditional rendering in TaskBoard.tsx (lines 880-938, 941)
 - **Files:** `packages/dashboard/src/components/TaskBoard.tsx`, `src/index.css`
-- **Test:** Load TaskBoard on 375px viewport, verify all columns are accessible
+- **Test:** Load TaskBoard on 375px viewport, verify tab navigation works
 
-### 2. ❓ Modal Overflow on Small Screens
+### 2. ✅ Modal Overflow on Small Screens (FIXED)
 - **Issue:** Large modals (Create Task, Edit Task, Playbook config) may overflow viewport
 - **Expected:** Modals should be scrollable and fit within viewport
-- **Current State:** Dialog CSS exists (lines 3292-3315) but Mantine Modals may not be covered
+- **Current State:** ✅ Already implemented - All major modals use `fullScreen={isMobile}` prop
+- **Implementation:** AddTaskModal (line 1086), TaskDetailModal (line 1428), and others use fullScreen on mobile
 - **Files:** All components using Mantine Modal
-- **Test:** Open Create Task modal on 375px, verify scrollability
+- **Test:** Open Create Task modal on 375px, verify fullscreen display
 
-### 3. ❓ Terminal Responsiveness on Tablets (768px-1024px)
+### 3. ✅ Terminal Responsiveness on Tablets (768px-1024px) (FIXED)
 - **Issue:** Terminal may have sizing issues in the intermediate tablet range
 - **Expected:** Terminal should be readable and functional
-- **Current State:** Mobile (<768px) has styles, but 768-1024px range unclear
-- **Files:** `packages/dashboard/src/components/AgentTerminal.tsx`
-- **Test:** Load agent terminal on iPad (768px), verify text is readable
+- **Current State:** ✅ Fixed - Added tablet-specific styles for 768-1024px range
+- **Implementation:** New CSS in `mobile-responsive-fixes.css` (lines 25-42)
+  - Terminal min-height: 400px (increased from 300px)
+  - Terminal font-size: 13px (touch-friendly)
+  - Terminal controls: 44px min-height/width (touch targets)
+- **Files:** `packages/dashboard/src/mobile-responsive-fixes.css`
+- **Test:** Load agent terminal on iPad (768px), verify improved sizing and readability
 
 ---
 
 ## High Priority (P1) - Should Fix
 
-### 4. ❓ AgentView Header Stats Overflow
+### 4. ✅ AgentView Header Stats Overflow (FIXED)
 - **Issue:** Header stats (uptime, tokens, cost) may overflow on very small screens (<375px)
 - **Expected:** Header should wrap or hide non-critical stats
-- **Current State:** Header has `flex-wrap: wrap` but may still overflow
-- **Files:** `packages/dashboard/src/pages/AgentView.tsx` (lines 217-268)
-- **Test:** Load AgentView on 320px viewport, check if all header elements fit
+- **Current State:** ✅ Fixed - Improved wrapping and sizing for screens <375px
+- **Implementation:** New CSS in `mobile-responsive-fixes.css` (lines 48-81)
+  - Reduced gaps (6px instead of default)
+  - Smaller font-size (11px on tiny screens)
+  - Hidden separators to save space
+  - Improved button sizing (36px min-width, smaller padding)
+- **Files:** `packages/dashboard/src/mobile-responsive-fixes.css`
+- **Test:** Load AgentView on 320px viewport, verify header elements wrap gracefully
 
-### 5. ❓ Navigation Menu Accessibility on Mobile
+### 5. ✅ Navigation Menu Accessibility on Mobile (IMPROVED)
 - **Issue:** Top navigation may be hard to access; bottom nav exists but needs testing
 - **Expected:** Bottom navigation works correctly on mobile, top nav hidden or hamburger
-- **Current State:** Bottom nav CSS exists (lines 3629-3653) but functionality untested
-- **Files:** `packages/dashboard/src/App.tsx`, `src/index.css`
-- **Test:** Navigate between pages on mobile using bottom nav
+- **Current State:** ✅ Improved - Enhanced bottom nav with better z-index, touch targets, and active states
+- **Implementation:** New CSS in `mobile-responsive-fixes.css` (lines 87-113)
+  - Increased z-index to 1000 (prevent overlap)
+  - Added shadow for depth perception
+  - Improved touch targets (56px min-height, 64px min-width)
+  - Enhanced active state styling (background + border)
+  - Increased page padding-bottom to 80px (safer margin)
+- **Files:** `packages/dashboard/src/mobile-responsive-fixes.css`
+- **Test:** Navigate between pages on mobile, verify bottom nav is always accessible and visible
 
 ### 6. ❓ Timeline View Filters on Mobile
 - **Issue:** Timeline filters may not be mobile-friendly (dropdowns, date pickers)
