@@ -8,7 +8,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 3;
 
 export class AppDatabase {
   public db: Database.Database;
@@ -83,6 +83,26 @@ export class AppDatabase {
         PRAGMA user_version = 1;
       `);
     }
+
+    if (version < 2) {
+      // Migration 2: Add priority column to tasks
+      this.db.exec(`
+        ALTER TABLE tasks ADD COLUMN priority TEXT DEFAULT 'P2';
+        CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
+        UPDATE tasks SET priority = 'P2' WHERE priority IS NULL;
+        PRAGMA user_version = 2;
+      `);
+    }
+
+    if (version < 3) {
+      // Migration 3: Add labels (JSON array) and due_date columns
+      this.db.exec(`
+        ALTER TABLE tasks ADD COLUMN labels TEXT DEFAULT '[]';
+        ALTER TABLE tasks ADD COLUMN due_date TEXT;
+        CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
+        PRAGMA user_version = 3;
+      `);
+    }
   }
 
   // ─── Events ──────────────────────────────────────────────
@@ -152,17 +172,23 @@ export class AppDatabase {
     assignedTo?: string;
     createdBy: string;
     dependencies?: string[];
+    priority?: string;
+    labels?: string[];
+    dueDate?: string;
     createdAt: string;
     updatedAt: string;
   }): void {
     const stmt = this.db.prepare(
-      `INSERT INTO tasks (id, session_id, title, description, status, assigned_to, created_by, dependencies, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO tasks (id, session_id, title, description, status, assigned_to, created_by, dependencies, priority, labels, due_date, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     stmt.run(
       task.id, task.sessionId, task.title, task.description, task.status,
       task.assignedTo || null, task.createdBy,
       JSON.stringify(task.dependencies || []),
+      task.priority || "P2",
+      JSON.stringify(task.labels || []),
+      task.dueDate || null,
       task.createdAt, task.updatedAt
     );
   }
@@ -172,44 +198,134 @@ export class AppDatabase {
       `SELECT * FROM tasks WHERE session_id = ? ORDER BY created_at DESC`
     ).all(sessionId) as any[];
 
-    return rows.map(r => {
-      const comments = this.getTaskComments(r.id);
-      return {
-        id: r.id,
-        sessionId: r.session_id,
-        title: r.title,
-        description: r.description,
-        status: r.status,
-        assignedTo: r.assigned_to,
-        createdBy: r.created_by,
-        dependencies: JSON.parse(r.dependencies || "[]"),
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-        comments,
-      };
-    });
+    return rows.map(r => this.mapTaskRow(r, true));
+  }
+
+  /**
+   * Query tasks with optional filters.
+   * @param sessionId - Session ID
+   * @param filters.assignedTo - Filter by assigned agent (optional, null = all)
+   * @param filters.status - Filter by status or "active" shortcut (pending+in-progress+review)
+   * @param filters.priority - Filter by priority (P0, P1, P2, P3)
+   * @param filters.label - Filter by label (tasks containing this label)
+   * @param filters.due - Filter by due date: "overdue", "today", "week", or YYYY-MM-DD
+   * @param filters.sortBy - Sort: "created" (default), "due" (by due_date ASC NULLS LAST), "priority"
+   * @param filters.summary - If true, return compact fields only (no description, comments, dependencies)
+   */
+  getFilteredTasks(sessionId: string, filters: {
+    assignedTo?: string | null;
+    status?: string | null;
+    priority?: string | null;
+    label?: string | null;
+    due?: string | null;
+    sortBy?: string | null;
+    summary?: boolean;
+  } = {}): Array<any> {
+    const conditions: string[] = ["session_id = ?"];
+    const values: any[] = [sessionId];
+
+    if (filters.assignedTo) {
+      conditions.push("assigned_to = ?");
+      values.push(filters.assignedTo);
+    }
+
+    if (filters.status) {
+      if (filters.status === "active") {
+        conditions.push("status IN ('pending', 'in-progress', 'review')");
+      } else {
+        conditions.push("status = ?");
+        values.push(filters.status);
+      }
+    }
+
+    if (filters.priority) {
+      conditions.push("priority = ?");
+      values.push(filters.priority);
+    }
+
+    if (filters.label) {
+      // Use json_each to match labels within the JSON array
+      conditions.push("EXISTS (SELECT 1 FROM json_each(labels) WHERE json_each.value = ?)");
+      values.push(filters.label);
+    }
+
+    if (filters.due) {
+      const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+      if (filters.due === "overdue") {
+        conditions.push("due_date IS NOT NULL AND due_date < ?");
+        values.push(today);
+      } else if (filters.due === "today") {
+        conditions.push("due_date = ?");
+        values.push(today);
+      } else if (filters.due === "week") {
+        const weekFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+        conditions.push("due_date IS NOT NULL AND due_date <= ?");
+        values.push(weekFromNow);
+      } else {
+        // Exact date match
+        conditions.push("due_date = ?");
+        values.push(filters.due);
+      }
+    }
+
+    const where = conditions.join(" AND ");
+
+    // Sort order
+    let orderBy = "created_at DESC";
+    if (filters.sortBy === "due") {
+      orderBy = "CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date ASC, created_at DESC";
+    } else if (filters.sortBy === "priority") {
+      orderBy = "CASE priority WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 ELSE 4 END, created_at DESC";
+    }
+
+    const rows = this.db.prepare(
+      `SELECT * FROM tasks WHERE ${where} ORDER BY ${orderBy}`
+    ).all(...values) as any[];
+
+    const isSummary = filters.summary !== false; // default true
+    return rows.map(r => this.mapTaskRow(r, !isSummary));
+  }
+
+  /** Map a raw DB row to a task object */
+  private mapTaskRow(r: any, includeDetails: boolean): any {
+    const base: any = {
+      id: r.id,
+      sessionId: r.session_id,
+      title: r.title,
+      status: r.status,
+      assignedTo: r.assigned_to,
+      priority: r.priority || "P2",
+      labels: JSON.parse(r.labels || "[]"),
+      dueDate: r.due_date || null,
+    };
+
+    if (includeDetails) {
+      base.description = r.description;
+      base.createdBy = r.created_by;
+      base.dependencies = JSON.parse(r.dependencies || "[]");
+      base.createdAt = r.created_at;
+      base.updatedAt = r.updated_at;
+      base.comments = this.getTaskComments(r.id);
+    }
+
+    return base;
   }
 
   getTask(taskId: string): any | null {
     const r = this.db.prepare(`SELECT * FROM tasks WHERE id = ?`).get(taskId) as any;
     if (!r) return null;
-    const comments = this.getTaskComments(r.id);
-    return {
-      id: r.id,
-      sessionId: r.session_id,
-      title: r.title,
-      description: r.description,
-      status: r.status,
-      assignedTo: r.assigned_to,
-      createdBy: r.created_by,
-      dependencies: JSON.parse(r.dependencies || "[]"),
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-      comments,
-    };
+    return this.mapTaskRow(r, true);
   }
 
-  updateTask(taskId: string, updates: { title?: string; description?: string; status?: string; assignedTo?: string }): any | null {
+  updateTask(taskId: string, updates: {
+    title?: string;
+    description?: string;
+    status?: string;
+    assignedTo?: string;
+    priority?: string;
+    labels?: string[];
+    dueDate?: string | null;
+  }): any | null {
     const task = this.db.prepare(`SELECT * FROM tasks WHERE id = ?`).get(taskId) as any;
     if (!task) return null;
 
@@ -217,11 +333,14 @@ export class AppDatabase {
     const newDesc = updates.description !== undefined ? updates.description : task.description;
     const newStatus = updates.status !== undefined ? updates.status : task.status;
     const newAssigned = updates.assignedTo !== undefined ? (updates.assignedTo || null) : task.assigned_to;
+    const newPriority = updates.priority !== undefined ? updates.priority : (task.priority || "P2");
+    const newLabels = updates.labels !== undefined ? JSON.stringify(updates.labels) : (task.labels || "[]");
+    const newDueDate = updates.dueDate !== undefined ? (updates.dueDate || null) : task.due_date;
     const now = new Date().toISOString();
 
     this.db.prepare(
-      `UPDATE tasks SET title = ?, description = ?, status = ?, assigned_to = ?, updated_at = ? WHERE id = ?`
-    ).run(newTitle, newDesc, newStatus, newAssigned, now, taskId);
+      `UPDATE tasks SET title = ?, description = ?, status = ?, assigned_to = ?, priority = ?, labels = ?, due_date = ?, updated_at = ? WHERE id = ?`
+    ).run(newTitle, newDesc, newStatus, newAssigned, newPriority, newLabels, newDueDate, now, taskId);
 
     return this.getTask(taskId);
   }

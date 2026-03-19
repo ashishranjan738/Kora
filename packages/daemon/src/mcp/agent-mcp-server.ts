@@ -255,16 +255,56 @@ const TOOL_DEFINITIONS = [
   {
     name: "list_tasks",
     description:
-      "List tasks in the current session. Shows tasks assigned to you and unassigned tasks.",
+      "List tasks in the current session. By default shows only YOUR active tasks in summary mode (compact). Use assignedTo: \"all\" to see all tasks.",
     inputSchema: {
       type: "object" as const,
-      properties: {},
+      properties: {
+        assignedTo: {
+          type: "string",
+          description: 'Filter by assignee. Default: "me" (your tasks). Use "all" for all tasks, or an agent name/ID.',
+        },
+        status: {
+          type: "string",
+          description: 'Filter by status. Default: "active" (pending+in-progress+review). Or: "pending", "in-progress", "review", "done", "all".',
+        },
+        label: {
+          type: "string",
+          description: 'Filter by label (e.g. "bug", "frontend"). Only returns tasks with this label.',
+        },
+        due: {
+          type: "string",
+          description: 'Filter by due date: "overdue", "today", "week", or a specific YYYY-MM-DD date.',
+        },
+        sortBy: {
+          type: "string",
+          description: 'Sort order: "created" (default), "due" (by due date, nulls last), "priority" (P0 first).',
+        },
+        summary: {
+          type: "boolean",
+          description: "If true (default), return compact fields only (id, title, status, assignedTo, priority, labels, dueDate). Set false for full details.",
+        },
+      },
+    },
+  },
+  {
+    name: "get_task",
+    description:
+      "Get full details of a single task including description, comments, and dependencies. Use this when you need the complete info on a specific task.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        taskId: {
+          type: "string",
+          description: "The task ID to retrieve",
+        },
+      },
+      required: ["taskId"],
     },
   },
   {
     name: "update_task",
     description:
-      "Update a task's status or add a comment/update. Use this to report progress on assigned tasks.",
+      "Update a task's status, priority, title, description, labels, due date, or assignee. Also supports adding comments. Immutable fields: id, sessionId, createdBy, createdAt.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -275,6 +315,31 @@ const TOOL_DEFINITIONS = [
         status: {
           type: "string",
           description: 'New status - "pending", "in-progress", "review", "done"',
+        },
+        title: {
+          type: "string",
+          description: "New task title (optional)",
+        },
+        description: {
+          type: "string",
+          description: "New task description (optional)",
+        },
+        priority: {
+          type: "string",
+          description: 'Task priority - "P0" (critical), "P1" (high), "P2" (normal, default), "P3" (low)',
+        },
+        labels: {
+          type: "array",
+          items: { type: "string" },
+          description: 'Task labels (e.g. ["bug", "frontend"])',
+        },
+        dueDate: {
+          type: "string",
+          description: "Due date in YYYY-MM-DD format. Set to null to clear.",
+        },
+        assignedTo: {
+          type: "string",
+          description: "Agent name or ID to reassign to (optional)",
         },
         comment: {
           type: "string",
@@ -302,6 +367,19 @@ const TOOL_DEFINITIONS = [
         assignedTo: {
           type: "string",
           description: "Agent name or ID to assign to (optional)",
+        },
+        priority: {
+          type: "string",
+          description: 'Task priority - "P0" (critical), "P1" (high), "P2" (normal, default), "P3" (low)',
+        },
+        labels: {
+          type: "array",
+          items: { type: "string" },
+          description: 'Task labels (e.g. ["bug", "frontend"])',
+        },
+        dueDate: {
+          type: "string",
+          description: "Due date in YYYY-MM-DD format",
         },
       },
       required: ["title"],
@@ -654,12 +732,63 @@ async function handleToolCall(
     }
 
     case "list_tasks": {
+      // Build query params for filtering
+      const params = new URLSearchParams();
+
+      // assignedTo: default "me" → resolve to AGENT_ID; "all" → no filter
+      const assignedToArg = toolArgs.assignedTo || "me";
+      if (assignedToArg === "me") {
+        params.set("assignedTo", AGENT_ID);
+      } else if (assignedToArg !== "all") {
+        // Resolve agent name to ID
+        const agents = (await apiCall(
+          "GET",
+          `/api/v1/sessions/${SESSION_ID}/agents`,
+        )) as AgentsResponse;
+        const search = assignedToArg.toLowerCase();
+        const target = (agents.agents || []).find((a) => {
+          const name = (a.config?.name || "").toLowerCase();
+          return name === search || name.includes(search) || a.id.toLowerCase().includes(search);
+        });
+        if (target) {
+          params.set("assignedTo", target.id);
+        } else {
+          params.set("assignedTo", assignedToArg);
+        }
+      }
+
+      // status: default "active" unless "all"
+      const statusArg = toolArgs.status || "active";
+      if (statusArg !== "all") {
+        params.set("status", statusArg);
+      }
+
+      // label filter
+      if (toolArgs.label) {
+        params.set("label", toolArgs.label);
+      }
+
+      // due date filter
+      if (toolArgs.due) {
+        params.set("due", toolArgs.due);
+      }
+
+      // sort order
+      if (toolArgs.sortBy) {
+        params.set("sortBy", toolArgs.sortBy);
+      }
+
+      // summary: default true
+      const summaryArg = toolArgs.summary === "false" ? "false" : "true";
+      params.set("summary", summaryArg);
+
+      const queryString = params.toString();
       const response = (await apiCall(
         "GET",
-        `/api/v1/sessions/${SESSION_ID}/tasks`,
+        `/api/v1/sessions/${SESSION_ID}/tasks?${queryString}`,
       )) as { tasks?: Array<{ id: string; title: string; status: string; dependencies?: string[]; [key: string]: unknown }> };
 
-      // Enhance tasks with dependency blocking info
+      // Enhance tasks with dependency blocking info (only if full details returned)
       const tasks = response.tasks || [];
       const taskMap = new Map(tasks.map((t) => [t.id, t]));
 
@@ -678,8 +807,25 @@ async function handleToolCall(
       return response;
     }
 
+    case "get_task": {
+      if (!toolArgs.taskId) {
+        return { error: "taskId is required" };
+      }
+      const taskResp = (await apiCall(
+        "GET",
+        `/api/v1/sessions/${SESSION_ID}/tasks/${toolArgs.taskId}`,
+      )) as any;
+
+      if (taskResp.error) {
+        return { error: taskResp.error };
+      }
+
+      return { task: taskResp };
+    }
+
     case "update_task": {
-      const { taskId, status, comment } = toolArgs;
+      const { taskId, status, comment, title, description, priority, assignedTo, dueDate } = toolArgs;
+      const labels = (toolArgs as any).labels; // array type from MCP
       const results: { statusUpdate?: unknown; commentAdded?: unknown } = {};
 
       // If setting to "in-progress", check dependency gating first
@@ -706,12 +852,22 @@ async function handleToolCall(
         }
       }
 
-      // Update status if provided
-      if (status) {
+      // Build update payload with all editable fields
+      const updatePayload: Record<string, unknown> = {};
+      if (status) updatePayload.status = status;
+      if (title) updatePayload.title = title;
+      if (description !== undefined) updatePayload.description = description;
+      if (priority) updatePayload.priority = priority;
+      if (assignedTo !== undefined) updatePayload.assignedTo = assignedTo;
+      if (labels !== undefined) updatePayload.labels = labels;
+      if (dueDate !== undefined) updatePayload.dueDate = dueDate || null;
+
+      // Send update if any fields to update
+      if (Object.keys(updatePayload).length > 0) {
         results.statusUpdate = await apiCall(
           "PUT",
           `/api/v1/sessions/${SESSION_ID}/tasks/${taskId}`,
-          { status },
+          updatePayload,
         );
       }
 
@@ -735,6 +891,9 @@ async function handleToolCall(
         title: toolArgs.title,
         description: toolArgs.description || "",
         assignedTo: toolArgs.assignedTo || undefined,
+        priority: toolArgs.priority || undefined,
+        labels: (toolArgs as any).labels || undefined,
+        dueDate: toolArgs.dueDate || undefined,
       });
       return result;
     }

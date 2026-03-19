@@ -166,9 +166,41 @@ async function handleToolCall(
     }
 
     case "list_tasks": {
+      // Build query params for filtering (mirrors agent-mcp-server.ts)
+      const params = new URLSearchParams();
+
+      const assignedToArg = toolArgs.assignedTo || "me";
+      if (assignedToArg === "me") {
+        params.set("assignedTo", AGENT_ID);
+      } else if (assignedToArg !== "all") {
+        const agents = (await mockApiCall(
+          "GET",
+          `/api/v1/sessions/${SESSION_ID}/agents`,
+        )) as { agents?: AgentInfo[] };
+        const search = assignedToArg.toLowerCase();
+        const target = (agents.agents || []).find((a) => {
+          const name = (a.config?.name || "").toLowerCase();
+          return name === search || name.includes(search) || a.id.toLowerCase().includes(search);
+        });
+        if (target) {
+          params.set("assignedTo", target.id);
+        } else {
+          params.set("assignedTo", assignedToArg);
+        }
+      }
+
+      const statusArg = toolArgs.status || "active";
+      if (statusArg !== "all") {
+        params.set("status", statusArg);
+      }
+
+      const summaryArg = toolArgs.summary === "false" ? "false" : "true";
+      params.set("summary", summaryArg);
+
+      const queryString = params.toString();
       const response = (await mockApiCall(
         "GET",
-        `/api/v1/sessions/${SESSION_ID}/tasks`,
+        `/api/v1/sessions/${SESSION_ID}/tasks?${queryString}`,
       )) as { tasks?: Array<{ id: string; title: string; status: string; dependencies?: string[]; [key: string]: unknown }> };
 
       const tasks = response.tasks || [];
@@ -189,8 +221,23 @@ async function handleToolCall(
       return response;
     }
 
+    case "get_task": {
+      if (!toolArgs.taskId) {
+        return { error: "taskId is required" };
+      }
+      const taskResp = (await mockApiCall(
+        "GET",
+        `/api/v1/sessions/${SESSION_ID}/tasks/${toolArgs.taskId}`,
+      )) as any;
+
+      if (taskResp.error) {
+        return { error: taskResp.error };
+      }
+      return { task: taskResp };
+    }
+
     case "update_task": {
-      const { taskId, status, comment } = toolArgs;
+      const { taskId, status, comment, title, description, priority, assignedTo } = toolArgs;
       const results: { statusUpdate?: unknown; commentAdded?: unknown } = {};
 
       if (status === "in-progress") {
@@ -216,11 +263,18 @@ async function handleToolCall(
         }
       }
 
-      if (status) {
+      const updatePayload: Record<string, string> = {};
+      if (status) updatePayload.status = status;
+      if (title) updatePayload.title = title;
+      if (description !== undefined) updatePayload.description = description;
+      if (priority) updatePayload.priority = priority;
+      if (assignedTo !== undefined) updatePayload.assignedTo = assignedTo;
+
+      if (Object.keys(updatePayload).length > 0) {
         results.statusUpdate = await mockApiCall(
           "PUT",
           `/api/v1/sessions/${SESSION_ID}/tasks/${taskId}`,
-          { status },
+          updatePayload,
         );
       }
 
@@ -240,6 +294,7 @@ async function handleToolCall(
         title: toolArgs.title,
         description: toolArgs.description || "",
         assignedTo: toolArgs.assignedTo || undefined,
+        priority: toolArgs.priority || undefined,
       });
       return result;
     }
@@ -441,6 +496,50 @@ describe("MCP Tool Handlers", () => {
 
   // ---- list_tasks ----
 
+  it("list_tasks defaults to assignedTo=me and status=active", async () => {
+    mockApiCall.mockImplementation(async (method: string, urlPath: string) => {
+      if (urlPath.includes("/tasks")) {
+        return { tasks: [] };
+      }
+      return { agents: MOCK_AGENTS };
+    });
+
+    await handleToolCall("list_tasks", {}) as any;
+
+    // Should call with assignedTo=AGENT_ID and status=active and summary=true
+    expect(mockApiCall).toHaveBeenCalledWith(
+      "GET",
+      expect.stringContaining(`assignedTo=${AGENT_ID}`),
+    );
+    expect(mockApiCall).toHaveBeenCalledWith(
+      "GET",
+      expect.stringContaining("status=active"),
+    );
+    expect(mockApiCall).toHaveBeenCalledWith(
+      "GET",
+      expect.stringContaining("summary=true"),
+    );
+  });
+
+  it("list_tasks with assignedTo=all omits assignedTo param", async () => {
+    mockApiCall.mockImplementation(async (method: string, urlPath: string) => {
+      if (urlPath.includes("/tasks")) {
+        return { tasks: [] };
+      }
+      return { agents: MOCK_AGENTS };
+    });
+
+    await handleToolCall("list_tasks", { assignedTo: "all", status: "all" }) as any;
+
+    // Should NOT contain assignedTo or status params
+    const taskCall = mockApiCall.mock.calls.find(
+      (c: any[]) => c[0] === "GET" && c[1].includes("/tasks"),
+    );
+    expect(taskCall).toBeDefined();
+    expect(taskCall![1]).not.toContain("assignedTo=");
+    expect(taskCall![1]).not.toContain("status=");
+  });
+
   it("list_tasks returns tasks and marks blocked tasks", async () => {
     mockApiCall.mockImplementation(async (method: string, urlPath: string) => {
       if (urlPath.includes("/tasks")) {
@@ -454,12 +553,52 @@ describe("MCP Tool Handlers", () => {
       return { agents: MOCK_AGENTS };
     });
 
-    const result = await handleToolCall("list_tasks", {}) as any;
+    const result = await handleToolCall("list_tasks", { assignedTo: "all", status: "all" }) as any;
 
     expect(result.tasks).toHaveLength(2);
     const t2 = result.tasks.find((t: any) => t.id === "t2");
     expect(t2.blocked).toBe(true);
     expect(t2.blockedReason).toContain("Setup DB");
+  });
+
+  // ---- get_task ----
+
+  it("get_task returns full task details", async () => {
+    mockApiCall.mockImplementation(async (method: string, urlPath: string) => {
+      if (urlPath.includes("/tasks/t1")) {
+        return {
+          id: "t1",
+          title: "Setup DB",
+          description: "Full description here",
+          status: "pending",
+          priority: "P0",
+          assignedTo: "agent-a",
+          comments: [{ id: "c1", text: "Working on it" }],
+          dependencies: [],
+        };
+      }
+      return { agents: MOCK_AGENTS };
+    });
+
+    const result = await handleToolCall("get_task", { taskId: "t1" }) as any;
+
+    expect(result.task).toBeDefined();
+    expect(result.task.id).toBe("t1");
+    expect(result.task.description).toBe("Full description here");
+    expect(result.task.priority).toBe("P0");
+    expect(result.task.comments).toHaveLength(1);
+  });
+
+  it("get_task returns error when taskId missing", async () => {
+    const result = await handleToolCall("get_task", {}) as any;
+    expect(result.error).toContain("taskId is required");
+  });
+
+  it("get_task returns error for non-existent task", async () => {
+    mockApiCall.mockResolvedValue({ error: "Task not found" });
+
+    const result = await handleToolCall("get_task", { taskId: "nonexistent" }) as any;
+    expect(result.error).toContain("Task not found");
   });
 
   // ---- update_task ----
@@ -477,6 +616,22 @@ describe("MCP Tool Handlers", () => {
       text: "All tests pass",
       author: AGENT_ID,
       authorName: "agent",
+    });
+  });
+
+  it("update_task sends title, priority, and assignedTo in update payload", async () => {
+    const result = await handleToolCall("update_task", {
+      taskId: "t1",
+      title: "New title",
+      priority: "P0",
+      assignedTo: "agent-b",
+    }) as any;
+
+    expect(result.success).toBe(true);
+    expect(mockApiCall).toHaveBeenCalledWith("PUT", expect.stringContaining("/tasks/t1"), {
+      title: "New title",
+      priority: "P0",
+      assignedTo: "agent-b",
     });
   });
 
@@ -517,8 +672,26 @@ describe("MCP Tool Handlers", () => {
       title: "Write tests",
       description: "Add unit tests for auth module",
       assignedTo: "frontend-1",
+      priority: undefined,
     });
     expect(result.id).toBe("t-new");
+  });
+
+  it("create_task passes priority when provided", async () => {
+    mockApiCall.mockResolvedValue({ id: "t-new", title: "Urgent task", status: "pending", priority: "P0" });
+
+    const result = await handleToolCall("create_task", {
+      title: "Urgent task",
+      priority: "P0",
+    }) as any;
+
+    expect(mockApiCall).toHaveBeenCalledWith("POST", expect.stringContaining("/tasks"), {
+      title: "Urgent task",
+      description: "",
+      assignedTo: undefined,
+      priority: "P0",
+    });
+    expect(result.priority).toBe("P0");
   });
 
   // ---- spawn_agent (master only) ----
