@@ -143,7 +143,10 @@ function readAndConsumePendingMessages(): Array<{ from: string; content: string;
 // HTTP helper to call daemon API
 // ---------------------------------------------------------------------------
 
-function apiCall(method: string, urlPath: string, body?: unknown): Promise<unknown> {
+const API_RETRY_MAX = 3;
+const API_RETRY_BASE_MS = 2000; // 2s, 4s, 8s exponential backoff
+
+function apiCallOnce(method: string, urlPath: string, body?: unknown): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const url = new URL(urlPath, getDaemonUrl());
     const options: http.RequestOptions = {
@@ -173,6 +176,33 @@ function apiCall(method: string, urlPath: string, body?: unknown): Promise<unkno
     if (body) req.write(JSON.stringify(body));
     req.end();
   });
+}
+
+/** Retryable connection errors (daemon temporarily down) */
+function isRetryableError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message;
+  return msg.includes("ECONNREFUSED") || msg.includes("ECONNRESET") || msg.includes("EPIPE");
+}
+
+/** API call with automatic retry on connection failures (daemon restart resilience) */
+async function apiCall(method: string, urlPath: string, body?: unknown): Promise<unknown> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= API_RETRY_MAX; attempt++) {
+    try {
+      return await apiCallOnce(method, urlPath, body);
+    } catch (err) {
+      lastError = err;
+      if (attempt < API_RETRY_MAX && isRetryableError(err)) {
+        const delayMs = API_RETRY_BASE_MS * Math.pow(2, attempt); // 2s, 4s, 8s
+        process.stderr.write(`[MCP] Daemon connection failed (attempt ${attempt + 1}/${API_RETRY_MAX + 1}), retrying in ${delayMs / 1000}s...\n`);
+        await new Promise(r => setTimeout(r, delayMs));
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw lastError;
 }
 
 // ---------------------------------------------------------------------------
