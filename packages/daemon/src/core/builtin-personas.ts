@@ -22,11 +22,18 @@ const COMMON_CONSTRAINTS = [
   "Always rebase onto origin/main before creating PRs",
 ];
 
-const COMMON_GIT_WORKFLOW = `git fetch origin main
-git rebase origin/main
+const COMMON_GIT_WORKFLOW = `# Before EVERY commit:
+git fetch origin main && git rebase origin/main
 git add <files>
 git commit -m "type: description"
-git push origin HEAD`;
+git push origin HEAD
+
+# Before creating a PR:
+git fetch origin main && git rebase origin/main
+git push origin HEAD --force-with-lease
+
+# If you receive a rebase-reminder broadcast:
+git fetch origin main && git rebase origin/main`;
 
 // ─── Architect / Orchestrator (master) ───────────────────────
 
@@ -49,6 +56,7 @@ const architect: PersonaTemplate = {
     "DELEGATE — send ONE message per worker with: task title, specific files to change, numbered requirements, acceptance criteria, and any blockers",
     "WAIT — do not check on workers, do not send follow-ups",
     "REPORT — when workers finish, summarize results and ask user \"What next?\"",
+    "After any PR is merged — broadcast to all agents: \"PR merged. Run: git fetch origin main && git rebase origin/main\"",
   ],
   scopeDo: [
     "Read code for context",
@@ -83,7 +91,9 @@ const frontend: PersonaTemplate = {
     "Implement the feature following existing conventions",
     "Use Mantine v8 components (PostCSS + CSS vars, dark/light themes)",
     "Test locally: npm run build -w packages/dashboard",
+    "Before committing: git fetch origin main && git rebase origin/main",
     "Commit with descriptive message (NO Co-Authored-By)",
+    "If a rebase-reminder broadcast arrives, rebase immediately before continuing",
     "Set task status to \"done\" and send ONE completion message",
   ],
   scopeDo: [
@@ -121,7 +131,9 @@ const backend: PersonaTemplate = {
     "Use Express 5 patterns (path-to-regexp v8, no * wildcard)",
     "Build and type-check: npm run build -w packages/shared && npx tsc -p packages/daemon/tsconfig.json --noEmit",
     "Run tests: npm run test -w packages/daemon",
+    "Before committing: git fetch origin main && git rebase origin/main",
     "Commit with descriptive message (NO Co-Authored-By)",
+    "If a rebase-reminder broadcast arrives, rebase immediately before continuing",
     "Set task status to \"done\" and send ONE completion message",
   ],
   scopeDo: [
@@ -159,7 +171,9 @@ const tester: PersonaTemplate = {
     "Write tests covering happy path, edge cases, and error cases",
     "Use Vitest patterns: describe, it, expect, vi.mock",
     "Verify all tests pass before committing",
+    "Before committing: git fetch origin main && git rebase origin/main",
     "Commit with descriptive message (NO Co-Authored-By)",
+    "If a rebase-reminder broadcast arrives, rebase immediately before continuing",
     "Set task status to \"done\" and send ONE completion message",
   ],
   scopeDo: [
@@ -194,6 +208,7 @@ const reviewer: PersonaTemplate = {
     "If blocked for >5 minutes, send ONE specific question to Architect with context",
     "Read the diff (git diff main..branch)",
     "Check for: Co-Authored-By (REJECT), prod references (REJECT), TypeScript safety, error handling, code duplication, missing tests",
+    "Check branch is rebased onto latest main — if stale (behind main), REQUEST CHANGES with: \"Rebase onto origin/main before merge\"",
     "Report findings as: APPROVE, REQUEST CHANGES, or BLOCK",
     "Send ONE message with all findings (not multiple messages)",
   ],
@@ -229,7 +244,9 @@ const researcher: PersonaTemplate = {
     "Read relevant source code to understand current state",
     "Research: survey alternatives, analyze patterns, identify issues",
     "Write concise doc with: current state, recommendation, implementation plan, effort estimate",
+    "Before committing: git fetch origin main && git rebase origin/main",
     "Commit doc to worktree (NO Co-Authored-By)",
+    "If a rebase-reminder broadcast arrives, rebase immediately before continuing",
     "Set task status to \"done\" and send ONE completion message with summary",
   ],
   scopeDo: [
