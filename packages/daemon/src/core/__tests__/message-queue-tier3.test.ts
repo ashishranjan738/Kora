@@ -838,17 +838,13 @@ describe("Fire-and-Forget Optimization", () => {
       const getAgentSession = vi.fn().mockReturnValue("tmux-1");
       queue.setRenotifyCallbacks(getUnreadCount, getAgentSession);
 
-      // Mock logger to capture error logs
-      const loggerSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
       await queue.nudgeAgent("agent-1", "tmux-1");
 
-      // Give background delivery time to fail and log
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      // Give background delivery time to fail and log (reduced from 5s to 100ms)
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // Error should be logged (not thrown)
-      // Note: Actual logger.warn implementation may differ
-      loggerSpy.mockRestore();
-    }, 10000);
+      // Note: deliverDirect will retry and eventually log error via logger.error
+    });
   });
 });
