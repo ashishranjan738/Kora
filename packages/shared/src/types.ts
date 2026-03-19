@@ -93,10 +93,13 @@ export interface AgentState {
   sessionId: string;
   config: AgentConfig;
   status: AgentStatus;
+  activity: AgentActivity;
   currentTask?: string;
   output: string[];
   startedAt?: string;
   lastActivityAt?: string;
+  lastOutputAt?: string;
+  idleSince?: string;
   childAgents: string[];
   healthCheck: AgentHealthCheck;
   cost: AgentCost;
@@ -109,6 +112,16 @@ export type AgentStatus =
   | "error"
   | "crashed"
   | "stopped";
+
+export type AgentActivity =
+  | "working"          // Actively producing output (tokens flowing)
+  | "idle"             // At prompt, no task assigned or task completed
+  | "waiting-input"    // Waiting for user/orchestrator input (permission prompt)
+  | "blocked"          // Has task but dependency not met
+  | "waiting-review"   // Task done, waiting for review
+  | "error"            // Error state (process alive but broken)
+  | "crashed"          // Process dead
+  | "stopped";         // Intentionally stopped
 
 export interface AgentCost {
   totalTokensIn: number;

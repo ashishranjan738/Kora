@@ -471,7 +471,7 @@ export function createApiRouter(deps: {
 
       const orch = orchestrators.get(sid);
 
-      // Enrich each running agent with activity detection from terminal output
+      // Enrich agents with unread message count (activity is now tracked in agent state)
       const enrichedAgents = await Promise.all(agents.map(async (agent) => {
         // Get unread message count
         let unreadMessages = 0;
@@ -481,31 +481,7 @@ export function createApiRouter(deps: {
           } catch { /* ignore */ }
         }
 
-        if (agent.status !== "running") {
-          return { ...agent, activity: agent.status, unreadMessages };
-        }
-        try {
-          const output = await tmux.capturePane(agent.config.tmuxSession, 5, false);
-          const lines = output.trim().split("\n").filter((l: string) => l.trim());
-          const lastLine = lines[lines.length - 1] || "";
-
-          let activity = "working";
-          if (lastLine.includes("\u276F") || lastLine.includes("> ") || lastLine.match(/[$%#]\s*$/)) {
-            activity = "idle";
-          } else if (lastLine.includes("Thinking") || lastLine.includes("oking")) {
-            activity = "thinking";
-          } else if (lastLine.includes("Reading") || lastLine.includes("Searching")) {
-            activity = "reading";
-          } else if (lastLine.includes("Writing") || lastLine.includes("Editing")) {
-            activity = "writing";
-          } else if (lastLine.includes("Running") || lastLine.includes("Bash")) {
-            activity = "running-command";
-          }
-
-          return { ...agent, activity, unreadMessages };
-        } catch {
-          return { ...agent, activity: "unknown", unreadMessages };
-        }
+        return { ...agent, unreadMessages };
       }));
 
       res.json({ agents: enrichedAgents });
@@ -1060,6 +1036,153 @@ export function createApiRouter(deps: {
 
       orch.messageQueue.resetNotificationAttempts(String(aid));
       res.json({ success: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // ─── Idle Detection & Task Assignment ──────────────────────────────────
+
+  /** Agent reports it is idle and available for work */
+  router.post("/sessions/:sid/agents/:aid/report-idle", (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const reason = req.body?.reason || "task completed";
+      const orch = orchestrators.get(String(sid));
+      if (!orch) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const agent = orch.agentManager.getAgent(String(aid));
+      if (!agent) {
+        res.status(404).json({ error: `Agent "${aid}" not found in session "${sid}"` });
+        return;
+      }
+
+      // Update agent activity to idle
+      agent.activity = "idle";
+      agent.lastActivityAt = new Date().toISOString();
+      agent.idleSince = new Date().toISOString();
+
+      // Emit agent-idle event
+      orch.agentManager.emit("agent-idle", String(aid));
+
+      res.json({ success: true, activity: "idle", reason });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  /** Agent requests a task from the task board */
+  router.post("/sessions/:sid/agents/:aid/request-task", (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const skills = req.body?.skills || [];
+      const preferredPriority = req.body?.priority as "P0" | "P1" | "P2" | "P3" | undefined;
+
+      const orch = orchestrators.get(String(sid));
+      if (!orch) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const agent = orch.agentManager.getAgent(String(aid));
+      if (!agent) {
+        res.status(404).json({ error: `Agent "${aid}" not found in session "${sid}"` });
+        return;
+      }
+
+      const db = getDb(String(sid));
+      if (!db) {
+        res.status(404).json({ error: "Database not found" });
+        return;
+      }
+
+      // Get all pending/unassigned tasks
+      const allTasks = db.getTasks(String(sid));
+      const availableTasks = allTasks.filter(t =>
+        t.status === "pending" &&
+        (!t.assignedTo || t.assignedTo === "")
+      );
+
+      if (availableTasks.length === 0) {
+        res.json({ success: false, message: "No available tasks" });
+        return;
+      }
+
+      // Task matching algorithm:
+      // Score tasks by priority, skills, overdue status
+
+      const priorityScore = (p: string) => {
+        switch (p) {
+          case "P0": return 1000;
+          case "P1": return 100;
+          case "P2": return 10;
+          case "P3": return 1;
+          default: return 10;
+        }
+      };
+
+      const hasSkillMatch = (task: any) => {
+        if (skills.length === 0) return false;
+        const taskLabels = task.labels || [];
+        return skills.some((skill: string) =>
+          taskLabels.some((label: string) =>
+            label.toLowerCase().includes(skill.toLowerCase()) ||
+            skill.toLowerCase().includes(label.toLowerCase())
+          )
+        );
+      };
+
+      let bestTask = availableTasks[0];
+      let bestScore = 0;
+
+      for (const task of availableTasks) {
+        let score = priorityScore(task.priority);
+
+        // Bonus if matches preferred priority (highest priority)
+        if (preferredPriority && task.priority === preferredPriority) {
+          score += 10000;
+        }
+
+        // Bonus for skill match (but less than priority gap)
+        if (hasSkillMatch(task)) {
+          score += 50;
+        }
+
+        // Bonus for overdue tasks
+        if (task.dueDate) {
+          const dueTime = new Date(task.dueDate).getTime();
+          if (dueTime < Date.now()) {
+            score += 500;
+          }
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestTask = task;
+        }
+      }
+
+      // Assign task to agent
+      db.updateTask(bestTask.id, { assignedTo: String(aid), status: "assigned" });
+
+      // Fetch updated task
+      const updatedTask = db.getTask(bestTask.id);
+
+      // Update agent activity
+      agent.activity = "working";
+      agent.lastActivityAt = new Date().toISOString();
+      delete agent.idleSince;
+
+      res.json({
+        success: true,
+        task: updatedTask,
+        message: `Task "${bestTask.title}" assigned to you`
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
