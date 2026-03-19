@@ -1106,25 +1106,8 @@ export function createApiRouter(deps: {
       }
 
       // Task matching algorithm:
-      // 1. Filter by skills (if agent provided skills)
-      let candidates = availableTasks;
-      if (skills.length > 0) {
-        const matchingTasks = availableTasks.filter(t => {
-          const taskLabels = t.labels || [];
-          return skills.some((skill: string) =>
-            taskLabels.some((label: string) =>
-              label.toLowerCase().includes(skill.toLowerCase()) ||
-              skill.toLowerCase().includes(label.toLowerCase())
-            )
-          );
-        });
-        // If no skill match, fall back to all available tasks
-        if (matchingTasks.length > 0) {
-          candidates = matchingTasks;
-        }
-      }
+      // Score tasks by priority, skills, overdue status
 
-      // 2. Score tasks by priority (P0=1000, P1=100, P2=10, P3=1)
       const priorityScore = (p: string) => {
         switch (p) {
           case "P0": return 1000;
@@ -1135,16 +1118,31 @@ export function createApiRouter(deps: {
         }
       };
 
-      // 3. Prefer preferred priority if specified
-      let bestTask = candidates[0];
+      const hasSkillMatch = (task: any) => {
+        if (skills.length === 0) return false;
+        const taskLabels = task.labels || [];
+        return skills.some((skill: string) =>
+          taskLabels.some((label: string) =>
+            label.toLowerCase().includes(skill.toLowerCase()) ||
+            skill.toLowerCase().includes(label.toLowerCase())
+          )
+        );
+      };
+
+      let bestTask = availableTasks[0];
       let bestScore = 0;
 
-      for (const task of candidates) {
+      for (const task of availableTasks) {
         let score = priorityScore(task.priority);
 
-        // Bonus if matches preferred priority
+        // Bonus if matches preferred priority (highest priority)
         if (preferredPriority && task.priority === preferredPriority) {
           score += 10000;
+        }
+
+        // Bonus for skill match (but less than priority gap)
+        if (hasSkillMatch(task)) {
+          score += 50;
         }
 
         // Bonus for overdue tasks
@@ -1164,6 +1162,9 @@ export function createApiRouter(deps: {
       // Assign task to agent
       db.updateTask(bestTask.id, { assignedTo: String(aid), status: "assigned" });
 
+      // Fetch updated task
+      const updatedTask = db.getTask(bestTask.id);
+
       // Update agent activity
       agent.activity = "working";
       agent.lastActivityAt = new Date().toISOString();
@@ -1171,7 +1172,7 @@ export function createApiRouter(deps: {
 
       res.json({
         success: true,
-        task: bestTask,
+        task: updatedTask,
         message: `Task "${bestTask.title}" assigned to you`
       });
     } catch (err) {

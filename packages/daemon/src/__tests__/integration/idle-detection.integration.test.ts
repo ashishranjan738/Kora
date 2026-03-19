@@ -29,7 +29,7 @@ describe("Idle Detection API", () => {
       .send({
         name: "Idle Test Session",
         projectPath: "/tmp/idle-test",
-        defaultProvider: "test-provider",
+        defaultProvider: "claude-code",
       });
     sessionId = sessionRes.body.id;
 
@@ -40,7 +40,7 @@ describe("Idle Detection API", () => {
       .send({
         name: "Test Worker",
         role: "worker",
-        model: "test-model",
+        model: "claude-sonnet-4",
       });
     agentId = agentRes.body.id;
   });
@@ -245,7 +245,7 @@ describe("Idle Detection API", () => {
         .send({
           name: "Algorithm Test Session",
           projectPath: "/tmp/algo-test",
-          defaultProvider: "test-provider",
+          defaultProvider: "claude-code",
         });
       testSessionId = sessionRes.body.id;
 
@@ -255,7 +255,7 @@ describe("Idle Detection API", () => {
         .send({
           name: "Algorithm Test Agent",
           role: "worker",
-          model: "test-model",
+          model: "claude-sonnet-4",
         });
       testAgentId = agentRes.body.id;
 
@@ -309,7 +309,7 @@ describe("Idle Detection API", () => {
       await request(app)
         .put(`/api/v1/sessions/${testSessionId}/tasks/${p0Task.id}`)
         .set("Authorization", `Bearer ${token}`)
-        .send({ assignedTo: "other-agent" });
+        .send({ assignedTo: "other-agent", status: "pending" });
 
       // Now request task with frontend skill
       const res = await request(app)
