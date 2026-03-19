@@ -5,13 +5,15 @@ import { EventEmitter } from "events";
 import { PatternMatcher } from "./idle-detection/patterns/pattern-matcher.js";
 import { PatternCategory } from "./idle-detection/patterns/pattern-library.js";
 import { TimeHeuristicsAnalyzer, type TimeHeuristic } from "./idle-detection/heuristics/time-analyzer.js";
+import { stripAnsi } from "./agent-health.js";
 
 /** Legacy shell prompt patterns for backward compatibility */
 export const IDLE_PROMPT_PATTERNS = [
-  /[$%>#]\s*$/,                    // Generic shell prompts (❯, $, %, >, #)
-  /\s+[$%>]\s*$/,                  // Shell prompts with leading whitespace
+  /[$%>#❯]\s*$/,                   // Generic shell prompts (❯, $, %, >, #)
+  /\s+[$%>❯]\s*$/,                 // Shell prompts with leading whitespace
   /\w+@\w+\s+[$%>]\s*$/,           // user@host style (user@host $ )
   /^\s*\[.*?\]\s*[$%>]\s*$/,       // Bracketed prompts ([user@host] $ )
+  /\?\s+for shortcuts\s*$/,        // Claude Code "? for shortcuts" prompt
 ];
 
 /** How long to wait without output before considering an agent idle (ms) */
@@ -155,7 +157,12 @@ export class AgentHealthMonitor extends EventEmitter {
 
     try {
       // Capture last 10 lines of terminal output
-      const output = await this.tmux.capturePane(tmuxSession, 10, false);
+      const rawOutput = await this.tmux.capturePane(tmuxSession, 10, false);
+
+      // Strip ANSI escape sequences before comparing and pattern matching.
+      // holdpty returns raw PTY output (cursor blink, window title updates, etc.)
+      // that changes every poll even when the agent is idle.
+      const output = stripAnsi(rawOutput);
       const lastOutput = this.lastOutputCache.get(agentId) || "";
 
       // Phase 1: Analyze output with enhanced pattern matcher
