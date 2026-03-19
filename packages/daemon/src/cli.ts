@@ -435,7 +435,7 @@ async function handleRun(): Promise<void> {
       sessionId: session.id,
       runtimeDir,
       peers,
-      projectPath: projectDir,
+      projectPath: session.projectPath,
     });
 
     // Use the task param as initialTask for the master agent only
