@@ -18,6 +18,20 @@ import {
 import { useMediaQuery } from "@mantine/hooks";
 import { AutonomyLevel } from "@kora/shared";
 
+const AUTONOMY_DESCRIPTIONS: Record<AutonomyLevel, string> = {
+  [AutonomyLevel.SuggestOnly]: "Agent proposes actions and waits for approval",
+  [AutonomyLevel.AutoRead]: "Agent can explore codebase, asks before editing",
+  [AutonomyLevel.AutoApply]: "Agent edits files freely, asks before git operations",
+  [AutonomyLevel.FullAuto]: "Agent does everything including git operations",
+};
+
+const AUTONOMY_SLIDER_STYLES = {
+  track: { backgroundColor: "var(--border-color)" },
+  bar: { backgroundColor: "var(--accent-blue)" },
+  thumb: { borderColor: "var(--accent-blue)" },
+  markLabel: { color: "var(--text-muted)", fontSize: 11 },
+};
+
 interface SpawnAgentDialogProps {
   sessionId: string;
   onClose: () => void;
@@ -453,22 +467,10 @@ export function SpawnAgentDialog({
               { value: 2, label: "Auto-apply" },
               { value: 3, label: "Full auto" },
             ]}
-            styles={{
-              track: { backgroundColor: "var(--border-color)" },
-              bar: { backgroundColor: "var(--accent-blue)" },
-              thumb: { borderColor: "var(--accent-blue)" },
-              markLabel: { color: "var(--text-muted)", fontSize: 11 },
-            }}
+            styles={AUTONOMY_SLIDER_STYLES}
           />
           <Text size="xs" c="var(--text-muted)" mt={4}>
-            {autonomyLevel === AutonomyLevel.SuggestOnly &&
-              "Agent proposes actions and waits for approval"}
-            {autonomyLevel === AutonomyLevel.AutoRead &&
-              "Agent can explore codebase, asks before editing"}
-            {autonomyLevel === AutonomyLevel.AutoApply &&
-              "Agent edits files freely, asks before git operations"}
-            {autonomyLevel === AutonomyLevel.FullAuto &&
-              "Agent does everything including git operations"}
+            {AUTONOMY_DESCRIPTIONS[autonomyLevel]}
           </Text>
         </Stack>
 

@@ -17,6 +17,20 @@ import {
 import { useMediaQuery } from "@mantine/hooks";
 import { AutonomyLevel } from "@kora/shared";
 
+const AUTONOMY_DESCRIPTIONS: Record<AutonomyLevel, string> = {
+  [AutonomyLevel.SuggestOnly]: "Agent proposes actions and waits for approval",
+  [AutonomyLevel.AutoRead]: "Agent can explore codebase, asks before editing",
+  [AutonomyLevel.AutoApply]: "Agent edits files freely, asks before git operations",
+  [AutonomyLevel.FullAuto]: "Agent does everything including git operations",
+};
+
+const AUTONOMY_SLIDER_STYLES = {
+  track: { backgroundColor: "var(--border-color)" },
+  bar: { backgroundColor: "var(--accent-blue)" },
+  thumb: { borderColor: "var(--accent-blue)" },
+  markLabel: { color: "var(--text-muted)", fontSize: 11 },
+};
+
 interface SessionSettingsDialogProps {
   sessionId: string;
   onClose: () => void;
@@ -49,6 +63,7 @@ export function SessionSettingsDialog({
   const [defaultProvider, setDefaultProvider] = useState("");
   const [defaultModel, setDefaultModel] = useState("");
   const [worktreeMode, setWorktreeMode] = useState<string>("");
+  // TODO Sprint 5: Wire to session settings API, apply to new agent spawns
   const [defaultAutonomyLevel, setDefaultAutonomyLevel] = useState<AutonomyLevel>(
     AutonomyLevel.AutoRead
   );
@@ -309,22 +324,10 @@ export function SessionSettingsDialog({
               { value: 2, label: "Auto-apply" },
               { value: 3, label: "Full auto" },
             ]}
-            styles={{
-              track: { backgroundColor: "var(--border-color)" },
-              bar: { backgroundColor: "var(--accent-blue)" },
-              thumb: { borderColor: "var(--accent-blue)" },
-              markLabel: { color: "var(--text-muted)", fontSize: 11 },
-            }}
+            styles={AUTONOMY_SLIDER_STYLES}
           />
           <Text size="xs" c="var(--text-muted)" mt={8}>
-            {defaultAutonomyLevel === AutonomyLevel.SuggestOnly &&
-              "Agent proposes actions and waits for approval"}
-            {defaultAutonomyLevel === AutonomyLevel.AutoRead &&
-              "Agent can explore codebase, asks before editing"}
-            {defaultAutonomyLevel === AutonomyLevel.AutoApply &&
-              "Agent edits files freely, asks before git operations"}
-            {defaultAutonomyLevel === AutonomyLevel.FullAuto &&
-              "Agent does everything including git operations"}
+            {AUTONOMY_DESCRIPTIONS[defaultAutonomyLevel]}
           </Text>
           <Text size="xs" c="var(--text-muted)" mt={4}>
             Default autonomy level for newly spawned agents. Note: This is UI only - enforcement logic will be added in a future sprint.
