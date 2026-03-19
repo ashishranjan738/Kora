@@ -1105,40 +1105,7 @@ function AgentsTab({
     </Modal>
   );
 
-  if (agents.length === 0) {
-    return (
-      <>
-        <div className="empty-callout">
-          <h3>No agents running</h3>
-          <p>
-            Launch a playbook to spin up a pre-configured team, or spawn an
-            individual agent.
-          </p>
-          <Group gap="sm" justify="center" mt="md">
-            <Button
-              size="md"
-              onClick={openPlaybookDialog}
-              styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)" } }}
-              leftSection={<span style={{ fontSize: 16 }}>&#128640;</span>}
-            >
-              Launch Playbook
-            </Button>
-            <Button
-              size="md"
-              variant="default"
-              onClick={onShowSpawnDialog}
-              styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" } }}
-            >
-              + Spawn Agent
-            </Button>
-          </Group>
-        </div>
-        {playbookDialog}
-      </>
-    );
-  }
-
-  // Terminal session store
+  // Terminal session store — hooks must be above any early returns (React rules of hooks)
   const terminalSessionsMap = useTerminalSessionStore((state) => state.sessions);
   const terminalSessions = useMemo(() => Array.from(terminalSessionsMap.values()), [terminalSessionsMap]);
   const addSession = useTerminalSessionStore((state) => state.addSession);
@@ -1174,6 +1141,35 @@ function AgentsTab({
   return (
     <>
     {playbookDialog}
+
+    {agents.length === 0 && (
+      <div className="empty-callout">
+        <h3>No agents running</h3>
+        <p>
+          Launch a playbook to spin up a pre-configured team, or spawn an
+          individual agent.
+        </p>
+        <Group gap="sm" justify="center" mt="md">
+          <Button
+            size="md"
+            onClick={openPlaybookDialog}
+            styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)" } }}
+            leftSection={<span style={{ fontSize: 16 }}>&#128640;</span>}
+          >
+            Launch Playbook
+          </Button>
+          <Button
+            size="md"
+            variant="default"
+            onClick={onShowSpawnDialog}
+            styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" } }}
+          >
+            + Spawn Agent
+          </Button>
+        </Group>
+      </div>
+    )}
+
     <div className="agent-grid">
       {agents.map((a) => {
         const activity = agentActivities[a.id] || "working";
