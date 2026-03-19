@@ -168,6 +168,15 @@ export function SideTerminalPanel({
       {/* Message notification toast */}
       {recentNotification && (
         <div
+          className="message-notification-toast"
+          onClick={() => {
+            // Click to focus the terminal
+            const terminalId = tabs.find(t => t.name === recentNotification.terminalName)?.id;
+            if (terminalId) {
+              setActiveTabId(terminalId);
+              setRecentNotification(null);
+            }
+          }}
           style={{
             position: "absolute",
             top: 40,
@@ -175,15 +184,60 @@ export function SideTerminalPanel({
             zIndex: 100,
             backgroundColor: "var(--accent-blue)",
             color: "white",
-            padding: "8px 12px",
+            padding: "8px 12px 8px 12px",
             borderRadius: 6,
             fontSize: 12,
             fontWeight: 500,
             boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
             animation: "slideIn 0.2s ease-out",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            transition: "background-color 0.15s",
+            maxWidth: "400px",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = "var(--accent-blue-hover, #4a8fd8)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "var(--accent-blue)";
           }}
         >
-          📩 New message from {recentNotification.from} in {recentNotification.terminalName}
+          <span style={{ flex: 1 }}>
+            📩 New message from {recentNotification.from} in {recentNotification.terminalName}
+          </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setRecentNotification(null);
+              if (notificationTimer.current) {
+                clearTimeout(notificationTimer.current);
+              }
+            }}
+            style={{
+              background: "none",
+              border: "none",
+              color: "white",
+              cursor: "pointer",
+              padding: "2px 4px",
+              fontSize: 16,
+              lineHeight: 1,
+              opacity: 0.8,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.opacity = "1";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = "0.8";
+            }}
+            title="Dismiss"
+          >
+            ×
+          </button>
         </div>
       )}
 
@@ -215,10 +269,14 @@ export function SideTerminalPanel({
                       fontSize: 10,
                       height: 16,
                       minWidth: 16,
-                      padding: "0 4px",
+                      padding: "0 5px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
                     }}
+                    title={`${unreadCount} unread message${unreadCount !== 1 ? 's' : ''}`}
                   >
-                    {unreadCount}
+                    {unreadCount >= 10 ? "9+" : unreadCount}
                   </Badge>
                 )}
                 <span

@@ -87,6 +87,9 @@ export class Orchestrator extends EventEmitter {
       },
     );
 
+    // Wire delivery tracking (Tier 3 event routing)
+    this.messageQueue.setDeliveryTracking(this.database, config.sessionId);
+
     this.wireEvents();
     this.startIdleMonitoring();
   }

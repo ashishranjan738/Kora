@@ -1138,6 +1138,43 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ─── Tier 3: Delivery Metrics ──────────────────────────────────────
+
+  router.get("/sessions/:sid/agents/:aid/delivery-metrics", async (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const since = req.query.since ? parseInt(req.query.since as string) : undefined;
+
+      const orchestrator = orchestrators.get(String(sid));
+      if (!orchestrator) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const agent = orchestrator.agentManager.getAgent(String(aid));
+      if (!agent) {
+        res.status(404).json({ error: `Agent "${aid}" not found in session "${sid}"` });
+        return;
+      }
+
+      const metrics = orchestrator.messageQueue.getDeliveryMetrics(String(aid), since);
+
+      if (!metrics) {
+        res.status(503).json({ error: "Delivery tracking not available" });
+        return;
+      }
+
+      res.json({
+        agentId: String(aid),
+        metrics,
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
   /**
    * Parse terminal output into structured format
    * Identifies command inputs, tool calls, and responses
