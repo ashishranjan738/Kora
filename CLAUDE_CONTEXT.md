@@ -415,14 +415,87 @@ PR #1  feat: frontend worktree mode + UI
 - Nudge button backend endpoint
 
 #### Pending Work (Next Sprint)
-1. Complete holdpty integration + provider pattern
-2. Implement event routing Tier 1+2 (session-scoped + event-type WS filtering)
+1. ~~Complete holdpty integration + provider pattern~~ DONE (Sprint 3)
+2. ~~Implement event routing Tier 1+2~~ Partial — events API with filtering done
 3. Upstream PR: holdpty `send` command
 4. Upstream PR: holdpty macOS ARM node-pty fix
 5. P1 config fixes (health check intervals, scrollback limit, MAX_AGENTS_PER_SESSION)
 6. pty-manager prompt/stall/completion detection integration
-7. Bundle size optimization (code splitting for Mantine)
+7. ~~Bundle size optimization~~ DONE (67% reduction via code splitting)
 8. Remaining mobile cosmetic issues (editor height, timeline layout, mosaic touch)
+
+### Session: KaroDev Sprint 3 (March 18-19, 2026)
+
+**Session ID**: `karodev`
+**Project Path**: `/Users/ashishranjan738/Projects/Kora`
+**Mode**: Dev (port 7891, config `~/.kora-dev/`)
+**Agents**: Architect, Frontend, Frontend2, Backend, Backend3, Tests, Tester2, Researcher (8 agents)
+
+#### PRs Merged (Sprint 3)
+
+| PR | Title | Key Changes |
+|----|-------|-------------|
+| #23 | feat: holdpty backend + configurable PTY provider | HoldptyController, TerminalProvider interface, `--terminal-backend` CLI flag |
+| #24 | fix: handle corrupt/empty sessions.json gracefully | Graceful JSON parse errors |
+| #25 | fix: terminal tiles 'Connecting...' after reload | Terminal tile WebSocket reconnect |
+| #26 | feat: optimistic terminal rendering + slide-in animation | Optimistic UI for terminal creation |
+| #27 | feat: default PTY backend to holdpty | Default terminal backend changed |
+| #28 | feat: Sprint 3 dogfooding fixes | Terminal backend, ring buffer, playbook launcher |
+| #29 | feat: Sprint 3 frontend — UI redesign, terminal fixes | TaskBoard redesign, compact agent cards, playbook launcher for sessions |
+| #30 | fix: HoldptyController Node.js API | Direct API instead of CLI for holdpty |
+| #31 | fix: postinstall remove holdpty bundled node-pty | Build fix for holdpty dependency |
+| #32 | fix: Command Center fullscreen + mosaic scroll/layout | Fullscreen rendered outside mosaic as sibling overlay |
+| #33 | fix: fullscreenAgentId useCallback deps | React useCallback dependency fix |
+| #34 | fix: 6 frontend fixes | WS path, fullscreen, overlay, playbook, agent counts |
+| #36 | feat: holdpty detached mode | Session persistence across daemon restarts |
+| #37 | feat: Sprint 3 final — holdpty, messaging, performance | Holdpty detached mode, performance optimizations |
+| #38 | feat: terminal instance registry | Singleton terminal management outside React lifecycle, instant restore on navigation |
+| #39 | fix: terminal registry stale WebSocket reconnect | Timer cleanup + reconnect guard |
+| #40 | feat: terminal UX — session tracking, async creation | Zustand terminalSessionStore, connecting animation |
+| #41 | feat: terminals as first-class citizens | Shared store, side panel integration, optimistic creation |
+| #42 | fix: CLI flags/channels popovers auto-close | Hover-based popovers with onMouseEnter/onMouseLeave |
+| #43 | feat: Sprint 3 final — pino logging, Zustand fixes | Pino structured logging, notification system, security |
+| #45 | fix: Terminals section with zero agents | React hooks before early return, conditional rendering |
+| #46 | feat: task system improvements | Priority (P0-P3), labels, due dates, list_tasks optimization |
+| #47 | fix: standalone terminal persist across restart | Terminal session persistence |
+| #48 | feat: redesigned Timeline view | Event filtering, density modes, date grouping, live updates, color-coded bullets |
+| #49 | feat: Agent Card CLI Command Display | Show CLI command on agent cards |
+| #50 | feat: cost/token parser improvement | Claude Code cost tracking parser |
+| #51 | feat: events API with filtering/pagination | Query params: type, types, agentId, before, search, limit, order |
+| #52 | feat: Recent Paths & CLI Flags Suggestions | Autocomplete paths + flags from SQLite |
+| #54 | feat: integration testing framework | 247 API tests with createApp + MockPtyBackend |
+
+#### Architecture Changes (Sprint 3)
+
+- **Terminal Registry**: Singleton `Map<string, TerminalEntry>` outside React lifecycle — eliminates 500-800ms init delay, preserves WebSocket connections across navigation
+- **Terminal Session Store**: Zustand store shared between SessionDetail and Command Center — `sessions`, `openTabs`, `pruneStale()`
+- **Holdpty Detached Mode**: Terminal sessions survive daemon restarts via `--detach` mode
+- **Events API**: Cursor-based pagination with server-side filtering (type, agentId, search)
+- **Timeline View**: Redesigned with SegmentedControl filters, 3 density modes, date grouping, live WebSocket updates
+- **Task System**: Priority levels (P0-P3), labels, due dates via SegmentedControl in TaskDetailModal
+- **Pino Logging**: Structured JSON logging replacing console.log/debug
+- **Integration Tests**: 247 tests using createApp() factory + MockPtyBackend for isolated testing
+- **Suggestions DB**: SQLite-backed recent paths and CLI flags for autocomplete
+
+#### Key Bug Fixes (Sprint 3)
+
+1. **Zustand infinite re-render loop** — `getSessions()` in selector creates new array every render. Fixed: select `state.sessions` Map + `useMemo`
+2. **Fullscreen trapped in mosaic** — `position: fixed` trapped by `position: absolute` on `.mosaic-window`. Fixed: render outside mosaic as sibling overlay
+3. **Terminals lost on navigation** — MultiAgentView used local state for terminal sessions. Fixed: shared Zustand store + server fetch on mount
+4. **Ghost agent tiles** — `knownAgentIdsRef` initialized to `""` matched empty agent list. Fixed: sentinel `"__uninitialized__"`
+5. **Orphaned pending terminals** — `term-pending-*` tiles stuck after navigation. Fixed: cleanup on mount + 30s timeout
+6. **Terminal reconnect storms** — Infinite 3s reconnect loop for dead terminals. Fixed: exponential backoff (2s→30s), max 10 attempts
+7. **Stale terminal data** — Zustand store had terminals from previous sessions. Fixed: `pruneStale()` on mount against server data
+
+#### Pending Work (Next Sprint)
+1. Upstream PR: holdpty `send` command + macOS ARM fix
+2. Event routing Tier 2+3 (event-type WS filtering + agent-aware MCP routing)
+3. Move messages from file-based to SQLite
+4. Cost tracking parser refinement (multi-provider)
+5. npm packaging for `npx kora start`
+6. P1 config fixes (health intervals, scrollback, MAX_AGENTS)
+7. Graph View for Timeline (heatmap, density chart, cost chart — mockup exists)
+8. Remaining mobile cosmetic issues
 
 ### How to Resume Development
 
