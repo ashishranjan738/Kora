@@ -23,11 +23,50 @@ export interface ServerDeps {
   tmux: IPtyBackend;
   startTime: number;
   globalConfigDir: string;
+  suggestionsDb?: any; // Optional for testing
 }
 
 export interface ServerOptions {
   token: string;
   deps: ServerDeps;
+}
+
+export interface CreateAppOptions {
+  token: string;
+  deps: ServerDeps;
+  skipDashboard?: boolean;
+}
+
+/**
+ * Create an Express app for integration testing (no WebSocket, no HTTP server).
+ */
+export function createApp(options: CreateAppOptions) {
+  const { token, deps, skipDashboard = false } = options;
+  const app = express();
+
+  app.use(express.json());
+  app.use(pinoHttp({
+    logger,
+    autoLogging: {
+      ignore: (req) => req.url?.startsWith("/api/v1/status") ?? false,
+    },
+  }));
+  app.use(createAuthMiddleware(token));
+
+  // For testing, we pass a mock wss to createApiRouter
+  const mockWss = { clients: new Set() } as any;
+  app.use("/api/v1", createApiRouter(deps, mockWss));
+
+  if (!skipDashboard) {
+    const dashboardDistPath = path.resolve(
+      __dirname,
+      "../../..",
+      "dashboard/dist"
+    );
+    app.use(express.static(dashboardDistPath, { index: false }));
+  }
+
+  return app;
 }
 
 export function createServer(options: ServerOptions) {

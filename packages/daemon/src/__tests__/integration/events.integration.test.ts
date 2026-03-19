@@ -33,22 +33,22 @@ describe("Events API integration", () => {
     ctx.cleanup();
   });
 
-  describe("GET /api/v1/events", () => {
+  describe("GET /api/v1/sessions/:sid/events", () => {
     it("returns empty list initially", async () => {
       const res = await request(ctx.app)
-        .get(`/api/v1/events?sessionId=${sessionId}`)
+        .get(`/api/v1/sessions/${sessionId}/events`)
         .set("Authorization", `Bearer ${ctx.token}`);
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty("events");
       expect(res.body.events).toEqual([]);
-      expect(res.body).toHaveProperty("total", 0);
+      expect(res.body.pagination).toHaveProperty("total", 0);
     });
 
     it("logs event on session creation", async () => {
       // Query events
       const res = await request(ctx.app)
-        .get(`/api/v1/events?sessionId=${sessionId}`)
+        .get(`/api/v1/sessions/${sessionId}/events`)
         .set("Authorization", `Bearer ${ctx.token}`);
 
       expect(res.status).toBe(200);
@@ -69,7 +69,7 @@ describe("Events API integration", () => {
 
       // Query events
       const res = await request(ctx.app)
-        .get(`/api/v1/events?sessionId=${sessionId}`)
+        .get(`/api/v1/sessions/${sessionId}/events`)
         .set("Authorization", `Bearer ${ctx.token}`);
 
       expect(res.status).toBe(200);
@@ -89,7 +89,7 @@ describe("Events API integration", () => {
 
       // Filter by task-created
       const res = await request(ctx.app)
-        .get(`/api/v1/events?sessionId=${sessionId}&type=task-created`)
+        .get(`/api/v1/sessions/${sessionId}/events?type=task-created`)
         .set("Authorization", `Bearer ${ctx.token}`);
 
       expect(res.status).toBe(200);
@@ -110,7 +110,7 @@ describe("Events API integration", () => {
 
       // Query with since filter
       const res = await request(ctx.app)
-        .get(`/api/v1/events?sessionId=${sessionId}&since=${since}`)
+        .get(`/api/v1/sessions/${sessionId}/events?since=${since}`)
         .set("Authorization", `Bearer ${ctx.token}`);
 
       expect(res.status).toBe(200);
@@ -129,7 +129,7 @@ describe("Events API integration", () => {
 
       // Query with limit
       const res = await request(ctx.app)
-        .get(`/api/v1/events?sessionId=${sessionId}&limit=3`)
+        .get(`/api/v1/sessions/${sessionId}/events?limit=3`)
         .set("Authorization", `Bearer ${ctx.token}`);
 
       expect(res.status).toBe(200);
@@ -147,12 +147,12 @@ describe("Events API integration", () => {
 
       // Query with limit but expect total count
       const res = await request(ctx.app)
-        .get(`/api/v1/events?sessionId=${sessionId}&limit=2`)
+        .get(`/api/v1/sessions/${sessionId}/events?limit=2`)
         .set("Authorization", `Bearer ${ctx.token}`);
 
       expect(res.status).toBe(200);
       expect(res.body.events).toHaveLength(2);
-      expect(res.body.total).toBeGreaterThanOrEqual(4); // session-created + 3 task-created
+      expect(res.body.pagination.total).toBeGreaterThanOrEqual(4); // session-created + 3 task-created
     });
   });
 
@@ -172,7 +172,7 @@ describe("Events API integration", () => {
 
       // Query events
       const res = await request(ctx.app)
-        .get(`/api/v1/events?sessionId=${sessionId}&type=task-created`)
+        .get(`/api/v1/sessions/${sessionId}/events?type=task-created`)
         .set("Authorization", `Bearer ${ctx.token}`);
 
       expect(res.status).toBe(200);

@@ -35,6 +35,10 @@ describe("Session CRUD integration", () => {
           provider: "claude-code",
         });
 
+      if (res.status !== 201) {
+        console.log("Error response:", res.status, res.body);
+      }
+
       expect(res.status).toBe(201);
       expect(res.body).toHaveProperty("id");
       expect(res.body).toHaveProperty("name", "Test Session");
@@ -79,7 +83,7 @@ describe("Session CRUD integration", () => {
         .set("Authorization", `Bearer ${ctx.token}`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
+      expect(res.body).toEqual({ sessions: [] });
     });
 
     it("returns created sessions", async () => {
@@ -98,9 +102,10 @@ describe("Session CRUD integration", () => {
         .set("Authorization", `Bearer ${ctx.token}`);
 
       expect(listRes.status).toBe(200);
-      expect(listRes.body).toHaveLength(1);
-      expect(listRes.body[0]).toHaveProperty("id", createRes.body.id);
-      expect(listRes.body[0]).toHaveProperty("name", "Test");
+      expect(listRes.body).toHaveProperty("sessions");
+      expect(listRes.body.sessions).toHaveLength(1);
+      expect(listRes.body.sessions[0]).toHaveProperty("id", createRes.body.id);
+      expect(listRes.body.sessions[0]).toHaveProperty("name", "Test");
     });
   });
 
