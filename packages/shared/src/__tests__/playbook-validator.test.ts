@@ -44,7 +44,7 @@ describe("validatePlaybook", () => {
           framework: {
             description: "Frontend framework",
             type: "string",
-            enum: ["React", "Vue", "Angular"],
+            options: ["React", "Vue", "Angular"],
           },
         },
         agents: [
@@ -122,7 +122,7 @@ describe("validatePlaybook", () => {
       expect(result.errors.some((e) => e.includes("name"))).toBe(true);
     });
 
-    it("should reject playbook without description", () => {
+    it("should accept playbook without description", () => {
       const playbook = {
         name: "Test",
         agents: [{ name: "Agent1", role: "master", model: "test" }],
@@ -130,8 +130,8 @@ describe("validatePlaybook", () => {
 
       const result = validatePlaybook(playbook);
 
-      expect(result.valid).toBe(false);
-      expect(result.errors.some((e) => e.includes("description"))).toBe(true);
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
     });
 
     it("should reject playbook without agents", () => {
@@ -248,6 +248,33 @@ describe("validatePlaybook", () => {
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
     });
+
+    it("should error when agent has empty string model and no defaults.model", () => {
+      const playbook = {
+        name: "Test",
+        description: "Test",
+        agents: [{ name: "Agent1", role: "master", model: "" }],
+      };
+
+      const result = validatePlaybook(playbook);
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => e.includes("model"))).toBe(true);
+    });
+
+    it("should error when defaults.model is empty string", () => {
+      const playbook = {
+        name: "Test",
+        description: "Test",
+        defaults: { model: "" },
+        agents: [{ name: "Agent1", role: "master" }],
+      };
+
+      const result = validatePlaybook(playbook);
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => e.includes("model"))).toBe(true);
+    });
   });
 
   describe("agent name uniqueness", () => {
@@ -281,7 +308,7 @@ describe("validatePlaybook", () => {
           },
           framework: {
             description: "Framework",
-            enum: ["React", "Vue"],
+            options: ["React", "Vue"],
           },
         },
         agents: [{ name: "Agent1", role: "master", model: "test" }],

@@ -4,7 +4,7 @@
   "title": "Kora Playbook Schema",
   "description": "JSON Schema for Kora YAML playbook format",
   "type": "object",
-  "required": ["name", "description", "agents"],
+  "required": ["name", "agents"],
   "properties": {
     "version": {
       "type": "number",
@@ -18,8 +18,7 @@
     },
     "description": {
       "type": "string",
-      "minLength": 1,
-      "description": "Playbook description (required)"
+      "description": "Playbook description (optional)"
     },
     "author": {
       "type": "string",
@@ -51,7 +50,7 @@
         },
         "messagingMode": {
           "type": "string",
-          "enum": ["mcp", "terminal", "manual"],
+          "enum": ["mcp", "acknowledge"],
           "description": "Default messaging mode"
         }
       },
@@ -61,7 +60,7 @@
       "type": "object",
       "description": "Variables prompted at launch for interpolation",
       "patternProperties": {
-        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+        "^[a-zA-Z_][a-zA-Z0-9_-]*$": {
           "type": "object",
           "properties": {
             "description": {
@@ -77,7 +76,7 @@
             "default": {
               "description": "Default value if not provided"
             },
-            "enum": {
+            "options": {
               "type": "array",
               "items": {
                 "type": "string"
@@ -134,7 +133,7 @@
           "envVars": {
             "type": "object",
             "patternProperties": {
-              "^[A-Z_][A-Z0-9_]*$": {
+              "^[A-Za-z_][A-Za-z0-9_]*$": {
                 "type": "string"
               }
             },
@@ -203,7 +202,7 @@
     },
     "messagingMode": {
       "type": "string",
-      "enum": ["mcp", "terminal", "manual"],
+      "enum": ["mcp", "acknowledge"],
       "description": "Messaging mode override (overrides defaults.messagingMode)"
     },
     "budget": {

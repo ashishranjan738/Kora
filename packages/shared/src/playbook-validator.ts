@@ -57,18 +57,19 @@ export function validatePlaybook(playbook: unknown): ValidationResult {
   }
 
   // Check that agents have a model (either individually or via defaults)
-  const hasDefaultModel = pb.defaults?.model;
+  const hasDefaultModel = pb.defaults?.model && pb.defaults.model.trim() !== "";
   for (const agent of pb.agents || []) {
-    if (!agent.model && !hasDefaultModel) {
+    const agentModel = agent.model?.trim();
+    if ((!agentModel || agentModel === "") && !hasDefaultModel) {
       errors.push(
         `Agent "${agent.name}" requires a model (no defaults.model set)`
       );
     }
   }
 
-  // Check variable references in agent personas and initialTask
+  // Check variable references in agent personas, initialTask, and tasks
   const declaredVars = new Set(Object.keys(pb.variables || {}));
-  const allText = JSON.stringify(pb.agents);
+  const allText = JSON.stringify({ agents: pb.agents, tasks: pb.tasks });
   const usedVars = findTemplateVariables(allText);
 
   for (const varName of usedVars) {
@@ -131,7 +132,7 @@ function formatAjvError(error: ErrorObject): string {
  */
 function findTemplateVariables(text: string): Set<string> {
   const variables = new Set<string>();
-  const regex = /\{\{(\w+)\}\}/g;
+  const regex = /\{\{([\w-]+)\}\}/g;
   let match;
 
   while ((match = regex.exec(text)) !== null) {
