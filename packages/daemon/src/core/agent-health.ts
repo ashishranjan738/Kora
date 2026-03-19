@@ -5,11 +5,10 @@ import { EventEmitter } from "events";
 
 /** Shell prompt patterns that indicate the agent is idle at a command prompt */
 const IDLE_PROMPT_PATTERNS = [
-  /[$%>#]\s*$/,           // Generic shell prompts
-  /\s+\$\s*$/,            // Bash-style
-  /\s+%\s*$/,             // Zsh-style
-  /\s+>\s*$/,             // PowerShell-style
-  /^\s*\[.*?\]\s*[$%>]\s*$/, // Bracketed prompts
+  /[$%>#]\s*$/,                    // Generic shell prompts (❯, $, %, >, #)
+  /\s+[$%>]\s*$/,                  // Shell prompts with leading whitespace
+  /\w+@\w+\s+[$%>]\s*$/,           // user@host style (user@host $ )
+  /^\s*\[.*?\]\s*[$%>]\s*$/,       // Bracketed prompts ([user@host] $ )
 ];
 
 /** How long to wait without output before considering an agent idle (ms) */
@@ -70,9 +69,33 @@ export class AgentHealthMonitor extends EventEmitter {
       const output = await this.tmux.capturePane(tmuxSession, 10, false);
       const lastOutput = this.lastOutputCache.get(agentId) || "";
 
-      // If output has changed, agent is producing output (working)
+      // Check if current output shows a shell prompt
+      const lines = output.trim().split('\n').filter(l => l.trim());
+      const lastLine = lines[lines.length - 1] || '';
+      const isAtPrompt = IDLE_PROMPT_PATTERNS.some(pattern => pattern.test(lastLine));
+
+      // If output has changed
       if (output !== lastOutput) {
         this.lastOutputCache.set(agentId, output);
+
+        // If new output is a shell prompt, don't mark as working
+        // Instead, check if we should transition to idle
+        if (isAtPrompt) {
+          const lastOutputTime = this.lastOutputTimestamps.get(agentId) || Date.now();
+          const timeSinceOutput = Date.now() - lastOutputTime;
+
+          // If been at prompt for idle timeout, mark as idle
+          if (timeSinceOutput > IDLE_TIMEOUT_MS && agent.activity !== "idle") {
+            agent.activity = "idle";
+            agent.lastActivityAt = new Date().toISOString();
+            agent.idleSince = new Date(lastOutputTime).toISOString();
+            this.emit("agent-idle", agentId);
+          }
+          // Don't update timestamp - we're at a prompt, not producing real output
+          return;
+        }
+
+        // Output changed and NOT at a prompt → real work is happening
         this.lastOutputTimestamps.set(agentId, Date.now());
 
         // Update activity to "working" if not already
@@ -93,19 +116,11 @@ export class AgentHealthMonitor extends EventEmitter {
       const lastOutputTime = this.lastOutputTimestamps.get(agentId) || Date.now();
       const timeSinceOutput = Date.now() - lastOutputTime;
 
-      if (timeSinceOutput > IDLE_TIMEOUT_MS) {
-        // Check if terminal shows a shell prompt (idle indicator)
-        const lines = output.trim().split('\n').filter(l => l.trim());
-        const lastLine = lines[lines.length - 1] || '';
-
-        const isAtPrompt = IDLE_PROMPT_PATTERNS.some(pattern => pattern.test(lastLine));
-
-        if (isAtPrompt && agent.activity !== "idle") {
-          agent.activity = "idle";
-          agent.lastActivityAt = new Date().toISOString();
-          agent.idleSince = new Date().toISOString();
-          this.emit("agent-idle", agentId);
-        }
+      if (timeSinceOutput > IDLE_TIMEOUT_MS && isAtPrompt && agent.activity !== "idle") {
+        agent.activity = "idle";
+        agent.lastActivityAt = new Date().toISOString();
+        agent.idleSince = new Date(lastOutputTime).toISOString();
+        this.emit("agent-idle", agentId);
       }
     } catch (err) {
       // Ignore errors during idle detection (tmux might be unavailable temporarily)

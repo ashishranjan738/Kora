@@ -280,3 +280,144 @@ describe("cleanupOrphanedSessions", () => {
     });
   });
 });
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { HoldptyController } from "../holdpty-controller.js";
+import fs from "fs";
+import os from "os";
+import path from "path";
+
+describe("HoldptyController — killSession cleanup", () => {
+  let controller: HoldptyController;
+  let tmpDir: string;
+  let sessionName: string;
+
+  beforeEach(() => {
+    controller = new HoldptyController();
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "holdpty-cleanup-test-"));
+    sessionName = `test-session-${Math.random().toString(36).slice(2, 10)}`;
+
+    // Set HOLDPTY_DIR to use tmpDir for this test
+    process.env.HOLDPTY_DIR = tmpDir;
+  });
+
+  afterEach(() => {
+    delete process.env.HOLDPTY_DIR;
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // Cleanup best-effort
+    }
+  });
+
+  it("should clean up socket and metadata files after killSession", async () => {
+    // First, create a real holdpty session so socket files exist
+    await controller.newSession(sessionName);
+
+    // Get the actual socket path that holdpty uses
+    const platform = await import("holdpty/dist/platform.js");
+    const sessionDir = platform.getSessionDir();
+    const socketPath = platform.socketPath(sessionDir, sessionName);
+    const metadataPath = socketPath.replace(/\.sock$/, ".json");
+
+    // Verify session was created and files exist
+    expect(fs.existsSync(socketPath)).toBe(true);
+
+    // Kill session (will call holdpty stop + manual cleanup)
+    await controller.killSession(sessionName);
+
+    // Verify files are deleted
+    expect(fs.existsSync(socketPath)).toBe(false);
+    if (fs.existsSync(metadataPath)) {
+      // Metadata might not exist depending on holdpty version
+      expect(fs.existsSync(metadataPath)).toBe(false);
+    }
+  });
+
+  it("should not throw if socket files don't exist", async () => {
+    // killSession should handle missing files gracefully
+    await expect(controller.killSession(sessionName)).resolves.not.toThrow();
+  });
+
+  it("should log debug messages during cleanup", async () => {
+    // Create a real holdpty session
+    await controller.newSession(sessionName);
+
+    // Get actual paths
+    const platform = await import("holdpty/dist/platform.js");
+    const sessionDir = platform.getSessionDir();
+    const socketPath = platform.socketPath(sessionDir, sessionName);
+
+    // Spy on logger to verify messages
+    const { logger } = await import("../logger.js");
+    const debugSpy = vi.spyOn(logger, "debug");
+
+    await controller.killSession(sessionName);
+
+    // Verify debug logs were called
+    expect(debugSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionName }),
+      expect.stringContaining("Attempting manual cleanup")
+    );
+
+    // Note: holdpty stop might have already deleted the files, so we might see
+    // either "Deleted" or "Failed to delete" (ENOENT)
+    const calls = debugSpy.mock.calls.map(c => c[1]);
+    const hasSocketLog = calls.some(msg =>
+      typeof msg === "string" &&
+      (msg.includes("Deleted socket file") || msg.includes("Failed to delete socket file"))
+    );
+    expect(hasSocketLog).toBe(true);
+
+    debugSpy.mockRestore();
+  });
+
+  it("should log error if socket deletion fails", async () => {
+    const socketPath = path.join(tmpDir, `${sessionName}.sock`);
+
+    // Create socket with read-only parent directory to force deletion failure
+    const readOnlyDir = path.join(tmpDir, "readonly");
+    fs.mkdirSync(readOnlyDir);
+    const readOnlySocket = path.join(readOnlyDir, `${sessionName}.sock`);
+    fs.writeFileSync(readOnlySocket, "");
+    fs.chmodSync(readOnlyDir, 0o444); // read-only
+
+    // Override HOLDPTY_DIR to point to readonly dir
+    process.env.HOLDPTY_DIR = readOnlyDir;
+
+    const { logger } = await import("../logger.js");
+    const debugSpy = vi.spyOn(logger, "debug");
+
+    await controller.killSession(sessionName);
+
+    // Verify error was logged
+    expect(debugSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionName }),
+      expect.stringContaining("Failed to delete socket file")
+    );
+
+    debugSpy.mockRestore();
+
+    // Cleanup
+    fs.chmodSync(readOnlyDir, 0o755);
+    delete process.env.HOLDPTY_DIR;
+  });
+
+  it("should handle getSocketPath failure gracefully", async () => {
+    // Corrupt HOLDPTY_DIR to make getSocketPath fail
+    process.env.HOLDPTY_DIR = "/nonexistent/invalid/path";
+
+    const { logger } = await import("../logger.js");
+    const warnSpy = vi.spyOn(logger, "warn");
+
+    // Should not throw even if getSocketPath fails
+    await expect(controller.killSession(sessionName)).resolves.not.toThrow();
+
+    // Verify warning was logged
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionName }),
+      expect.stringContaining("getSocketPath failed during cleanup")
+    );
+
+    warnSpy.mockRestore();
+  });
+});

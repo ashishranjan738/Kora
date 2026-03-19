@@ -85,6 +85,8 @@ export class MessageQueue {
   private database: any | null = null;
   private sessionId: string | null = null;
   private metricsInterval: ReturnType<typeof setTimeout> | null = null;
+  /** Enable SQLite message storage (dual-write with file fallback) */
+  private enableSqliteMessages = true;
 
   constructor(
     private tmux: IPtyBackend,
@@ -527,35 +529,81 @@ export class MessageQueue {
 
   /** MCP mode: write full message to inbox file, send short tmux notification */
   private async deliverViaMcp(msg: QueuedMessage): Promise<void> {
-    // Write full message to inbox file
+    const messageId = crypto.randomUUID();
+    const senderName = msg.message.match(/\[(?:Message|Task|DONE|Question|Broadcast|System) from (.+?)\]/)?.[1]
+      || msg.message.match(/\[Message from (.+?)\]/)?.[1]
+      || "teammate";
+
+    // Write to SQLite (if enabled)
+    if (this.enableSqliteMessages && this.database && this.sessionId) {
+      try {
+        const expiresAt = msg.ttl || (Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days default
+        this.database.insertMessage({
+          id: messageId,
+          sessionId: this.sessionId,
+          fromAgentId: msg.fromAgentId || 'system',
+          toAgentId: msg.agentId,
+          messageType: this.classifyMessageType(msg.message),
+          content: msg.message,
+          priority: msg.priority,
+          createdAt: msg.timestamp,
+          expiresAt,
+          channel: msg.targetAgentId ? null : '#broadcast',
+        });
+      } catch (err) {
+        logger.debug({ err }, "[MessageQueue] Failed to insert message to SQLite, falling back to file");
+      }
+    }
+
+    // Write full message to inbox file (backward compatibility)
     const inboxDir = path.join(this.runtimeDir, "messages", `inbox-${msg.agentId}`);
     await fs.mkdir(inboxDir, { recursive: true });
     const filename = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.md`;
     await fs.writeFile(path.join(inboxDir, filename), msg.message, "utf-8");
 
     // Send short notification to tmux
-    const senderName = msg.message.match(/\[(?:Message|Task|DONE|Question|Broadcast|System) from (.+?)\]/)?.[1]
-      || msg.message.match(/\[Message from (.+?)\]/)?.[1]
-      || "teammate";
     const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
     await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: false });
   }
 
   /** MCP pending mode: write to mcp-pending store + send tmux notification */
   private async deliverViaMcpPending(msg: QueuedMessage): Promise<void> {
-    // 1. Write to mcp-pending store
+    const messageId = crypto.randomUUID();
+    const senderName = msg.message.match(/\[(?:Message|Task|DONE|Question|Broadcast|System)[^\]]*from (.+?)\]/)?.[1] || "unknown";
+
+    // Write to SQLite (if enabled)
+    if (this.enableSqliteMessages && this.database && this.sessionId) {
+      try {
+        const expiresAt = msg.ttl || (Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days default
+        this.database.insertMessage({
+          id: messageId,
+          sessionId: this.sessionId,
+          fromAgentId: msg.fromAgentId || 'system',
+          toAgentId: msg.agentId,
+          messageType: this.classifyMessageType(msg.message),
+          content: msg.message,
+          priority: msg.priority,
+          createdAt: msg.timestamp,
+          expiresAt,
+          channel: msg.targetAgentId ? null : '#broadcast',
+        });
+      } catch (err) {
+        logger.debug({ err }, "[MessageQueue] Failed to insert message to SQLite, falling back to file");
+      }
+    }
+
+    // 1. Write to mcp-pending store (backward compatibility)
     const pendingDir = path.join(this.runtimeDir, "mcp-pending", msg.agentId);
     await fs.mkdir(pendingDir, { recursive: true });
     const filename = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.json`;
     const payload = {
-      from: msg.message.match(/\[(?:Message|Task|DONE|Question|Broadcast|System)[^\]]*from (.+?)\]/)?.[1] || "unknown",
+      from: senderName,
       content: msg.message,
       timestamp: new Date().toISOString(),
     };
     await fs.writeFile(path.join(pendingDir, filename), JSON.stringify(payload), "utf-8");
 
     // 2. Also send tmux notification as fallback
-    const senderName = payload.from;
     const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
     await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: false });
   }
@@ -579,6 +627,16 @@ export class MessageQueue {
     }
 
     await this.tmux.sendKeys(msg.tmuxSession, cleanMsg, { literal: false });
+  }
+
+  /** Classify message type based on content patterns */
+  private classifyMessageType(message: string): string {
+    if (message.includes("[Task assigned]") || message.includes("[Task from")) return "task";
+    if (message.includes("[Question from") || message.includes("?")) return "question";
+    if (message.includes("[DONE from") || message.includes("completed")) return "result";
+    if (message.includes("[Broadcast]")) return "broadcast";
+    if (message.includes("[System")) return "system";
+    return "text";
   }
 
   /** Add structured prefix to relay messages based on content patterns */

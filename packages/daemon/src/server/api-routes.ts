@@ -1392,6 +1392,97 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ─── SQLite Messages ─────────────────────────────────────────────────────
+
+  /** Get messages for an agent (SQLite-based) */
+  router.get("/sessions/:sid/agents/:aid/messages", (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const orch = orchestrators.get(String(sid));
+      if (!orch) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const status = req.query.status as string | string[] | undefined;
+      const since = req.query.since ? parseInt(req.query.since as string, 10) : undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+
+      // Handle multiple status values (e.g. ?status=pending&status=delivered)
+      const statusValues = Array.isArray(status) ? status : status ? [status] : undefined;
+
+      // Query messages for each status and combine
+      let allMessages: any[] = [];
+      if (statusValues) {
+        for (const s of statusValues) {
+          const messages = orch.database.getMessages({
+            toAgentId: String(aid),
+            sessionId: String(sid),
+            status: s as any,
+            since,
+            limit,
+          });
+          allMessages.push(...messages);
+        }
+      } else {
+        allMessages = orch.database.getMessages({
+          toAgentId: String(aid),
+          sessionId: String(sid),
+          since,
+          limit,
+        });
+      }
+
+      res.json({ messages: allMessages, count: allMessages.length });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  /** Mark messages as read */
+  router.post("/sessions/:sid/agents/:aid/messages/mark-read", (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const { messageIds } = req.body as { messageIds: string[] };
+
+      const orch = orchestrators.get(String(sid));
+      if (!orch) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      if (!Array.isArray(messageIds) || messageIds.length === 0) {
+        res.status(400).json({ error: "messageIds array required" });
+        return;
+      }
+
+      orch.database.markMessagesRead(messageIds);
+      res.json({ success: true, markedRead: messageIds.length });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  /** Get unread message count */
+  router.get("/sessions/:sid/agents/:aid/messages/unread-count", (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const orch = orchestrators.get(String(sid));
+      if (!orch) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const count = orch.database.getUnreadMessageCount(String(aid));
+      res.json({ count });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
   // ─── Autonomy Enforcement (Stubs) ───────────────────────────────────────
 
   /** Approve an agent action request. Stub endpoint — full implementation in Sprint 5. */
