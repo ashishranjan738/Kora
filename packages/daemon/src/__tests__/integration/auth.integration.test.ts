@@ -30,7 +30,7 @@ describe("Auth integration", () => {
 
   it("rejects requests with invalid token", async () => {
     const res = await request(ctx.app)
-      .get("/api/v1/status")
+      .get("/api/v1/sessions")
       .set("Authorization", "Bearer invalid-token");
 
     expect(res.status).toBe(401);
@@ -38,7 +38,7 @@ describe("Auth integration", () => {
   });
 
   it("rejects requests without Authorization header", async () => {
-    const res = await request(ctx.app).get("/api/v1/status");
+    const res = await request(ctx.app).get("/api/v1/sessions");
 
     expect(res.status).toBe(401);
     expect(res.body).toHaveProperty("error", "Unauthorized");
@@ -46,7 +46,7 @@ describe("Auth integration", () => {
 
   it("rejects requests with malformed Authorization header", async () => {
     const res = await request(ctx.app)
-      .get("/api/v1/status")
+      .get("/api/v1/sessions")
       .set("Authorization", ctx.token); // Missing "Bearer " prefix
 
     expect(res.status).toBe(401);

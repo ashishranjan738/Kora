@@ -248,7 +248,11 @@ export function createApiRouter(deps: {
       res.status(201).json(response);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (message.includes("already exists")) {
+      // Client errors (invalid input) return 400
+      if (message.includes("already exists") ||
+          message.includes("ENOENT") ||
+          message.includes("does not exist") ||
+          message.includes("not found")) {
         res.status(400).json({ error: message });
       } else {
         res.status(500).json({ error: message });
