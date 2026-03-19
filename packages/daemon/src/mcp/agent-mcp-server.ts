@@ -554,6 +554,21 @@ const TOOL_DEFINITIONS = [
       },
     },
   },
+  {
+    name: "save_knowledge",
+    description:
+      "Save a knowledge entry that persists across sessions. Use this to record important findings, patterns, or decisions that future agents should know about. Entries are injected into all agent personas at spawn.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        entry: {
+          type: "string",
+          description: "Knowledge entry to save (e.g. 'Express 5 uses path-to-regexp v8 — no * wildcard for SPA fallback')",
+        },
+      },
+      required: ["entry"],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1145,6 +1160,27 @@ async function handleToolCall(
         priority,
       });
       return result;
+    }
+
+    case "save_knowledge": {
+      if (!toolArgs.entry || !toolArgs.entry.trim()) {
+        return { error: "entry is required (non-empty string)" };
+      }
+
+      // Get agent name for attribution
+      const agents3 = (await apiCall(
+        "GET",
+        `/api/v1/sessions/${SESSION_ID}/agents`,
+      )) as AgentsResponse;
+      const self = (agents3.agents || []).find((a) => a.id === AGENT_ID);
+      const agentName = self?.config?.name || AGENT_ID;
+
+      await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/knowledge`, {
+        entry: toolArgs.entry.trim(),
+        agentName,
+      });
+
+      return { success: true, saved: toolArgs.entry.trim() };
     }
 
     default:

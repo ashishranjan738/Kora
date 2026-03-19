@@ -68,3 +68,47 @@ export function discoverContextFiles(projectPath: string): ContextFile[] {
 
   return results;
 }
+
+/**
+ * Read the last N entries from the knowledge file (.kora/knowledge.md).
+ * Returns entries as an array of strings (most recent last).
+ */
+export function readKnowledgeEntries(projectPath: string, maxEntries: number = 20): string[] {
+  const runtimeDirs = [".kora-dev", ".kora"];
+  for (const dir of runtimeDirs) {
+    const knowledgePath = path.join(projectPath, dir, "knowledge.md");
+    try {
+      if (!fs.existsSync(knowledgePath)) continue;
+      const content = fs.readFileSync(knowledgePath, "utf-8");
+      const entries = content.trim().split("\n").filter(l => l.startsWith("- "));
+      return entries.slice(-maxEntries);
+    } catch {
+      // Skip unreadable files
+    }
+  }
+  return [];
+}
+
+/**
+ * Append a knowledge entry to .kora/knowledge.md (or .kora-dev/knowledge.md).
+ * Format: - [ISO_TIMESTAMP] [agent-name] entry text
+ */
+export function appendKnowledgeEntry(
+  runtimeDir: string,
+  agentName: string,
+  entry: string,
+): void {
+  const knowledgePath = path.join(runtimeDir, "knowledge.md");
+  const timestamp = new Date().toISOString();
+  const line = `- [${timestamp}] [${agentName}] ${entry}\n`;
+
+  try {
+    // Ensure directory exists
+    if (!fs.existsSync(runtimeDir)) {
+      fs.mkdirSync(runtimeDir, { recursive: true });
+    }
+    fs.appendFileSync(knowledgePath, line, "utf-8");
+  } catch (err) {
+    logger.warn({ err, runtimeDir }, "[context-discovery] Failed to append knowledge entry");
+  }
+}
