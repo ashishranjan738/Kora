@@ -1177,6 +1177,128 @@ async function handleToolCall(
       }
     }
 
+    case "create_pr": {
+      // Get the calling agent's working directory
+      const agentsResp = (await apiCall(
+        "GET",
+        `/api/v1/sessions/${SESSION_ID}/agents`,
+      )) as AgentsResponse;
+
+      const currentAgent = (agentsResp.agents || []).find((a) => a.id === AGENT_ID);
+      if (!currentAgent || !(currentAgent.config as any)?.workingDirectory) {
+        return { success: false, error: "Could not determine your working directory" };
+      }
+
+      const workDir = (currentAgent.config as any).workingDirectory;
+
+      try {
+        // Step 1: Get current branch name if not specified
+        let headBranch = toolArgs.headBranch;
+        if (!headBranch) {
+          const { stdout: branchOut } = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: workDir });
+          headBranch = branchOut.trim();
+        }
+
+        // Step 2: Get repository information from git remote
+        const { stdout: remoteOut } = await execFileAsync("git", ["remote", "get-url", "origin"], { cwd: workDir });
+        const remoteUrl = remoteOut.trim();
+
+        // Parse owner/repo from remote URL
+        // Supports: git@github.com:owner/repo.git and https://github.com/owner/repo.git
+        let owner: string;
+        let repo: string;
+
+        if (remoteUrl.startsWith("git@github.com:")) {
+          const match = remoteUrl.match(/git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/);
+          if (!match) {
+            return { success: false, error: `Could not parse GitHub remote URL: ${remoteUrl}` };
+          }
+          owner = match[1];
+          repo = match[2];
+        } else if (remoteUrl.includes("github.com")) {
+          const match = remoteUrl.match(/github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/);
+          if (!match) {
+            return { success: false, error: `Could not parse GitHub remote URL: ${remoteUrl}` };
+          }
+          owner = match[1];
+          repo = match[2];
+        } else {
+          return { success: false, error: `Remote URL is not a GitHub repository: ${remoteUrl}` };
+        }
+
+        // Step 3: Get GitHub token from environment or .kora.yml
+        let githubToken = process.env.GITHUB_TOKEN;
+
+        if (!githubToken && PROJECT_PATH) {
+          // Try to load from .kora.yml
+          try {
+            const configPath = nodePath.join(PROJECT_PATH, ".kora.yml");
+            const configRaw = fs.readFileSync(configPath, "utf-8");
+            // Simple YAML parse for github.token
+            const tokenMatch = configRaw.match(/github:\s*\n\s*token:\s*['"]?([^\s'"]+)['"]?/);
+            if (tokenMatch) {
+              githubToken = tokenMatch[1];
+            }
+          } catch {
+            // Config file doesn't exist or can't be read
+          }
+        }
+
+        if (!githubToken) {
+          return {
+            success: false,
+            error: "GitHub token not found. Set GITHUB_TOKEN env var or add github.token to .kora.yml",
+          };
+        }
+
+        // Step 4: Create PR via GitHub API
+        const baseBranch = toolArgs.baseBranch || "main";
+        const prPayload = {
+          title: toolArgs.title,
+          body: toolArgs.body,
+          head: headBranch,
+          base: baseBranch,
+        };
+
+        const prResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls`, {
+          method: "POST",
+          headers: {
+            "Accept": "application/vnd.github+json",
+            "Authorization": `Bearer ${githubToken}`,
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(prPayload),
+        });
+
+        if (!prResponse.ok) {
+          const errorBody = await prResponse.text();
+          return {
+            success: false,
+            error: `GitHub API error (${prResponse.status}): ${errorBody}`,
+            statusCode: prResponse.status,
+          };
+        }
+
+        const prData = await prResponse.json() as { html_url: string; number: number };
+
+        return {
+          success: true,
+          prUrl: prData.html_url,
+          prNumber: prData.number,
+          head: headBranch,
+          base: baseBranch,
+          repository: `${owner}/${repo}`,
+        };
+      } catch (err: unknown) {
+        const error = err as { message?: string };
+        return {
+          success: false,
+          error: error.message || "Failed to create PR",
+        };
+      }
+    }
+
     case "report_idle": {
       const reason = toolArgs.reason || "task completed";
       const result = await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}/report-idle`, {
