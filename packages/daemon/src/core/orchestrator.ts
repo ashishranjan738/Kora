@@ -47,6 +47,7 @@ export class Orchestrator extends EventEmitter {
   private autoRelay: AutoRelay;
   public messageQueue: MessageQueue;
   private logRotationInterval?: NodeJS.Timeout;
+  private deliveryCleanupInterval?: NodeJS.Timeout;
 
   constructor(private config: OrchestratorConfig) {
     super();
@@ -521,6 +522,14 @@ export class Orchestrator extends EventEmitter {
     this.logRotationInterval = setInterval(async () => {
       await this.rotateAgentLogs();
     }, 20 * 1000);
+
+    // Start daily cleanup of old delivery records (prevent unbounded database growth)
+    this.deliveryCleanupInterval = setInterval(() => {
+      const deleted = this.database.cleanupOldDeliveries(7);
+      if (deleted > 0) {
+        logger.info(`[database] Cleaned up ${deleted} old delivery records (>7 days)`);
+      }
+    }, 24 * 60 * 60 * 1000); // 24 hours
   }
 
   /** Stop the orchestrator — persists state before stopping */
@@ -533,6 +542,12 @@ export class Orchestrator extends EventEmitter {
     if (this.logRotationInterval) {
       clearInterval(this.logRotationInterval);
       this.logRotationInterval = undefined;
+    }
+
+    // Stop delivery cleanup interval
+    if (this.deliveryCleanupInterval) {
+      clearInterval(this.deliveryCleanupInterval);
+      this.deliveryCleanupInterval = undefined;
     }
 
     await this.persistState();
