@@ -2719,6 +2719,75 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ── Knowledge Entries ────────────────────────────────────
+  // Read knowledge entries from .kora.yml and knowledge.md files
+  router.get("/sessions/:sid/knowledge", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const session = sessionManager.getSession(sid);
+      if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const entries: Array<{ text: string; source: string; timestamp?: string }> = [];
+      const fs = await import("fs/promises");
+      const path = await import("path");
+
+      // 1. Read from .kora.yml knowledge array
+      try {
+        const { loadProjectConfig } = await import("../core/project-config.js");
+        const config = await loadProjectConfig(session.projectPath);
+        if (config?.knowledge) {
+          for (const k of config.knowledge) {
+            entries.push({ text: k, source: ".kora.yml" });
+          }
+        }
+      } catch { /* ignore */ }
+
+      // 2. Read from knowledge.md if it exists
+      const knowledgeMdPath = path.join(session.runtimeDir, "knowledge.md");
+      try {
+        const content = await fs.readFile(knowledgeMdPath, "utf-8");
+        const lines = content.split("\n").filter((l: string) => l.trim());
+        for (const line of lines) {
+          // Parse markdown entries like "- [2026-03-19 10:00] (AgentName): knowledge text"
+          const match = line.match(/^-?\s*\[([^\]]+)\]\s*\(([^)]+)\):\s*(.+)$/);
+          if (match) {
+            entries.push({ text: match[3].trim(), source: match[2], timestamp: match[1] });
+          } else if (line.startsWith("- ")) {
+            entries.push({ text: line.slice(2).trim(), source: "knowledge.md" });
+          } else if (!line.startsWith("#")) {
+            entries.push({ text: line.trim(), source: "knowledge.md" });
+          }
+        }
+      } catch { /* file doesn't exist, ignore */ }
+
+      res.json({ entries });
+    } catch (err) {
+      logger.error({ err }, "[api] GET knowledge error");
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Delete all knowledge entries (clear knowledge.md)
+  router.delete("/sessions/:sid/knowledge", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const session = sessionManager.getSession(sid);
+      if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const fs = await import("fs/promises");
+      const path = await import("path");
+      const knowledgeMdPath = path.join(session.runtimeDir, "knowledge.md");
+      try {
+        await fs.writeFile(knowledgeMdPath, "# Session Knowledge\n\n", "utf-8");
+      } catch { /* ignore */ }
+
+      res.json({ cleared: true });
+    } catch (err) {
+      logger.error({ err }, "[api] DELETE knowledge error");
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   return router;
 }
 

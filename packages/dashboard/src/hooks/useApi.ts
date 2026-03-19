@@ -173,5 +173,9 @@ export function useApi() {
         method: "POST",
         body: JSON.stringify({ prNumber, prTitle }),
       }),
+    getKnowledge: (sid: string) =>
+      apiFetch<{ entries: Array<{ text: string; source: string; timestamp?: string }> }>(`/sessions/${sid}/knowledge`),
+    clearKnowledge: (sid: string) =>
+      apiFetch<{ cleared: boolean }>(`/sessions/${sid}/knowledge`, { method: "DELETE" }),
   };
 }

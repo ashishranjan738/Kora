@@ -11,6 +11,7 @@ import type { AgentActivity } from "../components/AgentCardTerminal";
 import { AgentActivityBadge, AgentUtilization, ActivitySparkline } from "../components/AgentActivityBadge";
 import { TaskBoard } from "../components/TaskBoard";
 import { SessionSummary } from "../components/SessionSummary";
+import { KnowledgeViewer } from "../components/KnowledgeViewer";
 import { TimelineView } from "../components/timeline/TimelineView";
 import { SideTerminalPanel } from "../components/SideTerminalPanel";
 import { EditorTile } from "../components/EditorTile";
@@ -41,11 +42,11 @@ import {
   CopyButton,
 } from "@mantine/core";
 
-type TabId = "editor" | "agents" | "tasks" | "timeline" | "changes";
+type TabId = "editor" | "agents" | "tasks" | "timeline" | "changes" | "knowledge";
 
 function getInitialTab(): TabId {
   const hash = window.location.hash.replace("#", "");
-  if (["agents", "tasks", "timeline", "changes"].includes(hash)) return hash as TabId;
+  if (["agents", "tasks", "timeline", "changes", "knowledge"].includes(hash)) return hash as TabId;
   return "editor";
 }
 
@@ -490,6 +491,12 @@ export function SessionDetail() {
           Timeline
           <span className="tab-count">{events.length}</span>
         </button>
+        <button
+          className={activeTab === "knowledge" ? "tab-active" : ""}
+          onClick={() => setActiveTab("knowledge")}
+        >
+          Knowledge
+        </button>
       </div>
 
       {/* Tab content */}
@@ -687,6 +694,10 @@ export function SessionDetail() {
           onJumpToTaskBoard={() => setActiveTab("tasks")}
           onRestartAgent={handleRestartAgent}
         />
+      )}
+
+      {activeTab === "knowledge" && sessionId && (
+        <KnowledgeViewer sessionId={sessionId} />
       )}
 
       {/* Spawn Agent Dialog */}
