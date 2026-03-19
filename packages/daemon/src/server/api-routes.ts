@@ -248,7 +248,11 @@ export function createApiRouter(deps: {
       res.status(201).json(response);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (message.includes("already exists")) {
+      // Client errors (invalid input) return 400
+      if (message.includes("already exists") ||
+          message.includes("ENOENT") ||
+          message.includes("does not exist") ||
+          message.includes("not found")) {
         res.status(400).json({ error: message });
       } else {
         res.status(500).json({ error: message });
@@ -1164,7 +1168,7 @@ export function createApiRouter(deps: {
       // Log to SQLite for timeline
       const orch_tc = orchestrators.get(sid);
       if (orch_tc) {
-        orch_tc.eventLog.log({ sessionId: sid, type: "task-created" as any, data: { taskId: task.id, title: task.title, assignedTo: task.assignedTo || null } });
+        orch_tc.eventLog.log({ sessionId: sid, type: "task-created" as any, data: { taskId: task.id, title: task.title, description: task.description, priority: task.priority, labels: task.labels, assignedTo: task.assignedTo || null } });
       }
 
       res.status(201).json(db.getTask(task.id));
