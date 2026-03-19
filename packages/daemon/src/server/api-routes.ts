@@ -969,7 +969,48 @@ export function createApiRouter(deps: {
       const sid = String(req.params.sid);
       const db = getDb(sid);
       if (!db) { res.status(404).json({ error: "Session not found" }); return; }
-      res.json({ tasks: db.getTasks(sid) });
+
+      // Support query param filters: ?assignedTo=X&status=active&priority=P0&label=bug&due=overdue&sortBy=due&summary=true
+      const assignedTo = req.query.assignedTo as string | undefined;
+      const status = req.query.status as string | undefined;
+      const priority = req.query.priority as string | undefined;
+      const label = req.query.label as string | undefined;
+      const due = req.query.due as string | undefined;
+      const sortBy = (req.query.sortBy || req.query.sort) as string | undefined;
+      const summary = req.query.summary as string | undefined;
+
+      if (assignedTo || status || priority || label || due || sortBy || summary !== undefined) {
+        const tasks = db.getFilteredTasks(sid, {
+          assignedTo: assignedTo || null,
+          status: status || null,
+          priority: priority || null,
+          label: label || null,
+          due: due || null,
+          sortBy: sortBy || null,
+          summary: summary !== "false",  // default true when query params used
+        });
+        res.json({ tasks });
+      } else {
+        // No filters — return full tasks (backward compatible)
+        res.json({ tasks: db.getTasks(sid) });
+      }
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // GET single task by ID (full details)
+  router.get("/sessions/:sid/tasks/:tid", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const tid = String(req.params.tid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const task = db.getTask(tid);
+      if (!task) { res.status(404).json({ error: "Task not found" }); return; }
+
+      res.json(task);
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -985,6 +1026,27 @@ export function createApiRouter(deps: {
 
       const { randomUUID } = require("crypto");
       const now = new Date().toISOString();
+      // Validate priority if provided
+      const validPriorities = ["P0", "P1", "P2", "P3"];
+      if (body.priority && !validPriorities.includes(body.priority)) {
+        res.status(400).json({ error: `priority must be one of: ${validPriorities.join(", ")}` });
+        return;
+      }
+
+      // Validate labels if provided
+      if (body.labels !== undefined && !Array.isArray(body.labels)) {
+        res.status(400).json({ error: "labels must be an array of strings" });
+        return;
+      }
+
+      // Validate dueDate format if provided
+      if (body.dueDate !== undefined && body.dueDate !== null) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(body.dueDate)) {
+          res.status(400).json({ error: "dueDate must be in YYYY-MM-DD format" });
+          return;
+        }
+      }
+
       const task = {
         id: randomUUID().slice(0, 8),
         sessionId: sid,
@@ -994,6 +1056,9 @@ export function createApiRouter(deps: {
         assignedTo: body.assignedTo || undefined,
         createdBy: "user",
         dependencies: body.dependencies || [],
+        priority: body.priority || "P2",
+        labels: body.labels || [],
+        dueDate: body.dueDate || undefined,
         createdAt: now,
         updatedAt: now,
       };
@@ -1045,11 +1110,32 @@ export function createApiRouter(deps: {
         return;
       }
 
+      const validPriorities = ["P0", "P1", "P2", "P3"];
+      if (body.priority !== undefined && !validPriorities.includes(body.priority)) {
+        res.status(400).json({ error: `priority must be one of: ${validPriorities.join(", ")}` });
+        return;
+      }
+
+      if (body.labels !== undefined && !Array.isArray(body.labels)) {
+        res.status(400).json({ error: "labels must be an array of strings" });
+        return;
+      }
+
+      if (body.dueDate !== undefined && body.dueDate !== null) {
+        if (typeof body.dueDate === "string" && !/^\d{4}-\d{2}-\d{2}$/.test(body.dueDate)) {
+          res.status(400).json({ error: "dueDate must be in YYYY-MM-DD format" });
+          return;
+        }
+      }
+
       const task = db.updateTask(tid, {
         title: body.title,
         description: body.description,
         status: body.status,
         assignedTo: body.assignedTo,
+        priority: body.priority,
+        labels: body.labels,
+        dueDate: body.dueDate,
       });
 
       // Notify if assignedTo changed

@@ -21,9 +21,20 @@ import {
   Tooltip,
   Divider,
   SegmentedControl,
+  TagsInput,
 } from "@mantine/core";
+import { DateInput } from "@mantine/dates";
 import { useMediaQuery } from "@mantine/hooks";
 import { MarkdownText } from "./MarkdownText";
+
+// Type wrapper to handle DateInput's onChange type
+const handleDateChange = (setter: (v: string | null) => void) => (value: Date | string | null) => {
+  if (value instanceof Date) {
+    setter(value.toISOString().split("T")[0]);
+  } else {
+    setter(value);
+  }
+};
 
 interface TaskComment {
   id: string;
@@ -38,6 +49,9 @@ interface Task {
   title: string;
   description: string;
   status: string;
+  priority: string;
+  labels?: string[];
+  dueDate?: string;
   assignedTo?: string;
   createdBy: string;
   createdAt: string;
@@ -74,6 +88,38 @@ const COLUMN_CSS_COLORS: Record<string, string> = {
   review: "var(--accent-yellow)",
   done: "var(--accent-green)",
 };
+
+const PRIORITY_COLORS: Record<string, string> = {
+  P0: "red",
+  P1: "orange",
+  P2: "blue",
+  P3: "gray",
+};
+
+// Hash label string to deterministic color
+function getLabelColor(label: string): string {
+  const colors = ["blue", "cyan", "teal", "green", "lime", "yellow", "orange", "red", "pink", "grape", "violet", "indigo"];
+  let hash = 0;
+  for (let i = 0; i < label.length; i++) {
+    hash = label.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
+// Calculate due date status
+function getDueDateStatus(dueDate: string): { label: string; color: string } | null {
+  if (!dueDate) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0);
+  const diffDays = Math.floor((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) return { label: "Overdue", color: "red" };
+  if (diffDays === 0) return { label: "Due today", color: "yellow" };
+  if (diffDays <= 2) return { label: "Due soon", color: "yellow" };
+  return { label: dueDate, color: "gray" };
+}
 
 function timeAgo(dateStr: string): string {
   const now = Date.now();
@@ -169,6 +215,48 @@ function TaskCard({
           Blocked
         </Badge>
       )}
+
+      {/* Priority badge */}
+      <Badge
+        color={PRIORITY_COLORS[task.priority]}
+        variant="filled"
+        size="xs"
+        mt={4}
+      >
+        {task.priority}
+      </Badge>
+
+      {/* Labels */}
+      {task.labels && task.labels.length > 0 && (
+        <Group gap={4} mt={4}>
+          {task.labels.map((label) => (
+            <Badge
+              key={label}
+              color={getLabelColor(label)}
+              variant="outline"
+              size="xs"
+            >
+              {label}
+            </Badge>
+          ))}
+        </Group>
+      )}
+
+      {/* Due date badge */}
+      {task.dueDate && (() => {
+        const dueDateStatus = getDueDateStatus(task.dueDate);
+        return dueDateStatus ? (
+          <Badge
+            color={dueDateStatus.color}
+            variant="light"
+            size="xs"
+            mt={4}
+            leftSection={<span style={{ fontSize: 10 }}>📅</span>}
+          >
+            {dueDateStatus.label}
+          </Badge>
+        ) : null;
+      })()}
 
       {/* Description — consistent 2-line clamp */}
       {task.description && (
@@ -356,6 +444,9 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
   const [newTitle, setNewTitle] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newAssignee, setNewAssignee] = useState("");
+  const [newPriority, setNewPriority] = useState("P2");
+  const [newLabels, setNewLabels] = useState<string[]>([]);
+  const [newDueDate, setNewDueDate] = useState<string | null>(null);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const [newDependencies, setNewDependencies] = useState<string[]>([]);
@@ -437,12 +528,18 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
         title: newTitle.trim(),
         description: newDescription.trim(),
         assignedTo: newAssignee || undefined,
+        priority: newPriority,
+        labels: newLabels.length > 0 ? newLabels : undefined,
+        dueDate: newDueDate || undefined,
         dependencies:
           newDependencies.length > 0 ? newDependencies : undefined,
       });
       setNewTitle("");
       setNewDescription("");
       setNewAssignee("");
+      setNewPriority("P2");
+      setNewLabels([]);
+      setNewDueDate(null);
       setNewDependencies([]);
       setShowAddDialog(false);
       fetchTasks();
@@ -489,8 +586,17 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
     }
   };
 
-  const tasksByColumn = (column: string) =>
-    tasks.filter((t) => t.status === column);
+  const tasksByColumn = (column: string) => {
+    const priOrder: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
+    return tasks
+      .filter((t) => t.status === column)
+      .sort((a, b) => {
+        const aPri = priOrder[a.priority] ?? 2;
+        const bPri = priOrder[b.priority] ?? 2;
+        if (aPri !== bPri) return aPri - bPri;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+  };
   const expandedTask = expandedTaskId
     ? tasks.find((t) => t.id === expandedTaskId)
     : null;
@@ -565,6 +671,9 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
             setNewTitle("");
             setNewDescription("");
             setNewAssignee("");
+            setNewPriority("P2");
+            setNewLabels([]);
+            setNewDueDate(null);
             setNewDependencies([]);
           }}
           isMobile={!!isMobile}
@@ -577,6 +686,12 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
           setNewDescription={setNewDescription}
           newAssignee={newAssignee}
           setNewAssignee={setNewAssignee}
+          newPriority={newPriority}
+          setNewPriority={setNewPriority}
+          newLabels={newLabels}
+          setNewLabels={setNewLabels}
+          newDueDate={newDueDate}
+          setNewDueDate={setNewDueDate}
           agentSelectData={agentSelectData}
           tasks={tasks}
           newDependencies={newDependencies}
@@ -681,6 +796,9 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
           setNewTitle("");
           setNewDescription("");
           setNewAssignee("");
+          setNewPriority("P2");
+          setNewLabels([]);
+          setNewDueDate(null);
           setNewDependencies([]);
         }}
         isMobile={!!isMobile}
@@ -693,6 +811,12 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
         setNewDescription={setNewDescription}
         newAssignee={newAssignee}
         setNewAssignee={setNewAssignee}
+        newPriority={newPriority}
+        setNewPriority={setNewPriority}
+        newLabels={newLabels}
+        setNewLabels={setNewLabels}
+        newDueDate={newDueDate}
+        setNewDueDate={setNewDueDate}
         agentSelectData={agentSelectData}
         tasks={tasks}
         newDependencies={newDependencies}
@@ -742,6 +866,12 @@ function AddTaskModal({
   setNewDescription,
   newAssignee,
   setNewAssignee,
+  newPriority,
+  setNewPriority,
+  newLabels,
+  setNewLabels,
+  newDueDate,
+  setNewDueDate,
   agentSelectData,
   tasks,
   newDependencies,
@@ -760,6 +890,12 @@ function AddTaskModal({
   setNewDescription: (v: string) => void;
   newAssignee: string;
   setNewAssignee: (v: string) => void;
+  newPriority: string;
+  setNewPriority: (v: string) => void;
+  newLabels: string[];
+  setNewLabels: (v: string[]) => void;
+  newDueDate: string | null;
+  setNewDueDate: (v: string | null) => void;
   agentSelectData: { value: string; label: string }[];
   tasks: Task[];
   newDependencies: string[];
@@ -813,6 +949,59 @@ function AddTaskModal({
           onChange={(v) => setNewAssignee(v || "")}
           clearable
           styles={selectDropdownStyles}
+        />
+
+        <Box>
+          <Text size="xs" c="var(--text-secondary)" mb={6}>
+            Priority
+          </Text>
+          <SegmentedControl
+            value={newPriority}
+            onChange={setNewPriority}
+            data={[
+              { value: "P0", label: "P0 Critical" },
+              { value: "P1", label: "P1 High" },
+              { value: "P2", label: "P2 Medium" },
+              { value: "P3", label: "P3 Low" },
+            ]}
+            size="sm"
+            styles={{
+              root: {
+                backgroundColor: "var(--bg-tertiary)",
+                border: "1px solid var(--border-color)",
+              },
+              label: {
+                color: "var(--text-primary)",
+                fontWeight: 500,
+                fontSize: 12,
+                padding: "6px 12px",
+              },
+              indicator: {
+                backgroundColor: PRIORITY_COLORS[newPriority] === "red" ? "var(--mantine-color-red-6)" :
+                                 PRIORITY_COLORS[newPriority] === "orange" ? "var(--mantine-color-orange-6)" :
+                                 PRIORITY_COLORS[newPriority] === "blue" ? "var(--accent-blue)" :
+                                 "var(--text-muted)",
+                boxShadow: "none",
+              },
+            }}
+          />
+        </Box>
+
+        <TagsInput
+          label="Labels"
+          placeholder="Add label (press Enter)"
+          value={newLabels}
+          onChange={setNewLabels}
+          styles={inputStyles}
+        />
+
+        <DateInput
+          label="Due Date"
+          placeholder="Select due date"
+          value={newDueDate ? new Date(newDueDate) : null}
+          onChange={handleDateChange(setNewDueDate)}
+          clearable
+          styles={inputStyles}
         />
 
         {incompleteTasks.length > 0 && (
@@ -949,6 +1138,8 @@ function TaskDetailModal({
   const [editTitle, setEditTitle] = useState(task.title);
   const [editDesc, setEditDesc] = useState(task.description || "");
   const [editAssignee, setEditAssignee] = useState(task.assignedTo || "");
+  const [editLabels, setEditLabels] = useState(task.labels || []);
+  const [editDueDate, setEditDueDate] = useState<string | null>(task.dueDate || null);
   const [saving, setSaving] = useState(false);
 
   // Sync local state when task changes
@@ -956,7 +1147,9 @@ function TaskDetailModal({
     setEditTitle(task.title);
     setEditDesc(task.description || "");
     setEditAssignee(task.assignedTo || "");
-  }, [task.id, task.title, task.description, task.assignedTo]);
+    setEditLabels(task.labels || []);
+    setEditDueDate(task.dueDate || null);
+  }, [task.id, task.title, task.description, task.assignedTo, task.labels, task.dueDate]);
 
   const agentSelectData = agents.map((a) => ({
     value: a.id,
@@ -993,6 +1186,34 @@ function TaskDetailModal({
     const newVal = value || "";
     setEditAssignee(newVal);
     saveField("assignedTo", newVal);
+  };
+
+  const handleLabelsChange = async (newLabels: string[]) => {
+    setEditLabels(newLabels);
+    setSaving(true);
+    try {
+      await api.updateTask(sessionId, task.id, { labels: newLabels });
+      fetchTasks();
+    } catch {
+      // revert on failure
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDueDateChange = async (newDate: string | null) => {
+    setEditDueDate(newDate);
+    setSaving(true);
+    try {
+      await api.updateTask(sessionId, task.id, {
+        dueDate: newDate || undefined
+      });
+      fetchTasks();
+    } catch {
+      // revert on failure
+    } finally {
+      setSaving(false);
+    }
   };
 
   const selectDropdownStyles = {
@@ -1110,48 +1331,132 @@ function TaskDetailModal({
         <Divider color="var(--border-color)" />
 
         {/* ---- Details grid ---- */}
-        <SimpleGrid cols={2} spacing="md" verticalSpacing="sm" style={{ maxWidth: 500 }}>
+        <Stack gap="md">
           {/* Status */}
-          <Text size="sm" fw={500} c="dimmed" style={{ alignSelf: "center" }}>
-            Status
-          </Text>
-          <SegmentedControl
-            value={task.status}
-            onChange={(val) => onChangeStatus(task.id, val)}
-            data={SEGMENTED_DATA}
-            size="xs"
-            styles={{
-              root: {
-                backgroundColor: "var(--bg-tertiary)",
-                border: "1px solid var(--border-color)",
-              },
-              label: {
-                color: "var(--text-primary)",
-                fontWeight: 500,
-                fontSize: 12,
-                padding: "4px 10px",
-              },
-              indicator: {
-                backgroundColor: COLUMN_CSS_COLORS[task.status] || "var(--accent-blue)",
-                boxShadow: "none",
-              },
-            }}
-          />
+          <Box>
+            <Text size="sm" fw={500} c="dimmed" mb={6}>
+              Status
+            </Text>
+            <SegmentedControl
+              value={task.status}
+              onChange={(val) => onChangeStatus(task.id, val)}
+              data={SEGMENTED_DATA}
+              size="xs"
+              fullWidth
+              styles={{
+                root: {
+                  backgroundColor: "var(--bg-tertiary)",
+                  border: "1px solid var(--border-color)",
+                },
+                label: {
+                  color: "var(--text-primary)",
+                  fontWeight: 500,
+                  fontSize: 12,
+                  padding: "6px 12px",
+                },
+                indicator: {
+                  backgroundColor: COLUMN_CSS_COLORS[task.status] || "var(--accent-blue)",
+                  boxShadow: "none",
+                },
+              }}
+            />
+          </Box>
 
           {/* Assignee */}
-          <Text size="sm" fw={500} c="dimmed" style={{ alignSelf: "center" }}>
-            Assignee
-          </Text>
-          <Select
-            placeholder="Unassigned"
-            data={agentSelectData}
-            value={editAssignee || null}
-            onChange={handleAssigneeChange}
-            clearable
-            size="xs"
-            styles={selectDropdownStyles}
-          />
-        </SimpleGrid>
+          <Box>
+            <Text size="sm" fw={500} c="dimmed" mb={6}>
+              Assignee
+            </Text>
+            <Select
+              placeholder="Unassigned"
+              data={agentSelectData}
+              value={editAssignee || null}
+              onChange={handleAssigneeChange}
+              clearable
+              size="sm"
+              styles={selectDropdownStyles}
+            />
+          </Box>
+
+          {/* Priority */}
+          <Box>
+            <Text size="sm" fw={500} c="dimmed" mb={6}>
+              Priority
+            </Text>
+            <SegmentedControl
+              value={task.priority}
+              onChange={(val) => saveField("priority", val)}
+              data={[
+                { value: "P0", label: "P0 Critical" },
+                { value: "P1", label: "P1 High" },
+                { value: "P2", label: "P2 Medium" },
+                { value: "P3", label: "P3 Low" },
+              ]}
+              size="xs"
+              fullWidth
+              styles={{
+                root: {
+                  backgroundColor: "var(--bg-tertiary)",
+                  border: "1px solid var(--border-color)",
+                },
+                label: {
+                  color: "var(--text-primary)",
+                  fontWeight: 500,
+                  fontSize: 12,
+                  padding: "6px 12px",
+                },
+                indicator: {
+                  backgroundColor: PRIORITY_COLORS[task.priority] === "red" ? "var(--mantine-color-red-6)" :
+                                   PRIORITY_COLORS[task.priority] === "orange" ? "var(--mantine-color-orange-6)" :
+                                   PRIORITY_COLORS[task.priority] === "blue" ? "var(--accent-blue)" :
+                                   "var(--text-muted)",
+                  boxShadow: "none",
+                },
+              }}
+            />
+          </Box>
+
+          {/* Labels */}
+          <Box>
+            <Text size="sm" fw={500} c="dimmed" mb={6}>
+              Labels
+            </Text>
+            <TagsInput
+              placeholder="Add label"
+              value={editLabels}
+              onChange={handleLabelsChange}
+              size="sm"
+              styles={{
+                input: {
+                  backgroundColor: "var(--bg-tertiary)",
+                  borderColor: "var(--border-color)",
+                  color: "var(--text-primary)",
+                },
+              }}
+            />
+          </Box>
+
+          {/* Due Date */}
+          <Box>
+            <Text size="sm" fw={500} c="dimmed" mb={6}>
+              Due Date
+            </Text>
+            <DateInput
+              placeholder="Select due date"
+              value={editDueDate ? new Date(editDueDate) : null}
+              onChange={handleDateChange((v) => handleDueDateChange(v))}
+              clearable
+              size="sm"
+              styles={{
+                input: {
+                  backgroundColor: "var(--bg-tertiary)",
+                  borderColor: "var(--border-color)",
+                  color: "var(--text-primary)",
+                },
+              }}
+            />
+          </Box>
+        </Stack>
 
         {/* ---- Description ---- */}
         <Box>

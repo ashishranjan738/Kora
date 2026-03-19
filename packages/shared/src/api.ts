@@ -99,6 +99,9 @@ export interface CreateTaskRequest {
   description: string;
   assignedTo?: string;
   dependencies?: string[];
+  priority?: string;  // P0, P1, P2 (default), P3
+  labels?: string[];  // e.g. ["bug", "frontend"]
+  dueDate?: string;   // YYYY-MM-DD format
 }
 
 export interface UpdateTaskRequest {
@@ -106,6 +109,9 @@ export interface UpdateTaskRequest {
   description?: string;
   status?: string;
   assignedTo?: string;
+  priority?: string;  // P0, P1, P2, P3
+  labels?: string[];  // e.g. ["bug", "frontend"]
+  dueDate?: string | null;  // YYYY-MM-DD format, null to clear
   result?: string;
 }
 
