@@ -23,6 +23,7 @@ import { UsageMonitor } from "./usage-monitor.js";
 import { AutoRelay } from "./auto-relay.js";
 import { MessageQueue } from "./message-queue.js";
 import { notifications } from "./notifications.js";
+import { notificationService } from "./notification-service.js";
 import { saveAgentStates, loadAgentStates } from "./state-persistence.js";
 import fs from "fs";
 import { HoldptyController } from "./holdpty-controller.js";
@@ -50,6 +51,8 @@ export class Orchestrator extends EventEmitter {
   private autoRelay: AutoRelay;
   public messageQueue: MessageQueue;
   private logRotationInterval?: NodeJS.Timeout;
+  private idleNotificationSent = new Map<string, boolean>();
+  private idleCheckInterval?: NodeJS.Timeout;
 
   constructor(private config: OrchestratorConfig) {
     super();
@@ -85,6 +88,35 @@ export class Orchestrator extends EventEmitter {
     );
 
     this.wireEvents();
+    this.startIdleMonitoring();
+  }
+
+  private startIdleMonitoring(): void {
+    // Check for idle agents every minute
+    this.idleCheckInterval = setInterval(() => {
+      const agents = this.agentManager.listAgents();
+      const now = Date.now();
+      const IDLE_NOTIFICATION_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+      for (const agent of agents) {
+        if (agent.activity === "idle" && agent.idleSince) {
+          const idleSince = new Date(agent.idleSince).getTime();
+          const idleDuration = now - idleSince;
+
+          // Notify if idle for >5min and haven't notified yet
+          if (
+            idleDuration > IDLE_NOTIFICATION_THRESHOLD_MS &&
+            !this.idleNotificationSent.get(agent.id)
+          ) {
+            notificationService.agentIdle(this.config.sessionId, agent.id, agent.config.name, idleDuration);
+            this.idleNotificationSent.set(agent.id, true);
+          }
+        } else {
+          // Agent is working, reset notification flag
+          this.idleNotificationSent.delete(agent.id);
+        }
+      }
+    }, 60_000); // Check every minute
   }
 
   private wireEvents(): void {
@@ -173,7 +205,11 @@ export class Orchestrator extends EventEmitter {
         type: "agent-crashed",
         data: { agentId },
       });
-      notifications.agentCrashed(agentId);
+      const agent = this.agentManager.getAgent(agentId);
+      if (agent) {
+        notifications.agentCrashed(agent.config.name);
+        notificationService.agentCrashed(this.config.sessionId, agentId, agent.config.name);
+      }
       this.emit("agent-crashed", agentId);
       await this.persistState();
     });
@@ -207,6 +243,16 @@ export class Orchestrator extends EventEmitter {
     // Budget exceeded
     this.costTracker.on("budget-exceeded", (agentId: string) => {
       notifications.budgetExceeded(agentId, this.costTracker.getCost(agentId)?.totalCostUsd ?? 0);
+    });
+
+    // Task completed
+    this.database.on("task-completed", (data: { taskId: string; title: string; assignedTo?: string }) => {
+      let agentName: string | undefined;
+      if (data.assignedTo) {
+        const agent = this.agentManager.getAgent(data.assignedTo);
+        agentName = agent?.config.name;
+      }
+      notificationService.taskCompleted(this.config.sessionId, data.title, agentName);
     });
   }
 

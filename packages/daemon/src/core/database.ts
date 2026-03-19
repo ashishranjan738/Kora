@@ -7,10 +7,11 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import { EventEmitter } from "events";
 
 const SCHEMA_VERSION = 4;
 
-export class AppDatabase {
+export class AppDatabase extends EventEmitter {
   public db: Database.Database;
   private _open = true;
 
@@ -20,6 +21,7 @@ export class AppDatabase {
   }
 
   constructor(runtimeDir: string) {
+    super();
     const dbPath = path.join(runtimeDir, "data.db");
     fs.mkdirSync(runtimeDir, { recursive: true });
 
@@ -391,6 +393,12 @@ export class AppDatabase {
     this.db.prepare(
       `UPDATE tasks SET title = ?, description = ?, status = ?, assigned_to = ?, priority = ?, labels = ?, due_date = ?, updated_at = ? WHERE id = ?`
     ).run(newTitle, newDesc, newStatus, newAssigned, newPriority, newLabels, newDueDate, now, taskId);
+
+    // Emit task-completed event if status changed to "done"
+    const wasCompleted = task.status !== "done" && newStatus === "done";
+    if (wasCompleted) {
+      this.emit("task-completed", { taskId, title: newTitle, assignedTo: newAssigned });
+    }
 
     return this.getTask(taskId);
   }
