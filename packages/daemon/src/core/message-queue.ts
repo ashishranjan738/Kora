@@ -488,7 +488,7 @@ export class MessageQueue {
           priority,
         });
       } catch (err) {
-        logger.debug({ err }, "[MessageQueue] Failed to track delivery in DB");
+        logger.warn({ err, agentId, messageId }, "[MessageQueue] Delivery tracking failed — sent status not recorded");
       }
     }
 
@@ -520,7 +520,7 @@ export class MessageQueue {
           try {
             this.database.updateMessageDeliveryStatus(messageId, agentId, 'delivered');
           } catch (err) {
-            logger.debug({ err }, "[MessageQueue] Failed to update delivery status in DB");
+            logger.warn({ err, agentId: msg.agentId, messageId }, "[MessageQueue] Delivery tracking failed — delivered status not recorded");
           }
         }
 
