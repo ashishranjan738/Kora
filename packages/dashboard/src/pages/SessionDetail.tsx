@@ -30,6 +30,9 @@ import {
   Badge,
   TextInput,
   Loader,
+  Collapse,
+  Code,
+  CopyButton,
 } from "@mantine/core";
 
 type TabId = "editor" | "agents" | "tasks" | "timeline" | "changes";
@@ -764,6 +767,38 @@ export function SessionDetail() {
 /* Agents Tab                                                          */
 /* ------------------------------------------------------------------ */
 
+/** Reconstruct the CLI command used to spawn an agent */
+function buildCliCommand(agent: any): string {
+  const provider = agent.config?.cliProvider || "claude-code";
+  const model = agent.config?.model;
+  const extraArgs = agent.config?.extraCliArgs || [];
+  const workDir = agent.config?.workingDirectory;
+
+  // Base command
+  let cmd = provider === "claude-code" ? "claude" :
+            provider === "aider" ? "aider" :
+            provider === "codex" ? "codex" :
+            provider === "kiro" ? "kiro" :
+            provider === "goose" ? "goose" : provider;
+
+  const parts = [cmd];
+
+  // Add model flag if not default
+  if (model && model !== "default" && model !== "") {
+    parts.push(`--model ${model}`);
+  }
+
+  // Add extra CLI args
+  if (extraArgs.length > 0) {
+    parts.push(...extraArgs);
+  }
+
+  // Note: We don't show --system-prompt-file or --mcp-config as those are internal runtime paths
+  // Just show the user-visible flags
+
+  return parts.join(" ");
+}
+
 interface AgentsTabProps {
   agents: any[];
   sessionId: string;
@@ -810,6 +845,7 @@ function AgentsTab({
   const api = useApi();
   const [agentActivities, setAgentActivities] = useState<Record<string, AgentActivity>>({});
   const [gearOpen, setGearOpen] = useState<string | null>(null);
+  const [cliExpanded, setCliExpanded] = useState<Record<string, boolean>>({});
 
   // Close gear dropdown when clicking outside
   useEffect(() => {
@@ -1245,6 +1281,95 @@ function AgentsTab({
               <span className="ac2-stat">${formatCost(costUsd)}</span>
               <span className="ac2-stat-sep">{"\u00B7"}</span>
               <span className="ac2-stat">{formatUptime(a.startedAt)}</span>
+            </div>
+
+            {/* CLI Command — collapsible */}
+            <div style={{ marginTop: 8 }}>
+              <div
+                onClick={() => setCliExpanded(prev => ({ ...prev, [a.id]: !prev[a.id] }))}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  cursor: "pointer",
+                  padding: "4px 0",
+                  color: "var(--text-secondary)",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  userSelect: "none",
+                }}
+              >
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{
+                    transform: cliExpanded[a.id] ? "rotate(90deg)" : "rotate(0deg)",
+                    transition: "transform 0.15s ease",
+                  }}
+                >
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+                <span>CLI Command</span>
+              </div>
+              <Collapse in={cliExpanded[a.id]}>
+                <div style={{ marginTop: 6, position: "relative" }}>
+                  <Code
+                    block
+                    style={{
+                      fontSize: 11,
+                      padding: "8px 32px 8px 8px",
+                      backgroundColor: "var(--bg-tertiary)",
+                      color: "var(--text-primary)",
+                      borderRadius: 4,
+                      border: "1px solid var(--border-color)",
+                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {buildCliCommand(a)}
+                  </Code>
+                  <CopyButton value={buildCliCommand(a)} timeout={2000}>
+                    {({ copied, copy }) => (
+                      <Tooltip label={copied ? "Copied!" : "Copy command"} position="left">
+                        <ActionIcon
+                          onClick={copy}
+                          variant="subtle"
+                          size="sm"
+                          style={{
+                            position: "absolute",
+                            top: 8,
+                            right: 8,
+                            color: copied ? "var(--accent-green)" : "var(--text-secondary)",
+                          }}
+                        >
+                          {copied ? (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          ) : (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                            </svg>
+                          )}
+                        </ActionIcon>
+                      </Tooltip>
+                    )}
+                  </CopyButton>
+                  {a.config?.workingDirectory && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)" }}>
+                      <span style={{ fontWeight: 500 }}>Working dir:</span> {a.config.workingDirectory}
+                    </div>
+                  )}
+                </div>
+              </Collapse>
             </div>
 
             {/* Inline message input (slides down) */}
