@@ -6,6 +6,7 @@ import {
   TextInput,
   Textarea,
   Select,
+  MultiSelect,
   Stack,
   Group,
   Text,
@@ -69,7 +70,7 @@ const COLUMNS = ["pending", "in-progress", "review", "done"] as const;
 type ColumnId = (typeof COLUMNS)[number];
 
 const COLUMN_LABELS: Record<string, string> = {
-  pending: "Pending",
+  pending: "Backlog",
   "in-progress": "In Progress",
   review: "Review",
   done: "Done",
@@ -452,6 +453,11 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
   const [newDependencies, setNewDependencies] = useState<string[]>([]);
   const [activeCol, setActiveCol] = useState<ColumnId>("pending");
 
+  // Filters
+  const [filterAgent, setFilterAgent] = useState<string | null>(null);
+  const [filterPriorities, setFilterPriorities] = useState<string[]>([]);
+  const [filterLabels, setFilterLabels] = useState<string[]>([]);
+
   const fetchTasks = useCallback(async () => {
     try {
       const data = await api.getTasks(sessionId);
@@ -589,7 +595,24 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
   const tasksByColumn = (column: string) => {
     const priOrder: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
     return tasks
-      .filter((t) => t.status === column)
+      .filter((t) => {
+        // Column filter
+        if (t.status !== column) return false;
+
+        // Agent filter
+        if (filterAgent && t.assignedTo !== filterAgent) return false;
+
+        // Priority filter
+        if (filterPriorities.length > 0 && !filterPriorities.includes(t.priority)) return false;
+
+        // Label filter (task must have at least one of the selected labels)
+        if (filterLabels.length > 0) {
+          const hasMatchingLabel = t.labels?.some(label => filterLabels.includes(label));
+          if (!hasMatchingLabel) return false;
+        }
+
+        return true;
+      })
       .sort((a, b) => {
         const aPri = priOrder[a.priority] ?? 2;
         const bPri = priOrder[b.priority] ?? 2;
@@ -605,6 +628,11 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
     value: a.id,
     label: a.name,
   }));
+
+  // Extract all unique labels from tasks
+  const allLabels = Array.from(
+    new Set(tasks.flatMap((t) => t.labels || []))
+  ).sort();
 
   const inputStyles = {
     input: {
@@ -705,6 +733,66 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
   /* ---- Board ---- */
   return (
     <div style={{ position: "relative" }}>
+      {/* Filters */}
+      <Group gap="md" mb="md" wrap="wrap">
+        <Select
+          placeholder="All agents"
+          data={[
+            { value: "", label: "All agents" },
+            ...agentSelectData,
+          ]}
+          value={filterAgent || ""}
+          onChange={(v) => setFilterAgent(v || null)}
+          clearable
+          searchable
+          styles={selectDropdownStyles}
+          style={{ minWidth: 180 }}
+        />
+
+        <MultiSelect
+          placeholder="All priorities"
+          data={[
+            { value: "P0", label: "P0 Critical" },
+            { value: "P1", label: "P1 High" },
+            { value: "P2", label: "P2 Medium" },
+            { value: "P3", label: "P3 Low" },
+          ]}
+          value={filterPriorities}
+          onChange={setFilterPriorities}
+          clearable
+          styles={selectDropdownStyles}
+          style={{ minWidth: 180 }}
+        />
+
+        {allLabels.length > 0 && (
+          <MultiSelect
+            placeholder="All labels"
+            data={allLabels}
+            value={filterLabels}
+            onChange={setFilterLabels}
+            clearable
+            searchable
+            styles={selectDropdownStyles}
+            style={{ minWidth: 180 }}
+          />
+        )}
+
+        {(filterAgent || filterPriorities.length > 0 || filterLabels.length > 0) && (
+          <Button
+            variant="subtle"
+            size="xs"
+            color="gray"
+            onClick={() => {
+              setFilterAgent(null);
+              setFilterPriorities([]);
+              setFilterLabels([]);
+            }}
+          >
+            Clear filters
+          </Button>
+        )}
+      </Group>
+
       {/* Mobile: column selector + single column */}
       {isMobile ? (
         <Stack gap="sm">
