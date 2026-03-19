@@ -279,6 +279,51 @@ async function apiCall(method: string, urlPath: string, body?: unknown): Promise
   throw lastError;
 }
 
+/**
+ * Find an agent by name or ID with prioritized matching to avoid ambiguity.
+ *
+ * Priority order:
+ * 1. Exact name match (case-insensitive) - "Backend" matches "Backend", not "Backend2"
+ * 2. Exact ID match (case-insensitive) - "backend-0b927a3d" matches agent by ID
+ * 3. Substring match (fallback) - "Back" matches "Backend" as partial name
+ *
+ * @param agents - Array of agent objects to search
+ * @param search - Name or ID to search for
+ * @returns Matching agent or undefined if not found
+ */
+function findAgentByNameOrId(
+  agents: AgentInfo[],
+  search: string
+): AgentInfo | undefined {
+  // Return undefined for empty search string
+  if (!search || search.trim() === "") {
+    return undefined;
+  }
+
+  const searchLower = search.toLowerCase();
+
+  // Priority 1: Exact name match
+  let target = agents.find(a =>
+    (a.config?.name || "").toLowerCase() === searchLower
+  );
+  if (target) return target;
+
+  // Priority 2: Exact ID match
+  target = agents.find(a =>
+    a.id.toLowerCase() === searchLower
+  );
+  if (target) return target;
+
+  // Priority 3: Substring match (fallback)
+  target = agents.find(a => {
+    const name = (a.config?.name || "").toLowerCase();
+    return name.includes(searchLower) ||
+           a.id.toLowerCase().includes(searchLower);
+  });
+
+  return target;
+}
+
 // ---------------------------------------------------------------------------
 // MCP Protocol — JSON-RPC over stdio
 // ---------------------------------------------------------------------------
@@ -778,15 +823,7 @@ async function handleToolCall(
       }
 
       // Direct routing: find target agent by name or ID
-      const search = (toolArgs.to || "").toLowerCase();
-      const target = (agents.agents || []).find((a) => {
-        const name = (a.config?.name || "").toLowerCase();
-        return (
-          name === search ||
-          name.includes(search) ||
-          a.id.toLowerCase().includes(search)
-        );
-      });
+      const target = findAgentByNameOrId(agents.agents || [], toolArgs.to || "");
 
       if (!target) {
         return { success: false, error: `Agent "${toolArgs.to}" not found` };
@@ -948,11 +985,7 @@ async function handleToolCall(
           "GET",
           `/api/v1/sessions/${SESSION_ID}/agents`,
         )) as AgentsResponse;
-        const search = assignedToArg.toLowerCase();
-        const target = (agents.agents || []).find((a) => {
-          const name = (a.config?.name || "").toLowerCase();
-          return name === search || name.includes(search) || a.id.toLowerCase().includes(search);
-        });
+        const target = findAgentByNameOrId(agents.agents || [], assignedToArg);
         if (target) {
           params.set("assignedTo", target.id);
         } else {
@@ -1125,11 +1158,7 @@ async function handleToolCall(
         `/api/v1/sessions/${SESSION_ID}/agents`,
       )) as AgentsResponse;
 
-      const search = (toolArgs.agentId || "").toLowerCase();
-      const target = (agents.agents || []).find((a) => {
-        const name = (a.config?.name || "").toLowerCase();
-        return name === search || name.includes(search) || a.id.toLowerCase().includes(search);
-      });
+      const target = findAgentByNameOrId(agents.agents || [], toolArgs.agentId || "");
 
       if (!target) {
         return { error: `Agent "${toolArgs.agentId}" not found` };
