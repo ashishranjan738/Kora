@@ -16,6 +16,7 @@ import { GitChanges } from "../components/GitChanges";
 import type { TerminalTab } from "../components/SideTerminalPanel";
 import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
+import { hasTerminal } from "../stores/terminalRegistry";
 import {
   ActionIcon,
   Indicator,
@@ -101,8 +102,27 @@ export function SessionDetail() {
   const [quickMessage, setQuickMessage] = useState("");
   const [editorFullscreen, setEditorFullscreen] = useState(false);
   const [sendingMsg, setSendingMsg] = useState(false);
-  const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([]);
   const [terminalHeight, setTerminalHeight] = useState(300);
+
+  // Use terminal session store for tabs
+  const terminalSessions = useTerminalSessionStore((state) => state.getSessions());
+  const openTabIds = useTerminalSessionStore((state) => state.openTabs);
+  const openTab = useTerminalSessionStore((state) => state.openTab);
+  const closeTab = useTerminalSessionStore((state) => state.closeTab);
+  const addSession = useTerminalSessionStore((state) => state.addSession);
+
+  // Build terminal tabs from open tabs
+  const terminalTabs: TerminalTab[] = openTabIds
+    .map((id) => {
+      const session = terminalSessions.find((s) => s.id === id);
+      if (!session) return null;
+      return {
+        id: session.id,
+        name: session.name,
+        type: session.type === "standalone" ? "terminal" : "agent",
+      } as TerminalTab;
+    })
+    .filter((t): t is TerminalTab => t !== null);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [stoppingSession, setStoppingSession] = useState(false);
   const [stopSuccess, setStopSuccess] = useState(false);
@@ -373,14 +393,19 @@ export function SessionDetail() {
             onClick={async () => {
               try {
                 const result = await api.openTerminal(sessionId!);
-                setTerminalTabs((prev) => [
-                  ...prev,
-                  {
-                    id: result.id,
-                    name: `Terminal ${prev.filter((t) => t.type === "terminal").length + 1}`,
-                    type: "terminal" as const,
-                  },
-                ]);
+                const terminalName = `Terminal ${terminalSessions.filter((t) => t.type === "standalone").length + 1}`;
+
+                // Add to session store
+                addSession({
+                  id: result.id,
+                  tmuxSession: result.tmuxSession,
+                  name: terminalName,
+                  type: "standalone",
+                  createdAt: new Date().toISOString(),
+                });
+
+                // Open tab
+                openTab(result.id);
               } catch (err: any) {
                 alert(`Failed to open terminal: ${err.message}`);
               }
@@ -481,10 +506,19 @@ export function SessionDetail() {
                     if (!agentId) return;
                     const agent = agents.find(a => a.id === agentId);
                     if (agent) {
-                      setTerminalTabs(prev => {
-                        if (prev.some(t => t.id === agentId)) return prev;
-                        return [...prev, { id: agentId, name: agent.config?.name || agentId, type: "agent" as const }];
-                      });
+                      // Add agent session if not already there
+                      if (!terminalSessions.find((s) => s.id === agentId)) {
+                        addSession({
+                          id: agentId,
+                          tmuxSession: agent.config?.tmuxSession || "",
+                          name: agent.config?.name || agentId,
+                          type: "agent",
+                          agentName: agent.config?.name || agentId,
+                          createdAt: agent.startedAt || new Date().toISOString(),
+                        });
+                      }
+                      // Open tab
+                      openTab(agentId);
                     }
                     e.target.value = "";
                   }}
@@ -507,10 +541,19 @@ export function SessionDetail() {
                 onClick={async () => {
                   try {
                     const result = await api.openTerminal(sessionId!);
-                    setTerminalTabs(prev => [
-                      ...prev,
-                      { id: result.id, name: `Terminal ${prev.filter(t => t.type === "terminal").length + 1}`, type: "terminal" as const },
-                    ]);
+                    const terminalName = `Terminal ${terminalSessions.filter((t) => t.type === "standalone").length + 1}`;
+
+                    // Add to session store
+                    addSession({
+                      id: result.id,
+                      tmuxSession: result.tmuxSession,
+                      name: terminalName,
+                      type: "standalone",
+                      createdAt: new Date().toISOString(),
+                    });
+
+                    // Open tab
+                    openTab(result.id);
                   } catch {}
                 }}
                 style={{
@@ -590,17 +633,26 @@ export function SessionDetail() {
           onShowSpawnDialog={() => setShowSpawnDialog(true)}
           onRestartAgent={handleRestartAgent}
           onOpenTerminal={(agentId: string, agentName: string) => {
-            setTerminalTabs((prev) => {
-              if (prev.some((t) => t.id === agentId)) return prev;
-              return [...prev, { id: agentId, name: agentName, type: "agent" as const }];
-            });
+            // Add agent session to store if not already there
+            if (!terminalSessions.find((s) => s.id === agentId)) {
+              addSession({
+                id: agentId,
+                tmuxSession: agents.find((a) => a.id === agentId)?.config?.tmuxSession || "",
+                name: agentName,
+                type: "agent",
+                agentName,
+                createdAt: agents.find((a) => a.id === agentId)?.startedAt || new Date().toISOString(),
+              });
+            }
+
+            // Open tab (will add if not already open)
+            openTab(agentId);
           }}
           getStatusDotClass={getStatusDotClass}
           getRoleBadgeClass={getRoleBadgeClass}
           getRoleCardClass={getRoleCardClass}
           showPlaybookLauncher={showPlaybookLauncher}
           onClosePlaybookLauncher={() => setShowPlaybookLauncher(false)}
-          setTerminalTabs={setTerminalTabs}
         />
       )}
 
@@ -642,27 +694,11 @@ export function SessionDetail() {
       {terminalTabs.length > 0 && sessionId && (
         <SideTerminalPanel
           sessionId={sessionId}
-          tabs={terminalTabs}
           height={terminalHeight}
           onHeightChange={setTerminalHeight}
-          onClose={() => setTerminalTabs([])}
-          onCloseTab={(tabId: string) =>
-            setTerminalTabs((prev) => prev.filter((t) => t.id !== tabId))
-          }
-          onAddTerminal={async () => {
-            try {
-              const result = await api.openTerminal(sessionId!);
-              setTerminalTabs((prev) => [
-                ...prev,
-                {
-                  id: result.id,
-                  name: `Terminal ${prev.filter((t) => t.type === "terminal").length + 1}`,
-                  type: "terminal" as const,
-                },
-              ]);
-            } catch (err: any) {
-              alert(`Failed to open terminal: ${err.message}`);
-            }
+          onClose={() => {
+            // Close all open tabs
+            useTerminalSessionStore.getState().setOpenTabs([]);
           }}
         />
       )}
@@ -749,7 +785,6 @@ interface AgentsTabProps {
   getRoleCardClass: (role: string) => string;
   showPlaybookLauncher?: boolean;
   onClosePlaybookLauncher?: () => void;
-  setTerminalTabs: React.Dispatch<React.SetStateAction<TerminalTab[]>>;
 }
 
 function AgentsTab({
@@ -772,7 +807,6 @@ function AgentsTab({
   getRoleCardClass,
   showPlaybookLauncher,
   onClosePlaybookLauncher,
-  setTerminalTabs,
 }: AgentsTabProps) {
   const api = useApi();
   const [agentActivities, setAgentActivities] = useState<Record<string, AgentActivity>>({});
@@ -1109,6 +1143,8 @@ function AgentsTab({
   const terminalSessions = useTerminalSessionStore((state) => state.getSessions());
   const addSession = useTerminalSessionStore((state) => state.addSession);
   const removeSession = useTerminalSessionStore((state) => state.removeSession);
+  const openTab = useTerminalSessionStore((state) => state.openTab);
+  const closeTab = useTerminalSessionStore((state) => state.closeTab);
 
   // Fetch terminals from server on mount
   useEffect(() => {
@@ -1315,15 +1351,8 @@ function AgentsTab({
                 createdAt: new Date().toISOString(),
               });
 
-              // Add to terminal tabs in the side panel
-              setTerminalTabs((prev) => [
-                ...prev,
-                {
-                  id: result.id,
-                  name: terminalName,
-                  type: "terminal" as const,
-                },
-              ]);
+              // Open tab in side panel
+              openTab(result.id);
             } catch (err: any) {
               alert(`Failed to create terminal: ${err.message}`);
             }
@@ -1354,6 +1383,7 @@ function AgentsTab({
             const isAgent = terminal.type === "agent";
             const createdDate = new Date(terminal.createdAt);
             const relativeTime = formatUptime(terminal.createdAt);
+            const isCached = hasTerminal(sessionId, terminal.id);
 
             return (
               <Paper
@@ -1376,20 +1406,7 @@ function AgentsTab({
                 }}
                 onClick={() => {
                   // Open terminal in side panel
-                  setTerminalTabs((prev) => {
-                    if (prev.some((t) => t.id === terminal.id)) {
-                      // Already open, do nothing or focus it
-                      return prev;
-                    }
-                    return [
-                      ...prev,
-                      {
-                        id: terminal.id,
-                        name: terminal.name,
-                        type: terminal.type === "standalone" ? "terminal" : "agent",
-                      },
-                    ];
-                  });
+                  openTab(terminal.id);
                 }}
               >
                 <Group justify="space-between" align="flex-start">
@@ -1405,6 +1422,13 @@ function AgentsTab({
                       >
                         {terminal.type}
                       </Badge>
+                      {isCached && (
+                        <Tooltip label="Terminal cached (instant open)">
+                          <Badge variant="dot" color="green" size="xs">
+                            Ready
+                          </Badge>
+                        </Tooltip>
+                      )}
                       {isAgent && terminal.agentName && (
                         <Badge variant="outline" color="gray" size="xs">
                           {terminal.agentName}
@@ -1428,17 +1452,7 @@ function AgentsTab({
                       onClick={(e) => {
                         e.stopPropagation();
                         // Open terminal
-                        setTerminalTabs((prev) => {
-                          if (prev.some((t) => t.id === terminal.id)) return prev;
-                          return [
-                            ...prev,
-                            {
-                              id: terminal.id,
-                              name: terminal.name,
-                              type: terminal.type === "standalone" ? "terminal" : "agent",
-                            },
-                          ];
-                        });
+                        openTab(terminal.id);
                       }}
                       style={{ color: "var(--text-secondary)" }}
                     >
@@ -1466,10 +1480,8 @@ function AgentsTab({
                           if (!confirm(`Close terminal "${terminal.name}"?`)) return;
                           try {
                             await api.deleteTerminal(sessionId, terminal.id);
-                            // Remove from store
+                            // Remove from store (this also closes the tab)
                             removeSession(terminal.id);
-                            // Close tab if open
-                            setTerminalTabs((prev) => prev.filter((t) => t.id !== terminal.id));
                           } catch (err: any) {
                             alert(`Failed to close terminal: ${err.message}`);
                           }

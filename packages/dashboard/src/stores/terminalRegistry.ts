@@ -220,6 +220,17 @@ export function destroyTerminal(sessionId: string, agentId: string): void {
   registry.delete(key);
 }
 
+/** Check if a terminal exists in the registry */
+export function hasTerminal(sessionId: string, agentId: string): boolean {
+  const key = `${sessionId}:${agentId}`;
+  return registry.has(key);
+}
+
+/** Get all terminal keys in the registry */
+export function getAllTerminalKeys(): string[] {
+  return Array.from(registry.keys());
+}
+
 /** Destroy all terminals in registry */
 export function destroyAllTerminals(): void {
   for (const [key, entry] of registry) {
