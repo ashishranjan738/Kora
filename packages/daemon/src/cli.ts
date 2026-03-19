@@ -18,6 +18,7 @@ import { HoldptyController } from "./core/holdpty-controller.js";
 import type { IPtyBackend } from "./core/pty-backend.js";
 import { DEFAULT_PORT, APP_VERSION, DEFAULT_PTY_BACKEND, getRuntimeTmuxPrefix, getRuntimeDaemonDir } from "@kora/shared";
 import type { PtyBackendType } from "@kora/shared";
+import { logger } from "./core/logger.js";
 import { ensureBuiltinPlaybooks } from "./core/playbook-loader.js";
 
 const args = process.argv.slice(2);
@@ -44,15 +45,15 @@ async function handleStart(): Promise<void> {
   let ptyBackend: IPtyBackend;
   if (backendFlag === "holdpty") {
     ptyBackend = new HoldptyController();
-    console.log(`  [pty backend] holdpty`);
+    logger.info(`  [pty backend] holdpty`);
   } else {
     ptyBackend = tmuxDefault;
-    console.log(`  [pty backend] tmux`);
+    logger.info(`  [pty backend] tmux`);
   }
 
   if (isDev) {
     process.env.KORA_DEV = "1"; // Ensure getGlobalConfigDir picks it up
-    console.log(`  [dev mode] Config: ~/.kora-dev/ | Port: ${port}`);
+    logger.info(`  [dev mode] Config: ~/.kora-dev/ | Port: ${port}`);
   }
 
   // 1. Start daemon (writes PID/port/token files, checks for existing)
@@ -60,7 +61,7 @@ async function handleStart(): Promise<void> {
 
   // If the daemon PID is not ours, it was already alive
   if (info.pid !== process.pid) {
-    console.log(`Daemon already running on port ${info.port}`);
+    logger.info(`Daemon already running on port ${info.port}`);
     process.exit(0);
   }
 
@@ -93,10 +94,10 @@ async function handleStart(): Promise<void> {
       const result = await orch.restore();
       orchestrators.set(config.id, orch);
       if (result.restored > 0 || result.dead > 0) {
-        console.log(`  Restored session "${config.id}": ${result.restored} agents alive, ${result.dead} dead`);
+        logger.info(`  Restored session "${config.id}": ${result.restored} agents alive, ${result.dead} dead`);
       }
     } catch (err) {
-      console.error(`  Failed to restore session "${config.id}":`, err);
+      logger.error({ err: err }, `  Failed to restore session "${config.id}":`);
     }
   }
 
@@ -116,10 +117,10 @@ async function handleStart(): Promise<void> {
   // 5. Start listening
   server.listen(info.port, () => {
     const configDirName = path.basename(getGlobalConfigDir());
-    console.log(
+    logger.info(
       `Kora daemon running on http://localhost:${info.port}`
     );
-    console.log(
+    logger.info(
       `Auth token: ${info.token.slice(0, 8)}... (saved to ~/${configDirName}/)`
     );
   });
@@ -138,7 +139,7 @@ async function handleStart(): Promise<void> {
         try { await ptyBackend.killSession(s); cleaned++; } catch {}
       }
     }
-    if (cleaned > 0) console.log(`  Cleaned up ${cleaned} orphaned tmux sessions`);
+    if (cleaned > 0) logger.info(`  Cleaned up ${cleaned} orphaned tmux sessions`);
   } catch {}
 
   // 5b. Set up periodic cleanup of orphaned tmux sessions (every 5 minutes)
@@ -147,7 +148,7 @@ async function handleStart(): Promise<void> {
       try {
         await orch.cleanup();
       } catch (err) {
-        console.error(`  Failed to cleanup session "${sid}":`, err);
+        logger.error({ err: err }, `  Failed to cleanup session "${sid}":`);
       }
     }
   }, 5 * 60 * 1000); // 5 minutes
@@ -155,7 +156,7 @@ async function handleStart(): Promise<void> {
   // 6. Graceful shutdown on SIGINT / SIGTERM
   //    Persist state but DON'T kill agents — holdpty --bg sessions persist independently
   const shutdown = async () => {
-    console.log("\nShutting down daemon...");
+    logger.info("\nShutting down daemon...");
 
     // Stop cleanup interval
     clearInterval(cleanupInterval);
@@ -166,9 +167,9 @@ async function handleStart(): Promise<void> {
         await orch.persistState();
         orch.messageBus.stopWatching();
         orch.controlPlane.stopWatching();
-        console.log(`  Saved state for session "${sid}"`);
+        logger.info(`  Saved state for session "${sid}"`);
       } catch (err) {
-        console.error(`  Failed to save state for session "${sid}":`, err);
+        logger.error({ err: err }, `  Failed to save state for session "${sid}":`);
       }
     }
 
@@ -191,7 +192,7 @@ async function handleStart(): Promise<void> {
   // SIGHUP: reload config/dashboard — do NOT exit
   // (Previous incident: kill -HUP killed the daemon, breaking all sessions)
   process.on("SIGHUP", () => {
-    console.log("[daemon] SIGHUP received — reloading (not exiting)");
+    logger.info("[daemon] SIGHUP received — reloading (not exiting)");
     // Future: re-read index.html, reload config files
     // For now, just log and ignore to prevent accidental daemon death
   });
@@ -204,12 +205,12 @@ async function handleStart(): Promise<void> {
         name: path.basename(resolvedPath),
         projectPath: resolvedPath,
       });
-      console.log(
+      logger.info(
         `Auto-created session "${session.name}" for ${resolvedPath}`
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.error(`Failed to auto-create session: ${message}`);
+      logger.error(`Failed to auto-create session: ${message}`);
     }
   }
 }
@@ -217,7 +218,7 @@ async function handleStart(): Promise<void> {
 async function handleStop(): Promise<void> {
   const info = await getDaemonInfo();
   if (!info) {
-    console.log("No daemon running");
+    logger.info("No daemon running");
     return;
   }
 
@@ -231,19 +232,19 @@ async function handleStop(): Promise<void> {
   }
 
   await cleanupDaemonInfo();
-  console.log("Daemon stopped");
+  logger.info("Daemon stopped");
 }
 
 async function handleStatus(): Promise<void> {
   const info = await getDaemonInfo();
   if (!info) {
-    console.log("No daemon running");
+    logger.info("No daemon running");
     return;
   }
 
   const alive = await isDaemonAlive(info.port);
   if (!alive) {
-    console.log("No daemon running (stale PID file found)");
+    logger.info("No daemon running (stale PID file found)");
     return;
   }
 
@@ -267,35 +268,35 @@ async function handleStatus(): Promise<void> {
   });
 
   const status = JSON.parse(statusData);
-  console.log("Daemon is running:");
-  console.log(`  PID:             ${info.pid}`);
-  console.log(`  Port:            ${info.port}`);
-  console.log(`  Version:         ${status.version}`);
-  console.log(`  API version:     ${status.apiVersion}`);
-  console.log(`  Uptime:          ${Math.round(status.uptime / 1000)}s`);
-  console.log(`  Active sessions: ${status.activeSessions}`);
-  console.log(`  Active agents:   ${status.activeAgents}`);
+  logger.info("Daemon is running:");
+  logger.info(`  PID:             ${info.pid}`);
+  logger.info(`  Port:            ${info.port}`);
+  logger.info(`  Version:         ${status.version}`);
+  logger.info(`  API version:     ${status.apiVersion}`);
+  logger.info(`  Uptime:          ${Math.round(status.uptime / 1000)}s`);
+  logger.info(`  Active sessions: ${status.activeSessions}`);
+  logger.info(`  Active agents:   ${status.activeAgents}`);
 }
 
 if (command === "start") {
   handleStart().catch((err) => {
-    console.error("Failed to start daemon:", err);
+    logger.error({ err: err }, "Failed to start daemon:");
     process.exit(1);
   });
 } else if (command === "stop") {
   handleStop().catch((err) => {
-    console.error("Failed to stop daemon:", err);
+    logger.error({ err: err }, "Failed to stop daemon:");
     process.exit(1);
   });
 } else if (command === "status") {
   handleStatus().catch((err) => {
-    console.error("Failed to get status:", err);
+    logger.error({ err: err }, "Failed to get status:");
     process.exit(1);
   });
 } else {
-  console.log(`Kora v${APP_VERSION}\n`);
-  console.log("Usage:");
-  console.log("  kora start [--port PORT] [--project PATH]");
-  console.log("  kora stop");
-  console.log("  kora status");
+  logger.info(`Kora v${APP_VERSION}\n`);
+  logger.info("Usage:");
+  logger.info("  kora start [--port PORT] [--project PATH]");
+  logger.info("  kora stop");
+  logger.info("  kora status");
 }
