@@ -1210,6 +1210,34 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ─── Knowledge Persistence ─────────────────────────────────────────────
+
+  router.post("/sessions/:sid/knowledge", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const { entry, agentName } = req.body as { entry: string; agentName?: string };
+
+      if (!entry || typeof entry !== "string" || !entry.trim()) {
+        res.status(400).json({ error: "entry is required (non-empty string)" });
+        return;
+      }
+
+      const session = sessionManager.getSession(sid);
+      if (!session) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const { appendKnowledgeEntry } = require("../core/context-discovery.js");
+      appendKnowledgeEntry(session.runtimeDir, agentName || "unknown", entry.trim());
+
+      res.status(201).json({ success: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
   // ─── Idle Detection & Task Assignment ──────────────────────────────────
 
   /** Agent reports it is idle and available for work */

@@ -5,7 +5,7 @@
 
 import type { AgentRole, AgentPermissions } from "@kora/shared";
 import { resolveBuiltinPersona, renderPersonaTemplate } from "./builtin-personas.js";
-import { discoverContextFiles } from "./context-discovery.js";
+import { discoverContextFiles, readKnowledgeEntries } from "./context-discovery.js";
 
 export interface PersonaBuildOptions {
   agentId: string;
@@ -57,6 +57,17 @@ export function buildPersona(options: PersonaBuildOptions): string {
   if (contextFiles.length > 0) {
     for (const cf of contextFiles) {
       sections.push(`## Project Context (${cf.name})\n${cf.content}`);
+    }
+  }
+
+  // Persisted knowledge entries (from save_knowledge MCP tool)
+  if (options.projectPath) {
+    const persistedKnowledge = readKnowledgeEntries(options.projectPath);
+    if (persistedKnowledge.length > 0) {
+      sections.push([
+        "## Persisted Knowledge (from previous agents)",
+        ...persistedKnowledge,
+      ].join("\n"));
     }
   }
 
