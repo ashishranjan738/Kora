@@ -6,11 +6,49 @@ import path from "path";
 import crypto from "crypto";
 import { logger } from "./logger.js";
 
+// ─── Priority system ──────────────────────────────────────────
+
+export type MessagePriority = "critical" | "high" | "normal" | "low";
+
+const PRIORITY_ORDER: Record<MessagePriority, number> = {
+  critical: 0, high: 1, normal: 2, low: 3,
+};
+
+/** TTL in milliseconds by priority */
+const PRIORITY_TTL: Record<MessagePriority, number> = {
+  critical: 10 * 60 * 1000,  // 10 min
+  high: 5 * 60 * 1000,       // 5 min
+  normal: 3 * 60 * 1000,     // 3 min
+  low: 1 * 60 * 1000,        // 1 min
+};
+
+/** Rate limits by role (messages per 60s) */
+const ROLE_RATE_LIMITS: Record<string, number> = {
+  master: 25,
+  worker: 10,
+};
+
+const MAX_QUEUE_SIZE = 50;
+
 interface QueuedMessage {
   agentId: string;
   tmuxSession: string;
   message: string;
   timestamp: number;
+  priority: MessagePriority;
+  ttl: number;  // absolute expiry timestamp (ms)
+  fromAgentId?: string;
+}
+
+/** Auto-classify message priority based on content patterns */
+export function classifyPriority(message: string): MessagePriority {
+  if (message.includes("[Task assigned]") || message.includes("[Task from"))
+    return "critical";
+  if (message.includes("[Question from") || message.includes("?"))
+    return "high";
+  if (message.includes("[Broadcast]") || message.includes("[System"))
+    return "low";
+  return "normal";
 }
 
 export class MessageQueue {
@@ -24,6 +62,10 @@ export class MessageQueue {
   private readonly READINESS_CACHE_TTL = 400; // ms
   /** Agent IDs that support MCP — get mcp-pending delivery */
   private mcpAgents = new Set<string>();
+  /** Agent roles for role-based rate limits */
+  private agentRoles = new Map<string, string>();
+  /** Callback for TTL expiry events */
+  private onExpiry: ((agentId: string, message: string, priority: MessagePriority) => void) | null = null;
 
   // ─── Re-notification state ──────────────────────────────
   /** Notification attempt counters per agent (reset when agent reads messages) */
@@ -42,7 +84,13 @@ export class MessageQueue {
     private messagingMode: MessagingMode = "mcp",
   ) {}
 
-  /** Check if an agent has exceeded the rate limit (3 messages per 60s) */
+  /** Get the rate limit for an agent based on their role */
+  private getRateLimit(agentId: string): number {
+    const role = this.agentRoles.get(agentId) || "worker";
+    return ROLE_RATE_LIMITS[role] || 10;
+  }
+
+  /** Check if an agent has exceeded the rate limit */
   private isRateLimited(agentId: string): boolean {
     const now = Date.now();
     const window = this.messageCountWindow.get(agentId);
@@ -53,8 +101,7 @@ export class MessageQueue {
       return false;
     }
 
-    // Max 10 incoming relay messages per minute per agent
-    return window.count >= 10;
+    return window.count >= this.getRateLimit(agentId);
   }
 
   /** Increment the message count for an agent */
@@ -68,9 +115,19 @@ export class MessageQueue {
     }
   }
 
-  /** Queue a message for delivery to an agent. Returns false if dropped. */
+  /** Register an agent's role for role-based rate limits */
+  registerAgentRole(agentId: string, role: string): void {
+    this.agentRoles.set(agentId, role);
+  }
+
+  /** Set callback for message TTL expiry events */
+  setExpiryCallback(cb: (agentId: string, message: string, priority: MessagePriority) => void): void {
+    this.onExpiry = cb;
+  }
+
+  /** Queue a message for delivery to an agent. Returns false if dropped (loop). */
   enqueue(agentId: string, tmuxSession: string, message: string, fromAgentId?: string): boolean {
-    // Conversation loop detection — max 3 messages between same pair in 2 minutes
+    // Conversation loop detection — max 8 messages between same pair in 2 minutes
     if (fromAgentId) {
       const pairKey = [fromAgentId, agentId].sort().join(":");
       const now = Date.now();
@@ -80,22 +137,53 @@ export class MessageQueue {
       } else {
         conv.count++;
         if (conv.count > 8) {
-          logger.warn(`[MessageQueue] Loop detected: ${pairKey} exchanged ${conv.count} messages in 2min — dropping`);
+          logger.warn({ conversationKey: pairKey, count: conv.count }, "[MessageQueue] Loop detected — dropping");
           return false;
         }
       }
     }
 
+    const priority = classifyPriority(message);
+    const now = Date.now();
+
     if (!this.queues.has(agentId)) this.queues.set(agentId, []);
-    this.queues.get(agentId)!.push({
+    const queue = this.queues.get(agentId)!;
+
+    // Buffer size cap — evict lowest-priority oldest when full
+    if (queue.length >= MAX_QUEUE_SIZE) {
+      // Sort by priority (worst first), then oldest first
+      queue.sort((a, b) => {
+        const pDiff = PRIORITY_ORDER[b.priority] - PRIORITY_ORDER[a.priority];
+        if (pDiff !== 0) return pDiff;
+        return a.timestamp - b.timestamp;
+      });
+      const evicted = queue.pop()!;
+      logger.warn({ agentId, evictedPriority: evicted.priority }, "[MessageQueue] Queue full, evicted lowest-priority message");
+      if (this.onExpiry) {
+        this.onExpiry(agentId, evicted.message, evicted.priority);
+      }
+    }
+
+    queue.push({
       agentId,
       tmuxSession,
       message,
-      timestamp: Date.now(),
+      timestamp: now,
+      priority,
+      ttl: now + PRIORITY_TTL[priority],
+      fromAgentId,
     });
+
+    // Sort queue by priority (highest first), then by timestamp (oldest first)
+    queue.sort((a, b) => {
+      const pDiff = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+      if (pDiff !== 0) return pDiff;
+      return a.timestamp - b.timestamp;
+    });
+
     // Try to deliver immediately instead of waiting for next poll cycle
     this.processQueues().catch((err) => {
-      console.error(`[MessageQueue] processQueues error:`, err);
+      logger.debug({ err }, "[MessageQueue] processQueues error");
     });
     return true;
   }
@@ -139,7 +227,35 @@ export class MessageQueue {
 
   /** Process a single agent's queue */
   private async processOneQueue(queue: QueuedMessage[]): Promise<void> {
-    const msg = queue[0];
+    // First, expire any TTL'd messages
+    const now = Date.now();
+    while (queue.length > 0 && queue[0].ttl < now) {
+      // Check if oldest high-priority message expired (shouldn't happen often)
+      // Actually scan for expired messages at any position
+      break; // We'll handle TTL below
+    }
+
+    // Remove expired messages
+    for (let i = queue.length - 1; i >= 0; i--) {
+      if (queue[i].ttl < now) {
+        const expired = queue.splice(i, 1)[0];
+        logger.warn({ agentId: expired.agentId, priority: expired.priority }, "[MessageQueue] Message expired (TTL)");
+        if (this.onExpiry) {
+          this.onExpiry(expired.agentId, expired.message, expired.priority);
+        }
+      }
+    }
+
+    if (queue.length === 0) return;
+
+    const msg = queue[0]; // Highest priority, oldest
+
+    // ─── THE CRITICAL FIX ───
+    // Check rate limit BEFORE dequeuing. If over limit, KEEP in queue for next cycle.
+    if (this.isRateLimited(msg.agentId)) {
+      logger.debug({ agentId: msg.agentId }, "[MessageQueue] Rate limited — keeping in queue for next cycle");
+      return; // Don't dequeue, don't drop. Will retry on next poll.
+    }
 
     // Notifications (MCP inbox/pending alerts) are small non-disruptive text — deliver immediately
     const isNotification = msg.message.includes("[New message from") || msg.message.includes("[Message from")
@@ -148,7 +264,6 @@ export class MessageQueue {
 
     if (isNotification) {
       queue.shift();
-      console.log(`[MessageQueue] INSTANT delivery: notification to ${msg.agentId} (${msg.tmuxSession})`);
       await this.deliver(msg);
       return;
     }
@@ -208,14 +323,8 @@ export class MessageQueue {
     }
   }
 
-  /** Actually deliver the message to tmux */
+  /** Actually deliver the message (rate limit already checked in processOneQueue) */
   private async deliver(msg: QueuedMessage): Promise<void> {
-    // Rate limit check — drop message if agent is receiving too many
-    if (this.isRateLimited(msg.agentId)) {
-      logger.warn(`[MessageQueue] Rate limited: dropping message for agent ${msg.agentId} — too many messages in 60s`);
-      return;
-    }
-
     try {
       if (this.mcpAgents.has(msg.agentId)) {
         // MCP agent: write to pending store + send tmux notification as fallback
@@ -329,8 +438,14 @@ export class MessageQueue {
   removeAgent(agentId: string): void {
     this.queues.delete(agentId);
     this.mcpAgents.delete(agentId);
+    this.agentRoles.delete(agentId);
     this.notificationAttempts.delete(agentId);
     this.lastNotificationTime.delete(agentId);
+  }
+
+  /** Get queue depth for an agent (for monitoring) */
+  getQueueDepth(agentId: string): number {
+    return this.queues.get(agentId)?.length || 0;
   }
 
   // ─── Re-notification system ──────────────────────────────
@@ -406,7 +521,6 @@ export class MessageQueue {
         if (!tmuxSession) continue;
 
         // Deliver re-notifications immediately — they are small non-disruptive text.
-        // The readiness check via capturePane is unreliable under holdpty (may return empty).
         const attempts = this.notificationAttempts.get(agentId) || 0;
         let notification: string;
 
