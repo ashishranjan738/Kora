@@ -17,6 +17,7 @@ import { GitChanges } from "../components/GitChanges";
 import type { TerminalTab } from "../components/SideTerminalPanel";
 import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
 import { useMessageBufferEvents, MessageBufferBadge } from "../components/MessageBufferIndicator";
+import { SessionCostSummary, extractCostData, formatCostSmart, hasCostData } from "../components/CostSummary";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
 import { hasTerminal } from "../stores/terminalRegistry";
 import { formatCost, formatTokens, formatUptime } from "../utils/formatters";
@@ -331,9 +332,10 @@ export function SessionDetail() {
 
   // Computed stats
   const totalCost = agents.reduce(
-    (sum, a) => sum + (typeof a.cost === "number" ? a.cost : 0),
+    (sum, a) => sum + extractCostData(a).costUsd,
     0
   );
+  const _hasCostData = hasCostData(agents);
 
   if (loading) {
     return (
@@ -371,7 +373,7 @@ export function SessionDetail() {
               {agents.length} agent{agents.length !== 1 ? "s" : ""}
             </span>
             <span className="stat-divider" />
-            <span className="stat-item">${totalCost.toFixed(4)} cost</span>
+            <span className="stat-item">{_hasCostData ? `$${totalCost.toFixed(2)} cost` : "No cost data"}</span>
             <span className="stat-divider" />
             <span className="stat-item">
               {events.length} event{events.length !== 1 ? "s" : ""}
@@ -1235,12 +1237,14 @@ function AgentsTab({
       </div>
     )}
 
+    {/* Session Cost Summary */}
+    <SessionCostSummary agents={agents} />
+
     <div className="agent-grid">
       {agents.map((a) => {
         const activity = agentActivities[a.id] || "working";
-        const tokensIn = a.cost?.totalTokensIn ?? a.tokensIn;
-        const tokensOut = a.cost?.totalTokensOut ?? a.tokensOut;
-        const costUsd = a.cost?.totalCostUsd ?? a.cost;
+        const { tokensIn, tokensOut, costUsd } = extractCostData(a);
+        const agentHasCost = costUsd > 0 || tokensIn > 0 || tokensOut > 0;
         const isCrashed = a.status === "crashed" || a.status === "error";
         const isStopped = a.status === "stopped";
         const stateClass = isCrashed ? "state-crashed" : isStopped ? "state-stopped" : activity === "idle" ? "state-idle" : "state-working";
@@ -1292,12 +1296,12 @@ function AgentsTab({
             {/* Stats — single inline row with dot separators + utilization */}
             <div className="ac2-stats-row">
               <span className="ac2-stat">
-                <span className="ac2-stat-dim">{"\u2193"}</span>{typeof tokensIn === "number" ? formatTokens(tokensIn) : "--"}
+                <span className="ac2-stat-dim">{"\u2193"}</span>{tokensIn > 0 ? formatTokens(tokensIn) : "--"}
                 {" "}
-                <span className="ac2-stat-dim">{"\u2191"}</span>{typeof tokensOut === "number" ? formatTokens(tokensOut) : "--"}
+                <span className="ac2-stat-dim">{"\u2191"}</span>{tokensOut > 0 ? formatTokens(tokensOut) : "--"}
               </span>
               <span className="ac2-stat-sep">{"\u00B7"}</span>
-              <span className="ac2-stat">${formatCost(costUsd)}</span>
+              <span className="ac2-stat">{formatCostSmart(costUsd, agentHasCost)}</span>
               <span className="ac2-stat-sep">{"\u00B7"}</span>
               <span className="ac2-stat">{formatUptime(a.startedAt)}</span>
               <span className="ac2-stat-sep">{"\u00B7"}</span>
