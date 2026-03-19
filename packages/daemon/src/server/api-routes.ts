@@ -7,6 +7,7 @@ import {
   APP_VERSION,
   API_VERSION,
   getRuntimeTmuxPrefix,
+  getRuntimeDaemonDir,
 } from "@kora/shared";
 import type {
   DaemonStatusResponse,
@@ -32,6 +33,8 @@ import { buildPersona } from "../core/persona-builder.js";
 import { discoverModels } from "../core/model-discovery.js";
 import { DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS } from "@kora/shared";
 import { logger } from "../core/logger.js";
+import { saveTerminalStates, loadTerminalStates } from "../core/terminal-persistence.js";
+import type { StandaloneTerminal } from "../core/terminal-persistence.js";
 
 export function createApiRouter(deps: {
   sessionManager: SessionManager;
@@ -45,13 +48,64 @@ export function createApiRouter(deps: {
   const router = Router();
 
   // Track standalone terminal sessions per session (id → terminal info)
-  const standaloneTerminals = new Map<string, Map<string, {
-    id: string;
-    tmuxSession: string;
-    name: string;
-    createdAt: string;
-    projectPath: string;
-  }>>();
+  const standaloneTerminals = new Map<string, Map<string, StandaloneTerminal>>();
+
+  // Restore standalone terminals from disk on daemon startup
+  (async () => {
+    const sessions = sessionManager.listSessions();
+    for (const sessionConfig of sessions) {
+      if (sessionConfig.status === "stopped") continue;
+
+      try {
+        const runtimeDir = path.join(sessionConfig.projectPath, getRuntimeDaemonDir(process.env.KORA_DEV === "1"));
+        const persisted = await loadTerminalStates(runtimeDir);
+        if (persisted.length === 0) continue;
+
+        // Verify each terminal's holdpty session still exists
+        const alive: StandaloneTerminal[] = [];
+        for (const term of persisted) {
+          const exists = await tmux.hasSession(term.tmuxSession);
+          if (exists) {
+            alive.push(term);
+          } else {
+            logger.debug({ sessionId: sessionConfig.id, terminalId: term.id }, "Standalone terminal died during daemon downtime");
+          }
+        }
+
+        // Populate in-memory Map with alive terminals
+        if (alive.length > 0) {
+          const termMap = new Map<string, StandaloneTerminal>();
+          alive.forEach(t => termMap.set(t.id, t));
+          standaloneTerminals.set(sessionConfig.id, termMap);
+
+          logger.info({ sessionId: sessionConfig.id, restored: alive.length, dead: persisted.length - alive.length }, "Restored standalone terminals");
+        }
+
+        // Re-persist if any terminals died
+        if (alive.length !== persisted.length) {
+          await saveTerminalStates(runtimeDir, alive);
+        }
+      } catch (err) {
+        logger.error({ err: err, sessionId: sessionConfig.id }, "Failed to restore standalone terminals");
+      }
+    }
+  })();
+
+  // Helper function to persist standalone terminals for a session to disk
+  const persistTerminalsForSession = async (sessionId: string): Promise<void> => {
+    const session = sessionManager.getSession(sessionId);
+    if (!session) return;
+
+    const terminals = standaloneTerminals.get(sessionId);
+    const terminalArray = terminals ? Array.from(terminals.values()) : [];
+
+    try {
+      const runtimeDir = session.runtimeDir;
+      await saveTerminalStates(runtimeDir, terminalArray);
+    } catch (err) {
+      logger.error({ err: err, sessionId }, "Failed to persist terminal states");
+    }
+  };
 
   // Helper function to broadcast events to dashboard WebSocket clients only.
   // Terminal connections (wsType === 'terminal') are excluded to prevent
@@ -301,6 +355,16 @@ export function createApiRouter(deps: {
 
       // Clean up standalone terminal tracking
       standaloneTerminals.delete(sid);
+
+      // Clean up persisted terminal state
+      const session = sessionManager.getSession(sid);
+      if (session) {
+        try {
+          await saveTerminalStates(session.runtimeDir, []); // Empty array clears the state
+        } catch (err) {
+          logger.debug({ err: err, sessionId: sid }, "Failed to clear terminal persistence file");
+        }
+      }
 
       // Broadcast session-stopped event
       broadcastEvent({ event: "session-stopped", sessionId: sid });
@@ -1659,6 +1723,9 @@ export function createApiRouter(deps: {
         projectPath: session.config.projectPath,
       });
 
+      // Persist terminal state to disk (survives daemon restart)
+      await persistTerminalsForSession(sid);
+
       res.status(201).json({ id: termId, tmuxSession: tmuxSessionName, projectPath: session.config.projectPath });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1733,6 +1800,9 @@ export function createApiRouter(deps: {
 
       // Remove from tracking
       terminals!.delete(tid);
+
+      // Persist updated state
+      await persistTerminalsForSession(sid);
 
       res.json({ deleted: true, id: tid });
     } catch (err) {
