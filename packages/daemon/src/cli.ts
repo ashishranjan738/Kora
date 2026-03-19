@@ -338,6 +338,12 @@ async function handleRun(): Promise<void> {
     process.exit(1);
   }
 
+  // Validate playbook
+  if (!playbook.agents || playbook.agents.length === 0) {
+    logger.error(`Error: playbook "${playbookName}" has no agents defined`);
+    process.exit(1);
+  }
+
   logger.info(`Running playbook: ${playbook.name}`);
   if (task) {
     logger.info(`Task: ${task}`);
@@ -433,7 +439,13 @@ async function handleRun(): Promise<void> {
 
   if (spawnedAgents.length === 0) {
     logger.error("Error: no agents spawned");
-    await orch.cleanup();
+    try {
+      await orch.cleanup();
+      await sessionManager.stopSession(session.id);
+      await sessionManager.save();
+    } catch (err) {
+      logger.error({ err }, "Error during cleanup:");
+    }
     process.exit(1);
   }
 
@@ -441,31 +453,39 @@ async function handleRun(): Promise<void> {
   let exitCode = 0;
   const startTime = Date.now();
   let outputInterval: NodeJS.Timeout | null = null;
-  let lastOutputLines = 0;
+  const seenLines = new Set<string>();
 
-  // Stream output from master agent to stdout (incremental)
+  // Stream output from master agent to stdout (incremental, de-duplicated)
   const masterAgent = orch.agentManager.listAgents().find(a => a.config.role === "master");
-  if (masterAgent) {
+  if (!masterAgent) {
+    logger.warn("Warning: No master agent found, output streaming disabled");
+  } else {
     outputInterval = setInterval(async () => {
       try {
-        // Capture more lines to detect new content
-        const output = await ptyBackend.capturePane(masterAgent.config.tmuxSession, 50, false);
+        // Capture recent lines
+        const output = await ptyBackend.capturePane(masterAgent.config.tmuxSession, 20, false);
         const lines = output.split('\n');
 
-        // Only print lines we haven't seen yet
-        if (lines.length > lastOutputLines) {
-          const newLines = lines.slice(lastOutputLines);
-          for (const line of newLines) {
-            if (line.trim()) {
-              process.stdout.write(line + '\n');
+        // Print only lines we haven't seen before
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed && !seenLines.has(line)) {
+            process.stdout.write(line + '\n');
+            seenLines.add(line);
+
+            // Prevent memory leak: limit seen lines to last 1000
+            if (seenLines.size > 1000) {
+              const firstKey = Array.from(seenLines)[0];
+              if (firstKey) seenLines.delete(firstKey);
             }
           }
-          lastOutputLines = lines.length;
         }
       } catch {
         // Agent may have exited, stop streaming
-        if (outputInterval) clearInterval(outputInterval);
-        outputInterval = null;
+        if (outputInterval) {
+          clearInterval(outputInterval);
+          outputInterval = null;
+        }
       }
     }, 1000);
   }
@@ -473,7 +493,7 @@ async function handleRun(): Promise<void> {
   // Graceful shutdown handler for Ctrl+C
   let checkInterval: NodeJS.Timeout | null = null;
 
-  const cleanup = async (signal: string) => {
+  const cleanup = async (signal: string, code: number = 130) => {
     logger.info(`\n${signal} received, cleaning up...`);
     if (outputInterval) {
       clearInterval(outputInterval);
@@ -485,11 +505,15 @@ async function handleRun(): Promise<void> {
     }
 
     // Cleanup orchestrator and session
-    await orch.cleanup();
-    await sessionManager.stopSession(session.id);
-    await sessionManager.save();
+    try {
+      await orch.cleanup();
+      await sessionManager.stopSession(session.id);
+      await sessionManager.save();
+    } catch (err) {
+      logger.error({ err }, "Error during cleanup:");
+    }
 
-    process.exit(130); // Standard exit code for Ctrl+C
+    process.exit(code);
   };
 
   process.on('SIGINT', () => cleanup('SIGINT'));
@@ -497,23 +521,9 @@ async function handleRun(): Promise<void> {
 
   checkInterval = setInterval(async () => {
     const elapsed = Date.now() - startTime;
-    if (elapsed > timeoutMs) {
+    if (elapsed >= timeoutMs) {
       logger.error(`\nTimeout reached (${timeoutMs}ms)`);
-      if (outputInterval) {
-        clearInterval(outputInterval);
-        outputInterval = null;
-      }
-      if (checkInterval) {
-        clearInterval(checkInterval);
-        checkInterval = null;
-      }
-
-      // Cleanup: stop orchestrator, remove session, save state
-      await orch.cleanup();
-      await sessionManager.stopSession(session.id);
-      await sessionManager.save();
-
-      process.exit(2);
+      await cleanup('TIMEOUT', 2);
     }
 
     // Check if all agents are done by verifying their tmux sessions still exist
@@ -534,29 +544,14 @@ async function handleRun(): Promise<void> {
     }
 
     if (allDone) {
-      if (outputInterval) {
-        clearInterval(outputInterval);
-        outputInterval = null;
-      }
-      if (checkInterval) {
-        clearInterval(checkInterval);
-        checkInterval = null;
-      }
-
       // Check for failures
       if (failedAgents.length > 0) {
         logger.error(`\nAgents failed: ${failedAgents.map(a => a.config.name).join(", ")}`);
-        exitCode = 1;
+        await cleanup('COMPLETION', 1);
       } else {
         logger.info("\nAll agents completed successfully");
+        await cleanup('COMPLETION', 0);
       }
-
-      // Cleanup: stop orchestrator, remove session, save state
-      await orch.cleanup();
-      await sessionManager.stopSession(session.id);
-      await sessionManager.save();
-
-      process.exit(exitCode);
     }
   }, 2000);
 }
