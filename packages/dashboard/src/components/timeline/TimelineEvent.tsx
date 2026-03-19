@@ -14,7 +14,7 @@ interface TimelineEventProps {
   event: TimelineEventData;
   density: DensityMode;
   onJumpToTerminal?: (agentId: string) => void;
-  onJumpToTaskBoard?: () => void;
+  onJumpToTaskBoard?: (taskId?: string) => void;
   onRestart?: (agentId: string) => void;
 }
 
@@ -210,7 +210,14 @@ export function TimelineEvent({
           )}
           {event.type.startsWith("task-") && onJumpToTaskBoard && (
             <Tooltip label="Go to task board">
-              <ActionIcon variant="subtle" size="xs" onClick={onJumpToTaskBoard}>
+              <ActionIcon
+                variant="subtle"
+                size="xs"
+                onClick={() => {
+                  const taskId = data.taskId || data.id;
+                  onJumpToTaskBoard(taskId);
+                }}
+              >
                 <span style={{ fontSize: 11 }}>{"\u2192"} Task Board</span>
               </ActionIcon>
             </Tooltip>

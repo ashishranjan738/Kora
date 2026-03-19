@@ -102,6 +102,7 @@ export function SessionDetail() {
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
   const [broadcastMessage, setBroadcastMessage] = useState("");
   const [sendingBroadcast, setSendingBroadcast] = useState(false);
+  const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
 
   // Use terminal session store for tabs
   const terminalSessionsMap = useTerminalSessionStore((state) => state.sessions);
@@ -175,6 +176,15 @@ export function SessionDetail() {
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [editorFullscreen]);
+
+  // Clear pendingTaskId after switching to tasks tab
+  useEffect(() => {
+    if (activeTab === "tasks" && pendingTaskId) {
+      // Clear after a short delay to ensure TaskBoard has mounted
+      const timer = setTimeout(() => setPendingTaskId(null), 100);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab, pendingTaskId]);
 
   const loadData = useCallback(async () => {
     if (!sessionId) return;
@@ -695,7 +705,10 @@ export function SessionDetail() {
       )}
 
       {activeTab === "tasks" && sessionId && (
-        <TaskBoard sessionId={sessionId} />
+        <TaskBoard
+          sessionId={sessionId}
+          initialTaskId={pendingTaskId || undefined}
+        />
       )}
 
       {activeTab === "execution" && sessionId && (
@@ -729,7 +742,10 @@ export function SessionDetail() {
               openTab(agentId);
             }
           }}
-          onJumpToTaskBoard={() => setActiveTab("tasks")}
+          onJumpToTaskBoard={(taskId) => {
+            if (taskId) setPendingTaskId(taskId);
+            setActiveTab("tasks");
+          }}
           onRestartAgent={handleRestartAgent}
         />
       )}
