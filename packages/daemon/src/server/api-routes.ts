@@ -1411,27 +1411,14 @@ export function createApiRouter(deps: {
       // Handle multiple status values (e.g. ?status=pending&status=delivered)
       const statusValues = Array.isArray(status) ? status : status ? [status] : undefined;
 
-      // Query messages for each status and combine
-      let allMessages: any[] = [];
-      if (statusValues) {
-        for (const s of statusValues) {
-          const messages = orch.database.getMessages({
-            toAgentId: String(aid),
-            sessionId: String(sid),
-            status: s as any,
-            since,
-            limit,
-          });
-          allMessages.push(...messages);
-        }
-      } else {
-        allMessages = orch.database.getMessages({
-          toAgentId: String(aid),
-          sessionId: String(sid),
-          since,
-          limit,
-        });
-      }
+      // Query messages with single database call (handles array via IN clause)
+      const allMessages = orch.database.getMessages({
+        toAgentId: String(aid),
+        sessionId: String(sid),
+        status: statusValues as any,
+        since,
+        limit,
+      });
 
       res.json({ messages: allMessages, count: allMessages.length });
     } catch (err) {

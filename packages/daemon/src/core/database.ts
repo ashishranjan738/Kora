@@ -672,7 +672,7 @@ export class AppDatabase extends EventEmitter {
     toAgentId?: string;
     fromAgentId?: string;
     sessionId?: string;
-    status?: 'pending' | 'delivered' | 'read' | 'expired';
+    status?: 'pending' | 'delivered' | 'read' | 'expired' | Array<'pending' | 'delivered' | 'read' | 'expired'>;
     channel?: string;
     since?: number;
     limit?: number;
@@ -711,8 +711,14 @@ export class AppDatabase extends EventEmitter {
       values.push(params.sessionId);
     }
     if (params.status) {
-      conditions.push("status = ?");
-      values.push(params.status);
+      if (Array.isArray(params.status)) {
+        const placeholders = params.status.map(() => '?').join(',');
+        conditions.push(`status IN (${placeholders})`);
+        values.push(...params.status);
+      } else {
+        conditions.push("status = ?");
+        values.push(params.status);
+      }
     }
     if (params.channel) {
       conditions.push("channel = ?");
@@ -724,16 +730,23 @@ export class AppDatabase extends EventEmitter {
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-    // SQLite requires LIMIT when using OFFSET
-    const limit = params.limit || (params.offset ? 999999 : undefined);
-    const limitClause = limit ? `LIMIT ${limit}` : "";
-    const offsetClause = params.offset ? `OFFSET ${params.offset}` : "";
 
-    const rows = this.db.prepare(`
-      SELECT * FROM messages ${where}
-      ORDER BY created_at DESC
-      ${limitClause} ${offsetClause}
-    `).all(...values) as any[];
+    // Build LIMIT and OFFSET clauses with parameterized queries to prevent SQL injection
+    let query = `SELECT * FROM messages ${where} ORDER BY created_at DESC`;
+    if (params.limit !== undefined) {
+      query += ` LIMIT ?`;
+      values.push(params.limit);
+    } else if (params.offset !== undefined) {
+      // SQLite requires LIMIT when using OFFSET
+      query += ` LIMIT ?`;
+      values.push(999999);
+    }
+    if (params.offset !== undefined) {
+      query += ` OFFSET ?`;
+      values.push(params.offset);
+    }
+
+    const rows = this.db.prepare(query).all(...values) as any[];
 
     return rows.map(r => ({
       id: r.id,
@@ -778,6 +791,17 @@ export class AppDatabase extends EventEmitter {
   /** Mark multiple messages as read */
   markMessagesRead(messageIds: string[]): void {
     if (messageIds.length === 0) return;
+
+    // Validate input to prevent SQL injection
+    if (!Array.isArray(messageIds)) {
+      throw new TypeError('messageIds must be an array');
+    }
+    for (const id of messageIds) {
+      if (typeof id !== 'string' || id.length === 0) {
+        throw new TypeError('All messageIds must be non-empty strings');
+      }
+    }
+
     const now = Date.now();
     const placeholders = messageIds.map(() => '?').join(',');
     this.db.prepare(`
@@ -796,18 +820,31 @@ export class AppDatabase extends EventEmitter {
     return row.count;
   }
 
-  /** Clean up expired messages and return count of deleted messages */
+  /**
+   * Clean up expired messages and return count of deleted messages.
+   *
+   * Two-phase cleanup process:
+   * 1. Mark messages as expired if they have passed their expires_at timestamp
+   * 2. Delete old messages based on two-tier retention policy:
+   *    - read/expired messages: 30 days (long retention for audit trail)
+   *    - pending/delivered messages: 7 days (shorter retention to flag delivery issues)
+   *
+   * Rationale: Undelivered messages older than 7 days likely indicate a problem
+   * (agent crashed, inbox corruption, etc.) and should be investigated. Read messages
+   * can be kept longer for debugging and analysis.
+   */
   cleanupExpiredMessages(): number {
     const now = Date.now();
-    // Mark expired messages as expired (where expires_at is set and past)
+
+    // Phase 1: Mark messages as expired based on their expires_at timestamp
     this.db.prepare(`
       UPDATE messages SET status = 'expired'
       WHERE expires_at IS NOT NULL AND expires_at < ? AND status != 'expired'
     `).run(now);
 
-    // Delete old messages (30 days retention for read/expired, 7 days for pending/delivered)
-    const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
-    const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
+    // Phase 2: Delete old messages using two-tier retention policy
+    const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);  // 30 days in milliseconds
+    const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);    // 7 days in milliseconds
 
     const result1 = this.db.prepare(`
       DELETE FROM messages
