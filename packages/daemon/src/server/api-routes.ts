@@ -2899,7 +2899,7 @@ export function createApiRouter(deps: {
       const fs = await import("fs/promises");
       const entries = await fs.readdir(resolved, { withFileTypes: true });
       const items = entries
-        .filter(e => !e.name.startsWith('.') && e.name !== 'node_modules') // hide dotfiles and node_modules
+        .filter(e => e.name !== 'node_modules' && e.name !== '.git') // hide node_modules and .git
         .map(e => ({
           name: e.name,
           type: e.isDirectory() ? "directory" : "file",
