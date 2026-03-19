@@ -43,6 +43,15 @@ export function createApiRouter(deps: {
   const { sessionManager, orchestrators, providerRegistry, tmux, startTime, globalConfigDir } = deps;
   const router = Router();
 
+  // Track standalone terminal sessions per session (id → terminal info)
+  const standaloneTerminals = new Map<string, Map<string, {
+    id: string;
+    tmuxSession: string;
+    name: string;
+    createdAt: string;
+    projectPath: string;
+  }>>();
+
   // Helper function to broadcast events to dashboard WebSocket clients only.
   // Terminal connections (wsType === 'terminal') are excluded to prevent
   // raw JSON from appearing in agent terminal output.
@@ -288,6 +297,9 @@ export function createApiRouter(deps: {
           }
         }
       } catch {}
+
+      // Clean up standalone terminal tracking
+      standaloneTerminals.delete(sid);
 
       // Broadcast session-stopped event
       broadcastEvent({ event: "session-stopped", sessionId: sid });
@@ -1548,7 +1560,94 @@ export function createApiRouter(deps: {
       // cd to the project directory
       await tmux.sendKeys(tmuxSessionName, `cd ${session.config.projectPath}`, { literal: false });
 
+      // Track this standalone terminal
+      if (!standaloneTerminals.has(sid)) {
+        standaloneTerminals.set(sid, new Map());
+      }
+      standaloneTerminals.get(sid)!.set(termId, {
+        id: termId,
+        tmuxSession: tmuxSessionName,
+        name: `Terminal ${(standaloneTerminals.get(sid)?.size || 0) + 1}`,
+        createdAt: new Date().toISOString(),
+        projectPath: session.config.projectPath,
+      });
+
       res.status(201).json({ id: termId, tmuxSession: tmuxSessionName, projectPath: session.config.projectPath });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // List all terminals (agent + standalone) for a session
+  router.get("/sessions/:sid/terminals", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const session = sessionManager.getSession(sid);
+      if (!session) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const terminals: any[] = [];
+
+      // Add standalone terminals
+      const sessionTerminals = standaloneTerminals.get(sid);
+      if (sessionTerminals) {
+        sessionTerminals.forEach((term) => {
+          terminals.push({
+            id: term.id,
+            tmuxSession: term.tmuxSession,
+            name: term.name,
+            type: "standalone",
+            createdAt: term.createdAt,
+          });
+        });
+      }
+
+      // Add agent terminals
+      const am = orchestrators.get(sid)?.agentManager;
+      if (am) {
+        const agents = am.listAgents();
+        agents.forEach((agent: any) => {
+          terminals.push({
+            id: agent.id,
+            tmuxSession: agent.config.tmuxSession,
+            name: agent.config.name,
+            type: "agent",
+            agentName: agent.config.name,
+            createdAt: agent.startedAt || new Date().toISOString(),
+          });
+        });
+      }
+
+      res.status(200).json({ terminals });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // DELETE /sessions/:sid/terminals/:tid — close a standalone terminal
+  router.delete("/sessions/:sid/terminals/:tid", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const tid = String(req.params.tid);
+
+      const terminals = standaloneTerminals.get(sid);
+      const termInfo = terminals?.get(tid);
+      if (!termInfo) {
+        res.status(404).json({ error: `Terminal "${tid}" not found` });
+        return;
+      }
+
+      // Kill the holdpty session + clean up socket
+      try { await tmux.killSession(termInfo.tmuxSession); } catch { /* may already be dead */ }
+
+      // Remove from tracking
+      terminals!.delete(tid);
+
+      res.json({ deleted: true, id: tid });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });

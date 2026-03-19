@@ -15,6 +15,7 @@ import { EditorTile } from "../components/EditorTile";
 import { GitChanges } from "../components/GitChanges";
 import type { TerminalTab } from "../components/SideTerminalPanel";
 import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
+import { useTerminalSessionStore } from "../stores/terminalSessionStore";
 import {
   ActionIcon,
   Indicator,
@@ -599,6 +600,7 @@ export function SessionDetail() {
           getRoleCardClass={getRoleCardClass}
           showPlaybookLauncher={showPlaybookLauncher}
           onClosePlaybookLauncher={() => setShowPlaybookLauncher(false)}
+          setTerminalTabs={setTerminalTabs}
         />
       )}
 
@@ -747,6 +749,7 @@ interface AgentsTabProps {
   getRoleCardClass: (role: string) => string;
   showPlaybookLauncher?: boolean;
   onClosePlaybookLauncher?: () => void;
+  setTerminalTabs: React.Dispatch<React.SetStateAction<TerminalTab[]>>;
 }
 
 function AgentsTab({
@@ -769,6 +772,7 @@ function AgentsTab({
   getRoleCardClass,
   showPlaybookLauncher,
   onClosePlaybookLauncher,
+  setTerminalTabs,
 }: AgentsTabProps) {
   const api = useApi();
   const [agentActivities, setAgentActivities] = useState<Record<string, AgentActivity>>({});
@@ -1101,6 +1105,36 @@ function AgentsTab({
     );
   }
 
+  // Terminal session store
+  const terminalSessions = useTerminalSessionStore((state) => state.getSessions());
+  const addSession = useTerminalSessionStore((state) => state.addSession);
+  const removeSession = useTerminalSessionStore((state) => state.removeSession);
+
+  // Fetch terminals from server on mount
+  useEffect(() => {
+    async function fetchTerminals() {
+      try {
+        const data = await api.getTerminals(sessionId);
+        if (data?.terminals) {
+          data.terminals.forEach((term: any) => {
+            addSession({
+              id: term.id,
+              tmuxSession: term.tmuxSession,
+              name: term.name || `Terminal ${term.id}`,
+              type: term.type || "standalone",
+              agentName: term.agentName,
+              createdAt: term.createdAt || new Date().toISOString(),
+            });
+          });
+        }
+      } catch (err) {
+        // Backend endpoint might not exist yet, silently ignore
+        console.debug("Could not fetch terminals from server:", err);
+      }
+    }
+    fetchTerminals();
+  }, [sessionId, api, addSession]);
+
   return (
     <>
     {playbookDialog}
@@ -1249,6 +1283,221 @@ function AgentsTab({
           </div>
         );
       })}
+    </div>
+
+    {/* Terminals Section */}
+    <div style={{ marginTop: 48 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+          Active Terminals
+          <Badge
+            variant="light"
+            color="blue"
+            size="sm"
+            style={{ marginLeft: 8 }}
+          >
+            {terminalSessions.length}
+          </Badge>
+        </h2>
+        <Button
+          size="sm"
+          onClick={async () => {
+            try {
+              const result = await api.openTerminal(sessionId);
+              const terminalName = `Terminal ${terminalSessions.filter((t) => t.type === "standalone").length + 1}`;
+
+              // Add to terminal session store
+              addSession({
+                id: result.id,
+                tmuxSession: result.tmuxSession,
+                name: terminalName,
+                type: "standalone",
+                createdAt: new Date().toISOString(),
+              });
+
+              // Add to terminal tabs in the side panel
+              setTerminalTabs((prev) => [
+                ...prev,
+                {
+                  id: result.id,
+                  name: terminalName,
+                  type: "terminal" as const,
+                },
+              ]);
+            } catch (err: any) {
+              alert(`Failed to create terminal: ${err.message}`);
+            }
+          }}
+          styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)" } }}
+        >
+          + New Terminal
+        </Button>
+      </div>
+
+      {terminalSessions.length === 0 ? (
+        <Paper
+          p="xl"
+          withBorder
+          style={{
+            backgroundColor: "var(--bg-secondary)",
+            borderColor: "var(--border-color)",
+            textAlign: "center",
+          }}
+        >
+          <Text size="sm" c="dimmed">
+            No active terminals. Click "+ New Terminal" to create one.
+          </Text>
+        </Paper>
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {terminalSessions.map((terminal) => {
+            const isAgent = terminal.type === "agent";
+            const createdDate = new Date(terminal.createdAt);
+            const relativeTime = formatUptime(terminal.createdAt);
+
+            return (
+              <Paper
+                key={terminal.id}
+                p="md"
+                withBorder
+                style={{
+                  backgroundColor: "var(--bg-secondary)",
+                  borderColor: "var(--border-color)",
+                  cursor: "pointer",
+                  transition: "border-color 0.15s, background-color 0.15s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = "var(--accent-blue)";
+                  e.currentTarget.style.backgroundColor = "rgba(88,166,255,0.05)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = "var(--border-color)";
+                  e.currentTarget.style.backgroundColor = "var(--bg-secondary)";
+                }}
+                onClick={() => {
+                  // Open terminal in side panel
+                  setTerminalTabs((prev) => {
+                    if (prev.some((t) => t.id === terminal.id)) {
+                      // Already open, do nothing or focus it
+                      return prev;
+                    }
+                    return [
+                      ...prev,
+                      {
+                        id: terminal.id,
+                        name: terminal.name,
+                        type: terminal.type === "standalone" ? "terminal" : "agent",
+                      },
+                    ];
+                  });
+                }}
+              >
+                <Group justify="space-between" align="flex-start">
+                  <div style={{ flex: 1 }}>
+                    <Group gap="xs" mb={4}>
+                      <Text fw={600} size="sm" c="var(--text-primary)">
+                        {terminal.name}
+                      </Text>
+                      <Badge
+                        variant="light"
+                        color={isAgent ? "blue" : "gray"}
+                        size="xs"
+                      >
+                        {terminal.type}
+                      </Badge>
+                      {isAgent && terminal.agentName && (
+                        <Badge variant="outline" color="gray" size="xs">
+                          {terminal.agentName}
+                        </Badge>
+                      )}
+                    </Group>
+                    <Group gap={8}>
+                      <Text size="xs" c="dimmed">
+                        {terminal.tmuxSession || terminal.id}
+                      </Text>
+                      <Text size="xs" c="dimmed">·</Text>
+                      <Text size="xs" c="dimmed">
+                        Created {relativeTime} ago
+                      </Text>
+                    </Group>
+                  </div>
+                  <Group gap={4}>
+                    <ActionIcon
+                      variant="subtle"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Open terminal
+                        setTerminalTabs((prev) => {
+                          if (prev.some((t) => t.id === terminal.id)) return prev;
+                          return [
+                            ...prev,
+                            {
+                              id: terminal.id,
+                              name: terminal.name,
+                              type: terminal.type === "standalone" ? "terminal" : "agent",
+                            },
+                          ];
+                        });
+                      }}
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="9 10 4 15 9 20" />
+                        <path d="M20 4v7a4 4 0 0 1-4 4H4" />
+                      </svg>
+                    </ActionIcon>
+                    {terminal.type === "standalone" && (
+                      <ActionIcon
+                        variant="subtle"
+                        size="sm"
+                        color="red"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!confirm(`Close terminal "${terminal.name}"?`)) return;
+                          try {
+                            await api.deleteTerminal(sessionId, terminal.id);
+                            // Remove from store
+                            removeSession(terminal.id);
+                            // Close tab if open
+                            setTerminalTabs((prev) => prev.filter((t) => t.id !== terminal.id));
+                          } catch (err: any) {
+                            alert(`Failed to close terminal: ${err.message}`);
+                          }
+                        }}
+                        style={{ color: "var(--text-secondary)" }}
+                      >
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </ActionIcon>
+                    )}
+                  </Group>
+                </Group>
+              </Paper>
+            );
+          })}
+        </div>
+      )}
     </div>
     </>
   );
