@@ -406,7 +406,7 @@ export function ExecutionTracing({ sessionId }: ExecutionTracingProps) {
     } finally {
       setLoading(false);
     }
-  }, [sessionId, api]);
+  }, [sessionId]); // api methods are stable, no need to include in deps
 
   useEffect(() => {
     loadExecutions();
