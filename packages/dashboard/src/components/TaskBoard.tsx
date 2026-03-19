@@ -135,6 +135,26 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
+// Calculate task age in hours
+function getTaskAge(createdAt: string): number {
+  const now = Date.now();
+  const then = new Date(createdAt).getTime();
+  return (now - then) / (1000 * 60 * 60); // hours
+}
+
+// Get task age badge with color coding
+function getTaskAgeBadge(createdAt: string): { label: string; color: string } | null {
+  const ageHours = getTaskAge(createdAt);
+  const ageText = timeAgo(createdAt);
+
+  if (ageHours >= 4) {
+    return { label: ageText, color: "red" };
+  } else if (ageHours >= 2) {
+    return { label: ageText, color: "orange" };
+  }
+  return null; // Don't show badge for tasks < 2 hours old
+}
+
 /* ------------------------------------------------------------------ */
 /* Task Card                                                           */
 /* ------------------------------------------------------------------ */
@@ -157,6 +177,13 @@ function TaskCard({
     ? agents.find((a) => a.id === task.assignedTo)?.name || task.assignedTo
     : null;
 
+  // Check if task is overdue
+  const dueDateStatus = task.dueDate ? getDueDateStatus(task.dueDate) : null;
+  const isOverdue = dueDateStatus?.label === "Overdue";
+
+  // Get task age badge
+  const ageBadge = getTaskAgeBadge(task.createdAt);
+
   return (
     <Card
       draggable
@@ -171,9 +198,14 @@ function TaskCard({
         opacity: isDragging ? 0.5 : task.blocked ? 0.7 : 1,
         borderColor: isDragging
           ? "var(--accent-blue)"
+          : isOverdue
+          ? "var(--accent-red)"
           : "var(--border-color)",
-        backgroundColor: "var(--bg-primary)",
+        borderWidth: isOverdue ? 2 : 1,
+        backgroundColor: task.blocked ? "var(--bg-tertiary)" : "var(--bg-primary)",
+        boxShadow: isOverdue ? "0 0 0 1px var(--accent-red), 0 0 8px rgba(255, 100, 100, 0.3)" : undefined,
         transition: "border-color 0.15s, box-shadow 0.15s, opacity 0.15s",
+        filter: task.blocked ? "grayscale(0.3)" : undefined,
       }}
       className="task-card-hover"
     >
@@ -211,21 +243,32 @@ function TaskCard({
           variant="light"
           size="xs"
           mt={4}
-          leftSection={<span style={{ fontSize: 10 }}>&#128274;</span>}
+          leftSection={<span style={{ fontSize: 10 }}>&#128279;</span>}
         >
           Blocked
         </Badge>
       )}
 
-      {/* Priority badge */}
-      <Badge
-        color={PRIORITY_COLORS[task.priority]}
-        variant="filled"
-        size="xs"
-        mt={4}
-      >
-        {task.priority}
-      </Badge>
+      {/* Priority + Age badges */}
+      <Group gap={4} mt={4}>
+        <Badge
+          color={PRIORITY_COLORS[task.priority]}
+          variant="filled"
+          size="xs"
+        >
+          {task.priority}
+        </Badge>
+        {ageBadge && (
+          <Badge
+            color={ageBadge.color}
+            variant="light"
+            size="xs"
+            leftSection={<span style={{ fontSize: 10 }}>&#8987;</span>}
+          >
+            {ageBadge.label}
+          </Badge>
+        )}
+      </Group>
 
       {/* Labels */}
       {task.labels && task.labels.length > 0 && (
@@ -624,6 +667,14 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
     ? tasks.find((t) => t.id === expandedTaskId)
     : null;
 
+  // Calculate agent workloads
+  const agentWorkloads = agents.reduce<Record<string, number>>((acc, agent) => {
+    acc[agent.id] = tasks.filter(t => t.assignedTo === agent.id && t.status !== "done").length;
+    return acc;
+  }, {});
+
+  const maxWorkload = Math.max(...Object.values(agentWorkloads), 1);
+
   const agentSelectData = agents.map((a) => ({
     value: a.id,
     label: a.name,
@@ -746,7 +797,39 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
           clearable
           searchable
           styles={selectDropdownStyles}
-          style={{ minWidth: 180 }}
+          style={{ minWidth: 200 }}
+          renderOption={({ option }) => {
+            if (option.value === "") {
+              return <div style={{ padding: 4 }}>{option.label}</div>;
+            }
+            const agentId = option.value;
+            const workload = agentWorkloads[agentId] || 0;
+            const workloadPercent = maxWorkload > 0 ? (workload / maxWorkload) * 100 : 0;
+            return (
+              <div style={{ padding: "4px 0" }}>
+                <Group justify="space-between" gap={8} wrap="nowrap">
+                  <Text size="sm" style={{ flex: 1 }}>{option.label}</Text>
+                  <Text size="xs" c="dimmed" style={{ minWidth: 30, textAlign: "right" }}>
+                    {workload}
+                  </Text>
+                </Group>
+                <div style={{
+                  height: 3,
+                  backgroundColor: "var(--bg-tertiary)",
+                  borderRadius: 2,
+                  marginTop: 4,
+                  overflow: "hidden",
+                }}>
+                  <div style={{
+                    width: `${workloadPercent}%`,
+                    height: "100%",
+                    backgroundColor: workload > 5 ? "var(--accent-red)" : workload > 2 ? "var(--accent-yellow)" : "var(--accent-blue)",
+                    transition: "width 0.2s ease",
+                  }} />
+                </div>
+              </div>
+            );
+          }}
         />
 
         <MultiSelect
