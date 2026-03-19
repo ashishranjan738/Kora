@@ -10,6 +10,7 @@ import "react-mosaic-component/react-mosaic-component.css";
 import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
 import { Indicator, Tooltip } from "@mantine/core";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
+import { setMessageNotificationCallback } from "../stores/terminalRegistry";
 import { formatCost, formatTokens } from "../utils/formatters";
 
 const PANEL_BORDER_COLORS = [
@@ -133,6 +134,10 @@ export function MultiAgentView() {
   const removeTerminalSession = useTerminalSessionStore((state) => state.removeSession);
   const pruneStaleTerminals = useTerminalSessionStore((state) => state.pruneStale);
 
+  // Message flash state — briefly highlights agent tiles when they receive messages
+  const [flashingAgents, setFlashingAgents] = useState<Set<string>>(new Set());
+  const flashTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
   // Named layout save/reload
   const [savedLayouts, setSavedLayouts] = useState<Record<string, any>>({});
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
@@ -230,6 +235,52 @@ export function MultiAgentView() {
   useEffect(() => {
     return () => {
       if (toastTimer.current) clearTimeout(toastTimer.current);
+    };
+  }, []);
+
+  // Flash an agent tile briefly when it receives a message
+  const flashAgent = useCallback((agentId: string) => {
+    setFlashingAgents((prev) => {
+      const next = new Set(prev);
+      next.add(agentId);
+      return next;
+    });
+    // Clear any existing timer for this agent
+    const existing = flashTimers.current.get(agentId);
+    if (existing) clearTimeout(existing);
+    // Remove flash after 2 seconds
+    const timer = setTimeout(() => {
+      setFlashingAgents((prev) => {
+        const next = new Set(prev);
+        next.delete(agentId);
+        return next;
+      });
+      flashTimers.current.delete(agentId);
+    }, 2000);
+    flashTimers.current.set(agentId, timer);
+  }, []);
+
+  // Hook into terminal message notifications to trigger flash on agent cards
+  useEffect(() => {
+    if (!sessionId || agents.length === 0) return;
+    for (const agent of agents) {
+      setMessageNotificationCallback(sessionId, agent.id, (_from) => {
+        flashAgent(agent.id);
+      });
+    }
+    return () => {
+      for (const agent of agents) {
+        setMessageNotificationCallback(sessionId, agent.id, undefined);
+      }
+    };
+  }, [sessionId, agents, flashAgent]);
+
+  // Cleanup flash timers on unmount
+  useEffect(() => {
+    return () => {
+      for (const timer of flashTimers.current.values()) {
+        clearTimeout(timer);
+      }
     };
   }, []);
 
@@ -743,7 +794,7 @@ export function MultiAgentView() {
         toolbarControls={<span />}
         renderToolbar={(_props: MosaicWindowProps<string>, _draggable: boolean | undefined) => (
           <div
-            className="mosaic-panel-header"
+            className={`mosaic-panel-header${flashingAgents.has(agent.id) ? " mosaic-panel-flash" : ""}`}
             onDoubleClick={() => toggleFullscreen(agent.id)}
             style={{
               borderLeft: `3px solid ${isFocused ? "#58a6ff" : borderColor}`,
@@ -1084,7 +1135,7 @@ export function MultiAgentView() {
         </div>
       </MosaicWindow>
     );
-  }, [sessionId, agents, focusedPanel, menuOpen, inlineMsgOpen, messages, sendingMap, sendAsMap, fullscreenAgentId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionId, agents, focusedPanel, menuOpen, inlineMsgOpen, messages, sendingMap, sendAsMap, fullscreenAgentId, flashingAgents]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Fullscreen is now handled by CSS class on the mosaic tile — no separate overlay needed */
 

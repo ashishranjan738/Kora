@@ -1909,6 +1909,18 @@ textarea:focus {
   min-height: 32px;
   width: 100%;
   box-sizing: border-box;
+  transition: background-color 0.3s ease;
+}
+
+/* Flash highlight when agent receives a message */
+.mosaic-panel-flash {
+  animation: panelFlash 2s ease-out;
+}
+
+@keyframes panelFlash {
+  0% { background-color: rgba(88, 166, 255, 0.3); }
+  30% { background-color: rgba(88, 166, 255, 0.15); }
+  100% { background-color: var(--bg-secondary); }
 }
 
 .mosaic-agent-name {
