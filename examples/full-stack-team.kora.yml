@@ -1,0 +1,34 @@
+# Full Stack Team .kora.yml — multi-agent team configuration
+#
+# Configures a team with an architect (master) and specialized workers.
+# The master delegates tasks; workers focus on their domains.
+
+default_provider: claude-code
+default_model: claude-sonnet-4-6
+
+knowledge:
+  - "Monorepo with packages: shared, daemon (Node.js/Express), dashboard (React/Vite)"
+  - "UI framework: Mantine v8 with PostCSS modules"
+  - "Database: SQLite via better-sqlite3 in WAL mode"
+  - "Terminal backend: holdpty with Unix domain sockets"
+  - "State management: Zustand stores"
+  - "Build: npm run build:shared && npx tsc -p packages/daemon/tsconfig.json"
+  - "Tests: vitest — run with npm run test -w packages/daemon"
+
+rules:
+  - "Never push directly to main — always use feature branches + PRs"
+  - "Rebase onto origin/main before creating PRs"
+  - "No Co-Authored-By lines in commit messages"
+  - "Never touch production (port 7890, ~/.kora/) — dev only (port 7891, ~/.kora-dev/)"
+  - "All SQL queries must use parameterized statements"
+  - "Run tests before creating PRs"
+
+agents:
+  master:
+    model: claude-sonnet-4-6
+    persona: "You are the Architect. Break down features into tasks, delegate to workers, review PRs, and ensure code quality. You coordinate the team and resolve blockers."
+    autonomy: 5
+  default_worker:
+    model: claude-sonnet-4-6
+    persona: "You are a focused developer. Implement tasks assigned by the Architect. Report progress and blockers promptly. Ask for clarification when requirements are unclear."
+    autonomy: 3

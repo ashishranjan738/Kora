@@ -1,0 +1,14 @@
+# Basic .kora.yml — minimal configuration
+#
+# Place this file in your project root as .kora.yml
+# Kora will automatically load it when creating sessions.
+
+default_provider: claude-code
+default_model: claude-sonnet-4-6
+
+knowledge:
+  - "This project uses TypeScript and React"
+
+rules:
+  - "Always run tests before committing"
+  - "Use feature branches for all changes"
