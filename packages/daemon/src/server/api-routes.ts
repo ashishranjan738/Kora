@@ -35,6 +35,7 @@ import { DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS } from "@kora/sh
 import { logger } from "../core/logger.js";
 import { saveTerminalStates, loadTerminalStates } from "../core/terminal-persistence.js";
 import type { StandaloneTerminal } from "../core/terminal-persistence.js";
+import type { SuggestionsDatabase } from "../core/suggestions-db.js";
 
 export function createApiRouter(deps: {
   sessionManager: SessionManager;
@@ -43,8 +44,9 @@ export function createApiRouter(deps: {
   tmux: IPtyBackend;
   startTime: number;  // Date.now() at daemon start
   globalConfigDir: string;
+  suggestionsDb: SuggestionsDatabase;
 }, wss: WebSocketServer): Router {
-  const { sessionManager, orchestrators, providerRegistry, tmux, startTime, globalConfigDir } = deps;
+  const { sessionManager, orchestrators, providerRegistry, tmux, startTime, globalConfigDir, suggestionsDb } = deps;
   const router = Router();
 
   // Track standalone terminal sessions per session (id → terminal info)
@@ -213,6 +215,9 @@ export function createApiRouter(deps: {
         messagingMode: body.messagingMode,
         worktreeMode: body.worktreeMode,
       });
+
+      // Record the working directory for autocomplete suggestions
+      suggestionsDb.recordPath(body.projectPath);
 
       // Create an Orchestrator for this session so agents can be spawned
       const session = sessionManager.getSession(config.id);
@@ -552,6 +557,11 @@ export function createApiRouter(deps: {
         messagingMode: session.config.messagingMode || "mcp",
         worktreeMode: session.config.worktreeMode,
       });
+
+      // Record CLI flags for autocomplete suggestions
+      if (body.extraCliArgs && body.extraCliArgs.trim()) {
+        suggestionsDb.recordFlags(body.extraCliArgs.trim());
+      }
 
       // Broadcast agent-spawned event via WebSocket
       broadcastEvent({ event: "agent-spawned", sessionId: sid, agentId: agentState.id });
@@ -1298,23 +1308,55 @@ export function createApiRouter(deps: {
         return;
       }
 
-      const query: EventsQueryParams = {
-        since: req.query.since ? String(req.query.since) : undefined,
-        limit: req.query.limit ? parseInt(req.query.limit as string) : 100,
-        type: req.query.type ? String(req.query.type) : undefined,
-      };
+      // Parse all query params for timeline filtering
+      const since = req.query.since ? String(req.query.since) : undefined;
+      const until = req.query.until ? String(req.query.until) : undefined;
+      const before = req.query.before ? String(req.query.before) : undefined;
+      const limit = req.query.limit ? Math.min(parseInt(req.query.limit as string), 1000) : 50;
+      const type = req.query.type ? String(req.query.type) : undefined;
+      const types = req.query.types ? String(req.query.types).split(",").map(t => t.trim()) : undefined;
+      const agentId = req.query.agentId ? String(req.query.agentId) : undefined;
+      const search = req.query.search ? String(req.query.search) : undefined;
+      const order = req.query.order === "asc" ? "asc" as const : "desc" as const;
 
       // Use orchestrator's event log (has database attached) or create standalone
       const orch = orchestrators.get(sid);
       const eventLog = orch ? orch.eventLog : new EventLog(session.runtimeDir);
-      const events = await eventLog.query({
-        sessionId: sid,
-        since: query.since,
-        limit: query.limit,
-        type: query.type as EventType | undefined,
-      });
 
-      res.json({ events });
+      const [events, total] = await Promise.all([
+        eventLog.query({
+          sessionId: sid,
+          since,
+          until,
+          before,
+          limit,
+          type: type as EventType | undefined,
+          types,
+          agentId,
+          search,
+          order,
+        }),
+        eventLog.count({
+          sessionId: sid,
+          since,
+          until,
+          before,
+          type: type as EventType | undefined,
+          types,
+          agentId,
+          search,
+        }),
+      ]);
+
+      res.json({
+        events,
+        pagination: {
+          total,
+          limit,
+          hasMore: events.length === limit,
+          nextBefore: events.length > 0 ? events[events.length - 1].timestamp : undefined,
+        },
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });

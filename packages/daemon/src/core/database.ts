@@ -8,7 +8,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 export class AppDatabase {
   public db: Database.Database;
@@ -103,6 +103,14 @@ export class AppDatabase {
         PRAGMA user_version = 3;
       `);
     }
+
+    if (version < 4) {
+      this.db.exec(`
+        ALTER TABLE events ADD COLUMN agent_id TEXT;
+        CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id);
+        PRAGMA user_version = 4;
+      `);
+    }
   }
 
   // ─── Events ──────────────────────────────────────────────
@@ -113,44 +121,54 @@ export class AppDatabase {
     type: string;
     data: Record<string, unknown>;
     timestamp: string;
+    agentId?: string;
   }): void {
     if (!this.isOpen) {
       throw new TypeError("The database connection is not open");
     }
     const stmt = this.db.prepare(
-      `INSERT INTO events (id, session_id, type, data, timestamp) VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO events (id, session_id, type, data, timestamp, agent_id) VALUES (?, ?, ?, ?, ?, ?)`
     );
-    stmt.run(event.id, event.sessionId, event.type, JSON.stringify(event.data), event.timestamp);
+    stmt.run(event.id, event.sessionId, event.type, JSON.stringify(event.data), event.timestamp, event.agentId || null);
   }
 
   queryEvents(params: {
     sessionId?: string;
     since?: string;
+    until?: string;
+    before?: string;
     limit?: number;
+    offset?: number;
     type?: string;
-  }): Array<{ id: string; sessionId: string; type: string; data: any; timestamp: string }> {
+    types?: string[];
+    agentId?: string;
+    search?: string;
+    order?: "asc" | "desc";
+  }): Array<{ id: string; sessionId: string; type: string; data: any; timestamp: string; agentId?: string }> {
     const conditions: string[] = [];
     const values: any[] = [];
 
-    if (params.sessionId) {
-      conditions.push("session_id = ?");
-      values.push(params.sessionId);
+    if (params.sessionId) { conditions.push("session_id = ?"); values.push(params.sessionId); }
+    if (params.since) { conditions.push("timestamp >= ?"); values.push(params.since); }
+    if (params.until) { conditions.push("timestamp <= ?"); values.push(params.until); }
+    if (params.before) { conditions.push("timestamp < ?"); values.push(params.before); }
+    if (params.type) { conditions.push("type = ?"); values.push(params.type); }
+    if (params.types && params.types.length > 0) {
+      const placeholders = params.types.map(() => "?").join(", ");
+      conditions.push(`type IN (${placeholders})`);
+      values.push(...params.types);
     }
-    if (params.since) {
-      conditions.push("timestamp >= ?");
-      values.push(params.since);
-    }
-    if (params.type) {
-      conditions.push("type = ?");
-      values.push(params.type);
-    }
+    if (params.agentId) { conditions.push("agent_id = ?"); values.push(params.agentId); }
+    if (params.search) { conditions.push("data LIKE ?"); values.push(`%${params.search}%`); }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const order = params.order === "asc" ? "ASC" : "DESC";
     const limitClause = params.limit ? `LIMIT ${params.limit}` : "";
+    const offsetClause = params.offset ? `OFFSET ${params.offset}` : "";
 
     const rows = this.db.prepare(
-      `SELECT id, session_id, type, data, timestamp FROM events ${where} ORDER BY timestamp DESC ${limitClause}`
-    ).all(...values) as Array<{ id: string; session_id: string; type: string; data: string; timestamp: string }>;
+      `SELECT id, session_id, type, data, timestamp, agent_id FROM events ${where} ORDER BY timestamp ${order} ${limitClause} ${offsetClause}`
+    ).all(...values) as Array<{ id: string; session_id: string; type: string; data: string; timestamp: string; agent_id: string | null }>;
 
     return rows.map(r => ({
       id: r.id,
@@ -158,7 +176,39 @@ export class AppDatabase {
       type: r.type,
       data: JSON.parse(r.data || "{}"),
       timestamp: r.timestamp,
+      agentId: r.agent_id || undefined,
     }));
+  }
+
+  countEvents(params: {
+    sessionId?: string;
+    since?: string;
+    until?: string;
+    before?: string;
+    type?: string;
+    types?: string[];
+    agentId?: string;
+    search?: string;
+  }): number {
+    const conditions: string[] = [];
+    const values: any[] = [];
+
+    if (params.sessionId) { conditions.push("session_id = ?"); values.push(params.sessionId); }
+    if (params.since) { conditions.push("timestamp >= ?"); values.push(params.since); }
+    if (params.until) { conditions.push("timestamp <= ?"); values.push(params.until); }
+    if (params.before) { conditions.push("timestamp < ?"); values.push(params.before); }
+    if (params.type) { conditions.push("type = ?"); values.push(params.type); }
+    if (params.types && params.types.length > 0) {
+      const placeholders = params.types.map(() => "?").join(", ");
+      conditions.push(`type IN (${placeholders})`);
+      values.push(...params.types);
+    }
+    if (params.agentId) { conditions.push("agent_id = ?"); values.push(params.agentId); }
+    if (params.search) { conditions.push("data LIKE ?"); values.push(`%${params.search}%`); }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const row = this.db.prepare(`SELECT COUNT(*) as count FROM events ${where}`).get(...values) as { count: number };
+    return row.count;
   }
 
   // ─── Tasks ───────────────────────────────────────────────
