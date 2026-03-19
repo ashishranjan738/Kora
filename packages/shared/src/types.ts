@@ -256,6 +256,8 @@ export interface Task {
   description: string;
   status: TaskStatus;
   priority: TaskPriority;
+  labels?: string[];
+  dueDate?: string; // ISO 8601 date (YYYY-MM-DD)
   assignedTo?: string;
   createdBy: string;
   dependencies?: string[];
