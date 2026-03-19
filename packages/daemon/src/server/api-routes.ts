@@ -27,6 +27,7 @@ import type { SessionManager } from "../core/session-manager.js";
 import { Orchestrator } from "../core/orchestrator.js";
 import type { CLIProviderRegistry } from "../cli-providers/provider-registry.js";
 import type { IPtyBackend } from "../core/pty-backend.js";
+import type { SuggestionsDatabase } from "../core/suggestions-db.js";
 import { EventLog } from "../core/event-log.js";
 import { listPlaybooks, loadPlaybook, savePlaybook } from "../core/playbook-loader.js";
 import { buildPersona } from "../core/persona-builder.js";
@@ -43,7 +44,7 @@ export function createApiRouter(deps: {
   tmux: IPtyBackend;
   startTime: number;  // Date.now() at daemon start
   globalConfigDir: string;
-  suggestionsDb?: { recordPath(p: string): void; recordFlags(f: string): void };
+  suggestionsDb: SuggestionsDatabase;
 }, wss: WebSocketServer): Router {
   const { sessionManager, orchestrators, providerRegistry, tmux, startTime, globalConfigDir, suggestionsDb } = deps;
   const router = Router();
@@ -216,7 +217,7 @@ export function createApiRouter(deps: {
       });
 
       // Record the working directory for autocomplete suggestions
-      suggestionsDb?.recordPath(body.projectPath);
+      suggestionsDb.recordPath(body.projectPath);
 
       // Create an Orchestrator for this session so agents can be spawned
       const session = sessionManager.getSession(config.id);
@@ -565,7 +566,7 @@ export function createApiRouter(deps: {
 
       // Record CLI flags for autocomplete suggestions
       if (body.extraCliArgs && body.extraCliArgs.length > 0) {
-        suggestionsDb?.recordFlags(body.extraCliArgs.join(" "));
+        suggestionsDb.recordFlags(body.extraCliArgs.join(" "));
       }
 
       // Broadcast agent-spawned event via WebSocket
@@ -2130,6 +2131,30 @@ export function createApiRouter(deps: {
       await fs.writeFile(fullPath, content, "utf-8");
       res.json({ saved: true, path: filePath });
     } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // ─── Suggestions (Recent Paths & CLI Flags) ──────────────────────────
+
+  router.get("/suggestions/paths", (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 10;
+      const paths = suggestionsDb.getRecentPaths(limit);
+      res.json({ paths });
+    } catch (err) {
+      logger.error({ err: err }, "[api] GET /suggestions/paths error");
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  router.get("/suggestions/flags", (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 10;
+      const flags = suggestionsDb.getRecentFlags(limit);
+      res.json({ flags });
+    } catch (err) {
+      logger.error({ err: err }, "[api] GET /suggestions/flags error");
       res.status(500).json({ error: String(err) });
     }
   });

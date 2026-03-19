@@ -20,6 +20,7 @@ import { DEFAULT_PORT, APP_VERSION, DEFAULT_PTY_BACKEND, getRuntimeTmuxPrefix, g
 import type { PtyBackendType } from "@kora/shared";
 import { logger } from "./core/logger.js";
 import { ensureBuiltinPlaybooks } from "./core/playbook-loader.js";
+import { SuggestionsDatabase } from "./core/suggestions-db.js";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -70,6 +71,9 @@ async function handleStart(): Promise<void> {
   const sessionManager = new SessionManager(globalConfigDir);
   await sessionManager.load();
 
+  // 2a. Initialize suggestions database for recent paths and flags
+  const suggestionsDb = new SuggestionsDatabase(isDev);
+
   // 3. Ensure built-in playbooks exist
   await ensureBuiltinPlaybooks(globalConfigDir);
 
@@ -111,6 +115,7 @@ async function handleStart(): Promise<void> {
       tmux: ptyBackend,
       startTime: Date.now(),
       globalConfigDir,
+      suggestionsDb,
     },
   });
 
@@ -175,6 +180,9 @@ async function handleStart(): Promise<void> {
 
     await sessionManager.save();
     await shutdownDaemon();
+
+    // Close databases
+    suggestionsDb.close();
 
     // Close PtyManager connections cleanly (disconnect dashboard terminals)
     ptyManager.destroyAll();

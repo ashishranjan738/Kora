@@ -12,6 +12,7 @@ import {
   Text,
   Badge,
   Alert,
+  Autocomplete,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 
@@ -81,6 +82,7 @@ export function SpawnAgentDialog({
   const [extraCliArgs, setExtraCliArgs] = useState("");
   const [spawning, setSpawning] = useState(false);
   const [error, setError] = useState("");
+  const [recentFlags, setRecentFlags] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,7 +98,18 @@ export function SpawnAgentDialog({
         if (!cancelled) setLoadingProviders(false);
       }
     }
+    async function loadRecentFlags() {
+      try {
+        const data = await api.getRecentFlags(10);
+        if (!cancelled) {
+          setRecentFlags(data.flags || []);
+        }
+      } catch {
+        // Non-fatal: suggestions are optional
+      }
+    }
     load();
+    loadRecentFlags();
     return () => {
       cancelled = true;
     };
@@ -351,12 +364,13 @@ export function SpawnAgentDialog({
           </Group>
         )}
 
-        <TextInput
+        <Autocomplete
           label="CLI Flags (optional)"
           value={extraCliArgs}
-          onChange={(e) => setExtraCliArgs(e.currentTarget.value)}
+          onChange={setExtraCliArgs}
+          data={recentFlags}
           placeholder={getCliPlaceholder(providerId)}
-          description="Space-separated flags passed directly to the CLI."
+          description="Space-separated flags passed directly to the CLI. Suggestions from recent usage."
           styles={{
             input: {
               backgroundColor: "var(--bg-tertiary)",
@@ -367,6 +381,15 @@ export function SpawnAgentDialog({
             },
             label: { color: "var(--text-secondary)", fontSize: 13 },
             description: { color: "var(--text-muted)" },
+            dropdown: {
+              backgroundColor: "var(--bg-secondary)",
+              borderColor: "var(--border-color)",
+            },
+            option: {
+              color: "var(--text-primary)",
+              fontFamily: "var(--font-mono)",
+              fontSize: 13,
+            },
           }}
         />
 
