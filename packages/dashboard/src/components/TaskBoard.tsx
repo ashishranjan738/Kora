@@ -931,65 +931,205 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
         )}
       </Group>
 
-      {/* Mobile: column selector + single column */}
+      {/* Mobile: view toggle + kanban or list */}
       {isMobile ? (
         <Stack gap="sm">
-          {/* Column tabs */}
-          <ScrollArea type="never">
-            <Group gap="xs" wrap="nowrap">
-              {COLUMNS.map((col) => (
-                <Badge
-                  key={col}
-                  variant={activeCol === col ? "filled" : "outline"}
-                  color={COLUMN_COLORS[col]}
-                  size="lg"
-                  onClick={() => setActiveCol(col)}
-                  style={{
-                    cursor: "pointer",
-                    minHeight: 36,
-                    flexShrink: 0,
-                  }}
-                >
-                  {COLUMN_LABELS[col]} ({tasksByColumn(col).length})
-                </Badge>
-              ))}
-              <ActionIcon
-                variant="light"
-                color="blue"
-                size="lg"
-                onClick={() => setShowAddDialog(true)}
-                style={{ flexShrink: 0 }}
-              >
-                <span style={{ fontSize: 18 }}>+</span>
-              </ActionIcon>
-            </Group>
-          </ScrollArea>
+          {/* View toggle + add button */}
+          <Group justify="space-between" align="center">
+            <SegmentedControl
+              value={mobileView}
+              onChange={(v) => setMobileView(v as "kanban" | "list")}
+              data={[
+                { value: "list", label: "List" },
+                { value: "kanban", label: "Board" },
+              ]}
+              size="xs"
+              styles={{
+                root: {
+                  backgroundColor: "var(--bg-tertiary)",
+                  border: "1px solid var(--border-color)",
+                },
+                label: {
+                  color: "var(--text-primary)",
+                  fontWeight: 500,
+                  fontSize: 12,
+                  padding: "4px 12px",
+                },
+                indicator: {
+                  backgroundColor: "var(--accent-blue)",
+                  boxShadow: "none",
+                },
+              }}
+            />
+            <ActionIcon
+              variant="light"
+              color="blue"
+              size="lg"
+              onClick={() => setShowAddDialog(true)}
+            >
+              <span style={{ fontSize: 18 }}>+</span>
+            </ActionIcon>
+          </Group>
 
-          {/* Active column's cards */}
-          <Stack gap="xs">
-            {tasksByColumn(activeCol).map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                agents={agents}
-                isDragging={false}
-                onDragStart={() => {}}
-                onClick={() => setExpandedTaskId(task.id)}
-                onDelete={() => handleDeleteTask(task.id)}
-              />
-            ))}
-            {tasksByColumn(activeCol).length === 0 && (
-              <Text
-                size="sm"
-                c="var(--text-muted)"
-                ta="center"
-                py="xl"
-                fs="italic"
-              >
-                No {COLUMN_LABELS[activeCol].toLowerCase()} tasks
-              </Text>
-            )}
-          </Stack>
+          {mobileView === "kanban" ? (
+            <>
+              {/* Column tabs */}
+              <ScrollArea type="never">
+                <Group gap="xs" wrap="nowrap">
+                  {COLUMNS.map((col) => (
+                    <Badge
+                      key={col}
+                      variant={activeCol === col ? "filled" : "outline"}
+                      color={COLUMN_COLORS[col]}
+                      size="lg"
+                      onClick={() => setActiveCol(col)}
+                      style={{
+                        cursor: "pointer",
+                        minHeight: 36,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {COLUMN_LABELS[col]} ({tasksByColumn(col).length})
+                    </Badge>
+                  ))}
+                </Group>
+              </ScrollArea>
+
+              {/* Active column's cards */}
+              <Stack gap="xs">
+                {tasksByColumn(activeCol).map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    agents={agents}
+                    isDragging={false}
+                    onDragStart={() => {}}
+                    onClick={() => setExpandedTaskId(task.id)}
+                    onDelete={() => handleDeleteTask(task.id)}
+                  />
+                ))}
+                {tasksByColumn(activeCol).length === 0 && (
+                  <Text
+                    size="sm"
+                    c="var(--text-muted)"
+                    ta="center"
+                    py="xl"
+                    fs="italic"
+                  >
+                    No {COLUMN_LABELS[activeCol].toLowerCase()} tasks
+                  </Text>
+                )}
+              </Stack>
+            </>
+          ) : (
+            /* List view: all tasks grouped by status */
+            <Stack gap="md">
+              {COLUMNS.map((col) => {
+                const colTasks = tasksByColumn(col);
+                return (
+                  <Box key={col}>
+                    {/* Status group header */}
+                    <Group
+                      gap={8}
+                      align="center"
+                      mb="xs"
+                      pb={6}
+                      style={{ borderBottom: `2px solid ${COLUMN_CSS_COLORS[col]}` }}
+                    >
+                      <Box
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background: COLUMN_CSS_COLORS[col],
+                          flexShrink: 0,
+                        }}
+                      />
+                      <Text fw={600} size="sm" c="var(--text-primary)">
+                        {COLUMN_LABELS[col]}
+                      </Text>
+                      <Badge size="xs" variant="light" color={COLUMN_COLORS[col]}>
+                        {colTasks.length}
+                      </Badge>
+                    </Group>
+
+                    {/* Task rows */}
+                    {colTasks.length > 0 ? (
+                      <Stack gap={4}>
+                        {colTasks.map((task) => {
+                          const taskAssignee = resolveAssignee(task.assignedTo, agents);
+                          return (
+                            <Paper
+                              key={task.id}
+                              withBorder
+                              px="sm"
+                              py={8}
+                              style={{
+                                backgroundColor: task.blocked ? "var(--bg-tertiary)" : "var(--bg-primary)",
+                                borderColor: "var(--border-color)",
+                                cursor: "pointer",
+                                opacity: task.blocked ? 0.7 : 1,
+                              }}
+                              onClick={() => setExpandedTaskId(task.id)}
+                            >
+                              <Group gap={8} wrap="nowrap" align="center">
+                                <Badge
+                                  color={PRIORITY_COLORS[task.priority]}
+                                  variant="filled"
+                                  size="xs"
+                                  style={{ flexShrink: 0 }}
+                                >
+                                  {task.priority}
+                                </Badge>
+                                <Text
+                                  size="sm"
+                                  fw={500}
+                                  c="var(--text-primary)"
+                                  lineClamp={1}
+                                  style={{ flex: 1 }}
+                                >
+                                  {task.title}
+                                </Text>
+                                {taskAssignee && (
+                                  <Badge
+                                    variant="light"
+                                    color={taskAssignee.isRemoved ? "gray" : "blue"}
+                                    size="xs"
+                                    style={{ flexShrink: 0 }}
+                                    styles={taskAssignee.isRemoved ? {
+                                      label: { fontStyle: "italic", opacity: 0.7 },
+                                    } : undefined}
+                                  >
+                                    {taskAssignee.name}{taskAssignee.isRemoved ? " ✕" : ""}
+                                  </Badge>
+                                )}
+                                <ActionIcon
+                                  variant="subtle"
+                                  color="red"
+                                  size="xs"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteTask(task.id);
+                                  }}
+                                  style={{ opacity: 0.4, flexShrink: 0 }}
+                                >
+                                  <span style={{ fontSize: 14, lineHeight: 1 }}>&times;</span>
+                                </ActionIcon>
+                              </Group>
+                            </Paper>
+                          );
+                        })}
+                      </Stack>
+                    ) : (
+                      <Text size="xs" c="var(--text-muted)" ta="center" py="sm" fs="italic">
+                        No tasks
+                      </Text>
+                    )}
+                  </Box>
+                );
+              })}
+            </Stack>
+          )}
         </Stack>
       ) : (
         /* Desktop / Tablet: grid columns */
