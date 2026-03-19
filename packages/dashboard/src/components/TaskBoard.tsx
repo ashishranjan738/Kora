@@ -27,6 +27,15 @@ import { DateInput } from "@mantine/dates";
 import { useMediaQuery } from "@mantine/hooks";
 import { MarkdownText } from "./MarkdownText";
 
+// Type wrapper to handle DateInput's onChange type
+const handleDateChange = (setter: (v: string | null) => void) => (value: Date | string | null) => {
+  if (value instanceof Date) {
+    setter(value.toISOString().split("T")[0]);
+  } else {
+    setter(value);
+  }
+};
+
 interface TaskComment {
   id: string;
   text: string;
@@ -40,7 +49,7 @@ interface Task {
   title: string;
   description: string;
   status: string;
-  priority?: string;
+  priority: string;
   labels?: string[];
   dueDate?: string;
   assignedTo?: string;
@@ -209,12 +218,12 @@ function TaskCard({
 
       {/* Priority badge */}
       <Badge
-        color={PRIORITY_COLORS[task.priority || "P2"]}
+        color={PRIORITY_COLORS[task.priority]}
         variant="filled"
         size="xs"
         mt={4}
       >
-        {task.priority || "P2"}
+        {task.priority}
       </Badge>
 
       {/* Labels */}
@@ -437,7 +446,7 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
   const [newAssignee, setNewAssignee] = useState("");
   const [newPriority, setNewPriority] = useState("P2");
   const [newLabels, setNewLabels] = useState<string[]>([]);
-  const [newDueDate, setNewDueDate] = useState<Date | null>(null);
+  const [newDueDate, setNewDueDate] = useState<string | null>(null);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const [newDependencies, setNewDependencies] = useState<string[]>([]);
@@ -521,7 +530,7 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
         assignedTo: newAssignee || undefined,
         priority: newPriority,
         labels: newLabels.length > 0 ? newLabels : undefined,
-        dueDate: newDueDate ? newDueDate.toISOString().split("T")[0] : undefined,
+        dueDate: newDueDate || undefined,
         dependencies:
           newDependencies.length > 0 ? newDependencies : undefined,
       });
@@ -582,8 +591,8 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
     return tasks
       .filter((t) => t.status === column)
       .sort((a, b) => {
-        const aPri = priOrder[a.priority || "P2"] ?? 2;
-        const bPri = priOrder[b.priority || "P2"] ?? 2;
+        const aPri = priOrder[a.priority] ?? 2;
+        const bPri = priOrder[b.priority] ?? 2;
         if (aPri !== bPri) return aPri - bPri;
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
@@ -885,8 +894,8 @@ function AddTaskModal({
   setNewPriority: (v: string) => void;
   newLabels: string[];
   setNewLabels: (v: string[]) => void;
-  newDueDate: Date | null;
-  setNewDueDate: (v: Date | null) => void;
+  newDueDate: string | null;
+  setNewDueDate: (v: string | null) => void;
   agentSelectData: { value: string; label: string }[];
   tasks: Task[];
   newDependencies: string[];
@@ -989,8 +998,8 @@ function AddTaskModal({
         <DateInput
           label="Due Date"
           placeholder="Select due date"
-          value={newDueDate}
-          onChange={setNewDueDate}
+          value={newDueDate ? new Date(newDueDate) : null}
+          onChange={handleDateChange(setNewDueDate)}
           clearable
           styles={inputStyles}
         />
@@ -1130,7 +1139,7 @@ function TaskDetailModal({
   const [editDesc, setEditDesc] = useState(task.description || "");
   const [editAssignee, setEditAssignee] = useState(task.assignedTo || "");
   const [editLabels, setEditLabels] = useState(task.labels || []);
-  const [editDueDate, setEditDueDate] = useState<Date | null>(task.dueDate ? new Date(task.dueDate) : null);
+  const [editDueDate, setEditDueDate] = useState<string | null>(task.dueDate || null);
   const [saving, setSaving] = useState(false);
 
   // Sync local state when task changes
@@ -1139,7 +1148,7 @@ function TaskDetailModal({
     setEditDesc(task.description || "");
     setEditAssignee(task.assignedTo || "");
     setEditLabels(task.labels || []);
-    setEditDueDate(task.dueDate ? new Date(task.dueDate) : null);
+    setEditDueDate(task.dueDate || null);
   }, [task.id, task.title, task.description, task.assignedTo, task.labels, task.dueDate]);
 
   const agentSelectData = agents.map((a) => ({
@@ -1192,12 +1201,12 @@ function TaskDetailModal({
     }
   };
 
-  const handleDueDateChange = async (newDate: Date | null) => {
+  const handleDueDateChange = async (newDate: string | null) => {
     setEditDueDate(newDate);
     setSaving(true);
     try {
       await api.updateTask(sessionId, task.id, {
-        dueDate: newDate ? newDate.toISOString().split("T")[0] : undefined
+        dueDate: newDate || undefined
       });
       fetchTasks();
     } catch {
@@ -1369,7 +1378,7 @@ function TaskDetailModal({
             Priority
           </Text>
           <SegmentedControl
-            value={task.priority || "P2"}
+            value={task.priority}
             onChange={(val) => saveField("priority", val)}
             data={[
               { value: "P0", label: "P0" },
@@ -1390,9 +1399,9 @@ function TaskDetailModal({
                 padding: "4px 10px",
               },
               indicator: {
-                backgroundColor: PRIORITY_COLORS[task.priority || "P2"] === "red" ? "var(--mantine-color-red-6)" :
-                                 PRIORITY_COLORS[task.priority || "P2"] === "orange" ? "var(--mantine-color-orange-6)" :
-                                 PRIORITY_COLORS[task.priority || "P2"] === "blue" ? "var(--accent-blue)" :
+                backgroundColor: PRIORITY_COLORS[task.priority] === "red" ? "var(--mantine-color-red-6)" :
+                                 PRIORITY_COLORS[task.priority] === "orange" ? "var(--mantine-color-orange-6)" :
+                                 PRIORITY_COLORS[task.priority] === "blue" ? "var(--accent-blue)" :
                                  "var(--text-muted)",
                 boxShadow: "none",
               },
@@ -1423,8 +1432,8 @@ function TaskDetailModal({
           </Text>
           <DateInput
             placeholder="Select due date"
-            value={editDueDate}
-            onChange={handleDueDateChange}
+            value={editDueDate ? new Date(editDueDate) : null}
+            onChange={handleDateChange((v) => handleDueDateChange(v))}
             clearable
             size="xs"
             styles={{
