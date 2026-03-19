@@ -71,6 +71,10 @@ export function useApi() {
       apiFetch<{ events: any[] }>(
         `/sessions/${sid}/events?limit=${limit || 50}`
       ),
+    getEventsByTypes: (sid: string, types: string[], limit?: number) =>
+      apiFetch<{ events: any[] }>(
+        `/sessions/${sid}/events?types=${types.join(",")}&limit=${limit || 1000}`
+      ),
     getStatus: () => apiFetch<any>("/status"),
     getTasks: (sid: string) =>
       apiFetch<{ tasks: any[] }>(`/sessions/${sid}/tasks`),

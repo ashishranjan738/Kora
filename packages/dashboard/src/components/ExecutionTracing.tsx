@@ -39,6 +39,18 @@ interface PlaybookExecution {
   dryRun?: boolean;
 }
 
+interface PlaybookEventData {
+  executionId?: string;
+  sessionId?: string;
+  playbookName?: string;
+  phase?: "setup" | "execute" | "finalize";
+  agents?: AgentExecutionStatus[];
+  taskIds?: string[];
+  error?: string;
+  variables?: Record<string, string>;
+  dryRun?: boolean;
+}
+
 interface ExecutionTracingProps {
   sessionId: string;
 }
@@ -148,7 +160,11 @@ function ExecutionCard({ execution, onClick }: { execution: PlaybookExecution; o
             style={{ fontFamily: "var(--font-mono)", cursor: "pointer" }}
             onClick={(e) => {
               e.stopPropagation();
-              navigator.clipboard.writeText(execution.id);
+              try {
+                navigator.clipboard.writeText(execution.id);
+              } catch (err) {
+                console.error("Failed to copy execution ID:", err);
+              }
             }}
           >
             #{execution.id.slice(0, 8)}
@@ -185,7 +201,13 @@ function ExecutionDetail({ execution }: { execution: PlaybookExecution }) {
             ff="var(--font-mono)"
             c="var(--text-primary)"
             style={{ cursor: "pointer" }}
-            onClick={() => navigator.clipboard.writeText(execution.id)}
+            onClick={() => {
+              try {
+                navigator.clipboard.writeText(execution.id);
+              } catch (err) {
+                console.error("Failed to copy execution ID:", err);
+              }
+            }}
             title="Click to copy"
           >
             {execution.id}
@@ -301,7 +323,13 @@ function ExecutionDetail({ execution }: { execution: PlaybookExecution }) {
                 color="blue"
                 size="xs"
                 style={{ fontFamily: "var(--font-mono)", cursor: "pointer" }}
-                onClick={() => navigator.clipboard.writeText(taskId)}
+                onClick={() => {
+                  try {
+                    navigator.clipboard.writeText(taskId);
+                  } catch (err) {
+                    console.error("Failed to copy task ID:", err);
+                  }
+                }}
                 title="Click to copy"
               >
                 #{taskId.slice(0, 8)}
@@ -324,20 +352,16 @@ export function ExecutionTracing({ sessionId }: ExecutionTracingProps) {
   const loadExecutions = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch events with types filter via custom URL
-      const types = ["playbook-progress", "playbook-complete", "playbook-failed"].join(",");
-      const response = await fetch(`/api/v1/sessions/${sessionId}/events?types=${types}&limit=1000`, {
-        headers: {
-          "Authorization": `Bearer ${localStorage.getItem("kora_token") || ""}`,
-        },
-      });
-      if (!response.ok) throw new Error("Failed to fetch events");
-      const events = await response.json();
+      const { events } = await api.getEventsByTypes(
+        sessionId,
+        ["playbook-progress", "playbook-complete", "playbook-failed"],
+        1000
+      );
 
       const executionMap = new Map<string, PlaybookExecution>();
 
-      for (const event of events.events || []) {
-        const data = event.data as any;
+      for (const event of events || []) {
+        const data = event.data as PlaybookEventData;
         const executionId = data.executionId;
         if (!executionId) continue;
 
@@ -387,17 +411,6 @@ export function ExecutionTracing({ sessionId }: ExecutionTracingProps) {
   useEffect(() => {
     loadExecutions();
   }, [loadExecutions]);
-
-  // TODO: Add WebSocket listener for live updates
-  // useEffect(() => {
-  //   const handleEvent = (event: any) => {
-  //     if (event.type === "playbook-progress" || event.type === "playbook-complete" || event.type === "playbook-failed") {
-  //       // Update executions map
-  //     }
-  //   };
-  //   // subscribe to events
-  //   return () => { /* unsubscribe */ };
-  // }, []);
 
   const executionList = Array.from(executions.values()).sort(
     (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
