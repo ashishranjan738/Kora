@@ -20,7 +20,6 @@ import { cleanupOrphanedSessions } from "./core/holdpty-cleanup.js";
 import { DEFAULT_PORT, APP_VERSION, DEFAULT_PTY_BACKEND, getRuntimeTmuxPrefix, getRuntimeDaemonDir } from "@kora/shared";
 import type { PtyBackendType } from "@kora/shared";
 import { logger } from "./core/logger.js";
-import { ensureBuiltinPlaybooks } from "./core/playbook-loader.js";
 import { SuggestionsDatabase } from "./core/suggestions-db.js";
 import { PlaybookDatabase } from "./core/playbook-database.js";
 
@@ -79,8 +78,8 @@ async function handleStart(): Promise<void> {
   // 2b. Initialize playbook database for YAML playbook storage
   const playbookDb = new PlaybookDatabase(globalConfigDir);
 
-  // 3. Ensure built-in playbooks exist
-  await ensureBuiltinPlaybooks(globalConfigDir);
+  // 3. Ensure built-in playbooks exist in database
+  playbookDb.ensureBuiltinPlaybooks();
 
   // 4. Restore existing sessions — reconnect to live tmux agents
   const orchestrators = new Map<string, Orchestrator>();
@@ -364,15 +363,25 @@ async function handleRun(): Promise<void> {
   const sessionManager = new SessionManager(globalConfigDir);
   await sessionManager.load();
 
-  // Ensure built-in playbooks exist
-  await ensureBuiltinPlaybooks(globalConfigDir);
+  // Initialize playbook database and ensure built-in playbooks exist
+  const playbookDb = new PlaybookDatabase(globalConfigDir);
+  playbookDb.ensureBuiltinPlaybooks();
 
-  // Load the playbook
-  const playbook = await (await import("./core/playbook-loader.js")).loadPlaybook(globalConfigDir, playbookName);
-  if (!playbook) {
+  // Load the playbook from database
+  const playbookRow = playbookDb.getPlaybookByName(playbookName);
+  if (!playbookRow) {
     logger.error(`Error: playbook "${playbookName}" not found`);
     process.exit(1);
   }
+
+  // Parse YAML
+  const { validateYAMLPlaybook } = await import("./core/playbook-validator.js");
+  const validation = validateYAMLPlaybook(playbookRow.yamlContent);
+  if (!validation.valid || !validation.parsed) {
+    logger.error(`Error: playbook "${playbookName}" is invalid: ${validation.errors.join(", ")}`);
+    process.exit(1);
+  }
+  const playbook = validation.parsed;
 
   // Validate playbook
   if (!playbook.agents || playbook.agents.length === 0) {

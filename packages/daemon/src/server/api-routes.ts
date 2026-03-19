@@ -2277,22 +2277,19 @@ export function createApiRouter(deps: {
 
   // ─── Playbooks ──────────────────────────────────────────────────────
 
-  // GET /playbooks - list all playbooks with pagination
+  // GET /playbooks - list all playbook names
   router.get("/playbooks", async (req: Request, res: Response) => {
     try {
       const limit = req.query.limit ? Number(req.query.limit) : 100;
       const offset = req.query.offset ? Number(req.query.offset) : 0;
 
       const playbooks = playbookDb.listPlaybooks({ limit, offset });
-      const total = playbookDb.countPlaybooks();
+
+      // Return just the names (frontend expects { playbooks: string[] })
+      const names = playbooks.map(pb => pb.name);
 
       res.json({
-        playbooks,
-        pagination: {
-          total,
-          limit,
-          offset,
-        },
+        playbooks: names,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -2300,16 +2297,38 @@ export function createApiRouter(deps: {
     }
   });
 
-  // GET /playbooks/:id - get single playbook
+  // GET /playbooks/:id - get single playbook (supports ID or name)
   router.get("/playbooks/:id", async (req: Request, res: Response) => {
     try {
       const id = String(req.params.id);
-      const playbook = playbookDb.getPlaybook(id);
+
+      // Try to find by ID first, then by name
+      let playbook = playbookDb.getPlaybook(id);
+      if (!playbook) {
+        playbook = playbookDb.getPlaybookByName(id);
+      }
+
       if (!playbook) {
         res.status(404).json({ error: `Playbook "${id}" not found` });
         return;
       }
-      res.json(playbook);
+
+      // Parse the YAML content and return the parsed object
+      const validation = validateYAMLPlaybook(playbook.yamlContent);
+      if (!validation.valid || !validation.parsed) {
+        res.status(500).json({
+          error: "Failed to parse playbook YAML",
+          details: validation.errors,
+        });
+        return;
+      }
+
+      // Return parsed playbook with metadata
+      res.json({
+        ...validation.parsed,
+        id: playbook.id,
+        source: "global",
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
