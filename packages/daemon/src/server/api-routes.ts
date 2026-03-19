@@ -2902,7 +2902,7 @@ export function createApiRouter(deps: {
       // 1. Read from .kora.yml knowledge array
       try {
         const { loadProjectConfig } = await import("../core/project-config.js");
-        const config = await loadProjectConfig(session.projectPath);
+        const config = await loadProjectConfig(session.config.projectPath);
         if (config?.knowledge) {
           for (const k of config.knowledge) {
             entries.push({ text: k, source: ".kora.yml" });
@@ -2913,7 +2913,7 @@ export function createApiRouter(deps: {
       // 2. Read from knowledge.md using readKnowledgeEntries (reuse existing parser)
       try {
         const { readKnowledgeEntries } = await import("../core/context-discovery.js");
-        const rawEntries = readKnowledgeEntries(session.projectPath, 200);
+        const rawEntries = readKnowledgeEntries(session.config.projectPath, 200);
         for (const line of rawEntries) {
           // Format: "- [ISO_TIMESTAMP] [agent-name] entry text"
           const match = line.match(/^-?\s*\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.+)$/);
