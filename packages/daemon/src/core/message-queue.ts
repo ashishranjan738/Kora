@@ -349,14 +349,33 @@ export class MessageQueue {
       return; // Don't dequeue, don't drop. Will retry on next poll.
     }
 
-    // Notifications (MCP inbox/pending alerts) are small non-disruptive text — deliver immediately
+    // OPTIMIZATION: Broadcasts and notifications skip readiness check (non-disruptive)
+    const isBroadcast = msg.message.includes("[Broadcast]");
     const isNotification = msg.message.includes("[New message from") || msg.message.includes("[Message from")
       || msg.message.includes("check_messages") || msg.message.includes("[Task assigned]")
-      || msg.message.includes("[Broadcast]");
+      || isBroadcast;
 
     if (isNotification) {
       queue.shift();
+      const startTime = Date.now();
       await this.deliver(msg);
+      const duration = Date.now() - startTime;
+
+      // Log delivery timing for performance monitoring
+      if (duration > 500 || isBroadcast) {
+        logger.debug({ agentId: msg.agentId, deliveryTimeMs: duration, isBroadcast }, "[MessageQueue] Delivery completed");
+      }
+
+      // Broadcast delivery metrics to dashboard
+      if (this.broadcastFn && isBroadcast) {
+        this.broadcastFn({
+          event: "delivery-timing",
+          agentId: msg.agentId,
+          durationMs: duration,
+          isBroadcast: true,
+          timestamp: Date.now(),
+        });
+      }
       return;
     }
 
@@ -456,11 +475,10 @@ export class MessageQueue {
     let lastError: unknown;
 
     // Track: message sent (queued)
-    // Use messageId as PK to prevent duplicate tracking records on retry
     if (this.database && this.sessionId) {
       try {
         this.database.trackMessageDelivery({
-          id: messageId,  // Use messageId as PK for idempotency
+          id: crypto.randomUUID(),
           sessionId: this.sessionId,
           messageId,
           agentId,
@@ -535,34 +553,39 @@ export class MessageQueue {
       || msg.message.match(/\[Message from (.+?)\]/)?.[1]
       || "teammate";
 
-    // Write to SQLite (if enabled)
-    if (this.enableSqliteMessages && this.database && this.sessionId) {
-      try {
-        const expiresAt = msg.ttl || (Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days default
-        this.database.insertMessage({
-          id: messageId,
-          sessionId: this.sessionId,
-          fromAgentId: msg.fromAgentId || 'system',
-          toAgentId: msg.agentId,
-          messageType: this.classifyMessageType(msg.message),
-          content: msg.message,
-          priority: msg.priority,
-          createdAt: msg.timestamp,
-          expiresAt,
-          channel: msg.targetAgentId ? null : '#broadcast',
-        });
-      } catch (err) {
-        logger.debug({ err }, "[MessageQueue] Failed to insert message to SQLite, falling back to file");
+    // OPTIMIZATION: Skip persistent storage for broadcasts (transient notifications)
+    const isBroadcast = msg.message.includes("[Broadcast]");
+
+    if (!isBroadcast) {
+      // Write to SQLite (if enabled) - skip for broadcasts
+      if (this.enableSqliteMessages && this.database && this.sessionId) {
+        try {
+          const expiresAt = msg.ttl || (Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days default
+          this.database.insertMessage({
+            id: messageId,
+            sessionId: this.sessionId,
+            fromAgentId: msg.fromAgentId || 'system',
+            toAgentId: msg.agentId,
+            messageType: this.classifyMessageType(msg.message),
+            content: msg.message,
+            priority: msg.priority,
+            createdAt: msg.timestamp,
+            expiresAt,
+            channel: msg.targetAgentId ? null : '#broadcast',
+          });
+        } catch (err) {
+          logger.debug({ err }, "[MessageQueue] Failed to insert message to SQLite, falling back to file");
+        }
       }
+
+      // Write full message to inbox file (backward compatibility) - skip for broadcasts
+      const inboxDir = path.join(this.runtimeDir, "messages", `inbox-${msg.agentId}`);
+      await fs.mkdir(inboxDir, { recursive: true });
+      const filename = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.md`;
+      await fs.writeFile(path.join(inboxDir, filename), msg.message, "utf-8");
     }
 
-    // Write full message to inbox file (backward compatibility)
-    const inboxDir = path.join(this.runtimeDir, "messages", `inbox-${msg.agentId}`);
-    await fs.mkdir(inboxDir, { recursive: true });
-    const filename = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.md`;
-    await fs.writeFile(path.join(inboxDir, filename), msg.message, "utf-8");
-
-    // Send short notification to tmux
+    // Send short notification to tmux (always, even for broadcasts)
     const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
     await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: false });
   }
@@ -572,39 +595,44 @@ export class MessageQueue {
     const messageId = crypto.randomUUID();
     const senderName = msg.message.match(/\[(?:Message|Task|DONE|Question|Broadcast|System)[^\]]*from (.+?)\]/)?.[1] || "unknown";
 
-    // Write to SQLite (if enabled)
-    if (this.enableSqliteMessages && this.database && this.sessionId) {
-      try {
-        const expiresAt = msg.ttl || (Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days default
-        this.database.insertMessage({
-          id: messageId,
-          sessionId: this.sessionId,
-          fromAgentId: msg.fromAgentId || 'system',
-          toAgentId: msg.agentId,
-          messageType: this.classifyMessageType(msg.message),
-          content: msg.message,
-          priority: msg.priority,
-          createdAt: msg.timestamp,
-          expiresAt,
-          channel: msg.targetAgentId ? null : '#broadcast',
-        });
-      } catch (err) {
-        logger.debug({ err }, "[MessageQueue] Failed to insert message to SQLite, falling back to file");
+    // OPTIMIZATION: Skip persistent storage for broadcasts (transient notifications)
+    const isBroadcast = msg.message.includes("[Broadcast]");
+
+    if (!isBroadcast) {
+      // Write to SQLite (if enabled) - skip for broadcasts
+      if (this.enableSqliteMessages && this.database && this.sessionId) {
+        try {
+          const expiresAt = msg.ttl || (Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days default
+          this.database.insertMessage({
+            id: messageId,
+            sessionId: this.sessionId,
+            fromAgentId: msg.fromAgentId || 'system',
+            toAgentId: msg.agentId,
+            messageType: this.classifyMessageType(msg.message),
+            content: msg.message,
+            priority: msg.priority,
+            createdAt: msg.timestamp,
+            expiresAt,
+            channel: msg.targetAgentId ? null : '#broadcast',
+          });
+        } catch (err) {
+          logger.debug({ err }, "[MessageQueue] Failed to insert message to SQLite, falling back to file");
+        }
       }
+
+      // 1. Write to mcp-pending store (backward compatibility) - skip for broadcasts
+      const pendingDir = path.join(this.runtimeDir, "mcp-pending", msg.agentId);
+      await fs.mkdir(pendingDir, { recursive: true });
+      const filename = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.json`;
+      const payload = {
+        from: senderName,
+        content: msg.message,
+        timestamp: new Date().toISOString(),
+      };
+      await fs.writeFile(path.join(pendingDir, filename), JSON.stringify(payload), "utf-8");
     }
 
-    // 1. Write to mcp-pending store (backward compatibility)
-    const pendingDir = path.join(this.runtimeDir, "mcp-pending", msg.agentId);
-    await fs.mkdir(pendingDir, { recursive: true });
-    const filename = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.json`;
-    const payload = {
-      from: senderName,
-      content: msg.message,
-      timestamp: new Date().toISOString(),
-    };
-    await fs.writeFile(path.join(pendingDir, filename), JSON.stringify(payload), "utf-8");
-
-    // 2. Also send tmux notification as fallback
+    // 2. Send tmux notification (always, even for broadcasts)
     const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
     await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: false });
   }
