@@ -5,13 +5,15 @@ import { EventEmitter } from "events";
 import { PatternMatcher } from "./idle-detection/patterns/pattern-matcher.js";
 import { PatternCategory } from "./idle-detection/patterns/pattern-library.js";
 import { TimeHeuristicsAnalyzer, type TimeHeuristic } from "./idle-detection/heuristics/time-analyzer.js";
+import { stripAnsi } from "./agent-health.js";
 
 /** Legacy shell prompt patterns for backward compatibility */
 export const IDLE_PROMPT_PATTERNS = [
-  /[$%>#]\s*$/,                    // Generic shell prompts (❯, $, %, >, #)
-  /\s+[$%>]\s*$/,                  // Shell prompts with leading whitespace
+  /[$%>#\u276F]\s*$/,              // Generic shell prompts (❯, $, %, >, #)
+  /\s+[$%>\u276F]\s*$/,            // Shell prompts with leading whitespace
   /\w+@\w+\s+[$%>]\s*$/,           // user@host style (user@host $ )
   /^\s*\[.*?\]\s*[$%>]\s*$/,       // Bracketed prompts ([user@host] $ )
+  /\?\s+for shortcuts\s*$/,        // Claude Code "? for shortcuts" prompt
 ];
 
 /** How long to wait without output before considering an agent idle (ms) */

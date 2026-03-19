@@ -504,6 +504,15 @@ export class AgentManager extends EventEmitter {
   }
 
   /**
+   * Mark agent as idle from MCP signal (Layer 1 — highest confidence).
+   * Called when agent uses report_idle tool or sends a completion message.
+   * Protected from terminal polling override for 2 minutes.
+   */
+  markIdleFromMcp(agentId: string, reason?: string): void {
+    this.healthMonitor.markIdleFromMcp(agentId, reason);
+  }
+
+  /**
    * Restore an agent from persisted state — re-registers without spawning tmux.
    * Used after daemon restart to reconnect to still-running tmux sessions.
    */
