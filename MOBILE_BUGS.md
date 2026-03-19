@@ -16,6 +16,35 @@
 
 **Note:** TaskBoard columns (#1) and Modal overflow (#2) were already well-implemented and required no fixes.
 
+---
+
+## P2 Improvements (Future Work)
+
+### From PR #116 Code Review (Reviewer2):
+
+**21. CSS Animation Scope Narrowing (P2)**
+- **Issue:** `* { animation-duration: 0.15s !important }` affects all elements including third-party components (Mantine, xterm.js)
+- **Fix:** Narrow selector scope to specific elements: `.card, .button, .nav-item, .mantine-* { animation-duration: 0.15s }`
+- **Benefit:** Avoid potential conflicts with third-party component animations
+- **Priority:** P2 - Nice to have for maintainability
+- **Status:** Documented for follow-up PR #117
+
+**22. Modal Overscroll Behavior (P2)**
+- **Issue:** Modal internal scrolling could benefit from overscroll behavior control
+- **Fix:** Add `.mantine-Modal-body { overscroll-behavior-y: contain }` or similar
+- **Benefit:** Better scroll UX, prevents unintended body scroll when modal content is scrolled to end
+- **Priority:** P2 - Nice to have for UX polish
+- **Status:** Documented for follow-up PR #117
+
+**23. PWA Safe Area Syntax Update (P2)**
+- **Issue:** Currently using `calc()` with env() for PWA safe areas (e.g., `calc(12px + env(safe-area-inset-top))`)
+- **Fix:** Use `max()` for cleaner, more idiomatic syntax: `padding-bottom: max(20px, env(safe-area-inset-bottom))`
+- **Benefit:** More concise CSS, better maintainability, works without @supports block
+- **Priority:** P2 - Nice to have for code quality
+- **Status:** Documented for follow-up PR #117
+
+---
+
 ## Test Environments
 - **Mobile:** 375px (iPhone SE), 414px (iPhone Pro Max)
 - **Tablet:** 768px (iPad Mini), 1024px (iPad Pro)
