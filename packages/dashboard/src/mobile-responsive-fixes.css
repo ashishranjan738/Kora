@@ -1,0 +1,313 @@
+/**
+ * Mobile Responsive Fixes - Additional Improvements
+ * Date: 2026-03-19
+ * Related: MOBILE_BUGS.md
+ */
+
+/* ============================================================
+   Fix #1: TaskBoard - Already handled ✅
+   Mobile: Tab-based single column view (<768px)
+   Tablet: 2 columns (768-992px)
+   Desktop: 4 columns (>992px)
+   No changes needed.
+   ============================================================ */
+
+/* ============================================================
+   Fix #2: Modal Overflow - Already handled ✅
+   Modals use fullScreen={isMobile} prop
+   No changes needed.
+   ============================================================ */
+
+/* ============================================================
+   Fix #3: Terminal Responsiveness on Tablets (768-1024px)
+   Add intermediate breakpoint for better tablet experience
+   ============================================================ */
+@media (min-width: 769px) and (max-width: 1024px) {
+  /* Terminal should be comfortably sized on tablets */
+  .agent-view-layout .terminal-col {
+    min-height: 400px; /* Increase from 300px for tablets */
+  }
+
+  /* Ensure terminal font is readable on tablets */
+  .xterm {
+    font-size: 13px; /* Slightly larger than default for touch devices */
+  }
+
+  /* Terminal controls should be touch-friendly on tablets */
+  .terminal-controls button,
+  .terminal-toolbar button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* ============================================================
+   Fix #4: AgentView Header Stats - Improved Wrapping
+   Ensure stats wrap gracefully on very small screens
+   ============================================================ */
+@media (max-width: 375px) {
+  .agent-header-bar {
+    gap: 6px; /* Reduce gap on very small screens */
+  }
+
+  .header-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-start;
+  }
+
+  .header-stat {
+    font-size: 11px; /* Slightly smaller on tiny screens */
+    min-width: auto;
+  }
+
+  .header-separator {
+    display: none; /* Hide separators on tiny screens to save space */
+  }
+
+  /* Stack header actions vertically on very small screens if needed */
+  .header-actions {
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-content: flex-start;
+  }
+
+  .header-actions button {
+    min-width: 36px;
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+}
+
+/* ============================================================
+   Fix #5: Navigation Menu Accessibility
+   Ensure bottom nav is properly accessible and visible
+   ============================================================ */
+@media (max-width: 768px) {
+  /* Ensure bottom nav has proper z-index above all content */
+  .bottom-nav {
+    z-index: 1000; /* Increase from 100 to prevent overlap */
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.15); /* Add shadow for depth */
+  }
+
+  /* Ensure touch targets are properly sized */
+  .bottom-nav-item {
+    min-height: 56px; /* Increase from default for better touch */
+    min-width: 64px;
+    padding: 8px 12px;
+  }
+
+  /* Make active state more obvious */
+  .bottom-nav-item.active {
+    background: rgba(var(--accent-blue-rgb, 66, 135, 245), 0.1);
+    border-top: 2px solid var(--accent-blue);
+  }
+
+  /* Ensure page content doesn't get hidden behind bottom nav */
+  body .page,
+  .page-content,
+  .agent-view-page {
+    padding-bottom: 80px !important; /* Increase from 72px for safer margin */
+  }
+}
+
+/* ============================================================
+   Additional Improvements - Touch Interactions
+   ============================================================ */
+
+/* Ensure all interactive elements have proper touch targets */
+@media (max-width: 768px) {
+  /* Agent cards */
+  .agent-card button,
+  .agent-card-v2 button,
+  .ac2-btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 8px 12px;
+  }
+
+  /* Task cards */
+  .task-card button,
+  .task-card-hover button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Timeline filters */
+  .tl-filter-bar button,
+  .tl-density-bar button {
+    min-height: 44px;
+    padding: 8px 12px;
+  }
+
+  /* Ensure dropdowns are touch-friendly */
+  select,
+  .mantine-Select-input,
+  .mantine-MultiSelect-input {
+    min-height: 44px;
+    font-size: 16px; /* Prevent iOS zoom */
+  }
+
+  /* Date pickers should be touch-friendly */
+  input[type="date"],
+  input[type="datetime-local"],
+  .mantine-DateInput input {
+    min-height: 44px;
+    font-size: 16px; /* Prevent iOS zoom */
+  }
+}
+
+/* ============================================================
+   Tablet-Specific Improvements (768-1024px)
+   ============================================================ */
+@media (min-width: 769px) and (max-width: 1024px) {
+  /* TaskBoard: 2 columns is good, but ensure proper spacing */
+  .task-column {
+    min-width: 0; /* Allow flex shrinking */
+  }
+
+  /* Modal sizing on tablets */
+  .mantine-Modal-content {
+    max-width: 90vw;
+    max-height: 90vh;
+  }
+
+  /* Agent cards should be comfortable on tablets */
+  .agent-card,
+  .agent-card-v2 {
+    min-width: 300px;
+  }
+
+  /* Timeline events should have good spacing */
+  .tl-event-card {
+    padding: 12px;
+  }
+}
+
+/* ============================================================
+   Landscape Orientation Support
+   ============================================================ */
+@media (max-width: 768px) and (orientation: landscape) {
+  /* Reduce vertical spacing in landscape to maximize content */
+  .page {
+    padding: 8px 12px;
+  }
+
+  .hero {
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+
+  /* Terminal should use more screen height in landscape */
+  .agent-view-layout .terminal-col {
+    min-height: 250px; /* Slightly less than portrait for landscape */
+    max-height: calc(100vh - 200px);
+  }
+
+  /* Modals should be more compact in landscape */
+  .mantine-Modal-content {
+    max-height: 85vh;
+  }
+
+  /* Bottom nav can be slightly smaller in landscape */
+  .bottom-nav {
+    padding: 2px 0 env(safe-area-inset-bottom, 2px) 0;
+  }
+
+  .bottom-nav-item {
+    padding: 4px 8px;
+    min-height: 48px;
+  }
+}
+
+/* ============================================================
+   PWA Safe Area Insets (iPhone X+, Notch devices)
+   ============================================================ */
+@supports (padding-top: env(safe-area-inset-top)) {
+  /* Top safe area for status bar */
+  .navbar,
+  .app-header {
+    padding-top: calc(12px + env(safe-area-inset-top));
+  }
+
+  /* Bottom safe area for home indicator */
+  .bottom-nav {
+    padding-bottom: calc(4px + env(safe-area-inset-bottom));
+  }
+
+  body .page {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+
+  /* Side safe areas */
+  @media (max-width: 768px) {
+    .page,
+    .agent-view-page {
+      padding-left: max(12px, env(safe-area-inset-left));
+      padding-right: max(12px, env(safe-area-inset-right));
+    }
+  }
+}
+
+/* ============================================================
+   iOS-Specific Fixes
+   ============================================================ */
+
+/* Prevent iOS bounce scroll on body */
+body {
+  overscroll-behavior-y: none;
+}
+
+/* Ensure iOS doesn't zoom on input focus */
+@media (max-width: 768px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="url"],
+  textarea,
+  select,
+  .mantine-Input-input,
+  .mantine-TextInput input,
+  .mantine-Textarea textarea {
+    font-size: 16px !important; /* 16px prevents iOS zoom */
+  }
+}
+
+/* Improve tap highlighting on iOS */
+@media (max-width: 768px) {
+  * {
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0.05);
+  }
+
+  button,
+  a,
+  [role="button"] {
+    -webkit-tap-highlight-color: rgba(var(--accent-blue-rgb, 66, 135, 245), 0.1);
+  }
+}
+
+/* ============================================================
+   Performance Optimizations for Mobile
+   ============================================================ */
+@media (max-width: 768px) {
+  /* Disable expensive animations on mobile for better performance */
+  * {
+    animation-duration: 0.15s !important; /* Faster animations */
+  }
+
+  /* Reduce box-shadows for better mobile performance */
+  .card,
+  .agent-card,
+  .task-card,
+  .modal {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+  }
+
+  /* Optimize transitions */
+  * {
+    transition-duration: 0.15s !important;
+  }
+}
