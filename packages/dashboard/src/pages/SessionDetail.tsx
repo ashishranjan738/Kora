@@ -9,7 +9,7 @@ import { StopSessionDialog } from "../components/StopSessionDialog";
 import { RestartAllDialog } from "../components/RestartAllDialog";
 import type { AgentActivity } from "../components/AgentCardTerminal";
 import { TaskBoard } from "../components/TaskBoard";
-import { Timeline } from "../components/Timeline";
+import { TimelineView } from "../components/timeline/TimelineView";
 import { SideTerminalPanel } from "../components/SideTerminalPanel";
 import { EditorTile } from "../components/EditorTile";
 import { GitChanges } from "../components/GitChanges";
@@ -669,7 +669,29 @@ export function SessionDetail() {
       )}
 
       {activeTab === "timeline" && sessionId && (
-        <Timeline sessionId={sessionId} />
+        <TimelineView
+          sessionId={sessionId}
+          agents={agents}
+          onJumpToTerminal={(agentId) => {
+            // Open terminal for agent
+            const agent = agents.find((a) => a.id === agentId);
+            if (agent) {
+              if (!terminalSessions.find((s) => s.id === agentId)) {
+                addSession({
+                  id: agentId,
+                  tmuxSession: agent.config?.tmuxSession || "",
+                  name: agent.config?.name || agentId,
+                  type: "agent",
+                  agentName: agent.config?.name || agentId,
+                  createdAt: agent.startedAt || new Date().toISOString(),
+                });
+              }
+              openTab(agentId);
+            }
+          }}
+          onJumpToTaskBoard={() => setActiveTab("tasks")}
+          onRestartAgent={handleRestartAgent}
+        />
       )}
 
       {/* Spawn Agent Dialog */}

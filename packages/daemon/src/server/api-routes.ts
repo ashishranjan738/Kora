@@ -35,7 +35,6 @@ import { DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS } from "@kora/sh
 import { logger } from "../core/logger.js";
 import { saveTerminalStates, loadTerminalStates } from "../core/terminal-persistence.js";
 import type { StandaloneTerminal } from "../core/terminal-persistence.js";
-import type { SuggestionsDatabase } from "../core/suggestions-db.js";
 
 export function createApiRouter(deps: {
   sessionManager: SessionManager;
@@ -44,7 +43,7 @@ export function createApiRouter(deps: {
   tmux: IPtyBackend;
   startTime: number;  // Date.now() at daemon start
   globalConfigDir: string;
-  suggestionsDb: SuggestionsDatabase;
+  suggestionsDb?: { recordPath(p: string): void; recordFlags(f: string): void };
 }, wss: WebSocketServer): Router {
   const { sessionManager, orchestrators, providerRegistry, tmux, startTime, globalConfigDir, suggestionsDb } = deps;
   const router = Router();
@@ -217,7 +216,7 @@ export function createApiRouter(deps: {
       });
 
       // Record the working directory for autocomplete suggestions
-      suggestionsDb.recordPath(body.projectPath);
+      suggestionsDb?.recordPath(body.projectPath);
 
       // Create an Orchestrator for this session so agents can be spawned
       const session = sessionManager.getSession(config.id);
@@ -373,6 +372,12 @@ export function createApiRouter(deps: {
 
       // Broadcast session-stopped event
       broadcastEvent({ event: "session-stopped", sessionId: sid });
+
+      // Log to SQLite for timeline
+      const orch_ss = orchestrators.get(sid);
+      if (orch_ss) {
+        orch_ss.eventLog.log({ sessionId: sid, type: "session-stopped" as any, data: {} });
+      }
 
       await sessionManager.stopSession(sid);
       res.status(204).send();
@@ -559,8 +564,8 @@ export function createApiRouter(deps: {
       });
 
       // Record CLI flags for autocomplete suggestions
-      if (body.extraCliArgs && body.extraCliArgs.trim()) {
-        suggestionsDb.recordFlags(body.extraCliArgs.trim());
+      if (body.extraCliArgs && body.extraCliArgs.length > 0) {
+        suggestionsDb?.recordFlags(body.extraCliArgs.join(" "));
       }
 
       // Broadcast agent-spawned event via WebSocket
@@ -1155,6 +1160,12 @@ export function createApiRouter(deps: {
       // Broadcast task-created event via WebSocket
       broadcastEvent({ event: "task-created", sessionId: sid, taskId: task.id });
 
+      // Log to SQLite for timeline
+      const orch_tc = orchestrators.get(sid);
+      if (orch_tc) {
+        orch_tc.eventLog.log({ sessionId: sid, type: "task-created" as any, data: { taskId: task.id, title: task.title, assignedTo: task.assignedTo || null } });
+      }
+
       res.status(201).json(db.getTask(task.id));
     } catch (err) {
       res.status(500).json({ error: String(err) });
@@ -1229,6 +1240,12 @@ export function createApiRouter(deps: {
       // Broadcast task-updated event via WebSocket
       broadcastEvent({ event: "task-updated", sessionId: sid, taskId: tid });
 
+      // Log to SQLite for timeline
+      const orch_tu = orchestrators.get(sid);
+      if (orch_tu) {
+        orch_tu.eventLog.log({ sessionId: sid, type: "task-updated" as any, data: { taskId: tid, title: task.title, status: task.status } });
+      }
+
       res.json(task);
     } catch (err) {
       res.status(500).json({ error: String(err) });
@@ -1247,6 +1264,12 @@ export function createApiRouter(deps: {
 
       // Broadcast task-deleted event via WebSocket
       broadcastEvent({ event: "task-deleted", sessionId: sid, taskId: tid });
+
+      // Log to SQLite for timeline
+      const orch_td = orchestrators.get(sid);
+      if (orch_td) {
+        orch_td.eventLog.log({ sessionId: sid, type: "task-deleted" as any, data: { taskId: tid } });
+      }
 
       res.json({ deleted: true, id: tid });
     } catch (err) {
