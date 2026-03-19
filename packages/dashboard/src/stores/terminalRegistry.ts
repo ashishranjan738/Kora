@@ -68,7 +68,19 @@ function connectWs(entry: TerminalEntry): void {
         entry.onMessageNotification(match[1]);
       }
 
-      entry.term.write(text);
+      // Check if user is at bottom BEFORE writing new data
+      // This prevents auto-scroll when user has scrolled up to read history
+      const buffer = entry.term.buffer.active;
+      const isAtBottom = buffer.baseY + buffer.cursorY >= buffer.length - entry.term.rows;
+
+      entry.term.write(text, () => {
+        // Only auto-scroll if user was already at bottom
+        if (isAtBottom) {
+          entry.term.scrollToBottom();
+        }
+        // Otherwise: preserve user's scroll position
+      });
+
       if (!firstChunkReceived) {
         firstChunkReceived = true;
         setTimeout(() => {
