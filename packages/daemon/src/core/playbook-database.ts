@@ -210,4 +210,155 @@ export class PlaybookDatabase {
     this._open = false;
     this.db.close();
   }
+
+  /**
+   * Ensure built-in playbooks are present in the database.
+   * This is idempotent and will not duplicate existing playbooks.
+   */
+  ensureBuiltinPlaybooks(): void {
+    const builtins = [
+      {
+        name: "Solo Agent",
+        description: "Single master agent for simple tasks",
+        yaml: `name: Solo Agent
+description: Single master agent for simple tasks
+defaults:
+  provider: claude-code
+  model: default
+agents:
+  - name: Agent
+    role: master
+    persona: You are a helpful coding assistant.
+    extraCliArgs:
+      - --dangerously-skip-permissions
+`,
+      },
+      {
+        name: "Master + 2 Workers",
+        description: "One master that delegates to two workers",
+        yaml: `name: Master + 2 Workers
+description: One master that delegates to two workers
+defaults:
+  provider: claude-code
+  model: default
+agents:
+  - name: Orchestrator
+    role: master
+    persona: builtin:architect
+    extraCliArgs:
+      - --dangerously-skip-permissions
+  - name: Worker A
+    role: worker
+    persona: builtin:backend
+    extraCliArgs:
+      - --dangerously-skip-permissions
+  - name: Worker B
+    role: worker
+    persona: builtin:frontend
+    extraCliArgs:
+      - --dangerously-skip-permissions
+`,
+      },
+      {
+        name: "Full Stack Team",
+        description: "Architect + Frontend + Backend + Tests + Reviewer",
+        yaml: `name: Full Stack Team
+description: Architect + Frontend + Backend + Tests + Reviewer
+defaults:
+  provider: claude-code
+  model: default
+agents:
+  - name: Architect
+    role: master
+    persona: builtin:architect
+    extraCliArgs:
+      - --dangerously-skip-permissions
+  - name: Frontend
+    role: worker
+    persona: builtin:frontend
+    extraCliArgs:
+      - --dangerously-skip-permissions
+  - name: Backend
+    role: worker
+    persona: builtin:backend
+    extraCliArgs:
+      - --dangerously-skip-permissions
+  - name: Tests
+    role: worker
+    persona: builtin:tester
+    extraCliArgs:
+      - --dangerously-skip-permissions
+  - name: Reviewer
+    role: worker
+    persona: builtin:reviewer
+    extraCliArgs:
+      - --dangerously-skip-permissions
+`,
+      },
+      {
+        name: "Research Team",
+        description: "Architect + Researcher + Backend + Frontend",
+        yaml: `name: Research Team
+description: Architect + Researcher + Backend + Frontend
+defaults:
+  provider: claude-code
+  model: default
+agents:
+  - name: Architect
+    role: master
+    persona: builtin:architect
+    extraCliArgs:
+      - --dangerously-skip-permissions
+  - name: Researcher
+    role: worker
+    persona: builtin:researcher
+    extraCliArgs:
+      - --dangerously-skip-permissions
+  - name: Backend
+    role: worker
+    persona: builtin:backend
+    extraCliArgs:
+      - --dangerously-skip-permissions
+  - name: Frontend
+    role: worker
+    persona: builtin:frontend
+    extraCliArgs:
+      - --dangerously-skip-permissions
+`,
+      },
+    ];
+
+    const now = new Date().toISOString();
+
+    for (const builtin of builtins) {
+      // Check if playbook already exists
+      const existing = this.getPlaybookByName(builtin.name);
+      if (existing) {
+        // Update existing playbook to pick up fixes
+        this.updatePlaybook(existing.id, {
+          description: builtin.description,
+          yamlContent: builtin.yaml,
+        });
+      } else {
+        // Insert new playbook
+        const id = require("crypto").randomUUID();
+        try {
+          this.insertPlaybook({
+            id,
+            name: builtin.name,
+            description: builtin.description,
+            yamlContent: builtin.yaml,
+            createdAt: now,
+            updatedAt: now,
+          });
+        } catch (err) {
+          // Ignore UNIQUE constraint violations (race condition)
+          const errMsg = err instanceof Error ? err.message : String(err);
+          if (!errMsg.includes("UNIQUE") && !errMsg.includes("unique")) {
+            throw err;
+          }
+        }
+      }
+    }
+  }
 }
