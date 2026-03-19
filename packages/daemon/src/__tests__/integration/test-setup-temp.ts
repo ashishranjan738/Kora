@@ -12,6 +12,7 @@ import { createApp } from "../../server/index.js";
 import { SessionManager } from "../../core/session-manager.js";
 import { registry } from "../../cli-providers/index.js";
 import { MockPtyBackend } from "../../testing/mock-pty-backend.js";
+import { SuggestionsDatabase } from "../../core/suggestions-db.js";
 
 export interface TestContext {
   app: Application;
@@ -45,6 +46,7 @@ export function setupTestApp(): TestContext {
       tmux,
       startTime: Date.now(),
       globalConfigDir: testDir,
+      suggestionsDb: new SuggestionsDatabase(true),
     },
     skipDashboard: true,
   });
