@@ -43,6 +43,15 @@ export function createApiRouter(deps: {
   const { sessionManager, orchestrators, providerRegistry, tmux, startTime, globalConfigDir } = deps;
   const router = Router();
 
+  // Track standalone terminal sessions per session (id → terminal info)
+  const standaloneTerminals = new Map<string, Map<string, {
+    id: string;
+    tmuxSession: string;
+    name: string;
+    createdAt: string;
+    projectPath: string;
+  }>>();
+
   // Helper function to broadcast events to dashboard WebSocket clients only.
   // Terminal connections (wsType === 'terminal') are excluded to prevent
   // raw JSON from appearing in agent terminal output.
@@ -288,6 +297,9 @@ export function createApiRouter(deps: {
           }
         }
       } catch {}
+
+      // Clean up standalone terminal tracking
+      standaloneTerminals.delete(sid);
 
       // Broadcast session-stopped event
       broadcastEvent({ event: "session-stopped", sessionId: sid });
