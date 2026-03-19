@@ -1021,6 +1021,7 @@ function AgentsTab({
   const [activitySince, setActivitySince] = useState<Record<string, string>>({});
   const [gearOpen, setGearOpen] = useState<string | null>(null);
   const [cliExpanded, setCliExpanded] = useState<Record<string, boolean>>({});
+  const [tasks, setTasks] = useState<any[]>([]);
 
   // Close gear dropdown when clicking outside
   useEffect(() => {
@@ -1134,6 +1135,21 @@ function AgentsTab({
       setAgentActivities(prev => ({ ...prev, ...updates }));
     }
   }, [agents]);
+
+  // Fetch tasks for task indicators on agent cards
+  useEffect(() => {
+    const fetchTasks = async () => {
+      try {
+        const data = await api.getTasks(sessionId);
+        setTasks(data.tasks || []);
+      } catch (err) {
+        console.debug("[agent-cards] Failed to fetch tasks:", err);
+      }
+    };
+    fetchTasks();
+    const interval = setInterval(fetchTasks, 10000); // Refresh every 10s
+    return () => clearInterval(interval);
+  }, [sessionId, api]);
 
   // Playbook launcher state
   const [showPlaybookDialog, setShowPlaybookDialogInner] = useState(false);
@@ -1419,6 +1435,15 @@ function AgentsTab({
         const pendingRequests = getPendingForAgent(a.id);
         const pendingCount = pendingRequests.length;
 
+        // Calculate task counts for this agent
+        const agentTasks = tasks.filter(t => t.assignedTo === a.id && t.status !== "done");
+        const taskCount = agentTasks.length;
+        const overdueTasks = agentTasks.filter(t => {
+          if (!t.dueDate) return false;
+          return new Date(t.dueDate) < new Date();
+        });
+        const hasOverdue = overdueTasks.length > 0;
+
         return (
           <div
             key={a.id}
@@ -1435,6 +1460,41 @@ function AgentsTab({
                 <ChannelIndicator channels={(a.config?.channels as string[]) || []} />
                 <FlagIndicator flags={(a.config?.extraCliArgs as string[]) || []} />
                 <MessageBufferBadge agentId={a.id} />
+                {taskCount > 0 && (
+                  <Tooltip
+                    label={
+                      <div style={{ fontSize: 11 }}>
+                        <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                          {taskCount} active task{taskCount !== 1 ? "s" : ""}
+                        </div>
+                        {agentTasks.slice(0, 3).map(t => (
+                          <div key={t.id} style={{ marginBottom: 2 }}>
+                            • {t.title}
+                            {t.dueDate && new Date(t.dueDate) < new Date() && (
+                              <span style={{ color: "var(--accent-red)", marginLeft: 4 }}>(overdue)</span>
+                            )}
+                          </div>
+                        ))}
+                        {agentTasks.length > 3 && (
+                          <div style={{ marginTop: 4, opacity: 0.7 }}>
+                            +{agentTasks.length - 3} more...
+                          </div>
+                        )}
+                      </div>
+                    }
+                    position="bottom"
+                    withArrow
+                  >
+                    <Badge
+                      size="xs"
+                      color={hasOverdue ? "red" : "grape"}
+                      variant="filled"
+                      style={{ marginLeft: 4, cursor: "pointer" }}
+                    >
+                      {taskCount} task{taskCount !== 1 ? "s" : ""}
+                    </Badge>
+                  </Tooltip>
+                )}
                 {pendingCount > 0 && (
                   <Badge
                     size="xs"
