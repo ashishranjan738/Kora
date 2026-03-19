@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useApi } from "../hooks/useApi";
 import { useThemeStore } from "../stores/themeStore";
+import { formatUptimeSeconds } from "../utils/formatters";
 
 export function SettingsPage() {
   const api = useApi();
@@ -24,13 +25,6 @@ export function SettingsPage() {
     } finally {
       setLoading(false);
     }
-  }
-
-  function formatUptime(seconds: number): string {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    return `${h}h ${m}m ${s}s`;
   }
 
   return (
@@ -131,7 +125,7 @@ export function SettingsPage() {
                 ["Version", status.version || "N/A"],
                 [
                   "Uptime",
-                  status.uptime ? formatUptime(status.uptime) : "N/A",
+                  status.uptime ? formatUptimeSeconds(status.uptime) : "N/A",
                 ],
                 ["Port", status.port || "N/A"],
                 ["Status", status.status || "running"],
