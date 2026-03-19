@@ -3528,6 +3528,19 @@ textarea:focus {
 }
 
 /* ============================================================
+   Message Buffer / Expiry Toast
+   ============================================================ */
+.msg-expiry-toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  z-index: 1000; padding: 10px 20px; border-radius: 8px;
+  background: rgba(248,81,73,0.12); border: 1px solid rgba(248,81,73,0.3);
+  font-size: 13px; cursor: pointer; display: flex; align-items: center;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3); animation: fadeIn 0.2s ease-out;
+  backdrop-filter: blur(8px);
+}
+.msg-expiry-toast:hover { background: rgba(248,81,73,0.18); }
+
+/* ============================================================
    Agent Activity Badge
    ============================================================ */
 .activity-dot-sm {
