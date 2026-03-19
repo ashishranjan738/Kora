@@ -1,22 +1,54 @@
 {
-  "name": "@kora/daemon",
+  "name": "kora-cli",
   "version": "0.1.0",
+  "description": "Multi-agent orchestration platform for AI coding CLI agents (Claude Code, Aider, Codex, Kiro, Goose)",
   "bin": {
-    "kora": "dist/cli.js"
+    "kora": "dist/cli.js",
+    "kora-cli": "dist/cli.js"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:dashboard": "cd ../dashboard && npm run build",
+    "bundle:shared": "node scripts/bundle-shared.mjs",
+    "bundle:dashboard": "node scripts/bundle-dashboard.mjs",
+    "build:all": "npm run build && npm run build:dashboard && npm run bundle:shared && npm run bundle:dashboard",
+    "prepublishOnly": "npm run build:all",
+    "pack:test": "npm pack && tar -tzf kora-cli-*.tgz | head -50",
     "dev": "tsc -w -p tsconfig.json",
     "start": "node dist/cli.js start",
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "keywords": [
+    "kora",
+    "ai",
+    "claude",
+    "multi-agent",
+    "orchestration",
+    "cli",
+    "automation",
+    "coding-assistant"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ashishranjan738/kora.git",
+    "directory": "packages/daemon"
+  },
+  "bundleDependencies": [
+    "@kora/shared"
+  ],
   "dependencies": {
     "@kora/shared": "*",
     "@types/js-yaml": "^4.0.9",
     "@xterm/addon-attach": "^0.12.0",
+    "ajv": "^8.18.0",
     "better-sqlite3": "^12.8.0",
     "express": "^5.1.0",
     "holdpty": "^0.3.0",
@@ -34,9 +66,11 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.0",
+    "@types/fs-extra": "^11.0.4",
     "@types/supertest": "^7.2.0",
     "@types/uuid": "^10.0.0",
     "@types/ws": "^8.5.0",
+    "fs-extra": "^11.3.4",
     "supertest": "^7.2.2",
     "typescript": "^5.7.0",
     "vitest": "^4.1.0"
