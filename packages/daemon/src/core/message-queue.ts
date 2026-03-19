@@ -456,10 +456,11 @@ export class MessageQueue {
     let lastError: unknown;
 
     // Track: message sent (queued)
+    // Use messageId as PK to prevent duplicate tracking records on retry
     if (this.database && this.sessionId) {
       try {
         this.database.trackMessageDelivery({
-          id: crypto.randomUUID(),
+          id: messageId,  // Use messageId as PK for idempotency
           sessionId: this.sessionId,
           messageId,
           agentId,
