@@ -15,6 +15,7 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
   const [connected, setConnected] = useState(false);
   const [hasData, setHasData] = useState(false);
   const [scrolledUp, setScrolledUp] = useState(false);
+  const [manuallyPaused, setManuallyPaused] = useState(false);
   const resolvedTerminalColors = useThemeStore((s) => s.resolvedTerminalColors);
 
   const handleResize = useCallback((entry: ReturnType<typeof getOrCreateTerminal>) => {
@@ -90,12 +91,32 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
 
   const showLoading = !connected && !hasData;
 
-  function handleScrollToBottom() {
+  // Live Feed controls
+  function handleResumeLiveFeed() {
     const entry = getOrCreateTerminal(sessionId, agentId, resolvedTerminalColors);
     entry.term.scrollToBottom();
     entry.userScrolledUp = false;
+    entry.manuallyPaused = false;
     setScrolledUp(false);
+    setManuallyPaused(false);
   }
+
+  function handleToggleManualPause() {
+    const entry = getOrCreateTerminal(sessionId, agentId, resolvedTerminalColors);
+    if (manuallyPaused) {
+      // Resume
+      entry.manuallyPaused = false;
+      setManuallyPaused(false);
+      entry.term.scrollToBottom();
+    } else {
+      // Pause
+      entry.manuallyPaused = true;
+      setManuallyPaused(true);
+    }
+  }
+
+  // Determine Live Feed visual state
+  const isFollowing = !scrolledUp && !manuallyPaused;
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height }}>
@@ -156,10 +177,10 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
         transition: "opacity 0.3s ease-in",
       }} />
 
-      {/* Floating auto-scroll button — shown when user has scrolled up */}
-      {scrolledUp && hasData && (
+      {/* Live Feed indicator / button */}
+      {hasData && (
         <button
-          onClick={handleScrollToBottom}
+          onClick={scrolledUp ? handleResumeLiveFeed : handleToggleManualPause}
           style={{
             position: "absolute",
             bottom: 12,
@@ -171,19 +192,25 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
             padding: "6px 12px",
             fontSize: 12,
             fontWeight: 500,
-            color: "var(--text-primary)",
-            background: "rgba(30, 30, 30, 0.85)",
-            border: "1px solid var(--border-color)",
+            color: isFollowing ? "var(--accent-green)" : "var(--text-primary)",
+            background: isFollowing ? "rgba(30, 30, 30, 0.6)" : "rgba(30, 30, 30, 0.85)",
+            border: `1px solid ${isFollowing ? "rgba(63, 185, 80, 0.3)" : "var(--border-color)"}`,
             borderRadius: 16,
             cursor: "pointer",
             backdropFilter: "blur(4px)",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-            transition: "opacity 0.2s ease",
+            boxShadow: isFollowing ? "none" : "0 2px 8px rgba(0,0,0,0.3)",
+            transition: "all 0.2s ease",
+            opacity: isFollowing ? 0.7 : 1,
           }}
-          title="Scroll to bottom and resume auto-scroll"
+          title={scrolledUp ? "Jump to bottom and resume Live Feed" : manuallyPaused ? "Resume Live Feed" : "Pause Live Feed"}
         >
-          <span style={{ fontSize: 14 }}>{"\u2193"}</span>
-          Auto-scroll
+          {scrolledUp ? (
+            <>{"\u2193"} Live Feed</>
+          ) : manuallyPaused ? (
+            <>{"\u23F8"} Live Feed</>
+          ) : (
+            <><span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "var(--accent-green)", display: "inline-block" }} /> Live Feed</>
+          )}
         </button>
       )}
     </div>

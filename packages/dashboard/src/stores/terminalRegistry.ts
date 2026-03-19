@@ -13,6 +13,7 @@ export interface TerminalEntry {
   connected: boolean;
   reconnectAttempts: number;
   userScrolledUp: boolean;
+  manuallyPaused: boolean;
   onConnectedChange?: (connected: boolean) => void;
   onMessageNotification?: (from: string) => void;
   onScrollStateChange?: (scrolledUp: boolean) => void;
@@ -75,8 +76,8 @@ function connectWs(entry: TerminalEntry): void {
       const isAtBottom = entry.term.buffer.active.viewportY >= entry.term.buffer.active.baseY;
 
       entry.term.write(text, () => {
-        // Only auto-scroll if user was already at bottom
-        if (isAtBottom) {
+        // Only auto-scroll if user was at bottom AND not manually paused
+        if (isAtBottom && !entry.manuallyPaused) {
           entry.term.scrollToBottom();
         }
         // Otherwise: preserve user's scroll position — they're reading history
@@ -211,6 +212,7 @@ export function getOrCreateTerminal(
     connected: false,
     reconnectAttempts: 0,
     userScrolledUp: false,
+    manuallyPaused: false,
   };
 
   // Track scroll state — detect when user scrolls away from bottom
