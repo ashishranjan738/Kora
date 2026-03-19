@@ -404,15 +404,18 @@ export class Orchestrator extends EventEmitter {
   }
 
   /**
-   * Restore agents from persisted state after daemon restart.
-   * Checks which tmux sessions are still alive and reconnects to them.
-   * Dead agents are marked as "stopped".
+   * Get all known agents (for cleanup/diagnostics).
+   * Returns ALL agents including stopped, crashed, and running agents.
    */
-  /** Get all known agents (for cleanup/diagnostics). */
   getAgents(): AgentState[] {
     return this.agentManager.listAgents();
   }
 
+  /**
+   * Restore agents from persisted state after daemon restart.
+   * Checks which tmux sessions are still alive and reconnects to them.
+   * Dead agents are marked as "stopped".
+   */
   async restore(): Promise<{ restored: number; dead: number }> {
     const savedAgents = await loadAgentStates(this.config.runtimeDir);
     if (savedAgents.length === 0) return { restored: 0, dead: 0 };

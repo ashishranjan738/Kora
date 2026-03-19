@@ -72,12 +72,14 @@ export async function cleanupOrphanedSessions(
       // Orphaned — kill it
       try {
         await ptyBackend.killSession(sessionName);
+        // Only count as killed if killSession succeeded
         result.orphanedKilled++;
         result.killedNames.push(sessionName);
         logger.info(`[holdpty-cleanup] Killed orphaned session: ${sessionName}`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         logger.warn(`[holdpty-cleanup] Failed to kill orphaned session ${sessionName}: ${msg}`);
+        // Note: orphanedKilled is NOT incremented on failure
       }
     }
 
