@@ -21,6 +21,7 @@ import type { PtyBackendType } from "@kora/shared";
 import { logger } from "./core/logger.js";
 import { ensureBuiltinPlaybooks } from "./core/playbook-loader.js";
 import { SuggestionsDatabase } from "./core/suggestions-db.js";
+import { PlaybookDatabase } from "./core/playbook-database.js";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -74,6 +75,9 @@ async function handleStart(): Promise<void> {
   // 2a. Initialize suggestions database for recent paths and flags
   const suggestionsDb = new SuggestionsDatabase(isDev);
 
+  // 2b. Initialize playbook database for YAML playbook storage
+  const playbookDb = new PlaybookDatabase(globalConfigDir);
+
   // 3. Ensure built-in playbooks exist
   await ensureBuiltinPlaybooks(globalConfigDir);
 
@@ -116,6 +120,7 @@ async function handleStart(): Promise<void> {
       startTime: Date.now(),
       globalConfigDir,
       suggestionsDb,
+      playbookDb,
     },
   });
 
@@ -183,6 +188,7 @@ async function handleStart(): Promise<void> {
 
     // Close databases
     suggestionsDb.close();
+    playbookDb.close();
 
     // Close PtyManager connections cleanly (disconnect dashboard terminals)
     ptyManager.destroyAll();
