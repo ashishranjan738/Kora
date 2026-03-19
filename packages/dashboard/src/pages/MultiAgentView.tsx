@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { AgentTerminal } from "../components/AgentTerminal";
 import { SpawnAgentDialog } from "../components/SpawnAgentDialog";
@@ -8,7 +8,7 @@ import { EditorTile } from "../components/EditorTile";
 import { Mosaic, MosaicWindow, MosaicNode, MosaicPath, MosaicWindowProps, getLeaves, createBalancedTreeFromLeaves } from "react-mosaic-component";
 import "react-mosaic-component/react-mosaic-component.css";
 import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
-import { Indicator, Tooltip } from "@mantine/core";
+import { Badge, Indicator, Tooltip } from "@mantine/core";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
 import { setMessageNotificationCallback } from "../stores/terminalRegistry";
 import { formatCost, formatTokens, formatLastSeen } from "../utils/formatters";
@@ -95,10 +95,12 @@ function replaceMosaicLeaf(node: MosaicNode<string> | null, oldId: string, newId
 
 export function MultiAgentView() {
   const { sessionId } = useParams<{ sessionId: string }>();
+  const navigate = useNavigate();
   const api = useApi();
 
   const [session, setSession] = useState<any>(null);
   const [agents, setAgents] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [focusedPanel, setFocusedPanel] = useState<string | null>(null);
   const [messages, setMessages] = useState<Record<string, string>>({});
@@ -230,6 +232,20 @@ export function MultiAgentView() {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [sessionId, loadData]);
+
+  // Fetch tasks for agent task count indicators
+  useEffect(() => {
+    if (!sessionId) return;
+    const fetchTasks = async () => {
+      try {
+        const data = await api.getTasks(sessionId);
+        setTasks(data.tasks || []);
+      } catch { /* ignore */ }
+    };
+    fetchTasks();
+    const interval = setInterval(fetchTasks, 10000);
+    return () => clearInterval(interval);
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cleanup toast timer
   useEffect(() => {
@@ -814,6 +830,28 @@ export function MultiAgentView() {
             </span>
             <FlagIndicator flags={(agent.config?.extraCliArgs as string[]) || []} />
             <ChannelIndicator channels={(agent.config?.channels as string[]) || []} />
+            {(() => {
+              const activeTaskCount = tasks.filter(t =>
+                (t.assignedTo === agent.id || t.assignedTo === (agent.config?.name || agent.name)) &&
+                (t.status === "pending" || t.status === "in-progress")
+              ).length;
+              return activeTaskCount > 0 ? (
+                <Tooltip label={`${activeTaskCount} active task${activeTaskCount !== 1 ? "s" : ""} — click to view`}>
+                  <Badge
+                    size="xs"
+                    color="grape"
+                    variant="filled"
+                    style={{ cursor: "pointer", fontSize: 10, padding: "0 6px" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/session/${sessionId}#tasks`);
+                    }}
+                  >
+                    {activeTaskCount} task{activeTaskCount !== 1 ? "s" : ""}
+                  </Badge>
+                </Tooltip>
+              ) : null;
+            })()}
             <span className="mosaic-token-usage">
               <span>In: {formatTokens(tokenIn)}</span>
               <span>Out: {formatTokens(tokenOut)}</span>
