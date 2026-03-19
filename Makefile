@@ -1,5 +1,5 @@
 .PHONY: build build-shared build-daemon build-dashboard \
-       dev prod stop-dev stop-prod restart-dev restart-prod \
+       dev dev-debug prod stop-dev stop-prod restart-dev restart-prod \
        dev-bg prod-bg logs-dev logs-prod \
        test typecheck lint check \
        clean clean-dev clean-prod clean-dist clean-all \
@@ -26,7 +26,15 @@ dev: build ## Build and start dev daemon
 		lsof -ti :7891 | xargs kill 2>/dev/null; \
 		sleep 1; \
 	fi
-	node packages/daemon/dist/cli.js start --dev
+	KORA_LOG_LEVEL=info node packages/daemon/dist/cli.js start --dev
+
+dev-debug: build ## Build and start dev daemon with debug logging
+	@if lsof -ti :7891 >/dev/null 2>&1; then \
+		echo "Stopping existing dev daemon..."; \
+		lsof -ti :7891 | xargs kill 2>/dev/null; \
+		sleep 1; \
+	fi
+	KORA_LOG_LEVEL=debug node packages/daemon/dist/cli.js start --dev
 
 dev-bg: build ## Build and start dev daemon in background (logs to ~/.kora-dev/daemon.log)
 	@if lsof -ti :7891 >/dev/null 2>&1; then \
@@ -44,8 +52,8 @@ stop-dev: ## Stop dev daemon
 
 restart-dev: stop-dev dev-bg ## Rebuild and restart dev daemon
 
-logs-dev: ## Tail dev daemon logs
-	@tail -f ~/.kora-dev/daemon.log 2>/dev/null || echo "No dev daemon log found at ~/.kora-dev/daemon.log"
+logs-dev: ## Tail dev daemon logs (formatted with pino-pretty)
+	@tail -f ~/.kora-dev/daemon.log 2>/dev/null | npx pino-pretty --colorize 2>/dev/null || tail -f ~/.kora-dev/daemon.log 2>/dev/null || echo "No dev daemon log found at ~/.kora-dev/daemon.log"
 
 # ─── Prod (port 7890) ─────────────────────────────────────
 
@@ -129,6 +137,7 @@ clean-all: stop-dev stop-prod clean-dist clean-modules ## Full cleanup: stop dae
 
 install: ## Install all dependencies
 	npm install
+	@rm -rf node_modules/holdpty/node_modules/node-pty 2>/dev/null && echo "Cleaned holdpty bundled node-pty" || true
 
 fresh: clean-all install build ## Full clean, install, and build
 
