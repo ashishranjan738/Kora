@@ -66,25 +66,25 @@ interface TaskBoardProps {
   sessionId: string;
 }
 
-const COLUMNS = ["backlog", "in-progress", "review", "done"] as const;
+const COLUMNS = ["pending", "in-progress", "review", "done"] as const;
 type ColumnId = (typeof COLUMNS)[number];
 
 const COLUMN_LABELS: Record<string, string> = {
-  backlog: "Backlog",
+  pending: "Backlog",
   "in-progress": "In Progress",
   review: "Review",
   done: "Done",
 };
 
 const COLUMN_COLORS: Record<string, string> = {
-  backlog: "gray",
+  pending: "gray",
   "in-progress": "blue",
   review: "yellow",
   done: "green",
 };
 
 const COLUMN_CSS_COLORS: Record<string, string> = {
-  backlog: "var(--text-muted)",
+  pending: "var(--text-muted)",
   "in-progress": "var(--accent-blue)",
   review: "var(--accent-yellow)",
   done: "var(--accent-green)",
@@ -393,7 +393,7 @@ function TaskColumn({
             {tasks.length}
           </Badge>
         </Group>
-        {column === "backlog" && (
+        {column === "pending" && (
           <ActionIcon
             variant="subtle"
             size="sm"
@@ -451,7 +451,7 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const [newDependencies, setNewDependencies] = useState<string[]>([]);
-  const [activeCol, setActiveCol] = useState<ColumnId>("backlog");
+  const [activeCol, setActiveCol] = useState<ColumnId>("pending");
 
   // Filters
   const [filterAgent, setFilterAgent] = useState<string | null>(null);
@@ -1665,7 +1665,7 @@ function TaskDetailModal({
                       <Badge
                         size="xs"
                         variant="light"
-                        color={isDone ? "green" : COLUMN_COLORS[depTask?.status || "backlog"] || "gray"}
+                        color={isDone ? "green" : COLUMN_COLORS[depTask?.status || "pending"] || "gray"}
                       >
                         {isDone ? "Done" : depTask ? (COLUMN_LABELS[depTask.status] || depTask.status) : "Unknown"}
                       </Badge>
