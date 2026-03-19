@@ -1171,7 +1171,7 @@ function AgentsTab({
       }
     }
     fetchTerminals();
-  }, [sessionId, api, addSession]);
+  }, [sessionId]); // Zustand actions are stable, addSession not needed in deps
 
   return (
     <>
