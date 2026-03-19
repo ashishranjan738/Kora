@@ -4,6 +4,7 @@ import { EventEmitter } from "events";
 import fs from "fs/promises";
 import fsSyn from "fs";
 import path from "path";
+import { logger } from "./logger.js";
 
 export class AgentControlPlane extends EventEmitter {
   private watchers = new Map<string, fsSyn.FSWatcher>();
@@ -22,7 +23,7 @@ export class AgentControlPlane extends EventEmitter {
   /** Start watching all command directories for new commands */
   startWatching(): void {
     this.discoverAndWatchAgents().catch((err) => {
-      console.error("[AgentControlPlane] Failed to discover command directories:", err);
+      logger.error({ err: err }, "[AgentControlPlane] Failed to discover command directories:");
     });
   }
 
@@ -39,7 +40,7 @@ export class AgentControlPlane extends EventEmitter {
         }
       }
     } catch (err) {
-      console.error("[AgentControlPlane] Error discovering command directories:", err);
+      logger.error({ err: err }, "[AgentControlPlane] Error discovering command directories:");
     }
   }
 
@@ -68,16 +69,16 @@ export class AgentControlPlane extends EventEmitter {
         await fs.rename(filePath, path.join(cmdDir, PROCESSED_DIR, filename));
 
         // Emit for the orchestrator to handle
-        console.log(`[AgentControlPlane] Received command "${command.action}" (id: ${command.id}) from agent ${agentId}`);
+        logger.info(`[AgentControlPlane] Received command "${command.action}" (id: ${command.id}) from agent ${agentId}`);
         this.emit("command", agentId, command);
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
-        console.error(`[AgentControlPlane] Failed to process command file ${filename} for agent ${agentId}:`, err);
+        logger.error({ err: err }, `[AgentControlPlane] Failed to process command file ${filename} for agent ${agentId}:`);
       }
     });
 
     watcher.on("error", (err: Error) => {
-      console.error(`[AgentControlPlane] Watcher error for ${key}:`, err);
+      logger.error({ err: err }, `[AgentControlPlane] Watcher error for ${key}:`);
     });
 
     this.watchers.set(key, watcher);
@@ -85,7 +86,7 @@ export class AgentControlPlane extends EventEmitter {
 
   /** Write a response for an agent */
   async writeResponse(agentId: string, response: ControlResponse): Promise<void> {
-    console.log(`[AgentControlPlane] Writing response for command ${response.commandId} to agent ${agentId}: ${response.status}`);
+    logger.info(`[AgentControlPlane] Writing response for command ${response.commandId} to agent ${agentId}: ${response.status}`);
     const resDir = path.join(this.runtimeDir, CONTROL_DIR, `responses-${agentId}`);
     const filename = `${Date.now()}-${response.commandId}.json`;
     const tmpFile = path.join(resDir, `.${filename}.tmp`);

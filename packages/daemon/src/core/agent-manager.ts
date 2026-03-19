@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from "uuid";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+import { logger } from "./logger.js";
 
 export interface SpawnAgentOptions {
   sessionId: string;
@@ -86,7 +87,7 @@ export class AgentManager extends EventEmitter {
           runtimeDir: options.runtimeDir,
         });
       } catch (err) {
-        console.error(`[agent-manager] Failed to create worktree for ${agentId}, using main directory:`, err);
+        logger.error({ err: err }, `[agent-manager] Failed to create worktree for ${agentId}, using main directory:`);
       }
     }
 
@@ -164,7 +165,7 @@ export class AgentManager extends EventEmitter {
         };
         await fs.writeFile(mcpConfigPath, JSON.stringify(mcpConfig, null, 2), "utf-8");
       } catch (err) {
-        console.error(`[agent-manager] Failed to generate MCP config for ${agentId}:`, err);
+        logger.error({ err: err }, `[agent-manager] Failed to generate MCP config for ${agentId}:`);
         mcpConfigPath = undefined;
       }
     }
@@ -382,7 +383,7 @@ export class AgentManager extends EventEmitter {
       try {
         await this.worktreeManager.removeWorktree(wtInfo.projectPath, wtInfo.runtimeDir, agentId);
       } catch (err) {
-        console.error(`[agent-manager] Failed to remove worktree for ${agentId}:`, err);
+        logger.error({ err: err }, `[agent-manager] Failed to remove worktree for ${agentId}:`);
       }
       this.worktreeInfo.delete(agentId);
     }
@@ -503,7 +504,7 @@ export class AgentManager extends EventEmitter {
           await this.worktreeManager.removeWorktree(wtInfo.projectPath, wtInfo.runtimeDir, agentId);
           this.worktreeInfo.delete(agentId);
         } catch (err) {
-          console.error(`[agent-manager] Failed to cleanup worktree for ${agentId}:`, err);
+          logger.error({ err: err }, `[agent-manager] Failed to cleanup worktree for ${agentId}:`);
         }
       }
     }
@@ -533,9 +534,9 @@ export class AgentManager extends EventEmitter {
             const orphanedPath = path.join(worktreesDir, dirName);
             try {
               await fs.rm(orphanedPath, { recursive: true, force: true });
-              console.log(`[agent-manager] Removed orphaned worktree directory: ${orphanedPath}`);
+              logger.info(`[agent-manager] Removed orphaned worktree directory: ${orphanedPath}`);
             } catch (err) {
-              console.error(`[agent-manager] Failed to remove orphaned worktree directory ${orphanedPath}:`, err);
+              logger.error({ err: err }, `[agent-manager] Failed to remove orphaned worktree directory ${orphanedPath}:`);
             }
           }
         }
@@ -543,7 +544,7 @@ export class AgentManager extends EventEmitter {
     } catch (err) {
       // Directory might not exist, which is fine
       if ((err as any).code !== 'ENOENT') {
-        console.error(`[agent-manager] Failed to scan worktrees directory:`, err);
+        logger.error({ err: err }, `[agent-manager] Failed to scan worktrees directory:`);
       }
     }
   }

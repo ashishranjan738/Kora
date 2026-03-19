@@ -17,6 +17,7 @@ import * as fs from "fs";
 import * as path from "path";
 import type { IPtyBackend } from "./pty-backend.js";
 import type { PtyManager } from "./pty-manager.js";
+import { logger } from "./logger.js";
 
 const execFile = promisify(execFileCb);
 
@@ -77,7 +78,7 @@ export class HoldptyController implements IPtyBackend {
       return stdout;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      process.stderr.write(`[HoldptyController] Error running holdpty ${args[0]}: ${message}\n`);
+      logger.error(`[HoldptyController] Error running holdpty ${args[0]}: ${message}\n`);
       throw error;
     }
   }
@@ -254,7 +255,7 @@ export class HoldptyController implements IPtyBackend {
         const msg = err.message;
         if (msg.includes("ENOENT") || msg.includes("ECONNREFUSED") || msg.includes("no such file")
             || msg.includes("ECONNRESET") || msg.includes("already attached")) {
-          process.stderr.write(`[HoldptyController] Ignoring sendKeys error for ${session}: ${msg}\n`);
+          logger.error(`[HoldptyController] Ignoring sendKeys error for ${session}: ${msg}\n`);
         }
         resolve();
       });
@@ -373,7 +374,7 @@ export class HoldptyController implements IPtyBackend {
       });
       child.unref();
     } catch (err) {
-      console.error(`[HoldptyController] Failed to start pipe for ${session}:`, err);
+      logger.error({ err: err }, `[HoldptyController] Failed to start pipe for ${session}:`);
     }
   }
 

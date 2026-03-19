@@ -4,6 +4,7 @@ import * as path from "path";
 import { v4 as uuidv4 } from "uuid";
 import type { AgentMessage } from "@kora/shared";
 import { MESSAGES_DIR, PROCESSED_DIR } from "@kora/shared";
+import { logger } from "./logger.js";
 
 // ============================================================
 // Helpers
@@ -75,7 +76,7 @@ export class MessageBus extends EventEmitter {
         this.watchOutbox(agentId);
       }
     } catch (err) {
-      console.error(`[MessageBus] Failed to setup agent ${agentId}:`, err);
+      logger.error({ err: err }, `[MessageBus] Failed to setup agent ${agentId}:`);
     }
   }
 
@@ -93,7 +94,7 @@ export class MessageBus extends EventEmitter {
       await fs.rm(this.inboxDir(agentId), { recursive: true, force: true });
       await fs.rm(this.outboxDir(agentId), { recursive: true, force: true });
     } catch (err) {
-      console.error(`[MessageBus] Failed to teardown agent ${agentId}:`, err);
+      logger.error({ err: err }, `[MessageBus] Failed to teardown agent ${agentId}:`);
     }
   }
 
@@ -108,7 +109,7 @@ export class MessageBus extends EventEmitter {
       const filePath = path.join(this.inboxDir(agentId), filename);
       await atomicWriteJson(filePath, message);
     } catch (err) {
-      console.error(`[MessageBus] Failed to deliver message to inbox of ${agentId}:`, err);
+      logger.error({ err: err }, `[MessageBus] Failed to deliver message to inbox of ${agentId}:`);
     }
   }
 
@@ -132,11 +133,11 @@ export class MessageBus extends EventEmitter {
           const message = JSON.parse(raw) as AgentMessage;
           messages.push(message);
         } catch (readErr) {
-          console.error(`[MessageBus] Failed to read outbox message ${entry}:`, readErr);
+          logger.error({ err: readErr }, `[MessageBus] Failed to read outbox message ${entry}:`);
         }
       }
     } catch (err) {
-      console.error(`[MessageBus] Failed to read outbox for ${agentId}:`, err);
+      logger.error({ err: err }, `[MessageBus] Failed to read outbox for ${agentId}:`);
     }
 
     // Sort by timestamp embedded in the filename (prefix is Date.now())
@@ -160,9 +161,8 @@ export class MessageBus extends EventEmitter {
       const dest = path.join(this.processedDir(agentId, direction), filename);
       await fs.rename(src, dest);
     } catch (err) {
-      console.error(
-        `[MessageBus] Failed to mark ${direction} message ${filename} as processed for ${agentId}:`,
-        err,
+      logger.error({ err: err },
+        `[MessageBus] Failed to mark ${direction} message ${filename} as processed for ${agentId}`,
       );
     }
   }
@@ -177,7 +177,7 @@ export class MessageBus extends EventEmitter {
     this.watching = true;
 
     this.discoverAndWatchOutboxes().catch((err) => {
-      console.error("[MessageBus] Failed to discover outbox directories:", err);
+      logger.error({ err: err }, "[MessageBus] Failed to discover outbox directories:");
     });
   }
 
@@ -203,7 +203,7 @@ export class MessageBus extends EventEmitter {
         }
       }
     } catch (err) {
-      console.error("[MessageBus] Error discovering outbox directories:", err);
+      logger.error({ err: err }, "[MessageBus] Error discovering outbox directories:");
     }
   }
 
@@ -227,17 +227,17 @@ export class MessageBus extends EventEmitter {
 
         const filePath = path.join(dir, filename);
         this.handleNewOutboxFile(agentId, filePath, filename).catch((err) => {
-          console.error(`[MessageBus] Error handling outbox file ${filename}:`, err);
+          logger.error({ err: err }, `[MessageBus] Error handling outbox file ${filename}:`);
         });
       });
 
       watcher.on("error", (err: Error) => {
-        console.error(`[MessageBus] Watcher error for ${key}:`, err);
+        logger.error({ err: err }, `[MessageBus] Watcher error for ${key}:`);
       });
 
       this.fsWatchers.set(key, watcher);
     } catch (err) {
-      console.error(`[MessageBus] Failed to watch outbox for ${agentId}:`, err);
+      logger.error({ err: err }, `[MessageBus] Failed to watch outbox for ${agentId}:`);
     }
   }
 
@@ -260,7 +260,7 @@ export class MessageBus extends EventEmitter {
     } catch (err) {
       // File may have been moved/deleted between event and read — that's fine
       if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
-      console.error(`[MessageBus] Failed to read new outbox file ${filePath}:`, err);
+      logger.error({ err: err }, `[MessageBus] Failed to read new outbox file ${filePath}:`);
     }
   }
 
@@ -325,7 +325,7 @@ export class MessageBus extends EventEmitter {
         await this.deliverToInbox(agentId, message);
       }
     } catch (err) {
-      console.error(`[MessageBus] Failed to route message ${message.id}:`, err);
+      logger.error({ err: err }, `[MessageBus] Failed to route message ${message.id}:`);
     }
   }
 }

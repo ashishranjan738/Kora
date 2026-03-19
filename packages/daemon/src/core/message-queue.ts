@@ -3,6 +3,7 @@ import type { MessagingMode } from "@kora/shared";
 import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
+import { logger } from "./logger.js";
 
 interface QueuedMessage {
   agentId: string;
@@ -78,7 +79,7 @@ export class MessageQueue {
       } else {
         conv.count++;
         if (conv.count > 8) {
-          console.warn(`[MessageQueue] Loop detected: ${pairKey} exchanged ${conv.count} messages in 2min — dropping`);
+          logger.warn(`[MessageQueue] Loop detected: ${pairKey} exchanged ${conv.count} messages in 2min — dropping`);
           return false;
         }
       }
@@ -207,7 +208,7 @@ export class MessageQueue {
   private async deliver(msg: QueuedMessage): Promise<void> {
     // Rate limit check — drop message if agent is receiving too many
     if (this.isRateLimited(msg.agentId)) {
-      console.warn(`[MessageQueue] Rate limited: dropping message for agent ${msg.agentId} — too many messages in 60s`);
+      logger.warn(`[MessageQueue] Rate limited: dropping message for agent ${msg.agentId} — too many messages in 60s`);
       return;
     }
 

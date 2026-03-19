@@ -26,6 +26,7 @@ import {
   KNOWLEDGE_DIR,
 } from "@kora/shared";
 import { EventLog } from "./event-log.js";
+import { logger } from "./logger.js";
 
 /** Subdirectories created inside each session's runtime dir */
 const SESSION_SUBDIRS = [
@@ -66,7 +67,7 @@ export class SessionManager {
       }
       // Empty or corrupt JSON — log warning and start fresh
       if (err instanceof SyntaxError) {
-        console.warn(`[SessionManager] Corrupt sessions file — starting with empty registry`);
+        logger.warn(`[SessionManager] Corrupt sessions file — starting with empty registry`);
         return;
       }
       const message = err instanceof Error ? err.message : String(err);
