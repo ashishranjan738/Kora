@@ -12,8 +12,11 @@ export interface TerminalEntry {
   disposed: boolean;
   connected: boolean;
   reconnectAttempts: number;
+  userScrolledUp: boolean;
+  manuallyPaused: boolean;
   onConnectedChange?: (connected: boolean) => void;
   onMessageNotification?: (from: string) => void;
+  onScrollStateChange?: (scrolledUp: boolean) => void;
 }
 
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -68,17 +71,16 @@ function connectWs(entry: TerminalEntry): void {
         entry.onMessageNotification(match[1]);
       }
 
-      // Check if user is at bottom BEFORE writing new data
-      // This prevents auto-scroll when user has scrolled up to read history
-      const buffer = entry.term.buffer.active;
-      const isAtBottom = buffer.baseY + buffer.cursorY >= buffer.length - entry.term.rows;
+      // Check if user is at bottom BEFORE writing new data using viewport position
+      // viewportY tracks where the user has scrolled; baseY tracks the total scroll offset
+      const isAtBottom = entry.term.buffer.active.viewportY >= entry.term.buffer.active.baseY;
 
       entry.term.write(text, () => {
-        // Only auto-scroll if user was already at bottom
-        if (isAtBottom) {
+        // Only auto-scroll if user was at bottom AND not manually paused
+        if (isAtBottom && !entry.manuallyPaused) {
           entry.term.scrollToBottom();
         }
-        // Otherwise: preserve user's scroll position
+        // Otherwise: preserve user's scroll position — they're reading history
       });
 
       if (!firstChunkReceived) {
@@ -209,7 +211,19 @@ export function getOrCreateTerminal(
     disposed: false,
     connected: false,
     reconnectAttempts: 0,
+    userScrolledUp: false,
+    manuallyPaused: false,
   };
+
+  // Track scroll state — detect when user scrolls away from bottom
+  term.onScroll(() => {
+    const atBottom = term.buffer.active.viewportY >= term.buffer.active.baseY;
+    const wasScrolledUp = entry.userScrolledUp;
+    entry.userScrolledUp = !atBottom;
+    if (wasScrolledUp !== entry.userScrolledUp) {
+      entry.onScrollStateChange?.(entry.userScrolledUp);
+    }
+  });
 
   // Send terminal input to WebSocket (must be after entry is created)
   term.onData((data) => {

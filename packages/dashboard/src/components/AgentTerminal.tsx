@@ -14,6 +14,8 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
   const resizeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [connected, setConnected] = useState(false);
   const [hasData, setHasData] = useState(false);
+  const [scrolledUp, setScrolledUp] = useState(false);
+  const [manuallyPaused, setManuallyPaused] = useState(false);
   const resolvedTerminalColors = useThemeStore((s) => s.resolvedTerminalColors);
 
   const handleResize = useCallback((entry: ReturnType<typeof getOrCreateTerminal>) => {
@@ -43,7 +45,12 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
         setTimeout(() => setHasData(true), 200);
       }
     };
+    // Set scroll state callback — tracks when user scrolls away from bottom
+    entry.onScrollStateChange = (isScrolledUp) => {
+      setScrolledUp(isScrolledUp);
+    };
     setConnected(entry.connected);
+    setScrolledUp(entry.userScrolledUp);
     // If already connected or terminal has content, mark as having data
     if (entry.connected || entry.term.buffer.active.length > 1) {
       setHasData(true);
@@ -68,6 +75,7 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
     return () => {
       // Detach but keep alive in registry
       entry.onConnectedChange = undefined;
+      entry.onScrollStateChange = undefined;
       resizeObserver.disconnect();
       window.removeEventListener("resize", onWindowResize);
       if (resizeTimer.current) clearTimeout(resizeTimer.current);
@@ -82,6 +90,33 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
   }, [resolvedTerminalColors, sessionId, agentId]);
 
   const showLoading = !connected && !hasData;
+
+  // Live Feed controls
+  function handleResumeLiveFeed() {
+    const entry = getOrCreateTerminal(sessionId, agentId, resolvedTerminalColors);
+    entry.term.scrollToBottom();
+    entry.userScrolledUp = false;
+    entry.manuallyPaused = false;
+    setScrolledUp(false);
+    setManuallyPaused(false);
+  }
+
+  function handleToggleManualPause() {
+    const entry = getOrCreateTerminal(sessionId, agentId, resolvedTerminalColors);
+    if (manuallyPaused) {
+      // Resume
+      entry.manuallyPaused = false;
+      setManuallyPaused(false);
+      entry.term.scrollToBottom();
+    } else {
+      // Pause
+      entry.manuallyPaused = true;
+      setManuallyPaused(true);
+    }
+  }
+
+  // Determine Live Feed visual state
+  const isFollowing = !scrolledUp && !manuallyPaused;
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height }}>
@@ -141,6 +176,43 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
         opacity: hasData ? 1 : 0,
         transition: "opacity 0.3s ease-in",
       }} />
+
+      {/* Live Feed indicator / button */}
+      {hasData && (
+        <button
+          onClick={scrolledUp ? handleResumeLiveFeed : handleToggleManualPause}
+          style={{
+            position: "absolute",
+            bottom: 12,
+            right: 16,
+            zIndex: 15,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "6px 12px",
+            fontSize: 12,
+            fontWeight: 500,
+            color: isFollowing ? "var(--accent-green)" : "var(--text-primary)",
+            background: "var(--bg-tertiary)",
+            border: `1px solid ${isFollowing ? "rgba(63, 185, 80, 0.3)" : "var(--border-color)"}`,
+            borderRadius: 16,
+            cursor: "pointer",
+            backdropFilter: "blur(4px)",
+            boxShadow: isFollowing ? "none" : "0 2px 8px rgba(0,0,0,0.3)",
+            transition: "all 0.2s ease",
+            opacity: isFollowing ? 0.7 : 1,
+          }}
+          title={scrolledUp ? "Jump to bottom and resume Live Feed" : manuallyPaused ? "Resume Live Feed" : "Pause Live Feed"}
+        >
+          {scrolledUp ? (
+            <>{"\u2193"} Live Feed</>
+          ) : manuallyPaused ? (
+            <>{"\u23F8"} Live Feed</>
+          ) : (
+            <><span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "var(--accent-green)", display: "inline-block" }} /> Live Feed</>
+          )}
+        </button>
+      )}
     </div>
   );
 });

@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Terminal } from '@xterm/xterm';
 import {
@@ -8,12 +9,13 @@ import {
 } from './terminalRegistry';
 
 // Mock xterm.js
-vi.mock('@xterm/xterm', () => ({
-  Terminal: vi.fn(() => ({
-    write: vi.fn((text, callback) => callback?.()),
+function createMockTerminal() {
+  return {
+    write: vi.fn((text: string, callback?: () => void) => callback?.()),
     scrollToBottom: vi.fn(),
     dispose: vi.fn(),
     onData: vi.fn(),
+    onScroll: vi.fn(),
     onSelectionChange: vi.fn(),
     getSelection: vi.fn(),
     loadAddon: vi.fn(),
@@ -21,6 +23,7 @@ vi.mock('@xterm/xterm', () => ({
     buffer: {
       active: {
         baseY: 0,
+        viewportY: 0,
         cursorY: 10,
         length: 100,
       },
@@ -29,21 +32,31 @@ vi.mock('@xterm/xterm', () => ({
     cols: 80,
     options: {},
     element: null,
-  })),
-}));
+    refresh: vi.fn(),
+  };
+}
 
-vi.mock('@xterm/addon-fit', () => ({
-  FitAddon: vi.fn(() => ({
-    fit: vi.fn(),
-  })),
-}));
+vi.mock('@xterm/xterm', () => {
+  const MockTerminal = vi.fn(function(this: any) {
+    Object.assign(this, createMockTerminal());
+  });
+  return { Terminal: MockTerminal };
+});
 
-vi.mock('@xterm/addon-webgl', () => ({
-  WebglAddon: vi.fn(() => ({
-    onContextLoss: vi.fn(),
-    dispose: vi.fn(),
-  })),
-}));
+vi.mock('@xterm/addon-fit', () => {
+  const MockFitAddon = vi.fn(function(this: any) {
+    this.fit = vi.fn();
+  });
+  return { FitAddon: MockFitAddon };
+});
+
+vi.mock('@xterm/addon-webgl', () => {
+  const MockWebglAddon = vi.fn(function(this: any) {
+    this.onContextLoss = vi.fn();
+    this.dispose = vi.fn();
+  });
+  return { WebglAddon: MockWebglAddon };
+});
 
 // Mock WebSocket
 class MockWebSocket {
@@ -64,6 +77,26 @@ class MockWebSocket {
 }
 
 global.WebSocket = MockWebSocket as any;
+
+// Mock window.location for buildWsUrl
+Object.defineProperty(window, 'location', {
+  value: {
+    protocol: 'http:',
+    host: 'localhost:7891',
+    search: '',
+  },
+  writable: true,
+});
+
+// Mock localStorage
+global.localStorage = {
+  getItem: vi.fn(() => null),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
+  clear: vi.fn(),
+  length: 0,
+  key: vi.fn(() => null),
+} as any;
 
 // Mock document.createElement
 global.document.createElement = vi.fn((tag: string) => {
@@ -132,14 +165,13 @@ describe('terminalRegistry - Notification Preview Extraction', () => {
     expect(preview).toBeUndefined();
   });
 
-  it('should preserve scroll position when user scrolled up', () => {
+  it('should preserve scroll position when user scrolled up (viewportY < baseY)', () => {
     const entry = getOrCreateTerminal(sessionId, agentId, theme);
     const mockTerm = entry.term as any;
 
-    // Mock user scrolled up (not at bottom)
-    mockTerm.buffer.active.baseY = 0;
-    mockTerm.buffer.active.cursorY = 10;
-    mockTerm.buffer.active.length = 100;
+    // Mock user scrolled up: viewportY behind baseY
+    mockTerm.buffer.active.baseY = 50;
+    mockTerm.buffer.active.viewportY = 20;
 
     const mockWs = entry.ws as any;
     mockWs.onmessage?.({ data: 'new output line\n' });
@@ -148,14 +180,13 @@ describe('terminalRegistry - Notification Preview Extraction', () => {
     expect(mockTerm.scrollToBottom).not.toHaveBeenCalled();
   });
 
-  it('should auto-scroll when user is at bottom', () => {
+  it('should auto-scroll when user is at bottom (viewportY >= baseY)', () => {
     const entry = getOrCreateTerminal(sessionId, agentId, theme);
     const mockTerm = entry.term as any;
 
-    // Mock user at bottom
-    mockTerm.buffer.active.baseY = 80;
-    mockTerm.buffer.active.cursorY = 20;
-    mockTerm.buffer.active.length = 100;
+    // Mock user at bottom: viewportY equals baseY
+    mockTerm.buffer.active.baseY = 50;
+    mockTerm.buffer.active.viewportY = 50;
 
     const mockWs = entry.ws as any;
     mockWs.onmessage?.({ data: 'new output line\n' });
@@ -169,9 +200,8 @@ describe('terminalRegistry - Notification Preview Extraction', () => {
     const mockTerm = entry.term as any;
 
     // User scrolled up
-    mockTerm.buffer.active.baseY = 0;
-    mockTerm.buffer.active.cursorY = 10;
-    mockTerm.buffer.active.length = 100;
+    mockTerm.buffer.active.baseY = 50;
+    mockTerm.buffer.active.viewportY = 10;
 
     const mockWs = entry.ws as any;
     mockWs.onmessage?.({ data: 'line 1\n' });
@@ -179,13 +209,72 @@ describe('terminalRegistry - Notification Preview Extraction', () => {
     expect(mockTerm.scrollToBottom).not.toHaveBeenCalled();
 
     // User scrolls back to bottom
-    mockTerm.buffer.active.baseY = 80;
-    mockTerm.buffer.active.cursorY = 20;
+    mockTerm.buffer.active.viewportY = 50;
 
     mockWs.onmessage?.({ data: 'line 2\n' });
 
     // Should resume auto-scroll
     expect(mockTerm.scrollToBottom).toHaveBeenCalled();
+  });
+
+  it('should not auto-scroll when manuallyPaused even at bottom', () => {
+    const entry = getOrCreateTerminal(sessionId, agentId, theme);
+    const mockTerm = entry.term as any;
+
+    // User at bottom but manually paused
+    mockTerm.buffer.active.baseY = 50;
+    mockTerm.buffer.active.viewportY = 50;
+    entry.manuallyPaused = true;
+
+    const mockWs = entry.ws as any;
+    mockWs.onmessage?.({ data: 'new output\n' });
+
+    // Should NOT scroll — manually paused overrides
+    expect(mockTerm.scrollToBottom).not.toHaveBeenCalled();
+  });
+
+  it('should auto-scroll when manuallyPaused is false and at bottom', () => {
+    const entry = getOrCreateTerminal(sessionId, agentId, theme);
+    const mockTerm = entry.term as any;
+
+    // User at bottom, not manually paused
+    mockTerm.buffer.active.baseY = 50;
+    mockTerm.buffer.active.viewportY = 50;
+    entry.manuallyPaused = false;
+
+    const mockWs = entry.ws as any;
+    mockWs.onmessage?.({ data: 'new output\n' });
+
+    // Should scroll — at bottom and not paused
+    expect(mockTerm.scrollToBottom).toHaveBeenCalled();
+  });
+
+  it('should track userScrolledUp state and fire onScrollStateChange', () => {
+    const entry = getOrCreateTerminal(sessionId, agentId, theme);
+    const mockTerm = entry.term as any;
+
+    // Get the onScroll callback that was registered
+    const onScrollCall = mockTerm.onScroll.mock.calls[0];
+    expect(onScrollCall).toBeDefined();
+    const onScrollCallback = onScrollCall[0];
+
+    const scrollStateChanges: boolean[] = [];
+    entry.onScrollStateChange = (scrolledUp) => scrollStateChanges.push(scrolledUp);
+
+    // Simulate scroll up (viewportY < baseY)
+    mockTerm.buffer.active.baseY = 50;
+    mockTerm.buffer.active.viewportY = 20;
+    onScrollCallback();
+
+    expect(entry.userScrolledUp).toBe(true);
+    expect(scrollStateChanges).toEqual([true]);
+
+    // Simulate scroll back to bottom
+    mockTerm.buffer.active.viewportY = 50;
+    onScrollCallback();
+
+    expect(entry.userScrolledUp).toBe(false);
+    expect(scrollStateChanges).toEqual([true, false]);
   });
 
   it('should allow setting and clearing notification callback', () => {
