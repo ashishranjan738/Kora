@@ -9,7 +9,7 @@ import path from "path";
 import fs from "fs";
 import { EventEmitter } from "events";
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 export class AppDatabase extends EventEmitter {
   public db: Database.Database;
@@ -134,6 +134,37 @@ export class AppDatabase extends EventEmitter {
         CREATE INDEX IF NOT EXISTS idx_message_deliveries_latency ON message_deliveries(latency_ms);
         CREATE INDEX IF NOT EXISTS idx_message_deliveries_session ON message_deliveries(session_id);
         PRAGMA user_version = 5;
+      `);
+    }
+
+    if (version < 6) {
+      // Migration 6: Add messages table for message content storage
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS messages (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          from_agent_id TEXT NOT NULL,
+          to_agent_id TEXT NOT NULL,
+          message_type TEXT NOT NULL,
+          content TEXT NOT NULL,
+          priority TEXT CHECK(priority IN ('critical', 'high', 'normal', 'low')) DEFAULT 'normal',
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'delivered', 'read', 'expired')),
+          created_at INTEGER NOT NULL,
+          delivered_at INTEGER,
+          read_at INTEGER,
+          expires_at INTEGER,
+          channel TEXT,
+          parent_message_id TEXT,
+          metadata TEXT DEFAULT '{}',
+          payload TEXT DEFAULT '{}'
+        );
+        CREATE INDEX IF NOT EXISTS idx_messages_recipient_status ON messages(to_agent_id, status);
+        CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(from_agent_id);
+        CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+        CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_messages_expires ON messages(expires_at);
+        CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel);
+        PRAGMA user_version = 6;
       `);
     }
   }
@@ -593,6 +624,198 @@ export class AppDatabase extends EventEmitter {
       `DELETE FROM message_deliveries WHERE enqueued_at < ?`
     ).run(cutoff);
     return result.changes;
+  }
+
+  // ─── Messages (Inter-Agent Communication) ────────────────────
+
+  /** Insert a new message */
+  insertMessage(message: {
+    id: string;
+    sessionId: string;
+    fromAgentId: string;
+    toAgentId: string;
+    messageType: string;
+    content: string;
+    priority?: 'critical' | 'high' | 'normal' | 'low';
+    createdAt: number;
+    expiresAt?: number;
+    channel?: string;
+    parentMessageId?: string;
+    metadata?: Record<string, unknown>;
+    payload?: Record<string, unknown>;
+  }): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO messages (
+        id, session_id, from_agent_id, to_agent_id, message_type, content,
+        priority, status, created_at, expires_at, channel, parent_message_id,
+        metadata, payload
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+    `).run(
+      message.id,
+      message.sessionId,
+      message.fromAgentId,
+      message.toAgentId,
+      message.messageType,
+      message.content,
+      message.priority || 'normal',
+      message.createdAt,
+      message.expiresAt || null,
+      message.channel || null,
+      message.parentMessageId || null,
+      JSON.stringify(message.metadata || {}),
+      JSON.stringify(message.payload || {})
+    );
+  }
+
+  /** Get messages for a recipient with optional filters */
+  getMessages(params: {
+    toAgentId?: string;
+    fromAgentId?: string;
+    sessionId?: string;
+    status?: 'pending' | 'delivered' | 'read' | 'expired';
+    channel?: string;
+    since?: number;
+    limit?: number;
+    offset?: number;
+  }): Array<{
+    id: string;
+    sessionId: string;
+    fromAgentId: string;
+    toAgentId: string;
+    messageType: string;
+    content: string;
+    priority: string;
+    status: string;
+    createdAt: number;
+    deliveredAt: number | null;
+    readAt: number | null;
+    expiresAt: number | null;
+    channel: string | null;
+    parentMessageId: string | null;
+    metadata: any;
+    payload: any;
+  }> {
+    const conditions: string[] = [];
+    const values: any[] = [];
+
+    if (params.toAgentId) {
+      conditions.push("to_agent_id = ?");
+      values.push(params.toAgentId);
+    }
+    if (params.fromAgentId) {
+      conditions.push("from_agent_id = ?");
+      values.push(params.fromAgentId);
+    }
+    if (params.sessionId) {
+      conditions.push("session_id = ?");
+      values.push(params.sessionId);
+    }
+    if (params.status) {
+      conditions.push("status = ?");
+      values.push(params.status);
+    }
+    if (params.channel) {
+      conditions.push("channel = ?");
+      values.push(params.channel);
+    }
+    if (params.since) {
+      conditions.push("created_at >= ?");
+      values.push(params.since);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    // SQLite requires LIMIT when using OFFSET
+    const limit = params.limit || (params.offset ? 999999 : undefined);
+    const limitClause = limit ? `LIMIT ${limit}` : "";
+    const offsetClause = params.offset ? `OFFSET ${params.offset}` : "";
+
+    const rows = this.db.prepare(`
+      SELECT * FROM messages ${where}
+      ORDER BY created_at DESC
+      ${limitClause} ${offsetClause}
+    `).all(...values) as any[];
+
+    return rows.map(r => ({
+      id: r.id,
+      sessionId: r.session_id,
+      fromAgentId: r.from_agent_id,
+      toAgentId: r.to_agent_id,
+      messageType: r.message_type,
+      content: r.content,
+      priority: r.priority,
+      status: r.status,
+      createdAt: r.created_at,
+      deliveredAt: r.delivered_at,
+      readAt: r.read_at,
+      expiresAt: r.expires_at,
+      channel: r.channel,
+      parentMessageId: r.parent_message_id,
+      metadata: JSON.parse(r.metadata || '{}'),
+      payload: JSON.parse(r.payload || '{}'),
+    }));
+  }
+
+  /** Mark a message as delivered */
+  markMessageDelivered(messageId: string): void {
+    const now = Date.now();
+    this.db.prepare(`
+      UPDATE messages
+      SET status = 'delivered', delivered_at = ?
+      WHERE id = ? AND status = 'pending'
+    `).run(now, messageId);
+  }
+
+  /** Mark a message as read */
+  markMessageRead(messageId: string): void {
+    const now = Date.now();
+    this.db.prepare(`
+      UPDATE messages
+      SET status = 'read', read_at = ?
+      WHERE id = ? AND (status = 'pending' OR status = 'delivered')
+    `).run(now, messageId);
+  }
+
+  /** Mark multiple messages as read */
+  markMessagesRead(messageIds: string[]): void {
+    if (messageIds.length === 0) return;
+    const now = Date.now();
+    const placeholders = messageIds.map(() => '?').join(',');
+    this.db.prepare(`
+      UPDATE messages
+      SET status = 'read', read_at = ?
+      WHERE id IN (${placeholders}) AND (status = 'pending' OR status = 'delivered')
+    `).run(now, ...messageIds);
+  }
+
+  /** Get unread message count for an agent */
+  getUnreadMessageCount(agentId: string): number {
+    const row = this.db.prepare(`
+      SELECT COUNT(*) as count FROM messages
+      WHERE to_agent_id = ? AND status IN ('pending', 'delivered')
+    `).get(agentId) as { count: number };
+    return row.count;
+  }
+
+  /** Clean up expired messages and return count of deleted messages */
+  cleanupExpiredMessages(): number {
+    const now = Date.now();
+    // Mark expired messages as expired (where expires_at is set and past)
+    this.db.prepare(`
+      UPDATE messages SET status = 'expired'
+      WHERE expires_at IS NOT NULL AND expires_at < ? AND status != 'expired'
+    `).run(now);
+
+    // Delete old messages (30 days retention for read/expired, 7 days for pending/delivered)
+    const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
+
+    const result1 = this.db.prepare(`
+      DELETE FROM messages
+      WHERE (status IN ('read', 'expired') AND created_at < ?)
+         OR (status IN ('pending', 'delivered') AND created_at < ?)
+    `).run(thirtyDaysAgo, sevenDaysAgo);
+
+    return result1.changes;
   }
 
   close(): void {
