@@ -1,0 +1,16 @@
+name: Branch Up-to-Date Check
+on: [pull_request]
+jobs:
+  check-rebase:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - run: |
+          git fetch origin main
+          BEHIND=$(git rev-list --count HEAD..origin/main)
+          if [ $BEHIND -gt 0 ]; then
+            echo "::error::Branch is $BEHIND commits behind main. Rebase required."
+            exit 1
+          fi
