@@ -1,4 +1,4 @@
-import { SegmentedControl, TextInput, Select, Switch, Group } from "@mantine/core";
+import { SegmentedControl, TextInput, MultiSelect, Switch, Group } from "@mantine/core";
 
 export type EventFilter = "all" | "agents" | "messages" | "tasks" | "system";
 export type DensityMode = "compact" | "normal" | "detailed";
@@ -69,22 +69,20 @@ export function TimelineFilters({
         />
 
         {agents.length > 0 && (
-          <Select
+          <MultiSelect
             size="xs"
             placeholder="All agents"
-            value={agentFilter || null}
-            onChange={(val) => onAgentFilterChange(val || "")}
-            data={[
-              { label: "All agents", value: "" },
-              ...agents.map((a) => ({ label: a.name, value: a.id })),
-            ]}
+            value={agentFilter ? agentFilter.split(',').filter(Boolean) : []}
+            onChange={(vals) => onAgentFilterChange(vals.join(','))}
+            data={agents.map((a) => ({ label: a.name, value: a.id }))}
             clearable
+            searchable
             styles={{
               input: {
                 backgroundColor: "var(--bg-primary)",
                 borderColor: "var(--border-color)",
                 color: "var(--text-primary)",
-                minWidth: 130,
+                minWidth: 150,
               },
             }}
           />

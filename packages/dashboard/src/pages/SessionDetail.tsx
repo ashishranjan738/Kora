@@ -178,7 +178,7 @@ export function SessionDetail() {
       const [s, a, e] = await Promise.all([
         api.getSession(sessionId),
         api.getAgents(sessionId),
-        api.getEvents(sessionId, 50),
+        api.getEvents(sessionId, { limit: 50 }),
       ]);
       setSession(s);
       setAgents(a.agents || []);
