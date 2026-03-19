@@ -38,6 +38,7 @@ interface QueuedMessage {
   priority: MessagePriority;
   ttl: number;  // absolute expiry timestamp (ms)
   fromAgentId?: string;
+  targetAgentId?: string;  // Tier 3: If set, only deliver to this agent (targeted message). If undefined, broadcast to all.
 }
 
 /** Auto-classify message priority based on content patterns */
@@ -80,11 +81,55 @@ export class MessageQueue {
   /** Callback to get agent tmux session — set by orchestrator */
   private getAgentTmuxSessionFn: ((agentId: string) => string | null) | null = null;
 
+  // ─── Tier 3: Delivery tracking ──────────────────────────────
+  private database: any | null = null;
+  private sessionId: string | null = null;
+  private metricsInterval: ReturnType<typeof setTimeout> | null = null;
+
   constructor(
     private tmux: IPtyBackend,
     private runtimeDir: string = "",
     private messagingMode: MessagingMode = "mcp",
   ) {}
+
+  /** Set database and sessionId for delivery tracking (Tier 3) */
+  setDeliveryTracking(database: any, sessionId: string): void {
+    this.database = database;
+    this.sessionId = sessionId;
+    this.startMetricsBroadcast();
+  }
+
+  /** Start periodic metrics broadcast (every 10 seconds) */
+  private startMetricsBroadcast(): void {
+    if (this.metricsInterval || !this.broadcastFn) return;
+
+    this.metricsInterval = setInterval(() => {
+      try {
+        // Broadcast metrics for all agents with messages
+        for (const agentId of this.mcpAgents) {
+          const metrics = this.getDeliveryMetrics(agentId);
+          if (metrics && this.broadcastFn) {
+            this.broadcastFn({
+              event: "delivery-metrics-updated",
+              agentId,
+              metrics,
+              timestamp: Date.now(),
+            });
+          }
+        }
+      } catch (err) {
+        logger.debug({ err }, "[MessageQueue] Metrics broadcast error");
+      }
+    }, 10_000); // Every 10 seconds
+  }
+
+  /** Stop periodic metrics broadcast */
+  private stopMetricsBroadcast(): void {
+    if (this.metricsInterval) {
+      clearInterval(this.metricsInterval);
+      this.metricsInterval = null;
+    }
+  }
 
   /** Get the rate limit for an agent based on their role */
   private getRateLimit(agentId: string): number {
@@ -134,8 +179,8 @@ export class MessageQueue {
 
   /** Batch-enqueue messages without triggering processQueues for each one.
    *  Call flushQueues() after batch to trigger single delivery pass. */
-  enqueueBatch(agentId: string, tmuxSession: string, message: string, fromAgentId?: string): boolean {
-    return this._enqueue(agentId, tmuxSession, message, fromAgentId, false);
+  enqueueBatch(agentId: string, tmuxSession: string, message: string, fromAgentId?: string, targetAgentId?: string): boolean {
+    return this._enqueue(agentId, tmuxSession, message, fromAgentId, targetAgentId, false);
   }
 
   /** Trigger a single delivery pass for all queues. Call after enqueueBatch(). */
@@ -146,11 +191,11 @@ export class MessageQueue {
   }
 
   /** Queue a message for delivery to an agent. Returns false if dropped (loop). */
-  enqueue(agentId: string, tmuxSession: string, message: string, fromAgentId?: string): boolean {
-    return this._enqueue(agentId, tmuxSession, message, fromAgentId, true);
+  enqueue(agentId: string, tmuxSession: string, message: string, fromAgentId?: string, targetAgentId?: string): boolean {
+    return this._enqueue(agentId, tmuxSession, message, fromAgentId, targetAgentId, true);
   }
 
-  private _enqueue(agentId: string, tmuxSession: string, message: string, fromAgentId: string | undefined, immediateFlush: boolean): boolean {
+  private _enqueue(agentId: string, tmuxSession: string, message: string, fromAgentId: string | undefined, targetAgentId: string | undefined, immediateFlush: boolean): boolean {
     // Conversation loop detection — max 8 messages between same pair in 2 minutes
     if (fromAgentId) {
       const pairKey = [fromAgentId, agentId].sort().join(":");
@@ -169,6 +214,14 @@ export class MessageQueue {
 
     const priority = classifyPriority(message);
     const now = Date.now();
+
+    // Tier 3: Critical messages bypass queue via direct delivery
+    if (priority === "critical") {
+      this.deliverDirect(agentId, tmuxSession, message, fromAgentId, targetAgentId).catch((err) => {
+        logger.warn({ agentId, err }, "[MessageQueue] Direct delivery failed for critical message");
+      });
+      return true;
+    }
 
     if (!this.queues.has(agentId)) this.queues.set(agentId, []);
     const queue = this.queues.get(agentId)!;
@@ -199,6 +252,7 @@ export class MessageQueue {
       priority,
       ttl: now + PRIORITY_TTL[priority],
       fromAgentId,
+      targetAgentId,
     });
 
     // Sort queue by priority (highest first), then by timestamp (oldest first)
@@ -242,6 +296,7 @@ export class MessageQueue {
       this.deliveryInterval = null;
     }
     this.stopRenotifyLoop();
+    this.stopMetricsBroadcast();
   }
 
   /** Process all queues — deliver messages to agents that are ready (parallel) */
@@ -379,6 +434,97 @@ export class MessageQueue {
     }
   }
 
+  /**
+   * Tier 3: Direct delivery channel — bypasses queue for critical/high-priority messages.
+   * Returns true if delivery succeeded, false otherwise.
+   * Implements automatic retry with exponential backoff for critical/high priority messages.
+   */
+  async deliverDirect(
+    agentId: string,
+    tmuxSession: string,
+    message: string,
+    fromAgentId?: string,
+    targetAgentId?: string,
+  ): Promise<boolean> {
+    const priority = classifyPriority(message);
+    const maxRetries = priority === "critical" ? 3 : priority === "high" ? 2 : 0;
+    const messageId = crypto.randomUUID();
+    const enqueuedAt = Date.now();
+    const messageSizeBytes = Buffer.byteLength(message, 'utf8');
+    let lastError: unknown;
+
+    // Track: message sent (queued)
+    if (this.database && this.sessionId) {
+      try {
+        this.database.trackMessageDelivery({
+          id: crypto.randomUUID(),
+          sessionId: this.sessionId,
+          messageId,
+          agentId,
+          status: 'sent',
+          enqueuedAt,
+          messageSizeBytes,
+          priority,
+        });
+      } catch (err) {
+        logger.debug({ err }, "[MessageQueue] Failed to track delivery in DB");
+      }
+    }
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const msg: QueuedMessage = {
+          agentId,
+          tmuxSession,
+          message,
+          timestamp: Date.now(),
+          priority,
+          ttl: Date.now() + PRIORITY_TTL[priority],
+          fromAgentId,
+          targetAgentId,
+        };
+
+        if (this.mcpAgents.has(agentId)) {
+          await this.deliverViaMcpPending(msg);
+        } else if (this.messagingMode === "mcp") {
+          await this.deliverViaMcp(msg);
+        } else if (this.messagingMode === "terminal") {
+          await this.deliverViaTerminal(msg);
+        }
+
+        this.incrementMessageCount(agentId);
+
+        // Track: message delivered
+        if (this.database && this.sessionId) {
+          try {
+            this.database.updateMessageDeliveryStatus(messageId, agentId, 'delivered');
+          } catch (err) {
+            logger.debug({ err }, "[MessageQueue] Failed to update delivery status in DB");
+          }
+        }
+
+        logger.debug({ agentId, priority, attempt }, "[MessageQueue] Direct delivery succeeded");
+        return true;
+      } catch (err) {
+        lastError = err;
+        if (attempt < maxRetries) {
+          const delayMs = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+          logger.debug({ agentId, priority, attempt, delayMs }, "[MessageQueue] Direct delivery failed, retrying");
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+
+    logger.error({ agentId, priority, maxRetries, err: lastError }, "[MessageQueue] Direct delivery failed after retries");
+
+    // Emit failure event for dashboard
+    if (this.broadcastFn) {
+      this.broadcastFn({ event: "delivery-failed", agentId, priority, messageId });
+    }
+
+    return false;
+  }
+
   /** MCP mode: write full message to inbox file, send short tmux notification */
   private async deliverViaMcp(msg: QueuedMessage): Promise<void> {
     // Write full message to inbox file
@@ -483,6 +629,28 @@ export class MessageQueue {
     return this.queues.get(agentId)?.length || 0;
   }
 
+  /** Get delivery metrics for an agent (Tier 3) */
+  getDeliveryMetrics(agentId: string, since?: number): {
+    avgLatencyMs: number;
+    successRate: number;
+    failureCount: number;
+    totalMessages: number;
+    queueDepth: number;
+  } | null {
+    if (!this.database) {
+      return null;
+    }
+
+    try {
+      const metrics = this.database.getDeliveryMetrics(agentId, since);
+      metrics.queueDepth = this.getQueueDepth(agentId);
+      return metrics;
+    } catch (err) {
+      logger.debug({ err }, "[MessageQueue] Failed to get delivery metrics");
+      return null;
+    }
+  }
+
   // ─── Re-notification system ──────────────────────────────
 
   /** Set callbacks needed by the re-notification loop */
@@ -512,9 +680,10 @@ export class MessageQueue {
     if (unread === 0) return 0;
 
     const notification = `\n>>> 📬 YOU HAVE ${unread} UNREAD MESSAGE(S) — run check_messages NOW <<<\n`;
-    try {
-      await this.tmux.sendKeys(tmuxSession, notification, { literal: false });
-    } catch { /* agent may be dead */ }
+
+    // Tier 3: Use direct delivery to bypass queue (nudges are time-sensitive)
+    await this.deliverDirect(agentId, tmuxSession, notification, undefined, agentId);
+
     return unread;
   }
 

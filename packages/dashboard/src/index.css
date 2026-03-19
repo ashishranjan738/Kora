@@ -3582,6 +3582,19 @@ textarea:focus {
 }
 
 /* ===========================
+   Message Notification Toast
+   =========================== */
+/* Mobile responsive: full width on small screens */
+@media (max-width: 768px) {
+  .side-terminal .message-notification-toast {
+    left: 12px;
+    right: 12px;
+    top: 48px;
+    max-width: none;
+  }
+}
+
+/* ===========================
    Task Card Hover Effects
    =========================== */
 .task-card-hover:hover {
