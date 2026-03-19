@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { AgentTerminal } from "./AgentTerminal";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
 import { useApi } from "../hooks/useApi";
@@ -30,7 +30,8 @@ export function SideTerminalPanel({
   const api = useApi();
 
   // Use store for terminal sessions and open tabs
-  const terminalSessions = useTerminalSessionStore((state) => state.getSessions());
+  const terminalSessionsMap = useTerminalSessionStore((state) => state.sessions);
+  const terminalSessions = useMemo(() => Array.from(terminalSessionsMap.values()), [terminalSessionsMap]);
   const openTabIds = useTerminalSessionStore((state) => state.openTabs);
   const addSession = useTerminalSessionStore((state) => state.addSession);
   const closeTab = useTerminalSessionStore((state) => state.closeTab);
