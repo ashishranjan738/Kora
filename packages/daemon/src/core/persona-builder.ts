@@ -5,6 +5,7 @@
 
 import type { AgentRole, AgentPermissions } from "@kora/shared";
 import { resolveBuiltinPersona, renderPersonaTemplate } from "./builtin-personas.js";
+import { discoverContextFiles } from "./context-discovery.js";
 
 export interface PersonaBuildOptions {
   agentId: string;
@@ -23,6 +24,10 @@ export interface PersonaBuildOptions {
     scopeDo?: string[];
     scopeDoNot?: string[];
   };
+  /** Project root path for auto-discovering context files (CLAUDE_CONTEXT.md, README.md, etc.) */
+  projectPath?: string;
+  /** Pre-loaded context file contents (if already discovered). Overrides projectPath discovery. */
+  contextFiles?: Array<{ name: string; content: string }>;
 }
 
 /**
@@ -44,6 +49,15 @@ export function buildPersona(options: PersonaBuildOptions): string {
     }
   } else if (options.userPersona?.trim()) {
     sections.push(options.userPersona.trim());
+  }
+
+  // Auto-discovered context files (CLAUDE_CONTEXT.md, README.md, AGENTS.md, etc.)
+  const contextFiles = options.contextFiles
+    || (options.projectPath ? discoverContextFiles(options.projectPath) : []);
+  if (contextFiles.length > 0) {
+    for (const cf of contextFiles) {
+      sections.push(`## Project Context (${cf.name})\n${cf.content}`);
+    }
   }
 
   // Project knowledge

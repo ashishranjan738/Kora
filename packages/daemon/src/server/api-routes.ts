@@ -549,6 +549,7 @@ export function createApiRouter(deps: {
         sessionId: sid,
         runtimeDir: session.runtimeDir,
         peers,
+        projectPath: session.config.projectPath,
       });
 
       const agentState = await am.spawnAgent({
@@ -2013,6 +2014,7 @@ export function createApiRouter(deps: {
           sessionId: sid,
           runtimeDir: session.runtimeDir,
           peers,
+          projectPath: session.config.projectPath,
         });
 
         // Use the task param as initialTask for the master agent only
