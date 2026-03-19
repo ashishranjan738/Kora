@@ -13,6 +13,7 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
   const wrapperRef = useRef<HTMLDivElement>(null);
   const resizeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [connected, setConnected] = useState(false);
+  const [hasData, setHasData] = useState(false);
   const resolvedTerminalColors = useThemeStore((s) => s.resolvedTerminalColors);
 
   const handleResize = useCallback((entry: ReturnType<typeof getOrCreateTerminal>) => {
@@ -35,8 +36,18 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
     const entry = getOrCreateTerminal(sessionId, agentId, resolvedTerminalColors);
 
     // Set connected state callback
-    entry.onConnectedChange = setConnected;
+    entry.onConnectedChange = (c) => {
+      setConnected(c);
+      if (c) {
+        // Mark as having data after a brief delay (content starts streaming)
+        setTimeout(() => setHasData(true), 200);
+      }
+    };
     setConnected(entry.connected);
+    // If already connected or terminal has content, mark as having data
+    if (entry.connected || entry.term.buffer.active.length > 1) {
+      setHasData(true);
+    }
 
     // Attach the terminal container to our wrapper div
     wrapperRef.current.appendChild(entry.container);
@@ -70,8 +81,11 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
     entry.term.options.theme = resolvedTerminalColors;
   }, [resolvedTerminalColors, sessionId, agentId]);
 
+  const showLoading = !connected && !hasData;
+
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height }}>
+      {/* Connection status badge */}
       <div style={{
         position: "absolute", top: 8, right: 12, zIndex: 10,
         display: "flex", alignItems: "center", gap: 6,
@@ -86,6 +100,37 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
         }} />
         {connected ? "Live" : "Reconnecting..."}
       </div>
+
+      {/* Loading overlay — shown until first data arrives */}
+      {showLoading && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 5,
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          background: resolvedTerminalColors.background || "#0d1117",
+          borderRadius: 8, gap: 16,
+          animation: "fadeIn 0.2s ease-out",
+        }}>
+          {/* Typing cursor animation */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{
+              color: "var(--accent-green)", fontFamily: "monospace", fontSize: 14,
+              opacity: 0.8,
+            }}>
+              $
+            </span>
+            <span style={{
+              width: 8, height: 16, backgroundColor: "var(--accent-green)",
+              animation: "termCursorBlink 1s step-end infinite",
+              borderRadius: 1,
+            }} />
+          </div>
+          <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
+            Connecting...
+          </span>
+        </div>
+      )}
+
+      {/* Terminal container */}
       <div ref={wrapperRef} style={{
         flex: 1, minHeight: 0,
         background: resolvedTerminalColors.background,
@@ -93,6 +138,8 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
         padding: "4px 4px 4px 8px",
         overflow: "hidden",
         touchAction: "pan-y",
+        opacity: hasData ? 1 : 0,
+        transition: "opacity 0.3s ease-in",
       }} />
     </div>
   );

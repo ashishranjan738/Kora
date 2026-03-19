@@ -3500,6 +3500,17 @@ textarea:focus {
   to { opacity: 1; }
 }
 
+/* Terminal connecting cursor blink */
+@keyframes termCursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* ===========================
    Task Card Hover Effects
    =========================== */
