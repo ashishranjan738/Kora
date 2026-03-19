@@ -16,6 +16,7 @@ import { EditorTile } from "../components/EditorTile";
 import { GitChanges } from "../components/GitChanges";
 import type { TerminalTab } from "../components/SideTerminalPanel";
 import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
+import { useMessageBufferEvents, MessageBufferBadge } from "../components/MessageBufferIndicator";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
 import { hasTerminal } from "../stores/terminalRegistry";
 import { formatCost, formatTokens, formatUptime } from "../utils/formatters";
@@ -69,6 +70,9 @@ export function SessionDetail() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const api = useApi();
+
+  // Listen for message buffer/expiry WebSocket events
+  useMessageBufferEvents();
 
   const [session, setSession] = useState<any>(null);
   const [agents, setAgents] = useState<any[]>([]);
@@ -1256,6 +1260,7 @@ function AgentsTab({
                 )}
                 <ChannelIndicator channels={(a.config?.channels as string[]) || []} />
                 <FlagIndicator flags={(a.config?.extraCliArgs as string[]) || []} />
+                <MessageBufferBadge agentId={a.id} />
               </div>
               <span className="ac2-uptime">{formatUptime(a.startedAt)}</span>
             </div>
