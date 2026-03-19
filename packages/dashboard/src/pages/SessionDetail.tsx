@@ -13,6 +13,7 @@ import { TaskBoard } from "../components/TaskBoard";
 import { SessionSummary } from "../components/SessionSummary";
 import { KnowledgeViewer } from "../components/KnowledgeViewer";
 import { TimelineView } from "../components/timeline/TimelineView";
+import { ExecutionTracing } from "../components/ExecutionTracing";
 import { SideTerminalPanel } from "../components/SideTerminalPanel";
 import { EditorTile } from "../components/EditorTile";
 import { GitChanges } from "../components/GitChanges";
@@ -42,11 +43,11 @@ import {
   CopyButton,
 } from "@mantine/core";
 
-type TabId = "editor" | "agents" | "tasks" | "timeline" | "changes" | "knowledge";
+type TabId = "editor" | "agents" | "tasks" | "execution" | "timeline" | "changes" | "knowledge";
 
 function getInitialTab(): TabId {
   const hash = window.location.hash.replace("#", "");
-  if (["agents", "tasks", "timeline", "changes", "knowledge"].includes(hash)) return hash as TabId;
+  if (["agents", "tasks", "execution", "timeline", "changes", "knowledge"].includes(hash)) return hash as TabId;
   return "editor";
 }
 
@@ -485,6 +486,12 @@ export function SessionDetail() {
           Tasks
         </button>
         <button
+          className={activeTab === "execution" ? "tab-active" : ""}
+          onClick={() => setActiveTab("execution")}
+        >
+          Execution
+        </button>
+        <button
           className={activeTab === "timeline" ? "tab-active" : ""}
           onClick={() => setActiveTab("timeline")}
         >
@@ -662,6 +669,10 @@ export function SessionDetail() {
 
       {activeTab === "tasks" && sessionId && (
         <TaskBoard sessionId={sessionId} />
+      )}
+
+      {activeTab === "execution" && sessionId && (
+        <ExecutionTracing sessionId={sessionId} />
       )}
 
       {activeTab === "changes" && sessionId && (
