@@ -441,50 +441,121 @@ async function handleRun(): Promise<void> {
   let exitCode = 0;
   const startTime = Date.now();
   let outputInterval: NodeJS.Timeout | null = null;
+  let lastOutputLines = 0;
 
-  // Stream output from master agent to stdout
+  // Stream output from master agent to stdout (incremental)
   const masterAgent = orch.agentManager.listAgents().find(a => a.config.role === "master");
   if (masterAgent) {
     outputInterval = setInterval(async () => {
       try {
-        const output = await ptyBackend.capturePane(masterAgent.config.tmuxSession, 10, false);
-        if (output.trim()) {
-          process.stdout.write(output);
+        // Capture more lines to detect new content
+        const output = await ptyBackend.capturePane(masterAgent.config.tmuxSession, 50, false);
+        const lines = output.split('\n');
+
+        // Only print lines we haven't seen yet
+        if (lines.length > lastOutputLines) {
+          const newLines = lines.slice(lastOutputLines);
+          for (const line of newLines) {
+            if (line.trim()) {
+              process.stdout.write(line + '\n');
+            }
+          }
+          lastOutputLines = lines.length;
         }
       } catch {
-        // Agent may have exited
+        // Agent may have exited, stop streaming
+        if (outputInterval) clearInterval(outputInterval);
+        outputInterval = null;
       }
     }, 1000);
   }
 
-  const checkInterval = setInterval(async () => {
+  // Graceful shutdown handler for Ctrl+C
+  let checkInterval: NodeJS.Timeout | null = null;
+
+  const cleanup = async (signal: string) => {
+    logger.info(`\n${signal} received, cleaning up...`);
+    if (outputInterval) {
+      clearInterval(outputInterval);
+      outputInterval = null;
+    }
+    if (checkInterval) {
+      clearInterval(checkInterval);
+      checkInterval = null;
+    }
+
+    // Cleanup orchestrator and session
+    await orch.cleanup();
+    await sessionManager.stopSession(session.id);
+    await sessionManager.save();
+
+    process.exit(130); // Standard exit code for Ctrl+C
+  };
+
+  process.on('SIGINT', () => cleanup('SIGINT'));
+  process.on('SIGTERM', () => cleanup('SIGTERM'));
+
+  checkInterval = setInterval(async () => {
     const elapsed = Date.now() - startTime;
     if (elapsed > timeoutMs) {
       logger.error(`\nTimeout reached (${timeoutMs}ms)`);
-      if (outputInterval) clearInterval(outputInterval);
-      clearInterval(checkInterval);
+      if (outputInterval) {
+        clearInterval(outputInterval);
+        outputInterval = null;
+      }
+      if (checkInterval) {
+        clearInterval(checkInterval);
+        checkInterval = null;
+      }
+
+      // Cleanup: stop orchestrator, remove session, save state
       await orch.cleanup();
+      await sessionManager.stopSession(session.id);
+      await sessionManager.save();
+
       process.exit(2);
     }
 
-    // Check if all agents are done
-    const agents = orch.agentManager.listAgents();
-    const active = agents.filter(a => spawnedAgents.includes(a.id) && a.status === "running");
+    // Check if all agents are done by verifying their tmux sessions still exist
+    const agents = orch.agentManager.listAgents().filter(a => spawnedAgents.includes(a.id));
+    let allDone = true;
+    const failedAgents: typeof agents = [];
 
-    if (active.length === 0) {
-      if (outputInterval) clearInterval(outputInterval);
-      clearInterval(checkInterval);
+    for (const agent of agents) {
+      const sessionExists = await ptyBackend.hasSession(agent.config.tmuxSession);
+      if (sessionExists) {
+        allDone = false;
+      } else {
+        // Session ended - check if it was an error
+        if (agent.status === "error" || agent.status === "crashed") {
+          failedAgents.push(agent);
+        }
+      }
+    }
+
+    if (allDone) {
+      if (outputInterval) {
+        clearInterval(outputInterval);
+        outputInterval = null;
+      }
+      if (checkInterval) {
+        clearInterval(checkInterval);
+        checkInterval = null;
+      }
 
       // Check for failures
-      const failed = agents.filter(a => spawnedAgents.includes(a.id) && (a.status === "error" || a.status === "crashed"));
-      if (failed.length > 0) {
-        logger.error(`\nAgents failed: ${failed.map(a => a.config.name).join(", ")}`);
+      if (failedAgents.length > 0) {
+        logger.error(`\nAgents failed: ${failedAgents.map(a => a.config.name).join(", ")}`);
         exitCode = 1;
       } else {
         logger.info("\nAll agents completed successfully");
       }
 
+      // Cleanup: stop orchestrator, remove session, save state
       await orch.cleanup();
+      await sessionManager.stopSession(session.id);
+      await sessionManager.save();
+
       process.exit(exitCode);
     }
   }, 2000);
