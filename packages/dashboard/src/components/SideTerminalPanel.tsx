@@ -2,6 +2,8 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { AgentTerminal } from "./AgentTerminal";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
 import { useApi } from "../hooks/useApi";
+import { setMessageNotificationCallback } from "../stores/terminalRegistry";
+import { Badge } from "@mantine/core";
 
 export interface TerminalTab {
   id: string;          // agent ID or "term-{uuid}"
@@ -24,6 +26,8 @@ export function SideTerminalPanel({
 }: SideTerminalPanelProps) {
   const [activeTabId, setActiveTabId] = useState<string>("");
   const [isCreatingTerminal, setIsCreatingTerminal] = useState(false);
+  const [recentNotification, setRecentNotification] = useState<{ terminalName: string; from: string } | null>(null);
+  const notificationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragging = useRef(false);
   const startY = useRef(0);
   const startHeight = useRef(0);
@@ -36,6 +40,8 @@ export function SideTerminalPanel({
   const addSession = useTerminalSessionStore((state) => state.addSession);
   const closeTab = useTerminalSessionStore((state) => state.closeTab);
   const openTab = useTerminalSessionStore((state) => state.openTab);
+  const incrementUnread = useTerminalSessionStore((state) => state.incrementUnread);
+  const clearUnread = useTerminalSessionStore((state) => state.clearUnread);
 
   // Build tab list from open tabs and sessions
   const tabs: TerminalTab[] = openTabIds
@@ -88,6 +94,44 @@ export function SideTerminalPanel({
     }
   }, [tabs.length]);
 
+  // Set up message notification callbacks for all open terminals
+  useEffect(() => {
+    tabs.forEach((tab) => {
+      setMessageNotificationCallback(sessionId, tab.id, (from) => {
+        // Only increment if this tab is not currently active
+        if (tab.id !== activeTabId) {
+          incrementUnread(tab.id);
+
+          // Show brief notification toast
+          setRecentNotification({ terminalName: tab.name, from });
+          if (notificationTimer.current) {
+            clearTimeout(notificationTimer.current);
+          }
+          notificationTimer.current = setTimeout(() => {
+            setRecentNotification(null);
+          }, 4000);
+        }
+      });
+    });
+
+    // Cleanup callbacks when component unmounts
+    return () => {
+      tabs.forEach((tab) => {
+        setMessageNotificationCallback(sessionId, tab.id, undefined);
+      });
+      if (notificationTimer.current) {
+        clearTimeout(notificationTimer.current);
+      }
+    };
+  }, [tabs, sessionId, activeTabId, incrementUnread]);
+
+  // Clear unread count when active tab changes
+  useEffect(() => {
+    if (activeTabId) {
+      clearUnread(activeTabId);
+    }
+  }, [activeTabId, clearUnread]);
+
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
@@ -121,32 +165,133 @@ export function SideTerminalPanel({
       {/* Drag handle */}
       <div className="side-terminal-handle" onMouseDown={handleMouseDown} />
 
+      {/* Message notification toast */}
+      {recentNotification && (
+        <div
+          className="message-notification-toast"
+          onClick={() => {
+            // Click to focus the terminal
+            const terminalId = tabs.find(t => t.name === recentNotification.terminalName)?.id;
+            if (terminalId) {
+              setActiveTabId(terminalId);
+              setRecentNotification(null);
+            }
+          }}
+          style={{
+            position: "absolute",
+            top: 40,
+            right: 12,
+            zIndex: 100,
+            backgroundColor: "var(--accent-blue)",
+            color: "white",
+            padding: "8px 12px 8px 12px",
+            borderRadius: 6,
+            fontSize: 12,
+            fontWeight: 500,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+            animation: "slideIn 0.2s ease-out",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            transition: "background-color 0.15s",
+            maxWidth: "400px",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = "var(--accent-blue-hover, #4a8fd8)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "var(--accent-blue)";
+          }}
+        >
+          <span style={{ flex: 1 }}>
+            📩 New message from {recentNotification.from} in {recentNotification.terminalName}
+          </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setRecentNotification(null);
+              if (notificationTimer.current) {
+                clearTimeout(notificationTimer.current);
+              }
+            }}
+            style={{
+              background: "none",
+              border: "none",
+              color: "white",
+              cursor: "pointer",
+              padding: "2px 4px",
+              fontSize: 16,
+              lineHeight: 1,
+              opacity: 0.8,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.opacity = "1";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = "0.8";
+            }}
+            title="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Tab bar + add button + close panel button */}
       <div style={{ display: "flex", alignItems: "center" }}>
         <div className="side-terminal-tabs" style={{ flex: 1 }}>
-          {tabs.map((tab) => (
-            <div
-              key={tab.id}
-              className={`side-terminal-tab${activeTabId === tab.id ? " active" : ""}`}
-              data-type={tab.type}
-              onClick={() => setActiveTabId(tab.id)}
-            >
-              <span className="tab-icon">
-                {tab.type === "agent" ? "\u25CF" : "\u25A0"}
-              </span>
-              {tab.name}
-              <span
-                className="close-tab"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeTab(tab.id);
-                }}
-                title="Close tab"
+          {tabs.map((tab) => {
+            const session = terminalSessions.find((s) => s.id === tab.id);
+            const unreadCount = session?.unreadCount || 0;
+
+            return (
+              <div
+                key={tab.id}
+                className={`side-terminal-tab${activeTabId === tab.id ? " active" : ""}`}
+                data-type={tab.type}
+                onClick={() => setActiveTabId(tab.id)}
               >
-                &times;
-              </span>
-            </div>
-          ))}
+                <span className="tab-icon">
+                  {tab.type === "agent" ? "\u25CF" : "\u25A0"}
+                </span>
+                {tab.name}
+                {unreadCount > 0 && (
+                  <Badge
+                    size="sm"
+                    color="blue"
+                    variant="filled"
+                    style={{
+                      marginLeft: 6,
+                      fontSize: 10,
+                      height: 16,
+                      minWidth: 16,
+                      padding: "0 5px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                    title={`${unreadCount} unread message${unreadCount !== 1 ? 's' : ''}`}
+                  >
+                    {unreadCount >= 10 ? "9+" : unreadCount}
+                  </Badge>
+                )}
+                <span
+                  className="close-tab"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeTab(tab.id);
+                  }}
+                  title="Close tab"
+                >
+                  &times;
+                </span>
+              </div>
+            );
+          })}
           <button
             className="side-terminal-add-tab"
             onClick={async () => {

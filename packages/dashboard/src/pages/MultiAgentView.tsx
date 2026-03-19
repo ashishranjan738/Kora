@@ -953,14 +953,16 @@ export function MultiAgentView() {
             </div>
           )}
 
-          {/* Terminal fills remaining space */}
-          <div className="agent-panel-terminal" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-            <AgentTerminal
-              sessionId={sessionId!}
-              agentId={agent.id}
-              height="100%"
-            />
-          </div>
+          {/* Terminal fills remaining space - hide when this agent is in fullscreen to avoid duplicate mounting */}
+          {fullscreenAgentId !== agent.id && (
+            <div className="agent-panel-terminal" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+              <AgentTerminal
+                sessionId={sessionId!}
+                agentId={agent.id}
+                height="100%"
+              />
+            </div>
+          )}
 
           {/* Chat input */}
           <div className="mosaic-panel-input">

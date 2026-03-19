@@ -124,6 +124,16 @@ if (!AGENT_ID && !SESSION_ID) {
 function countUnreadMessages(): number {
   if (!PROJECT_PATH) return 0;
   let count = 0;
+
+  // Try SQLite first (primary source)
+  try {
+    const response = apiCallOnce("GET", `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}/messages/unread-count`) as any;
+    if (response && typeof response === 'object' && 'count' in response) {
+      count += response.count;
+    }
+  } catch { /* SQLite may not be available */ }
+
+  // Fall back to file counting (backward compat)
   try {
     const inboxDir = nodePath.join(PROJECT_PATH, getRuntimeDir(), "messages", `inbox-${AGENT_ID}`);
     const files = fs.readdirSync(inboxDir);
@@ -135,6 +145,37 @@ function countUnreadMessages(): number {
     count += files.filter((f: string) => f.endsWith(".json")).length;
   } catch { /* pending dir may not exist */ }
   return count;
+}
+
+/** Read messages from SQLite (primary source) */
+async function readSqliteMessages(): Promise<Array<{ id: string; from: string; content: string; timestamp: string }>> {
+  try {
+    const response = (await apiCall(
+      "GET",
+      `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}/messages?status=pending&status=delivered`,
+    )) as any;
+
+    if (response.messages && Array.isArray(response.messages)) {
+      // Mark as read in SQLite
+      const messageIds = response.messages.map((m: any) => m.id);
+      if (messageIds.length > 0) {
+        await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}/messages/mark-read`, {
+          messageIds,
+        });
+      }
+
+      return response.messages.map((m: any) => ({
+        id: m.id,
+        from: m.fromAgentId || 'unknown',
+        content: m.content,
+        timestamp: new Date(m.createdAt).toISOString(),
+      }));
+    }
+    return [];
+  } catch {
+    // SQLite not available, fall back to files
+    return [];
+  }
 }
 
 function readAndConsumePendingMessages(): Array<{ from: string; content: string; timestamp: string }> {
@@ -236,6 +277,51 @@ async function apiCall(method: string, urlPath: string, body?: unknown): Promise
     }
   }
   throw lastError;
+}
+
+/**
+ * Find an agent by name or ID with prioritized matching to avoid ambiguity.
+ *
+ * Priority order:
+ * 1. Exact name match (case-insensitive) - "Backend" matches "Backend", not "Backend2"
+ * 2. Exact ID match (case-insensitive) - "backend-0b927a3d" matches agent by ID
+ * 3. Substring match (fallback) - "Back" matches "Backend" as partial name
+ *
+ * @param agents - Array of agent objects to search
+ * @param search - Name or ID to search for
+ * @returns Matching agent or undefined if not found
+ */
+function findAgentByNameOrId(
+  agents: AgentInfo[],
+  search: string
+): AgentInfo | undefined {
+  // Return undefined for empty search string
+  if (!search || search.trim() === "") {
+    return undefined;
+  }
+
+  const searchLower = search.toLowerCase();
+
+  // Priority 1: Exact name match
+  let target = agents.find(a =>
+    (a.config?.name || "").toLowerCase() === searchLower
+  );
+  if (target) return target;
+
+  // Priority 2: Exact ID match
+  target = agents.find(a =>
+    a.id.toLowerCase() === searchLower
+  );
+  if (target) return target;
+
+  // Priority 3: Substring match (fallback)
+  target = agents.find(a => {
+    const name = (a.config?.name || "").toLowerCase();
+    return name.includes(searchLower) ||
+           a.id.toLowerCase().includes(searchLower);
+  });
+
+  return target;
 }
 
 // ---------------------------------------------------------------------------
@@ -737,15 +823,7 @@ async function handleToolCall(
       }
 
       // Direct routing: find target agent by name or ID
-      const search = (toolArgs.to || "").toLowerCase();
-      const target = (agents.agents || []).find((a) => {
-        const name = (a.config?.name || "").toLowerCase();
-        return (
-          name === search ||
-          name.includes(search) ||
-          a.id.toLowerCase().includes(search)
-        );
-      });
+      const target = findAgentByNameOrId(agents.agents || [], toolArgs.to || "");
 
       if (!target) {
         return { success: false, error: `Agent "${toolArgs.to}" not found` };
@@ -763,10 +841,13 @@ async function handleToolCall(
     }
 
     case "check_messages": {
-      // Read from mcp-pending (primary for MCP agents)
+      // Tier 1: Read from SQLite (primary source)
+      const sqliteMessages = await readSqliteMessages();
+
+      // Tier 2: Read from mcp-pending (backward compat)
       const pendingMessages = readAndConsumePendingMessages();
 
-      // Also read from inbox files (backward compat)
+      // Tier 3: Read from inbox files (backward compat)
       const inboxMessages: Array<{ from: string; content: string; timestamp: string }> = [];
 
       if (PROJECT_PATH) {
@@ -792,9 +873,17 @@ async function handleToolCall(
         } catch { /* inbox may not exist */ }
       }
 
-      // Combine (pending first, then inbox, deduplicate by content)
+      // Combine (SQLite first, then pending, then inbox, deduplicate by content)
       const seen = new Set<string>();
       const allMessages: Array<{ from: string; content: string; timestamp: string }> = [];
+
+      for (const sm of sqliteMessages) {
+        const key = `${sm.from}:${sm.content.substring(0, 100)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          allMessages.push(sm);
+        }
+      }
 
       for (const pm of pendingMessages) {
         const key = `${pm.from}:${pm.content.substring(0, 100)}`;
@@ -813,16 +902,16 @@ async function handleToolCall(
       }
 
       // Notify daemon that agent has read messages (resets re-notification attempts)
-      if (allMessages.length > 0 || pendingMessages.length > 0 || inboxMessages.length > 0) {
+      if (allMessages.length > 0 || pendingMessages.length > 0 || inboxMessages.length > 0 || sqliteMessages.length > 0) {
         apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}/ack-read`).catch(() => {});
       }
 
-      // Skip events API fallback if we have messages from either source
+      // Skip events API fallback if we have messages from any source
       if (allMessages.length > 0) {
         return { messages: allMessages, count: allMessages.length };
       }
 
-      // Fallback: query events API for agents with no inbox/pending
+      // Fallback: query events API for agents with no inbox/pending/sqlite
       const events = (await apiCall(
         "GET",
         `/api/v1/sessions/${SESSION_ID}/events?limit=20&type=message-sent`,
@@ -896,11 +985,7 @@ async function handleToolCall(
           "GET",
           `/api/v1/sessions/${SESSION_ID}/agents`,
         )) as AgentsResponse;
-        const search = assignedToArg.toLowerCase();
-        const target = (agents.agents || []).find((a) => {
-          const name = (a.config?.name || "").toLowerCase();
-          return name === search || name.includes(search) || a.id.toLowerCase().includes(search);
-        });
+        const target = findAgentByNameOrId(agents.agents || [], assignedToArg);
         if (target) {
           params.set("assignedTo", target.id);
         } else {
@@ -1073,11 +1158,7 @@ async function handleToolCall(
         `/api/v1/sessions/${SESSION_ID}/agents`,
       )) as AgentsResponse;
 
-      const search = (toolArgs.agentId || "").toLowerCase();
-      const target = (agents.agents || []).find((a) => {
-        const name = (a.config?.name || "").toLowerCase();
-        return name === search || name.includes(search) || a.id.toLowerCase().includes(search);
-      });
+      const target = findAgentByNameOrId(agents.agents || [], toolArgs.agentId || "");
 
       if (!target) {
         return { error: `Agent "${toolArgs.agentId}" not found` };

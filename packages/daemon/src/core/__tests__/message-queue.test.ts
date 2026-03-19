@@ -186,7 +186,7 @@ describe("MessageQueue", () => {
     expect(mockSendKeys).toHaveBeenCalledWith(
       "tmux-1",
       expect.stringContaining("New message from Orchestrator"),
-      { literal: false },
+      { literal: true },  // Fixed: standardized to literal:true for consistency
     );
   });
 
@@ -325,7 +325,7 @@ describe("MessageQueue", () => {
     expect(mockSendKeys).toHaveBeenCalledWith(
       "tmux-1",
       expect.stringContaining("check_messages"),
-      { literal: false },
+      { literal: true },  // Fixed: standardized to literal:true for consistency
     );
   });
 

@@ -16,6 +16,7 @@ import { registry } from "./cli-providers/index.js";
 import tmuxDefault from "./core/tmux-controller.js";
 import { HoldptyController } from "./core/holdpty-controller.js";
 import type { IPtyBackend } from "./core/pty-backend.js";
+import { cleanupOrphanedSessions } from "./core/holdpty-cleanup.js";
 import { DEFAULT_PORT, APP_VERSION, DEFAULT_PTY_BACKEND, getRuntimeTmuxPrefix, getRuntimeDaemonDir } from "@kora/shared";
 import type { PtyBackendType } from "@kora/shared";
 import { logger } from "./core/logger.js";
@@ -107,6 +108,19 @@ async function handleStart(): Promise<void> {
     } catch (err) {
       logger.error({ err: err }, `  Failed to restore session "${config.id}":`);
     }
+  }
+
+  // 4b. Cleanup orphaned holdpty sessions that have no matching agent
+  try {
+    const allKnownAgents = Array.from(orchestrators.values())
+      .flatMap((orch) => orch.getAgents());
+    const tmuxPrefix = getRuntimeTmuxPrefix(isDev);
+    const cleanup = await cleanupOrphanedSessions(ptyBackend, allKnownAgents, tmuxPrefix);
+    if (cleanup.orphanedKilled > 0) {
+      logger.info(`  Cleaned up ${cleanup.orphanedKilled} orphaned holdpty session(s)`);
+    }
+  } catch (err) {
+    logger.warn({ err }, "  Holdpty cleanup failed (non-fatal)");
   }
 
   // 5. Create the HTTP + WebSocket server

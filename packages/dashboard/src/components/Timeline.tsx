@@ -210,7 +210,7 @@ export function Timeline({ sessionId }: TimelineProps) {
 
     async function fetchEvents() {
       try {
-        const data = await api.getEvents(sessionId, 50);
+        const data = await api.getEvents(sessionId, { limit: 50 });
         if (!cancelled) {
           const sorted = (data.events || []).sort(
             (a: TimelineEvent, b: TimelineEvent) =>

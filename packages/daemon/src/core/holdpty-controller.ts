@@ -190,17 +190,38 @@ export class HoldptyController implements IPtyBackend {
   async killSession(name: string): Promise<void> {
     try {
       await this.runCli("stop", name);
-    } catch {
-      // Already dead — that's fine
+      logger.debug({ sessionName: name }, "[HoldptyController] Successfully called holdpty stop");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.debug({ sessionName: name, err: message }, "[HoldptyController] holdpty stop failed (session may already be dead)");
     }
 
     // Force cleanup socket + metadata (respects HOLDPTY_DIR)
     try {
       const socketPath = await this.getSocketPath(name);
       const metadataPath = socketPath.replace(/\.sock$/, ".json");
-      try { fs.unlinkSync(socketPath); } catch { /* may not exist */ }
-      try { fs.unlinkSync(metadataPath); } catch { /* may not exist */ }
-    } catch { /* getSocketPath may fail */ }
+
+      logger.debug({ sessionName: name, socketPath, metadataPath }, "[HoldptyController] Attempting manual cleanup");
+
+      try {
+        fs.unlinkSync(socketPath);
+        logger.debug({ sessionName: name, socketPath }, "[HoldptyController] Deleted socket file");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.debug({ sessionName: name, socketPath, err: message }, "[HoldptyController] Failed to delete socket file");
+      }
+
+      try {
+        fs.unlinkSync(metadataPath);
+        logger.debug({ sessionName: name, metadataPath }, "[HoldptyController] Deleted metadata file");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.debug({ sessionName: name, metadataPath, err: message }, "[HoldptyController] Failed to delete metadata file");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn({ sessionName: name, err: message }, "[HoldptyController] getSocketPath failed during cleanup");
+    }
 
     this.envVars.delete(name);
   }

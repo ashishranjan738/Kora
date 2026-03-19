@@ -51,6 +51,7 @@ export class Orchestrator extends EventEmitter {
   private autoRelay: AutoRelay;
   public messageQueue: MessageQueue;
   private logRotationInterval?: NodeJS.Timeout;
+  private deliveryCleanupInterval?: NodeJS.Timeout;
   private lastIdleNotification = new Map<string, number>();
   private idleCheckInterval?: NodeJS.Timeout;
 
@@ -86,6 +87,9 @@ export class Orchestrator extends EventEmitter {
         return agent?.config.tmuxSession || null;
       },
     );
+
+    // Wire delivery tracking (Tier 3 event routing)
+    this.messageQueue.setDeliveryTracking(this.database, config.sessionId);
 
     this.wireEvents();
     this.startIdleMonitoring();
@@ -404,6 +408,14 @@ export class Orchestrator extends EventEmitter {
   }
 
   /**
+   * Get all known agents (for cleanup/diagnostics).
+   * Returns ALL agents including stopped, crashed, and running agents.
+   */
+  getAgents(): AgentState[] {
+    return this.agentManager.listAgents();
+  }
+
+  /**
    * Restore agents from persisted state after daemon restart.
    * Checks which tmux sessions are still alive and reconnects to them.
    * Dead agents are marked as "stopped".
@@ -579,6 +591,14 @@ export class Orchestrator extends EventEmitter {
     this.logRotationInterval = setInterval(async () => {
       await this.rotateAgentLogs();
     }, 20 * 1000);
+
+    // Start daily cleanup of old delivery records (prevent unbounded database growth)
+    this.deliveryCleanupInterval = setInterval(() => {
+      const deleted = this.database.cleanupOldDeliveries(7);
+      if (deleted > 0) {
+        logger.info(`[database] Cleaned up ${deleted} old delivery records (>7 days)`);
+      }
+    }, 24 * 60 * 60 * 1000); // 24 hours
   }
 
   /** Stop the orchestrator — persists state before stopping */
@@ -591,6 +611,18 @@ export class Orchestrator extends EventEmitter {
     if (this.logRotationInterval) {
       clearInterval(this.logRotationInterval);
       this.logRotationInterval = undefined;
+    }
+
+    // Stop delivery cleanup interval
+    if (this.deliveryCleanupInterval) {
+      clearInterval(this.deliveryCleanupInterval);
+      this.deliveryCleanupInterval = undefined;
+    }
+
+    // Stop idle check interval
+    if (this.idleCheckInterval) {
+      clearInterval(this.idleCheckInterval);
+      this.idleCheckInterval = undefined;
     }
 
     await this.persistState();

@@ -1,4 +1,5 @@
 import '@mantine/core/styles.css';
+import '@mantine/dates/styles.css';
 import { createRoot } from "react-dom/client";
 import { MantineProvider } from '@mantine/core';
 import { koraTheme } from './theme';

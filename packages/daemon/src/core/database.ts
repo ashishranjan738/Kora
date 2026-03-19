@@ -9,7 +9,7 @@ import path from "path";
 import fs from "fs";
 import { EventEmitter } from "events";
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 6;
 
 export class AppDatabase extends EventEmitter {
   public db: Database.Database;
@@ -111,6 +111,60 @@ export class AppDatabase extends EventEmitter {
         ALTER TABLE events ADD COLUMN agent_id TEXT;
         CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id);
         PRAGMA user_version = 4;
+      `);
+    }
+
+    if (version < 5) {
+      // Migration 5: Add message_deliveries table for Tier 3 routing metrics
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS message_deliveries (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          message_id TEXT NOT NULL,
+          agent_id TEXT NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('sent', 'delivered', 'read')),
+          enqueued_at INTEGER NOT NULL,
+          delivered_at INTEGER,
+          read_at INTEGER,
+          latency_ms INTEGER,
+          message_size_bytes INTEGER,
+          priority TEXT CHECK(priority IN ('critical', 'high', 'normal', 'low'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_message_deliveries_agent ON message_deliveries(agent_id, status);
+        CREATE INDEX IF NOT EXISTS idx_message_deliveries_latency ON message_deliveries(latency_ms);
+        CREATE INDEX IF NOT EXISTS idx_message_deliveries_session ON message_deliveries(session_id);
+        PRAGMA user_version = 5;
+      `);
+    }
+
+    if (version < 6) {
+      // Migration 6: Add messages table for message content storage
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS messages (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          from_agent_id TEXT NOT NULL,
+          to_agent_id TEXT NOT NULL,
+          message_type TEXT NOT NULL,
+          content TEXT NOT NULL,
+          priority TEXT CHECK(priority IN ('critical', 'high', 'normal', 'low')) DEFAULT 'normal',
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'delivered', 'read', 'expired')),
+          created_at INTEGER NOT NULL,
+          delivered_at INTEGER,
+          read_at INTEGER,
+          expires_at INTEGER,
+          channel TEXT,
+          parent_message_id TEXT,
+          metadata TEXT DEFAULT '{}',
+          payload TEXT DEFAULT '{}'
+        );
+        CREATE INDEX IF NOT EXISTS idx_messages_recipient_status ON messages(to_agent_id, status);
+        CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(from_agent_id);
+        CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+        CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_messages_expires ON messages(expires_at);
+        CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel);
+        PRAGMA user_version = 6;
       `);
     }
   }
@@ -438,6 +492,367 @@ export class AppDatabase extends EventEmitter {
       authorName: r.author_name,
       createdAt: r.created_at,
     }));
+  }
+
+  // ─── Message Deliveries (Tier 3 Event Routing) ────────────────
+
+  /** Track a message delivery (Tier 3 routing metrics) */
+  trackMessageDelivery(delivery: {
+    id: string;
+    sessionId: string;
+    messageId: string;
+    agentId: string;
+    status: 'sent' | 'delivered' | 'read';
+    enqueuedAt: number;
+    deliveredAt?: number;
+    readAt?: number;
+    messageSizeBytes?: number;
+    priority?: 'critical' | 'high' | 'normal' | 'low';
+  }): void {
+    const latencyMs = delivery.deliveredAt ? delivery.deliveredAt - delivery.enqueuedAt : null;
+
+    this.db.prepare(`
+      INSERT OR REPLACE INTO message_deliveries
+      (id, session_id, message_id, agent_id, status, enqueued_at, delivered_at, read_at, latency_ms, message_size_bytes, priority)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      delivery.id,
+      delivery.sessionId,
+      delivery.messageId,
+      delivery.agentId,
+      delivery.status,
+      delivery.enqueuedAt,
+      delivery.deliveredAt || null,
+      delivery.readAt || null,
+      latencyMs,
+      delivery.messageSizeBytes || null,
+      delivery.priority || null
+    );
+  }
+
+  /** Update message delivery status */
+  updateMessageDeliveryStatus(messageId: string, agentId: string, status: 'sent' | 'delivered' | 'read'): void {
+    const now = Date.now();
+    const updateField = status === 'delivered' ? 'delivered_at' : status === 'read' ? 'read_at' : null;
+
+    if (updateField) {
+      // Update timestamp and recalculate latency if delivered
+      const stmt = this.db.prepare(`
+        UPDATE message_deliveries
+        SET status = ?, ${updateField} = ?,
+            latency_ms = CASE WHEN ? = 'delivered' THEN (? - enqueued_at) ELSE latency_ms END
+        WHERE message_id = ? AND agent_id = ?
+      `);
+      stmt.run(status, now, status, now, messageId, agentId);
+    } else {
+      this.db.prepare(`
+        UPDATE message_deliveries SET status = ? WHERE message_id = ? AND agent_id = ?
+      `).run(status, messageId, agentId);
+    }
+  }
+
+  /** Get delivery metrics for an agent */
+  getDeliveryMetrics(agentId: string, since?: number): {
+    avgLatencyMs: number;
+    successRate: number;
+    failureCount: number;
+    totalMessages: number;
+    queueDepth: number;
+  } {
+    // Validate input to prevent SQL injection
+    if (since !== undefined && (isNaN(since) || since < 0)) {
+      throw new TypeError('Invalid since parameter: must be a positive number');
+    }
+
+    const now = Date.now();
+    // Build params in order of SQL placeholders: now (failure calc), agentId (WHERE), since (optional AND)
+    const params: (string | number)[] = [now, agentId];
+    let sinceClause = '';
+
+    if (since !== undefined) {
+      sinceClause = 'AND enqueued_at >= ?';
+      params.push(since);
+    }
+
+    const stats = this.db.prepare(`
+      SELECT
+        AVG(latency_ms) as avg_latency,
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'delivered' OR status = 'read' THEN 1 ELSE 0 END) as delivered,
+        SUM(CASE WHEN status = 'sent' AND (? - enqueued_at) > 60000 THEN 1 ELSE 0 END) as failed
+      FROM message_deliveries
+      WHERE agent_id = ? ${sinceClause}
+    `).get(...params) as any;
+
+    return {
+      avgLatencyMs: stats.avg_latency || 0,
+      successRate: stats.total > 0 ? (stats.delivered / stats.total) * 100 : 100,
+      failureCount: stats.failed || 0,
+      totalMessages: stats.total || 0,
+      queueDepth: 0, // This will be filled from MessageQueue.getQueueDepth()
+    };
+  }
+
+  /** Get recent delivery failures for an agent */
+  getRecentDeliveryFailures(agentId: string, limit = 10): Array<{
+    messageId: string;
+    enqueuedAt: number;
+    priority: string;
+  }> {
+    const now = Date.now();
+    const rows = this.db.prepare(`
+      SELECT message_id, enqueued_at, priority
+      FROM message_deliveries
+      WHERE agent_id = ?
+        AND status = 'sent'
+        AND (? - enqueued_at) > 60000
+      ORDER BY enqueued_at DESC
+      LIMIT ?
+    `).all(agentId, now, limit) as any[];
+
+    return rows.map(r => ({
+      messageId: r.message_id,
+      enqueuedAt: r.enqueued_at,
+      priority: r.priority,
+    }));
+  }
+
+  /** Clean up old delivery records (keep last 7 days) */
+  cleanupOldDeliveries(daysToKeep = 7): number {
+    const cutoff = Date.now() - (daysToKeep * 24 * 60 * 60 * 1000);
+    const result = this.db.prepare(
+      `DELETE FROM message_deliveries WHERE enqueued_at < ?`
+    ).run(cutoff);
+    return result.changes;
+  }
+
+  // ─── Messages (Inter-Agent Communication) ────────────────────
+
+  /** Insert a new message */
+  insertMessage(message: {
+    id: string;
+    sessionId: string;
+    fromAgentId: string;
+    toAgentId: string;
+    messageType: string;
+    content: string;
+    priority?: 'critical' | 'high' | 'normal' | 'low';
+    createdAt: number;
+    expiresAt?: number;
+    channel?: string;
+    parentMessageId?: string;
+    metadata?: Record<string, unknown>;
+    payload?: Record<string, unknown>;
+  }): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO messages (
+        id, session_id, from_agent_id, to_agent_id, message_type, content,
+        priority, status, created_at, expires_at, channel, parent_message_id,
+        metadata, payload
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+    `).run(
+      message.id,
+      message.sessionId,
+      message.fromAgentId,
+      message.toAgentId,
+      message.messageType,
+      message.content,
+      message.priority || 'normal',
+      message.createdAt,
+      message.expiresAt || null,
+      message.channel || null,
+      message.parentMessageId || null,
+      JSON.stringify(message.metadata || {}),
+      JSON.stringify(message.payload || {})
+    );
+  }
+
+  /** Get messages for a recipient with optional filters */
+  getMessages(params: {
+    toAgentId?: string;
+    fromAgentId?: string;
+    sessionId?: string;
+    status?: 'pending' | 'delivered' | 'read' | 'expired' | Array<'pending' | 'delivered' | 'read' | 'expired'>;
+    channel?: string;
+    since?: number;
+    limit?: number;
+    offset?: number;
+  }): Array<{
+    id: string;
+    sessionId: string;
+    fromAgentId: string;
+    toAgentId: string;
+    messageType: string;
+    content: string;
+    priority: string;
+    status: string;
+    createdAt: number;
+    deliveredAt: number | null;
+    readAt: number | null;
+    expiresAt: number | null;
+    channel: string | null;
+    parentMessageId: string | null;
+    metadata: any;
+    payload: any;
+  }> {
+    const conditions: string[] = [];
+    const values: any[] = [];
+
+    if (params.toAgentId) {
+      conditions.push("to_agent_id = ?");
+      values.push(params.toAgentId);
+    }
+    if (params.fromAgentId) {
+      conditions.push("from_agent_id = ?");
+      values.push(params.fromAgentId);
+    }
+    if (params.sessionId) {
+      conditions.push("session_id = ?");
+      values.push(params.sessionId);
+    }
+    if (params.status) {
+      if (Array.isArray(params.status)) {
+        const placeholders = params.status.map(() => '?').join(',');
+        conditions.push(`status IN (${placeholders})`);
+        values.push(...params.status);
+      } else {
+        conditions.push("status = ?");
+        values.push(params.status);
+      }
+    }
+    if (params.channel) {
+      conditions.push("channel = ?");
+      values.push(params.channel);
+    }
+    if (params.since) {
+      conditions.push("created_at >= ?");
+      values.push(params.since);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    // Build LIMIT and OFFSET clauses with parameterized queries to prevent SQL injection
+    let query = `SELECT * FROM messages ${where} ORDER BY created_at DESC`;
+    if (params.limit !== undefined) {
+      query += ` LIMIT ?`;
+      values.push(params.limit);
+    } else if (params.offset !== undefined) {
+      // SQLite requires LIMIT when using OFFSET
+      query += ` LIMIT ?`;
+      values.push(999999);
+    }
+    if (params.offset !== undefined) {
+      query += ` OFFSET ?`;
+      values.push(params.offset);
+    }
+
+    const rows = this.db.prepare(query).all(...values) as any[];
+
+    return rows.map(r => ({
+      id: r.id,
+      sessionId: r.session_id,
+      fromAgentId: r.from_agent_id,
+      toAgentId: r.to_agent_id,
+      messageType: r.message_type,
+      content: r.content,
+      priority: r.priority,
+      status: r.status,
+      createdAt: r.created_at,
+      deliveredAt: r.delivered_at,
+      readAt: r.read_at,
+      expiresAt: r.expires_at,
+      channel: r.channel,
+      parentMessageId: r.parent_message_id,
+      metadata: JSON.parse(r.metadata || '{}'),
+      payload: JSON.parse(r.payload || '{}'),
+    }));
+  }
+
+  /** Mark a message as delivered */
+  markMessageDelivered(messageId: string): void {
+    const now = Date.now();
+    this.db.prepare(`
+      UPDATE messages
+      SET status = 'delivered', delivered_at = ?
+      WHERE id = ? AND status = 'pending'
+    `).run(now, messageId);
+  }
+
+  /** Mark a message as read */
+  markMessageRead(messageId: string): void {
+    const now = Date.now();
+    this.db.prepare(`
+      UPDATE messages
+      SET status = 'read', read_at = ?
+      WHERE id = ? AND (status = 'pending' OR status = 'delivered')
+    `).run(now, messageId);
+  }
+
+  /** Mark multiple messages as read */
+  markMessagesRead(messageIds: string[]): void {
+    if (messageIds.length === 0) return;
+
+    // Validate input to prevent SQL injection
+    if (!Array.isArray(messageIds)) {
+      throw new TypeError('messageIds must be an array');
+    }
+    for (const id of messageIds) {
+      if (typeof id !== 'string' || id.length === 0) {
+        throw new TypeError('All messageIds must be non-empty strings');
+      }
+    }
+
+    const now = Date.now();
+    const placeholders = messageIds.map(() => '?').join(',');
+    this.db.prepare(`
+      UPDATE messages
+      SET status = 'read', read_at = ?
+      WHERE id IN (${placeholders}) AND (status = 'pending' OR status = 'delivered')
+    `).run(now, ...messageIds);
+  }
+
+  /** Get unread message count for an agent */
+  getUnreadMessageCount(agentId: string): number {
+    const row = this.db.prepare(`
+      SELECT COUNT(*) as count FROM messages
+      WHERE to_agent_id = ? AND status IN ('pending', 'delivered')
+    `).get(agentId) as { count: number };
+    return row.count;
+  }
+
+  /**
+   * Clean up expired messages and return count of deleted messages.
+   *
+   * Two-phase cleanup process:
+   * 1. Mark messages as expired if they have passed their expires_at timestamp
+   * 2. Delete old messages based on two-tier retention policy:
+   *    - read/expired messages: 30 days (long retention for audit trail)
+   *    - pending/delivered messages: 7 days (shorter retention to flag delivery issues)
+   *
+   * Rationale: Undelivered messages older than 7 days likely indicate a problem
+   * (agent crashed, inbox corruption, etc.) and should be investigated. Read messages
+   * can be kept longer for debugging and analysis.
+   */
+  cleanupExpiredMessages(): number {
+    const now = Date.now();
+
+    // Phase 1: Mark messages as expired based on their expires_at timestamp
+    this.db.prepare(`
+      UPDATE messages SET status = 'expired'
+      WHERE expires_at IS NOT NULL AND expires_at < ? AND status != 'expired'
+    `).run(now);
+
+    // Phase 2: Delete old messages using two-tier retention policy
+    const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);  // 30 days in milliseconds
+    const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);    // 7 days in milliseconds
+
+    const result1 = this.db.prepare(`
+      DELETE FROM messages
+      WHERE (status IN ('read', 'expired') AND created_at < ?)
+         OR (status IN ('pending', 'delivered') AND created_at < ?)
+    `).run(thirtyDaysAgo, sevenDaysAgo);
+
+    return result1.changes;
   }
 
   close(): void {

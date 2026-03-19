@@ -13,6 +13,7 @@ export interface TerminalEntry {
   connected: boolean;
   reconnectAttempts: number;
   onConnectedChange?: (connected: boolean) => void;
+  onMessageNotification?: (from: string) => void;
 }
 
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -60,7 +61,26 @@ function connectWs(entry: TerminalEntry): void {
 
   ws.onmessage = (event) => {
     const writeData = (text: string) => {
-      entry.term.write(text);
+      // Detect message notification patterns
+      const messagePattern = /\[(?:New )?[Mm]essage from ([^\]]+)\]/;
+      const match = text.match(messagePattern);
+      if (match && entry.onMessageNotification) {
+        entry.onMessageNotification(match[1]);
+      }
+
+      // Check if user is at bottom BEFORE writing new data
+      // This prevents auto-scroll when user has scrolled up to read history
+      const buffer = entry.term.buffer.active;
+      const isAtBottom = buffer.baseY + buffer.cursorY >= buffer.length - entry.term.rows;
+
+      entry.term.write(text, () => {
+        // Only auto-scroll if user was already at bottom
+        if (isAtBottom) {
+          entry.term.scrollToBottom();
+        }
+        // Otherwise: preserve user's scroll position
+      });
+
       if (!firstChunkReceived) {
         firstChunkReceived = true;
         setTimeout(() => {
@@ -212,6 +232,19 @@ export function detachTerminal(sessionId: string, agentId: string): void {
   const entry = registry.get(key);
   if (entry && entry.container.parentElement) {
     entry.container.parentElement.removeChild(entry.container);
+  }
+}
+
+/** Set callback for message notifications detected in terminal output */
+export function setMessageNotificationCallback(
+  sessionId: string,
+  agentId: string,
+  callback: ((from: string) => void) | undefined
+): void {
+  const key = `${sessionId}:${agentId}`;
+  const entry = registry.get(key);
+  if (entry) {
+    entry.onMessageNotification = callback;
   }
 }
 

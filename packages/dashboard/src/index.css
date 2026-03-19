@@ -3576,6 +3576,24 @@ textarea:focus {
   to { opacity: 1; }
 }
 
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* ===========================
+   Message Notification Toast
+   =========================== */
+/* Mobile responsive: full width on small screens */
+@media (max-width: 768px) {
+  .side-terminal .message-notification-toast {
+    left: 12px;
+    right: 12px;
+    top: 48px;
+    max-width: none;
+  }
+}
+
 /* ===========================
    Task Card Hover Effects
    =========================== */

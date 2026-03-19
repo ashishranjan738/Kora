@@ -37,7 +37,7 @@ import { buildPersona } from "../core/persona-builder.js";
 import { discoverModels } from "../core/model-discovery.js";
 import { DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS } from "@kora/shared";
 import { logger } from "../core/logger.js";
-import { saveTerminalStates, loadTerminalStates } from "../core/terminal-persistence.js";
+import { saveTerminalStates, loadTerminalStates, restoreTerminalsWithHealthCheck } from "../core/terminal-persistence.js";
 import type { StandaloneTerminal } from "../core/terminal-persistence.js";
 import { WebhookNotifier } from "../core/webhook-notifier.js";
 import type { WebhookConfig } from "@kora/shared";
@@ -115,16 +115,8 @@ export function createApiRouter(deps: {
         const persisted = await loadTerminalStates(runtimeDir);
         if (persisted.length === 0) continue;
 
-        // Verify each terminal's holdpty session still exists
-        const alive: StandaloneTerminal[] = [];
-        for (const term of persisted) {
-          const exists = await tmux.hasSession(term.tmuxSession);
-          if (exists) {
-            alive.push(term);
-          } else {
-            logger.debug({ sessionId: sessionConfig.id, terminalId: term.id }, "Standalone terminal died during daemon downtime");
-          }
-        }
+        // Verify each terminal's session exists AND socket file is accessible (for holdpty)
+        const { alive, dead } = await restoreTerminalsWithHealthCheck(tmux, persisted, sessionConfig.id);
 
         // Populate in-memory Map with alive terminals
         if (alive.length > 0) {
@@ -132,11 +124,11 @@ export function createApiRouter(deps: {
           alive.forEach(t => termMap.set(t.id, t));
           standaloneTerminals.set(sessionConfig.id, termMap);
 
-          logger.info({ sessionId: sessionConfig.id, restored: alive.length, dead: persisted.length - alive.length }, "Restored standalone terminals");
+          logger.info({ sessionId: sessionConfig.id, restored: alive.length, dead: dead.length }, "Restored standalone terminals");
         }
 
-        // Re-persist if any terminals died
-        if (alive.length !== persisted.length) {
+        // Re-persist if any terminals died (clean up stale entries)
+        if (dead.length > 0) {
           await saveTerminalStates(runtimeDir, alive);
         }
       } catch (err) {
@@ -967,16 +959,17 @@ export function createApiRouter(deps: {
       const agents = orch.agentManager.listAgents().filter((a) => a.status === "running");
       const results: Array<{ agentId: string; name: string; sent: boolean; error?: string }> = [];
 
+      // Batch enqueue all messages, then flush once (avoids N redundant processQueues calls)
+      const broadcastMsg = `\x1b[1;33m[Broadcast]\x1b[0m: ${body.message}`;
       for (const agent of agents) {
         try {
-          // Use messageQueue-backed relayMessage so broadcast is delivered when agents are ready
-          const broadcastMsg = `\x1b[1;33m[Broadcast]\x1b[0m: ${body.message}`;
-          orch.messageQueue.enqueue(agent.id, agent.config.tmuxSession, broadcastMsg);
+          orch.messageQueue.enqueueBatch(agent.id, agent.config.tmuxSession, broadcastMsg);
           results.push({ agentId: agent.id, name: agent.config.name, sent: true });
         } catch (err) {
           results.push({ agentId: agent.id, name: agent.config.name, sent: false, error: String(err) });
         }
       }
+      orch.messageQueue.flushQueues(); // Single delivery pass for all agents
 
       // Log broadcast event to timeline
       const broadcastSession = sessionManager.getSession(sid);
@@ -1139,6 +1132,43 @@ export function createApiRouter(deps: {
           output: outputLines,
         });
       }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // ─── Tier 3: Delivery Metrics ──────────────────────────────────────
+
+  router.get("/sessions/:sid/agents/:aid/delivery-metrics", async (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const since = req.query.since ? parseInt(req.query.since as string) : undefined;
+
+      const orchestrator = orchestrators.get(String(sid));
+      if (!orchestrator) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const agent = orchestrator.agentManager.getAgent(String(aid));
+      if (!agent) {
+        res.status(404).json({ error: `Agent "${aid}" not found in session "${sid}"` });
+        return;
+      }
+
+      const metrics = orchestrator.messageQueue.getDeliveryMetrics(String(aid), since);
+
+      if (!metrics) {
+        res.status(503).json({ error: "Delivery tracking not available" });
+        return;
+      }
+
+      res.json({
+        agentId: String(aid),
+        metrics,
+        timestamp: Date.now(),
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
@@ -1331,12 +1361,64 @@ export function createApiRouter(deps: {
 
       if (customMessage) {
         // Direct custom message via tmux — bypass queue entirely
-        await tmux.sendKeys(agent.config.tmuxSession, `\n[Nudge]: ${customMessage}\n`, { literal: true });
-        res.json({ nudged: true, customMessage: true });
+        try {
+          await tmux.sendKeys(agent.config.tmuxSession, `\n[Nudge]: ${customMessage}\n`, { literal: true });
+          logger.info({ agentId: aid, customMessage, sessionId: sid }, "[API] Custom nudge sent successfully");
+
+          // Track nudge-sent event
+          orch.database.insertEvent({
+            id: randomUUID(),
+            sessionId: String(sid),
+            type: 'nudge-sent',
+            data: { agentId: String(aid), messageType: 'custom', customMessage },
+            agentId: String(aid),
+          });
+
+          res.json({ nudged: true, customMessage: true });
+        } catch (err) {
+          logger.error({ err, agentId: aid, customMessage, sessionId: sid }, "[API] Failed to send custom nudge");
+
+          // Track nudge-failed event
+          orch.database.insertEvent({
+            id: randomUUID(),
+            sessionId: String(sid),
+            type: 'nudge-failed',
+            data: { agentId: String(aid), messageType: 'custom', error: String(err) },
+            agentId: String(aid),
+          });
+
+          res.status(500).json({ error: "Failed to send nudge", details: String(err) });
+        }
       } else {
         // Default: nudge with unread count
-        const unread = await orch.messageQueue.nudgeAgent(String(aid), agent.config.tmuxSession);
-        res.json({ nudged: true, unreadCount: unread });
+        try {
+          const unread = await orch.messageQueue.nudgeAgent(String(aid), agent.config.tmuxSession);
+          logger.info({ agentId: aid, unreadCount: unread, sessionId: sid }, "[API] Default nudge sent successfully");
+
+          // Track nudge-sent event
+          orch.database.insertEvent({
+            id: randomUUID(),
+            sessionId: String(sid),
+            type: 'nudge-sent',
+            data: { agentId: String(aid), messageType: 'default', unreadCount: unread },
+            agentId: String(aid),
+          });
+
+          res.json({ nudged: true, unreadCount: unread });
+        } catch (err) {
+          logger.error({ err, agentId: aid, sessionId: sid }, "[API] Failed to send default nudge");
+
+          // Track nudge-failed event
+          orch.database.insertEvent({
+            id: randomUUID(),
+            sessionId: String(sid),
+            type: 'nudge-failed',
+            data: { agentId: String(aid), messageType: 'default', error: String(err) },
+            agentId: String(aid),
+          });
+
+          res.status(500).json({ error: "Failed to send nudge", details: String(err) });
+        }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1356,6 +1438,84 @@ export function createApiRouter(deps: {
 
       orch.messageQueue.resetNotificationAttempts(String(aid));
       res.json({ success: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // ─── SQLite Messages ─────────────────────────────────────────────────────
+
+  /** Get messages for an agent (SQLite-based) */
+  router.get("/sessions/:sid/agents/:aid/messages", (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const orch = orchestrators.get(String(sid));
+      if (!orch) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const status = req.query.status as string | string[] | undefined;
+      const since = req.query.since ? parseInt(req.query.since as string, 10) : undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+
+      // Handle multiple status values (e.g. ?status=pending&status=delivered)
+      const statusValues = Array.isArray(status) ? status : status ? [status] : undefined;
+
+      // Query messages with single database call (handles array via IN clause)
+      const allMessages = orch.database.getMessages({
+        toAgentId: String(aid),
+        sessionId: String(sid),
+        status: statusValues as any,
+        since,
+        limit,
+      });
+
+      res.json({ messages: allMessages, count: allMessages.length });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  /** Mark messages as read */
+  router.post("/sessions/:sid/agents/:aid/messages/mark-read", (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const { messageIds } = req.body as { messageIds: string[] };
+
+      const orch = orchestrators.get(String(sid));
+      if (!orch) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      if (!Array.isArray(messageIds) || messageIds.length === 0) {
+        res.status(400).json({ error: "messageIds array required" });
+        return;
+      }
+
+      orch.database.markMessagesRead(messageIds);
+      res.json({ success: true, markedRead: messageIds.length });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  /** Get unread message count */
+  router.get("/sessions/:sid/agents/:aid/messages/unread-count", (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const orch = orchestrators.get(String(sid));
+      if (!orch) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const count = orch.database.getUnreadMessageCount(String(aid));
+      res.json({ count });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
@@ -2849,14 +3009,16 @@ export function createApiRouter(deps: {
       const agents = orch.agentManager.listAgents().filter((a) => a.status === "running");
       const results: Array<{ agentId: string; name: string; sent: boolean }> = [];
 
+      // Batch enqueue all, then flush once
       for (const agent of agents) {
         try {
-          orch.messageQueue.enqueue(agent.id, agent.config.tmuxSession, broadcastMsg);
+          orch.messageQueue.enqueueBatch(agent.id, agent.config.tmuxSession, broadcastMsg);
           results.push({ agentId: agent.id, name: agent.config.name, sent: true });
         } catch {
           results.push({ agentId: agent.id, name: agent.config.name, sent: false });
         }
       }
+      orch.messageQueue.flushQueues();
 
       // Log event
       const session = sessionManager.getSession(sid);
