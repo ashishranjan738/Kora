@@ -21,7 +21,9 @@ import {
   Tooltip,
   Divider,
   SegmentedControl,
+  TagsInput,
 } from "@mantine/core";
+import { DateInput } from "@mantine/dates";
 import { useMediaQuery } from "@mantine/hooks";
 import { MarkdownText } from "./MarkdownText";
 
@@ -39,6 +41,8 @@ interface Task {
   description: string;
   status: string;
   priority?: string;
+  labels?: string[];
+  dueDate?: string;
   assignedTo?: string;
   createdBy: string;
   createdAt: string;
@@ -82,6 +86,31 @@ const PRIORITY_COLORS: Record<string, string> = {
   P2: "blue",
   P3: "gray",
 };
+
+// Hash label string to deterministic color
+function getLabelColor(label: string): string {
+  const colors = ["blue", "cyan", "teal", "green", "lime", "yellow", "orange", "red", "pink", "grape", "violet", "indigo"];
+  let hash = 0;
+  for (let i = 0; i < label.length; i++) {
+    hash = label.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
+// Calculate due date status
+function getDueDateStatus(dueDate: string): { label: string; color: string } | null {
+  if (!dueDate) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0);
+  const diffDays = Math.floor((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) return { label: "Overdue", color: "red" };
+  if (diffDays === 0) return { label: "Due today", color: "yellow" };
+  if (diffDays <= 2) return { label: "Due soon", color: "yellow" };
+  return { label: dueDate, color: "gray" };
+}
 
 function timeAgo(dateStr: string): string {
   const now = Date.now();
@@ -187,6 +216,38 @@ function TaskCard({
       >
         {task.priority || "P2"}
       </Badge>
+
+      {/* Labels */}
+      {task.labels && task.labels.length > 0 && (
+        <Group gap={4} mt={4}>
+          {task.labels.map((label) => (
+            <Badge
+              key={label}
+              color={getLabelColor(label)}
+              variant="outline"
+              size="xs"
+            >
+              {label}
+            </Badge>
+          ))}
+        </Group>
+      )}
+
+      {/* Due date badge */}
+      {task.dueDate && (() => {
+        const dueDateStatus = getDueDateStatus(task.dueDate);
+        return dueDateStatus ? (
+          <Badge
+            color={dueDateStatus.color}
+            variant="light"
+            size="xs"
+            mt={4}
+            leftSection={<span style={{ fontSize: 10 }}>📅</span>}
+          >
+            {dueDateStatus.label}
+          </Badge>
+        ) : null;
+      })()}
 
       {/* Description — consistent 2-line clamp */}
       {task.description && (
@@ -375,6 +436,8 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
   const [newDescription, setNewDescription] = useState("");
   const [newAssignee, setNewAssignee] = useState("");
   const [newPriority, setNewPriority] = useState("P2");
+  const [newLabels, setNewLabels] = useState<string[]>([]);
+  const [newDueDate, setNewDueDate] = useState<Date | null>(null);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const [newDependencies, setNewDependencies] = useState<string[]>([]);
@@ -457,6 +520,8 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
         description: newDescription.trim(),
         assignedTo: newAssignee || undefined,
         priority: newPriority,
+        labels: newLabels.length > 0 ? newLabels : undefined,
+        dueDate: newDueDate ? newDueDate.toISOString().split("T")[0] : undefined,
         dependencies:
           newDependencies.length > 0 ? newDependencies : undefined,
       });
@@ -464,6 +529,8 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
       setNewDescription("");
       setNewAssignee("");
       setNewPriority("P2");
+      setNewLabels([]);
+      setNewDueDate(null);
       setNewDependencies([]);
       setShowAddDialog(false);
       fetchTasks();
@@ -596,6 +663,8 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
             setNewDescription("");
             setNewAssignee("");
             setNewPriority("P2");
+            setNewLabels([]);
+            setNewDueDate(null);
             setNewDependencies([]);
           }}
           isMobile={!!isMobile}
@@ -610,6 +679,10 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
           setNewAssignee={setNewAssignee}
           newPriority={newPriority}
           setNewPriority={setNewPriority}
+          newLabels={newLabels}
+          setNewLabels={setNewLabels}
+          newDueDate={newDueDate}
+          setNewDueDate={setNewDueDate}
           agentSelectData={agentSelectData}
           tasks={tasks}
           newDependencies={newDependencies}
@@ -715,6 +788,8 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
           setNewDescription("");
           setNewAssignee("");
           setNewPriority("P2");
+          setNewLabels([]);
+          setNewDueDate(null);
           setNewDependencies([]);
         }}
         isMobile={!!isMobile}
@@ -729,6 +804,10 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
         setNewAssignee={setNewAssignee}
         newPriority={newPriority}
         setNewPriority={setNewPriority}
+        newLabels={newLabels}
+        setNewLabels={setNewLabels}
+        newDueDate={newDueDate}
+        setNewDueDate={setNewDueDate}
         agentSelectData={agentSelectData}
         tasks={tasks}
         newDependencies={newDependencies}
@@ -780,6 +859,10 @@ function AddTaskModal({
   setNewAssignee,
   newPriority,
   setNewPriority,
+  newLabels,
+  setNewLabels,
+  newDueDate,
+  setNewDueDate,
   agentSelectData,
   tasks,
   newDependencies,
@@ -800,6 +883,10 @@ function AddTaskModal({
   setNewAssignee: (v: string) => void;
   newPriority: string;
   setNewPriority: (v: string) => void;
+  newLabels: string[];
+  setNewLabels: (v: string[]) => void;
+  newDueDate: Date | null;
+  setNewDueDate: (v: Date | null) => void;
   agentSelectData: { value: string; label: string }[];
   tasks: Task[];
   newDependencies: string[];
@@ -890,6 +977,23 @@ function AddTaskModal({
             }}
           />
         </Box>
+
+        <TagsInput
+          label="Labels"
+          placeholder="Add label (press Enter)"
+          value={newLabels}
+          onChange={setNewLabels}
+          styles={inputStyles}
+        />
+
+        <DateInput
+          label="Due Date"
+          placeholder="Select due date"
+          value={newDueDate}
+          onChange={setNewDueDate}
+          clearable
+          styles={inputStyles}
+        />
 
         {incompleteTasks.length > 0 && (
           <Box>
@@ -1025,6 +1129,8 @@ function TaskDetailModal({
   const [editTitle, setEditTitle] = useState(task.title);
   const [editDesc, setEditDesc] = useState(task.description || "");
   const [editAssignee, setEditAssignee] = useState(task.assignedTo || "");
+  const [editLabels, setEditLabels] = useState(task.labels || []);
+  const [editDueDate, setEditDueDate] = useState<Date | null>(task.dueDate ? new Date(task.dueDate) : null);
   const [saving, setSaving] = useState(false);
 
   // Sync local state when task changes
@@ -1032,7 +1138,9 @@ function TaskDetailModal({
     setEditTitle(task.title);
     setEditDesc(task.description || "");
     setEditAssignee(task.assignedTo || "");
-  }, [task.id, task.title, task.description, task.assignedTo]);
+    setEditLabels(task.labels || []);
+    setEditDueDate(task.dueDate ? new Date(task.dueDate) : null);
+  }, [task.id, task.title, task.description, task.assignedTo, task.labels, task.dueDate]);
 
   const agentSelectData = agents.map((a) => ({
     value: a.id,
@@ -1069,6 +1177,34 @@ function TaskDetailModal({
     const newVal = value || "";
     setEditAssignee(newVal);
     saveField("assignedTo", newVal);
+  };
+
+  const handleLabelsChange = async (newLabels: string[]) => {
+    setEditLabels(newLabels);
+    setSaving(true);
+    try {
+      await api.updateTask(sessionId, task.id, { labels: newLabels });
+      fetchTasks();
+    } catch {
+      // revert on failure
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDueDateChange = async (newDate: Date | null) => {
+    setEditDueDate(newDate);
+    setSaving(true);
+    try {
+      await api.updateTask(sessionId, task.id, {
+        dueDate: newDate ? newDate.toISOString().split("T")[0] : undefined
+      });
+      fetchTasks();
+    } catch {
+      // revert on failure
+    } finally {
+      setSaving(false);
+    }
   };
 
   const selectDropdownStyles = {
@@ -1259,6 +1395,43 @@ function TaskDetailModal({
                                  PRIORITY_COLORS[task.priority || "P2"] === "blue" ? "var(--accent-blue)" :
                                  "var(--text-muted)",
                 boxShadow: "none",
+              },
+            }}
+          />
+
+          {/* Labels */}
+          <Text size="sm" fw={500} c="dimmed" style={{ alignSelf: "center" }}>
+            Labels
+          </Text>
+          <TagsInput
+            placeholder="Add label"
+            value={editLabels}
+            onChange={handleLabelsChange}
+            size="xs"
+            styles={{
+              input: {
+                backgroundColor: "var(--bg-tertiary)",
+                borderColor: "var(--border-color)",
+                color: "var(--text-primary)",
+              },
+            }}
+          />
+
+          {/* Due Date */}
+          <Text size="sm" fw={500} c="dimmed" style={{ alignSelf: "center" }}>
+            Due Date
+          </Text>
+          <DateInput
+            placeholder="Select due date"
+            value={editDueDate}
+            onChange={handleDueDateChange}
+            clearable
+            size="xs"
+            styles={{
+              input: {
+                backgroundColor: "var(--bg-tertiary)",
+                borderColor: "var(--border-color)",
+                color: "var(--text-primary)",
               },
             }}
           />
