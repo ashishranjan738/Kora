@@ -1372,6 +1372,7 @@ export function createApiRouter(deps: {
             type: 'nudge-sent',
             data: { agentId: String(aid), messageType: 'custom', customMessage },
             agentId: String(aid),
+            timestamp: new Date().toISOString(),
           });
 
           res.json({ nudged: true, customMessage: true });
@@ -1385,6 +1386,7 @@ export function createApiRouter(deps: {
             type: 'nudge-failed',
             data: { agentId: String(aid), messageType: 'custom', error: String(err) },
             agentId: String(aid),
+            timestamp: new Date().toISOString(),
           });
 
           res.status(500).json({ error: "Failed to send nudge", details: String(err) });
@@ -1402,6 +1404,7 @@ export function createApiRouter(deps: {
             type: 'nudge-sent',
             data: { agentId: String(aid), messageType: 'default', unreadCount: unread },
             agentId: String(aid),
+            timestamp: new Date().toISOString(),
           });
 
           res.json({ nudged: true, unreadCount: unread });
@@ -1415,6 +1418,7 @@ export function createApiRouter(deps: {
             type: 'nudge-failed',
             data: { agentId: String(aid), messageType: 'default', error: String(err) },
             agentId: String(aid),
+            timestamp: new Date().toISOString(),
           });
 
           res.status(500).json({ error: "Failed to send nudge", details: String(err) });
