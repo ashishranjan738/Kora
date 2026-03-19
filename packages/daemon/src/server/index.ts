@@ -16,6 +16,7 @@ import { getRuntimeTmuxPrefix } from "@kora/shared";
 import { PtyManager } from "../core/pty-manager.js";
 import { HoldptyController } from "../core/holdpty-controller.js";
 import { logger } from "../core/logger.js";
+import { notificationService } from "../core/notification-service.js";
 import pinoHttp from "pino-http";
 
 export interface ServerDeps {
@@ -78,6 +79,37 @@ export function createServer(options: ServerOptions) {
   const app = express();
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server });
+
+  // Set up global notification broadcast
+  notificationService.on("notification", (notification) => {
+    const event: WSEvent = {
+      event: "notification",
+      sessionId: notification.sessionId,
+      notification: {
+        id: notification.id,
+        type: notification.type,
+        title: notification.title,
+        body: notification.body,
+        agentId: notification.agentId,
+        timestamp: notification.timestamp,
+      },
+    };
+
+    // Broadcast to all WebSocket clients subscribed to this session
+    wss.clients.forEach((client) => {
+      if (client.readyState === 1 && (client as any).wsType === "dashboard") {
+        // Check if this client is subscribed to the notification's session
+        const subscribedSessions = (client as any).subscribedSessions as Set<string> | undefined;
+        if (subscribedSessions?.has(notification.sessionId)) {
+          try {
+            client.send(JSON.stringify(event));
+          } catch (err) {
+            logger.error({ err }, "Failed to broadcast notification to WebSocket client");
+          }
+        }
+      }
+    });
+  });
 
   // Configure PTY manager with the active terminal backend
   ptyManager.setBackend(deps.tmux);
@@ -157,6 +189,7 @@ export function createServer(options: ServerOptions) {
 
     const listeners: Array<{ emitter: Orchestrator; event: string; handler: (...args: any[]) => void }> = [];
     const subscriptions = new Set<string>(); // Track which sessionIds this WS is subscribed to (Tier 1)
+    (ws as any).subscribedSessions = subscriptions; // Expose for notification broadcast
 
     // Helper to check if an event should be sent to this client (Tier 2)
     const shouldSendEvent = (event: WSEvent, eventSessionId: string): boolean => {

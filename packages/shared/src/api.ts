@@ -144,4 +144,5 @@ export type WSEvent =
   | { event: "session-update"; session: SessionConfig }
   | { event: "terminal-data"; sessionId: string; agentId: string; data: string }
   | { event: "cost-update"; sessionId: string; agentId: string; costUsd: number }
+  | { event: "notification"; sessionId: string; notification: { id: string; type: string; title: string; body: string; agentId?: string; timestamp: number } }
   | { event: "error"; message: string };

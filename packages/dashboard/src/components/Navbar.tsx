@@ -14,6 +14,7 @@ import {
   Box,
 } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
+import { NotificationDropdown } from "./NotificationDropdown";
 
 export function Navbar() {
   const { sessions, fetchSessions } = useSessionStore();
@@ -180,6 +181,7 @@ export function Navbar() {
         ) : (
           <Group gap={16} align="center">
             {connectionStatus}
+            <NotificationDropdown sessionId={selectedSession || undefined} />
             {themeToggle}
             {settingsLink}
           </Group>
@@ -227,6 +229,13 @@ export function Navbar() {
               Status
             </Text>
             {connectionStatus}
+          </Box>
+
+          <Box>
+            <Text size="xs" c="var(--text-muted)" mb={4}>
+              Notifications
+            </Text>
+            <NotificationDropdown sessionId={selectedSession || undefined} />
           </Box>
 
           <Box>
