@@ -17,6 +17,8 @@ import {
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { AutonomyLevel } from "@kora/shared";
+import { PersonaLibrary } from "./PersonaLibrary";
+import type { Persona } from "../hooks/usePersonas";
 
 const AUTONOMY_DESCRIPTIONS: Record<AutonomyLevel, string> = {
   [AutonomyLevel.SuggestOnly]: "Agent proposes actions and waits for approval",
@@ -102,6 +104,11 @@ export function SpawnAgentDialog({
   const [autonomyLevel, setAutonomyLevel] = useState<AutonomyLevel>(
     AutonomyLevel.AutoRead
   );
+  const [personaLibraryOpen, setPersonaLibraryOpen] = useState(false);
+
+  const handlePersonaSelect = (selectedPersona: Persona) => {
+    setPersona(selectedPersona.fullText);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -413,24 +420,44 @@ export function SpawnAgentDialog({
           }}
         />
 
-        <Textarea
-          label="Persona (optional)"
-          value={persona}
-          onChange={(e) => setPersona(e.currentTarget.value)}
-          placeholder="Describe the agent's persona or system instructions..."
-          rows={3}
-          autosize
-          minRows={2}
-          maxRows={5}
-          styles={{
-            input: {
-              backgroundColor: "var(--bg-tertiary)",
-              borderColor: "var(--border-color)",
-              color: "var(--text-primary)",
-            },
-            label: { color: "var(--text-secondary)", fontSize: 13 },
-          }}
-        />
+        <Stack gap={4}>
+          <Group justify="space-between" align="center">
+            <Text size="sm" c="var(--text-secondary)" fw={500}>
+              Persona (optional)
+            </Text>
+            <Button
+              variant="subtle"
+              size="compact-sm"
+              onClick={() => setPersonaLibraryOpen(true)}
+              styles={{
+                root: {
+                  color: "var(--accent-blue)",
+                  fontSize: 12,
+                  height: 28,
+                  padding: "0 12px",
+                },
+              }}
+            >
+              🎯 Browse Personas
+            </Button>
+          </Group>
+          <Textarea
+            value={persona}
+            onChange={(e) => setPersona(e.currentTarget.value)}
+            placeholder="Describe the agent's persona or system instructions..."
+            rows={3}
+            autosize
+            minRows={2}
+            maxRows={5}
+            styles={{
+              input: {
+                backgroundColor: "var(--bg-tertiary)",
+                borderColor: "var(--border-color)",
+                color: "var(--text-primary)",
+              },
+            }}
+          />
+        </Stack>
 
         <Textarea
           label="Initial Task (optional)"
@@ -500,6 +527,12 @@ export function SpawnAgentDialog({
           </Button>
         </Group>
       </Stack>
+
+      <PersonaLibrary
+        opened={personaLibraryOpen}
+        onClose={() => setPersonaLibraryOpen(false)}
+        onSelect={handlePersonaSelect}
+      />
     </Modal>
   );
 }
