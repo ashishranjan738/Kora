@@ -13,6 +13,7 @@ export interface TerminalEntry {
   connected: boolean;
   reconnectAttempts: number;
   onConnectedChange?: (connected: boolean) => void;
+  onMessageNotification?: (from: string) => void;
 }
 
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -60,6 +61,13 @@ function connectWs(entry: TerminalEntry): void {
 
   ws.onmessage = (event) => {
     const writeData = (text: string) => {
+      // Detect message notification patterns
+      const messagePattern = /\[(?:New )?[Mm]essage from ([^\]]+)\]/;
+      const match = text.match(messagePattern);
+      if (match && entry.onMessageNotification) {
+        entry.onMessageNotification(match[1]);
+      }
+
       entry.term.write(text);
       if (!firstChunkReceived) {
         firstChunkReceived = true;
@@ -212,6 +220,19 @@ export function detachTerminal(sessionId: string, agentId: string): void {
   const entry = registry.get(key);
   if (entry && entry.container.parentElement) {
     entry.container.parentElement.removeChild(entry.container);
+  }
+}
+
+/** Set callback for message notifications detected in terminal output */
+export function setMessageNotificationCallback(
+  sessionId: string,
+  agentId: string,
+  callback: ((from: string) => void) | undefined
+): void {
+  const key = `${sessionId}:${agentId}`;
+  const entry = registry.get(key);
+  if (entry) {
+    entry.onMessageNotification = callback;
   }
 }
 

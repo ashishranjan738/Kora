@@ -7,6 +7,7 @@ export interface TerminalSession {
   type: "agent" | "standalone";
   agentName?: string;
   createdAt: string;
+  unreadCount?: number;
 }
 
 interface TerminalSessionStore {
@@ -23,6 +24,10 @@ interface TerminalSessionStore {
   /** Remove sessions not in the given set of valid IDs */
   pruneStale: (validIds: Set<string>) => void;
   clear: () => void;
+  /** Increment unread message count for a terminal */
+  incrementUnread: (id: string) => void;
+  /** Clear unread message count for a terminal */
+  clearUnread: (id: string) => void;
 }
 
 export const useTerminalSessionStore = create<TerminalSessionStore>((set, get) => ({
@@ -79,4 +84,25 @@ export const useTerminalSessionStore = create<TerminalSessionStore>((set, get) =
     }),
 
   clear: () => set({ sessions: new Map(), openTabs: [] }),
+
+  incrementUnread: (id) =>
+    set((state) => {
+      const session = state.sessions.get(id);
+      if (!session) return state;
+      const next = new Map(state.sessions);
+      next.set(id, {
+        ...session,
+        unreadCount: (session.unreadCount || 0) + 1,
+      });
+      return { sessions: next };
+    }),
+
+  clearUnread: (id) =>
+    set((state) => {
+      const session = state.sessions.get(id);
+      if (!session || !session.unreadCount) return state;
+      const next = new Map(state.sessions);
+      next.set(id, { ...session, unreadCount: 0 });
+      return { sessions: next };
+    }),
 }));
