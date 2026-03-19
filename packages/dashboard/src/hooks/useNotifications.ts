@@ -18,6 +18,12 @@ export function useNotifications(sessionId: string | undefined) {
     if (event.event === "notification" && event.notification) {
       setNotifications((prev) => {
         const newNotif = { ...event.notification, read: false };
+
+        // Prevent duplicates: check if notification with same ID already exists
+        if (prev.some((n) => n.id === newNotif.id)) {
+          return prev;
+        }
+
         // Add to beginning, keep only last 20
         const updated = [newNotif, ...prev].slice(0, 20);
         return updated;
