@@ -14,6 +14,7 @@ import { getRuntimeTmuxPrefix } from "@kora/shared";
 import { PtyManager } from "../core/pty-manager.js";
 import { HoldptyController } from "../core/holdpty-controller.js";
 import { logger } from "../core/logger.js";
+import pinoHttp from "pino-http";
 
 export interface ServerDeps {
   sessionManager: SessionManager;
@@ -66,6 +67,12 @@ export function createServer(options: ServerOptions) {
   app.use(express.static(dashboardDistPath, { index: false }));
 
   app.use(express.json());
+  app.use(pinoHttp({
+    logger,
+    autoLogging: {
+      ignore: (req) => req.url?.startsWith("/api/v1/status") ?? false,
+    },
+  }));
   app.use(createAuthMiddleware(token));
   app.use("/api/v1", createApiRouter(deps, wss));
 
