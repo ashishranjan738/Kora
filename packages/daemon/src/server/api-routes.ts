@@ -40,6 +40,45 @@ import { logger } from "../core/logger.js";
 import { saveTerminalStates, loadTerminalStates } from "../core/terminal-persistence.js";
 import type { StandaloneTerminal } from "../core/terminal-persistence.js";
 
+// Output cache to avoid repeated capturePane calls
+interface CachedOutput {
+  raw: string;
+  timestamp: number;
+  lines: string[];
+}
+
+class AgentOutputCache {
+  private cache = new Map<string, CachedOutput>();
+  private readonly TTL = 2000; // 2 seconds
+
+  get(agentId: string): CachedOutput | null {
+    const cached = this.cache.get(agentId);
+    if (!cached) return null;
+
+    // Check if cache is still valid
+    if (Date.now() - cached.timestamp > this.TTL) {
+      this.cache.delete(agentId);
+      return null;
+    }
+
+    return cached;
+  }
+
+  set(agentId: string, raw: string, lines: string[]): void {
+    this.cache.set(agentId, {
+      raw,
+      timestamp: Date.now(),
+      lines,
+    });
+  }
+
+  clear(agentId: string): void {
+    this.cache.delete(agentId);
+  }
+}
+
+const outputCache = new AgentOutputCache();
+
 export function createApiRouter(deps: {
   sessionManager: SessionManager;
   orchestrators: Map<string, Orchestrator>;  // sessionId -> Orchestrator
@@ -881,6 +920,9 @@ export function createApiRouter(deps: {
     try {
       const { sid, aid } = req.params;
       const lines = parseInt(req.query.lines as string) || 100;
+      const format = req.query.format as string || "raw";
+      const stripAnsiCodes = req.query.stripAnsi === "true";
+      const sinceTimestamp = req.query.since ? parseInt(req.query.since as string) : null;
 
       const am = orchestrators.get(String(sid))?.agentManager;
       if (!am) {
@@ -894,14 +936,131 @@ export function createApiRouter(deps: {
         return;
       }
 
-      const rawOutput = await tmux.capturePane(agent.config.tmuxSession, lines);
-      const outputLines = rawOutput.split("\n");
-      res.json({ output: outputLines });
+      // Try cache first
+      const cacheKey = `${sid}-${aid}`;
+      let rawOutput: string;
+      let outputLines: string[];
+      const cached = outputCache.get(cacheKey);
+
+      if (cached) {
+        rawOutput = cached.raw;
+        outputLines = cached.lines;
+      } else {
+        // Cache miss - fetch from terminal
+        rawOutput = await tmux.capturePane(agent.config.tmuxSession, lines);
+        outputLines = rawOutput.split("\n");
+        outputCache.set(cacheKey, rawOutput, outputLines);
+      }
+
+      // Filter by timestamp if requested
+      if (sinceTimestamp !== null && format === "structured") {
+        // For structured format, we can filter by timestamp
+        // For now, just return all (timestamp parsing would need to be added)
+      }
+
+      // Strip ANSI codes if requested
+      if (stripAnsiCodes) {
+        // Use dynamic import for strip-ansi (ESM module)
+        const stripAnsiModule = await import("strip-ansi");
+        const stripAnsiFunc = stripAnsiModule.default;
+        outputLines = outputLines.map(line => stripAnsiFunc(line));
+      }
+
+      // Format response based on requested format
+      if (format === "structured") {
+        // Parse output into structured format with commands and responses
+        const structured = parseStructuredOutput(outputLines);
+        res.json({
+          format: "structured",
+          timestamp: Date.now(),
+          entries: structured,
+        });
+      } else {
+        // Raw format (default)
+        res.json({
+          format: "raw",
+          timestamp: Date.now(),
+          output: outputLines,
+        });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
     }
   });
+
+  /**
+   * Parse terminal output into structured format
+   * Identifies command inputs, tool calls, and responses
+   */
+  function parseStructuredOutput(lines: string[]): Array<{
+    type: "command" | "response" | "system";
+    content: string;
+    timestamp?: number;
+  }> {
+    const entries: Array<{
+      type: "command" | "response" | "system";
+      content: string;
+      timestamp?: number;
+    }> = [];
+
+    let currentEntry: string[] = [];
+    let currentType: "command" | "response" | "system" = "response";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      // Detect command prompts ($ > ❯ etc)
+      if (trimmed.match(/^[$%>#❯]\s+/)) {
+        // Save previous entry
+        if (currentEntry.length > 0) {
+          entries.push({
+            type: currentType,
+            content: currentEntry.join('\n'),
+          });
+          currentEntry = [];
+        }
+        currentType = "command";
+        currentEntry.push(trimmed);
+      }
+      // Detect tool calls or system messages
+      else if (trimmed.startsWith('[') || trimmed.includes('Tool:') || trimmed.includes('ERROR:')) {
+        if (currentEntry.length > 0) {
+          entries.push({
+            type: currentType,
+            content: currentEntry.join('\n'),
+          });
+          currentEntry = [];
+        }
+        currentType = "system";
+        currentEntry.push(trimmed);
+      }
+      // Regular response output
+      else {
+        if (currentType === "command" && currentEntry.length > 0) {
+          // Command has been entered, now we're seeing response
+          entries.push({
+            type: "command",
+            content: currentEntry.join('\n'),
+          });
+          currentEntry = [];
+          currentType = "response";
+        }
+        currentEntry.push(trimmed);
+      }
+    }
+
+    // Save final entry
+    if (currentEntry.length > 0) {
+      entries.push({
+        type: currentType,
+        content: currentEntry.join('\n'),
+      });
+    }
+
+    return entries;
+  }
 
   router.post("/sessions/:sid/agents/:aid/model", async (req: Request, res: Response) => {
     try {
