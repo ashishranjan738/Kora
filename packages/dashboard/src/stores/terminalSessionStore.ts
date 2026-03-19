@@ -20,6 +20,8 @@ interface TerminalSessionStore {
   openTab: (id: string) => void;
   closeTab: (id: string) => void;
   setOpenTabs: (tabs: string[]) => void;
+  /** Remove sessions not in the given set of valid IDs */
+  pruneStale: (validIds: Set<string>) => void;
   clear: () => void;
 }
 
@@ -62,6 +64,19 @@ export const useTerminalSessionStore = create<TerminalSessionStore>((set, get) =
     })),
 
   setOpenTabs: (tabs) => set({ openTabs: tabs }),
+
+  pruneStale: (validIds) =>
+    set((state) => {
+      const next = new Map<string, TerminalSession>();
+      for (const [id, session] of state.sessions) {
+        if (validIds.has(id)) next.set(id, session);
+      }
+      if (next.size === state.sessions.size) return state;
+      return {
+        sessions: next,
+        openTabs: state.openTabs.filter((t) => validIds.has(t)),
+      };
+    }),
 
   clear: () => set({ sessions: new Map(), openTabs: [] }),
 }));

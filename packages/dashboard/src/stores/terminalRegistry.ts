@@ -11,8 +11,12 @@ export interface TerminalEntry {
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   disposed: boolean;
   connected: boolean;
+  reconnectAttempts: number;
   onConnectedChange?: (connected: boolean) => void;
 }
+
+const MAX_RECONNECT_ATTEMPTS = 10;
+const RECONNECT_BASE_DELAY = 2000;
 
 const registry = new Map<string, TerminalEntry>();
 
@@ -39,6 +43,7 @@ function connectWs(entry: TerminalEntry): void {
 
   ws.onopen = () => {
     entry.connected = true;
+    entry.reconnectAttempts = 0; // Reset on successful connection
     entry.onConnectedChange?.(true);
     // Delay initial resize to avoid racing with first data
     setTimeout(() => {
@@ -85,8 +90,11 @@ function connectWs(entry: TerminalEntry): void {
   ws.onclose = () => {
     entry.connected = false;
     entry.onConnectedChange?.(false);
-    if (!entry.disposed) {
-      entry.reconnectTimer = setTimeout(() => connectWs(entry), 3000);
+    if (!entry.disposed && entry.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      entry.reconnectAttempts++;
+      // Exponential backoff: 2s, 4s, 8s, ... capped at 30s
+      const delay = Math.min(RECONNECT_BASE_DELAY * Math.pow(2, entry.reconnectAttempts - 1), 30000);
+      entry.reconnectTimer = setTimeout(() => connectWs(entry), delay);
     }
   };
 
@@ -104,6 +112,8 @@ export function getOrCreateTerminal(
     const entry = registry.get(key)!;
     // Update theme if changed
     entry.term.options.theme = theme;
+    // Reset reconnect attempts when component re-mounts (user navigated back)
+    entry.reconnectAttempts = 0;
     // Reconnect if WebSocket is dead
     if (!entry.ws || entry.ws.readyState === WebSocket.CLOSED || entry.ws.readyState === WebSocket.CLOSING) {
       if (!entry.disposed) {
@@ -178,6 +188,7 @@ export function getOrCreateTerminal(
     reconnectTimer: null,
     disposed: false,
     connected: false,
+    reconnectAttempts: 0,
   };
 
   // Send terminal input to WebSocket (must be after entry is created)

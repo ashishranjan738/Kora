@@ -146,6 +146,8 @@ export function useApi() {
       apiFetch<{ opened: boolean; path: string }>(`/sessions/${sid}/open-vscode`, { method: "POST" }),
     openTerminal: (sid: string) =>
       apiFetch<{ id: string; tmuxSession: string; projectPath: string }>(`/sessions/${sid}/terminal`, { method: "POST" }),
+    getTerminals: (sid: string) =>
+      apiFetch<{ terminals: any[] }>(`/sessions/${sid}/terminals`),
     listFiles: (sid: string, subpath?: string) =>
       apiFetch<{ items: any[]; currentPath: string }>(`/sessions/${sid}/files?path=${encodeURIComponent(subpath || "")}`),
     readFile: (sid: string, filePath: string) =>
@@ -158,8 +160,6 @@ export function useApi() {
       apiFetch<{ diff: string; original: string; modified: string; path: string }>(`/sessions/${sid}/git/diff?path=${encodeURIComponent(filePath)}&repo=${encodeURIComponent(repo || ".")}`),
     nudgeAgent: (sid: string, aid: string) =>
       apiFetch<{ nudged: boolean; unreadCount: number }>(`/sessions/${sid}/agents/${aid}/nudge`, { method: "POST" }),
-    getTerminals: (sid: string) =>
-      apiFetch<{ terminals: any[] }>(`/sessions/${sid}/terminals`),
     deleteTerminal: (sid: string, tid: string) =>
       apiFetch<{ deleted: boolean; id: string }>(`/sessions/${sid}/terminals/${tid}`, { method: "DELETE" }),
   };

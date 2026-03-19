@@ -1112,31 +1112,36 @@ function AgentsTab({
   const removeSession = useTerminalSessionStore((state) => state.removeSession);
   const openTab = useTerminalSessionStore((state) => state.openTab);
   const closeTab = useTerminalSessionStore((state) => state.closeTab);
+  const pruneStaleTerminals = useTerminalSessionStore((state) => state.pruneStale);
 
-  // Fetch terminals from server on mount
+  // Fetch terminals from server on mount + prune stale entries
   useEffect(() => {
     async function fetchTerminals() {
       try {
         const data = await api.getTerminals(sessionId);
-        if (data?.terminals) {
-          data.terminals.forEach((term: any) => {
-            addSession({
-              id: term.id,
-              tmuxSession: term.tmuxSession,
-              name: term.name || `Terminal ${term.id}`,
-              type: term.type || "standalone",
-              agentName: term.agentName,
-              createdAt: term.createdAt || new Date().toISOString(),
-            });
+        const serverTerminals = data?.terminals || [];
+        const serverTerminalIds = new Set(serverTerminals.map((t: any) => t.id));
+
+        // Add server terminals to store
+        serverTerminals.forEach((term: any) => {
+          addSession({
+            id: term.id,
+            tmuxSession: term.tmuxSession,
+            name: term.name || `Terminal ${term.id}`,
+            type: term.type || "standalone",
+            agentName: term.agentName,
+            createdAt: term.createdAt || new Date().toISOString(),
           });
-        }
+        });
+
+        // Remove stale terminals not on server
+        pruneStaleTerminals(serverTerminalIds);
       } catch (err) {
-        // Backend endpoint might not exist yet, silently ignore
         console.debug("Could not fetch terminals from server:", err);
       }
     }
     fetchTerminals();
-  }, [sessionId]); // Zustand actions are stable, addSession not needed in deps
+  }, [sessionId]); // Zustand actions are stable, not needed in deps
 
   return (
     <>
