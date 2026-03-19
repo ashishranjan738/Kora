@@ -4,6 +4,7 @@
 // ============================================================
 
 import type { AgentRole, AgentPermissions } from "@kora/shared";
+import { resolveBuiltinPersona, renderPersonaTemplate } from "./builtin-personas.js";
 
 export interface PersonaBuildOptions {
   agentId: string;
@@ -16,6 +17,12 @@ export interface PersonaBuildOptions {
   rules?: string[];              // From .kora.yml
   /** List of other agents in the session that this agent can communicate with */
   peers?: Array<{ id: string; name: string; role: string; provider: string; model: string }>;
+  /** Overrides for builtin persona templates (extra constraints, scope items) */
+  personaOverrides?: {
+    constraints?: string[];
+    scopeDo?: string[];
+    scopeDoNot?: string[];
+  };
 }
 
 /**
@@ -26,8 +33,16 @@ export interface PersonaBuildOptions {
 export function buildPersona(options: PersonaBuildOptions): string {
   const sections: string[] = [];
 
-  // User-provided persona (if any)
-  if (options.userPersona?.trim()) {
+  // Resolve builtin persona templates (e.g. "builtin:frontend")
+  if (options.userPersona?.startsWith("builtin:")) {
+    const template = resolveBuiltinPersona(options.userPersona);
+    if (template) {
+      sections.push(renderPersonaTemplate(template, options.personaOverrides));
+    } else {
+      // Unknown builtin — use as raw text
+      sections.push(options.userPersona);
+    }
+  } else if (options.userPersona?.trim()) {
     sections.push(options.userPersona.trim());
   }
 

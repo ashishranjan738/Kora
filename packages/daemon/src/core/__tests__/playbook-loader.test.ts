@@ -156,14 +156,15 @@ describe("savePlaybook", () => {
 // ---------------------------------------------------------------------------
 
 describe("ensureBuiltinPlaybooks", () => {
-  it("creates 3 built-in playbooks", async () => {
+  it("creates 4 built-in playbooks", async () => {
     await ensureBuiltinPlaybooks(tmpDir);
 
     const names = await listPlaybooks(tmpDir);
-    expect(names).toHaveLength(3);
+    expect(names).toHaveLength(4);
     expect(names).toContain("solo-agent");
     expect(names).toContain("master-2-workers");
     expect(names).toContain("full-stack-team");
+    expect(names).toContain("research-team");
   });
 
   it("does not overwrite existing playbooks", async () => {
@@ -205,6 +206,6 @@ describe("ensureBuiltinPlaybooks", () => {
 
     expect(solo!.agents).toHaveLength(1);
     expect(masterWorkers!.agents).toHaveLength(3);
-    expect(fullStack!.agents).toHaveLength(4);
+    expect(fullStack!.agents).toHaveLength(5);
   });
 });

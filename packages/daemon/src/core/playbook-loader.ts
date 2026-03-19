@@ -70,19 +70,30 @@ export async function ensureBuiltinPlaybooks(globalConfigDir: string): Promise<v
       name: "Master + 2 Workers",
       description: "One master that delegates to two workers",
       agents: [
-        { name: "Orchestrator", role: "master", model: "default", persona: "You are a master orchestrator. Decompose tasks and delegate to workers.", extraCliArgs: skipPerms },
-        { name: "Worker A", role: "worker", model: "default", persona: "You are a coding worker. Follow the master's instructions.", extraCliArgs: skipPerms },
-        { name: "Worker B", role: "worker", model: "default", persona: "You are a coding worker. Follow the master's instructions.", extraCliArgs: skipPerms },
+        { name: "Orchestrator", role: "master", model: "default", persona: "builtin:architect", extraCliArgs: skipPerms },
+        { name: "Worker A", role: "worker", model: "default", persona: "builtin:backend", extraCliArgs: skipPerms },
+        { name: "Worker B", role: "worker", model: "default", persona: "builtin:frontend", extraCliArgs: skipPerms },
       ],
     },
     {
       name: "Full Stack Team",
-      description: "Architect + Frontend + Backend + Tests",
+      description: "Architect + Frontend + Backend + Tests + Reviewer",
       agents: [
-        { name: "Architect", role: "master", model: "default", persona: "You are a senior architect. Decompose features into frontend, backend, and test tasks.", extraCliArgs: skipPerms },
-        { name: "Frontend", role: "worker", model: "default", persona: "You are a frontend specialist. Focus on React/UI components.", extraCliArgs: skipPerms },
-        { name: "Backend", role: "worker", model: "default", persona: "You are a backend specialist. Focus on API endpoints and database.", extraCliArgs: skipPerms },
-        { name: "Tests", role: "worker", model: "default", persona: "You write comprehensive tests for all code changes.", extraCliArgs: skipPerms },
+        { name: "Architect", role: "master", model: "default", persona: "builtin:architect", extraCliArgs: skipPerms },
+        { name: "Frontend", role: "worker", model: "default", persona: "builtin:frontend", extraCliArgs: skipPerms },
+        { name: "Backend", role: "worker", model: "default", persona: "builtin:backend", extraCliArgs: skipPerms },
+        { name: "Tests", role: "worker", model: "default", persona: "builtin:tester", extraCliArgs: skipPerms },
+        { name: "Reviewer", role: "worker", model: "default", persona: "builtin:reviewer", extraCliArgs: skipPerms },
+      ],
+    },
+    {
+      name: "Research Team",
+      description: "Architect + Researcher + Backend + Frontend",
+      agents: [
+        { name: "Architect", role: "master", model: "default", persona: "builtin:architect", extraCliArgs: skipPerms },
+        { name: "Researcher", role: "worker", model: "default", persona: "builtin:researcher", extraCliArgs: skipPerms },
+        { name: "Backend", role: "worker", model: "default", persona: "builtin:backend", extraCliArgs: skipPerms },
+        { name: "Frontend", role: "worker", model: "default", persona: "builtin:frontend", extraCliArgs: skipPerms },
       ],
     },
   ];
