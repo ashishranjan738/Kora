@@ -39,6 +39,7 @@ import {
   Paper,
   Badge,
   TextInput,
+  Textarea,
   Loader,
   Collapse,
   Code,
@@ -98,6 +99,9 @@ export function SessionDetail() {
   const [editorFullscreen, setEditorFullscreen] = useState(false);
   const [sendingMsg, setSendingMsg] = useState(false);
   const [terminalHeight, setTerminalHeight] = useState(300);
+  const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+  const [broadcastMessage, setBroadcastMessage] = useState("");
+  const [sendingBroadcast, setSendingBroadcast] = useState(false);
 
   // Use terminal session store for tabs
   const terminalSessionsMap = useTerminalSessionStore((state) => state.sessions);
@@ -267,6 +271,21 @@ export function SessionDetail() {
       loadData();
     } catch (err: any) {
       alert(`Failed to restart agent: ${err.message}`);
+    }
+  }
+
+  async function handleBroadcastMessage() {
+    if (!broadcastMessage.trim() || sendingBroadcast) return;
+    setSendingBroadcast(true);
+    try {
+      await api.broadcastMessage(sessionId!, broadcastMessage);
+      setShowBroadcastModal(false);
+      setBroadcastMessage("");
+      alert(`Broadcast sent to ${agents.length} agent${agents.length !== 1 ? "s" : ""}!`);
+    } catch (err: any) {
+      alert(`Failed to broadcast message: ${err.message}`);
+    } finally {
+      setSendingBroadcast(false);
     }
   }
 
@@ -806,6 +825,91 @@ export function SessionDetail() {
           success={stopSuccess}
         />
       )}
+
+      {/* Broadcast Message Dialog */}
+      {showBroadcastModal && (
+        <Modal
+          opened={showBroadcastModal}
+          onClose={() => {
+            if (!sendingBroadcast) {
+              setShowBroadcastModal(false);
+              setBroadcastMessage("");
+            }
+          }}
+          title="Broadcast Message to All Agents"
+          size="md"
+          centered
+          styles={{
+            header: { backgroundColor: "var(--bg-secondary)", borderBottom: "1px solid var(--border-color)" },
+            body: { backgroundColor: "var(--bg-secondary)" },
+            content: { backgroundColor: "var(--bg-secondary)" },
+            title: { color: "var(--text-primary)", fontWeight: 600, fontSize: 18 },
+            close: { color: "var(--text-secondary)" },
+          }}
+        >
+          <Stack gap="md">
+            <Text size="sm" c="dimmed">
+              Send a message to all {agents.length} agent{agents.length !== 1 ? "s" : ""} in this session.
+            </Text>
+            <Textarea
+              placeholder="Type your message to all agents..."
+              value={broadcastMessage}
+              onChange={(e) => setBroadcastMessage(e.currentTarget.value)}
+              minRows={4}
+              maxRows={8}
+              autoFocus
+              disabled={sendingBroadcast}
+              styles={{
+                input: {
+                  backgroundColor: "var(--bg-tertiary)",
+                  borderColor: "var(--border-color)",
+                  color: "var(--text-primary)",
+                },
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  if (broadcastMessage.trim() && !sendingBroadcast) {
+                    handleBroadcastMessage();
+                  }
+                }
+              }}
+            />
+            <Group justify="flex-end">
+              <Button
+                variant="default"
+                onClick={() => {
+                  setShowBroadcastModal(false);
+                  setBroadcastMessage("");
+                }}
+                disabled={sendingBroadcast}
+                styles={{
+                  root: {
+                    backgroundColor: "var(--bg-tertiary)",
+                    borderColor: "var(--border-color)",
+                    color: "var(--text-primary)",
+                  },
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleBroadcastMessage}
+                disabled={!broadcastMessage.trim() || sendingBroadcast}
+                loading={sendingBroadcast}
+                styles={{
+                  root: {
+                    backgroundColor: "var(--accent-blue)",
+                    borderColor: "var(--accent-blue)",
+                  },
+                }}
+              >
+                Send Broadcast
+              </Button>
+            </Group>
+          </Stack>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -1283,11 +1387,7 @@ function AgentsTab({
       onNudgeAgent={async (agentId) => {
         try { await api.nudgeAgent(sessionId, agentId); } catch {}
       }}
-      onBroadcast={() => {
-        // Focus broadcast input if it exists, or open inline message
-        const input = document.querySelector<HTMLInputElement>(".broadcast-input");
-        if (input) input.focus();
-      }}
+      onBroadcast={() => setShowBroadcastModal(true)}
     />
 
     <SessionCostSummary agents={agents} />
