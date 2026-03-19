@@ -2180,6 +2180,69 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ── Post-Merge Rebase Broadcast ──────────────────────────
+  // Broadcasts a rebase reminder to all running agents in a session.
+  // Can be triggered manually by the Architect or via webhook after PR merge.
+  router.post("/sessions/:sid/broadcast-rebase", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const body = req.body as { prNumber?: number | string; prTitle?: string; message?: string };
+
+      const orch = orchestrators.get(sid);
+      if (!orch) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const prInfo = body.prNumber ? `PR #${body.prNumber}${body.prTitle ? ` (${body.prTitle})` : ""}` : "A PR";
+      const rebaseMsg = body.message ||
+        `${prInfo} merged into main. Please rebase your branch NOW:\n` +
+        `git fetch origin main && git rebase origin/main`;
+
+      const broadcastMsg = `\x1b[1;33m[System]\x1b[0m: ${rebaseMsg}`;
+      const agents = orch.agentManager.listAgents().filter((a) => a.status === "running");
+      const results: Array<{ agentId: string; name: string; sent: boolean }> = [];
+
+      for (const agent of agents) {
+        try {
+          orch.messageQueue.enqueue(agent.id, agent.config.tmuxSession, broadcastMsg);
+          results.push({ agentId: agent.id, name: agent.config.name, sent: true });
+        } catch {
+          results.push({ agentId: agent.id, name: agent.config.name, sent: false });
+        }
+      }
+
+      // Log event
+      const session = sessionManager.getSession(sid);
+      if (session) {
+        const { EventLog } = await import("../core/event-log.js");
+        const eventLog = new EventLog(session.runtimeDir);
+        await eventLog.log({
+          sessionId: sid,
+          type: "message-sent" as any,
+          data: {
+            from: "system",
+            fromName: "System",
+            to: "all",
+            toName: "All Agents",
+            content: rebaseMsg.substring(0, 200),
+            broadcast: true,
+            messageType: "rebase-reminder",
+            prNumber: body.prNumber,
+            prTitle: body.prTitle,
+          },
+        });
+      }
+
+      logger.info({ sid, prNumber: body.prNumber, agentCount: results.length }, "[api] POST broadcast-rebase");
+      res.json({ broadcast: true, prNumber: body.prNumber, sentTo: results.length, results });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err }, "[api] POST broadcast-rebase error");
+      res.status(500).json({ error: message });
+    }
+  });
+
   return router;
 }
 

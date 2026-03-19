@@ -166,5 +166,10 @@ export function useApi() {
       apiFetch<{ paths: string[] }>(`/suggestions/paths?limit=${limit || 10}`),
     getRecentFlags: (limit?: number) =>
       apiFetch<{ flags: string[] }>(`/suggestions/flags?limit=${limit || 10}`),
+    broadcastRebase: (sid: string, prNumber?: number, prTitle?: string) =>
+      apiFetch<{ broadcast: boolean; sentTo: number }>(`/sessions/${sid}/broadcast-rebase`, {
+        method: "POST",
+        body: JSON.stringify({ prNumber, prTitle }),
+      }),
   };
 }
