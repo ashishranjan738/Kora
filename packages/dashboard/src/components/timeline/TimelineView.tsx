@@ -4,8 +4,11 @@ import { useWebSocket } from "../../hooks/useWebSocket";
 import { useDebounce } from "../../hooks/useDebounce";
 import { TimelineFilters, type EventFilter, type DensityMode } from "./TimelineFilters";
 import { TimelineEvent, type TimelineEventData } from "./TimelineEvent";
+import { TimelineGraph } from "./TimelineGraph";
 import { DateDivider, getDateLabel, getDateKey } from "./DateDivider";
-import { Badge, Loader, Text } from "@mantine/core";
+import { Badge, Loader, SegmentedControl, Text } from "@mantine/core";
+
+type ViewMode = "list" | "graph";
 
 interface TimelineViewProps {
   sessionId: string;
@@ -41,6 +44,7 @@ export function TimelineView({
   const [search, setSearch] = useState("");
   const [agentFilter, setAgentFilter] = useState("");
   const [liveMode, setLiveMode] = useState(true);
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [newEventCount, setNewEventCount] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastEventCountRef = useRef(0);
@@ -253,6 +257,20 @@ export function TimelineView({
         <Badge variant="light" color="blue" size="sm">
           {filteredEvents.length} event{filteredEvents.length !== 1 ? "s" : ""}
         </Badge>
+        <div style={{ marginLeft: "auto" }}>
+          <SegmentedControl
+            size="xs"
+            value={viewMode}
+            onChange={(val) => setViewMode(val as ViewMode)}
+            data={[
+              { label: "List", value: "list" },
+              { label: "Graph", value: "graph" },
+            ]}
+            styles={{
+              root: { backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border-color)" },
+            }}
+          />
+        </div>
       </div>
 
       <TimelineFilters
@@ -270,7 +288,7 @@ export function TimelineView({
       />
 
       {/* New events banner */}
-      {newEventCount > 0 && !loading && (
+      {newEventCount > 0 && !loading && viewMode === "list" && (
         <div className="tl-new-events-banner" onClick={dismissNewEvents}>
           {newEventCount} new event{newEventCount !== 1 ? "s" : ""} — click to scroll up
         </div>
@@ -294,7 +312,18 @@ export function TimelineView({
         </div>
       )}
 
-      {!loading && filteredEvents.length > 0 && (
+      {/* Graph view */}
+      {!loading && filteredEvents.length > 0 && viewMode === "graph" && (
+        <TimelineGraph
+          events={filteredEvents}
+          agents={agentOptions}
+          onJumpToTerminal={onJumpToTerminal}
+          onJumpToTaskBoard={onJumpToTaskBoard}
+        />
+      )}
+
+      {/* List view */}
+      {!loading && filteredEvents.length > 0 && viewMode === "list" && (
         <div ref={scrollRef} className={`tl-timeline ${densityClass}`} style={{ maxHeight: '70vh', overflowY: 'auto' }}>
           {groupedEvents.map((group) => (
             <div key={group.dateKey}>
