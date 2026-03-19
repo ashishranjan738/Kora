@@ -1,119 +1,91 @@
 import { Badge, Tooltip } from "@mantine/core";
-import { useEffect, useState, useCallback } from "react";
+import { useCallback } from "react";
 import { useWebSocket } from "../hooks/useWebSocket";
+import { useMessageBufferStore, type BufferState } from "../stores/messageBufferStore";
 
-interface BufferState {
-  /** Number of messages currently buffered for this agent */
+// ── Typed WebSocket events ──────────────────────────────────
+
+interface MessageBufferedEvent {
+  event: "message-buffered";
+  agentId: string;
   queueSize: number;
-  /** Number of messages expired (lost) since last reset */
-  expiredCount: number;
-  /** Last update timestamp */
-  lastUpdate: number;
 }
 
-/** Global buffer state keyed by agentId */
-const bufferStates = new Map<string, BufferState>();
-
-/** Listeners that want to be notified of buffer state changes */
-const listeners = new Set<() => void>();
-
-function notifyListeners() {
-  listeners.forEach((fn) => fn());
+interface MessageExpiredEvent {
+  event: "message-expired";
+  agentId: string;
+  priority: string;
 }
 
-function getBufferState(agentId: string): BufferState {
-  return bufferStates.get(agentId) || { queueSize: 0, expiredCount: 0, lastUpdate: 0 };
+type BufferEvent = MessageBufferedEvent | MessageExpiredEvent;
+
+function isBufferEvent(event: unknown): event is BufferEvent {
+  if (!event || typeof event !== "object") return false;
+  const e = event as Record<string, unknown>;
+  return e.event === "message-buffered" || e.event === "message-expired";
 }
+
+// ── Hook: listen for buffer/expiry WebSocket events ─────────
 
 /**
- * Hook to listen for message-buffered and message-expired WebSocket events
- * and maintain per-agent buffer state. Call once at app/session level.
+ * Listens for message-buffered and message-expired WebSocket events
+ * and updates the Zustand messageBufferStore. Call once at session level.
  */
 export function useMessageBufferEvents() {
-  const handleWsEvent = useCallback((event: any) => {
-    if (event.event === "message-buffered" || event.type === "message-buffered") {
-      const agentId = event.agentId || event.data?.agentId;
-      const queueSize = event.queueSize || event.data?.queueSize || 0;
-      if (!agentId) return;
+  const setBuffered = useMessageBufferStore((s) => s.setBuffered);
+  const addExpired = useMessageBufferStore((s) => s.addExpired);
 
-      const prev = getBufferState(agentId);
-      bufferStates.set(agentId, {
-        ...prev,
-        queueSize,
-        lastUpdate: Date.now(),
-      });
-      notifyListeners();
-    }
+  const handleWsEvent = useCallback(
+    (raw: unknown) => {
+      if (!isBufferEvent(raw)) return;
 
-    if (event.event === "message-expired" || event.type === "message-expired") {
-      const agentId = event.agentId || event.data?.agentId;
-      if (!agentId) return;
-
-      const prev = getBufferState(agentId);
-      bufferStates.set(agentId, {
-        ...prev,
-        expiredCount: prev.expiredCount + 1,
-        lastUpdate: Date.now(),
-      });
-      notifyListeners();
-    }
-  }, []);
+      if (raw.event === "message-buffered") {
+        setBuffered(raw.agentId, raw.queueSize);
+      } else if (raw.event === "message-expired") {
+        addExpired(raw.agentId);
+      }
+    },
+    [setBuffered, addExpired]
+  );
 
   useWebSocket(handleWsEvent);
 }
 
-/**
- * Hook to get buffer state for a specific agent. Re-renders on changes.
- */
-export function useAgentBufferState(agentId: string): BufferState {
-  const [, setTick] = useState(0);
+// ── Component: badge on agent cards ──────────────────────────
 
-  useEffect(() => {
-    const listener = () => setTick((t) => t + 1);
-    listeners.add(listener);
-    return () => { listeners.delete(listener); };
-  }, []);
-
-  return getBufferState(agentId);
-}
-
-/**
- * Badge component showing buffered message count for an agent.
- * Shows nothing when no messages are buffered.
- */
 interface MessageBufferBadgeProps {
   agentId: string;
 }
 
+/**
+ * Badge showing buffered/expired message count for an agent.
+ * Uses agent-specific Zustand selector to avoid over-rendering.
+ * Shows nothing when no messages are buffered or expired.
+ */
 export function MessageBufferBadge({ agentId }: MessageBufferBadgeProps) {
-  const state = useAgentBufferState(agentId);
+  const state: BufferState | undefined = useMessageBufferStore(
+    (s) => s.buffers.get(agentId)
+  );
 
-  if (state.queueSize === 0 && state.expiredCount === 0) return null;
+  if (!state || (state.queueSize === 0 && state.expiredCount === 0)) return null;
 
-  // Show warning if messages are expiring
   if (state.expiredCount > 0) {
     return (
       <Tooltip
-        label={`${state.expiredCount} message${state.expiredCount !== 1 ? "s" : ""} expired (delivery failed). ${state.queueSize > 0 ? `${state.queueSize} still buffered.` : ""}`}
+        label={`${state.expiredCount} message${state.expiredCount !== 1 ? "s" : ""} expired (delivery failed).${state.queueSize > 0 ? ` ${state.queueSize} still buffered.` : ""}`}
         withArrow
         position="bottom"
       >
-        <Badge
-          variant="filled"
-          color="red"
-          size="xs"
-          styles={{ root: { cursor: "default" } }}
-        >
+        <Badge variant="filled" color="red" size="xs" style={{ cursor: "default" }}>
           {state.expiredCount} expired
         </Badge>
       </Tooltip>
     );
   }
 
-  // Show buffered count
   return (
     <Tooltip
-      label={`${state.queueSize} message${state.queueSize !== 1 ? "s" : ""} buffered (rate limited — will deliver when slot opens)`}
+      label={`${state.queueSize} message${state.queueSize !== 1 ? "s" : ""} buffered (rate limited)`}
       withArrow
       position="bottom"
     >
@@ -121,39 +93,10 @@ export function MessageBufferBadge({ agentId }: MessageBufferBadgeProps) {
         variant="light"
         color="yellow"
         size="xs"
-        styles={{ root: { cursor: "default", animation: "tl-pulse 2s infinite" } }}
+        style={{ cursor: "default", animation: "tl-pulse 2s infinite" }}
       >
         {state.queueSize} buffered
       </Badge>
     </Tooltip>
-  );
-}
-
-/**
- * Toast-style notification component for expired messages.
- * Mount at session level — shows a dismissable warning when messages expire.
- */
-interface MessageExpiryToastProps {
-  /** Called when user dismisses */
-  onDismiss: () => void;
-  agentName?: string;
-  count: number;
-}
-
-export function MessageExpiryToast({ onDismiss, agentName, count }: MessageExpiryToastProps) {
-  return (
-    <div className="msg-expiry-toast" onClick={onDismiss}>
-      <span style={{ fontWeight: 600, color: "var(--accent-red)" }}>
-        {count} message{count !== 1 ? "s" : ""} expired
-      </span>
-      {agentName && (
-        <span style={{ color: "var(--text-secondary)", marginLeft: 6 }}>
-          for {agentName}
-        </span>
-      )}
-      <span style={{ color: "var(--text-muted)", marginLeft: 8, fontSize: 11 }}>
-        Click to dismiss
-      </span>
-    </div>
   );
 }
