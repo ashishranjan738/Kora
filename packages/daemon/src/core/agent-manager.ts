@@ -173,6 +173,7 @@ export class AgentManager extends EventEmitter {
                 mcpServerScript,
                 "--agent-id", agentId,
                 "--session-id", options.sessionId,
+                "--agent-role", options.role,
                 "--daemon-url", `http://localhost:${daemonPort}`,
                 "--token", daemonToken,
                 "--project-path", path.resolve(options.runtimeDir, ".."),
