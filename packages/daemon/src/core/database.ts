@@ -528,17 +528,30 @@ export class AppDatabase extends EventEmitter {
     totalMessages: number;
     queueDepth: number;
   } {
-    const sinceClause = since ? `AND enqueued_at >= ${since}` : '';
+    // Validate input to prevent SQL injection
+    if (since !== undefined && (isNaN(since) || since < 0)) {
+      throw new TypeError('Invalid since parameter: must be a positive number');
+    }
+
+    const now = Date.now();
+    // Build params in order of SQL placeholders: now (failure calc), agentId (WHERE), since (optional AND)
+    const params: (string | number)[] = [now, agentId];
+    let sinceClause = '';
+
+    if (since !== undefined) {
+      sinceClause = 'AND enqueued_at >= ?';
+      params.push(since);
+    }
 
     const stats = this.db.prepare(`
       SELECT
         AVG(latency_ms) as avg_latency,
         COUNT(*) as total,
         SUM(CASE WHEN status = 'delivered' OR status = 'read' THEN 1 ELSE 0 END) as delivered,
-        SUM(CASE WHEN status = 'sent' AND (${Date.now()} - enqueued_at) > 60000 THEN 1 ELSE 0 END) as failed
+        SUM(CASE WHEN status = 'sent' AND (? - enqueued_at) > 60000 THEN 1 ELSE 0 END) as failed
       FROM message_deliveries
       WHERE agent_id = ? ${sinceClause}
-    `).get(agentId) as any;
+    `).get(...params) as any;
 
     return {
       avgLatencyMs: stats.avg_latency || 0,
@@ -555,15 +568,16 @@ export class AppDatabase extends EventEmitter {
     enqueuedAt: number;
     priority: string;
   }> {
+    const now = Date.now();
     const rows = this.db.prepare(`
       SELECT message_id, enqueued_at, priority
       FROM message_deliveries
       WHERE agent_id = ?
         AND status = 'sent'
-        AND (${Date.now()} - enqueued_at) > 60000
+        AND (? - enqueued_at) > 60000
       ORDER BY enqueued_at DESC
       LIMIT ?
-    `).all(agentId, limit) as any[];
+    `).all(agentId, now, limit) as any[];
 
     return rows.map(r => ({
       messageId: r.message_id,
