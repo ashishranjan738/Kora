@@ -34,9 +34,9 @@ afterEach(() => {
 });
 
 describe("DB migration — events agent_id column", () => {
-  it("schema version is 4", () => {
+  it("schema version is 5", () => {
     const version = db.db.pragma("user_version", { simple: true }) as number;
-    expect(version).toBe(4);
+    expect(version).toBe(5);
   });
 
   it("agent_id column exists on events table", () => {
