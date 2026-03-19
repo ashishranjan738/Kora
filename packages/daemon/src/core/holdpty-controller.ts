@@ -18,6 +18,7 @@ import * as path from "path";
 import type { IPtyBackend } from "./pty-backend.js";
 import type { PtyManager } from "./pty-manager.js";
 import { logger } from "./logger.js";
+import { stripAnsi } from "./agent-health.js";
 
 const execFile = promisify(execFileCb);
 
@@ -337,12 +338,12 @@ export class HoldptyController implements IPtyBackend {
    * Captures terminal output via socket-based logs replay.
    * Avoids spawning a subprocess per call.
    */
-  async capturePane(session: string, lines: number = 1000, _escapeSequences: boolean = false): Promise<string> {
+  async capturePane(session: string, lines: number = 1000, escapeSequences: boolean = false): Promise<string> {
     try {
       const proto = await getProtocol();
       const socketPath = await this.getSocketPath(session);
 
-      return await new Promise<string>((resolve) => {
+      const raw = await new Promise<string>((resolve) => {
         const chunks: Buffer[] = [];
         const decoder = new proto.FrameDecoder();
         let resolved = false;
@@ -377,6 +378,11 @@ export class HoldptyController implements IPtyBackend {
           }
         }, 3000);
       });
+
+      // Strip ANSI escape sequences when escapeSequences=false (default).
+      // holdpty replays raw PTY output including cursor blink, window titles,
+      // color codes etc. — unlike tmux's capture-pane which strips these.
+      return escapeSequences ? raw : stripAnsi(raw);
     } catch {
       return "";
     }

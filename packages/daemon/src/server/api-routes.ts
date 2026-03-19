@@ -1021,6 +1021,16 @@ export function createApiRouter(deps: {
         return;
       }
 
+      // Layer 1 idle detection: check if sender's message indicates they're idle/done.
+      // Keywords like "Standing by", "Task complete" in the message content
+      // trigger an immediate idle status for the SENDER.
+      if (body.from && body.from !== "user") {
+        const { AgentHealthMonitor } = await import("../core/agent-health.js");
+        if (AgentHealthMonitor.isMessageIdle(body.message)) {
+          orch.agentManager.markIdleFromMcp(body.from, "completion message detected");
+        }
+      }
+
       res.json({ relayed: true, from: body.from || "user", to: body.to });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1653,13 +1663,10 @@ export function createApiRouter(deps: {
         return;
       }
 
-      // Update agent activity to idle
-      agent.activity = "idle";
-      agent.lastActivityAt = new Date().toISOString();
-      agent.idleSince = new Date().toISOString();
-
-      // Emit agent-idle event
-      orch.agentManager.emit("agent-idle", String(aid));
+      // Layer 1 (MCP signal): Mark agent as idle with protection from terminal override.
+      // This sets activity to "idle" AND protects it from being flapped back to "working"
+      // by terminal polling for 2 minutes.
+      orch.agentManager.markIdleFromMcp(String(aid), reason);
 
       res.json({ success: true, activity: "idle", reason });
     } catch (err) {
