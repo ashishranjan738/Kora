@@ -9,8 +9,8 @@ version: 1
 name: "Test Playbook"
 description: "A test playbook"
 agents:
-  - name: Worker
-    role: worker
+  - name: Master
+    role: master
     model: claude-sonnet-4
 `;
       const result = validateYAMLPlaybook(yaml);
@@ -102,7 +102,7 @@ agents: [
       const playbook = {
         name: "Test",
         defaults: { model: "claude-sonnet-4" },
-        agents: [{ name: "Worker", role: "worker" }],
+        agents: [{ name: "Master", role: "master" }],
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(true);
@@ -118,7 +118,7 @@ agents: [
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes("at least one master agent required"))).toBe(true);
+      expect(result.errors.some(e => e.includes("at least one master agent is required"))).toBe(true);
     });
 
     it("warns about multiple master agents", () => {
