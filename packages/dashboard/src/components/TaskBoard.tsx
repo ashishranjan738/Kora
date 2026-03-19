@@ -108,6 +108,28 @@ function getLabelColor(label: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
+// Extract a human-readable name from a raw agent ID (e.g., "backend3-43dab2d1" → "Backend3")
+function extractNameFromAgentId(agentId: string): string {
+  // Agent IDs follow the pattern: name-hexhash (e.g., "backend3-43dab2d1")
+  const match = agentId.match(/^(.+)-[0-9a-f]{6,}$/);
+  if (match) {
+    const rawName = match[1];
+    return rawName.charAt(0).toUpperCase() + rawName.slice(1);
+  }
+  return agentId;
+}
+
+// Resolve assignee: returns { name, isRemoved } for display
+function resolveAssignee(
+  assignedTo: string | undefined,
+  agents: { id: string; name: string }[]
+): { name: string; isRemoved: boolean } | null {
+  if (!assignedTo) return null;
+  const agent = agents.find((a) => a.id === assignedTo || a.name === assignedTo);
+  if (agent) return { name: agent.name, isRemoved: false };
+  return { name: extractNameFromAgentId(assignedTo), isRemoved: true };
+}
+
 // Calculate due date status
 function getDueDateStatus(dueDate: string): { label: string; color: string } | null {
   if (!dueDate) return null;
@@ -174,9 +196,7 @@ function TaskCard({
   onClick: () => void;
   onDelete: () => void;
 }) {
-  const assigneeName = task.assignedTo
-    ? agents.find((a) => a.id === task.assignedTo)?.name || task.assignedTo
-    : null;
+  const assignee = resolveAssignee(task.assignedTo, agents);
 
   // Check if task is overdue
   const dueDateStatus = task.dueDate ? getDueDateStatus(task.dueDate) : null;
@@ -312,9 +332,16 @@ function TaskCard({
 
       {/* Footer: assignee, comments, time */}
       <Group justify="space-between" align="center" mt="xs" gap={4}>
-        {assigneeName ? (
-          <Badge variant="light" color="blue" size="xs">
-            {assigneeName}
+        {assignee ? (
+          <Badge
+            variant="light"
+            color={assignee.isRemoved ? "gray" : "blue"}
+            size="xs"
+            styles={assignee.isRemoved ? {
+              label: { fontStyle: "italic", opacity: 0.7 },
+            } : undefined}
+          >
+            {assignee.name}{assignee.isRemoved ? " (removed)" : ""}
           </Badge>
         ) : (
           <Text size="xs" c="var(--text-muted)">
@@ -686,10 +713,22 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
 
   const maxWorkload = Math.max(...Object.values(agentWorkloads), 1);
 
-  const agentSelectData = agents.map((a) => ({
-    value: a.id,
-    label: a.name,
-  }));
+  // Build agent select data including stale/removed agents from tasks
+  const activeAgentIds = new Set(agents.map((a) => a.id));
+  const staleAgentIds = Array.from(
+    new Set(
+      tasks
+        .map((t) => t.assignedTo)
+        .filter((id): id is string => !!id && !activeAgentIds.has(id))
+    )
+  );
+  const agentSelectData = [
+    ...agents.map((a) => ({ value: a.id, label: a.name })),
+    ...staleAgentIds.map((id) => ({
+      value: id,
+      label: `${extractNameFromAgentId(id)} (removed)`,
+    })),
+  ];
 
   // Extract all unique labels from tasks
   const allLabels = Array.from(
@@ -1348,10 +1387,15 @@ function TaskDetailModal({
     setEditDueDate(task.dueDate || null);
   }, [task.id, task.title, task.description, task.assignedTo, task.labels, task.dueDate]);
 
-  const agentSelectData = agents.map((a) => ({
-    value: a.id,
-    label: a.name,
-  }));
+  const assignee = resolveAssignee(task.assignedTo, agents);
+
+  // Build agent select data, including a "(removed)" entry if the assigned agent is stale
+  const agentSelectData = [
+    ...agents.map((a) => ({ value: a.id, label: a.name })),
+    ...(assignee?.isRemoved && task.assignedTo
+      ? [{ value: task.assignedTo, label: `${assignee.name} (removed)` }]
+      : []),
+  ];
 
   const saveField = async (field: string, value: string) => {
     setSaving(true);
