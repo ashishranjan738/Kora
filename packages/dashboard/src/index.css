@@ -3528,6 +3528,21 @@ textarea:focus {
 }
 
 /* ============================================================
+   Agent Activity Badge
+   ============================================================ */
+.activity-dot-sm {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-muted); flex-shrink: 0;
+}
+.activity-dot-sm.activity-working { background: var(--accent-green); animation: tl-pulse 2s infinite; }
+.activity-dot-sm.activity-idle { background: var(--text-muted); }
+.activity-dot-sm.activity-reading { background: var(--accent-blue); }
+.activity-dot-sm.activity-writing { background: var(--accent-purple, #bc8cff); }
+.activity-dot-sm.activity-running { background: var(--accent-yellow); }
+.activity-dot-sm.activity-crashed { background: var(--accent-red); }
+.activity-dot-sm.activity-stopped { background: var(--text-muted); }
+
+/* ============================================================
    Timeline View
    ============================================================ */
 

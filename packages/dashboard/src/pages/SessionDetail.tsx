@@ -8,6 +8,7 @@ import { SessionSettingsDialog } from "../components/SessionSettingsDialog";
 import { StopSessionDialog } from "../components/StopSessionDialog";
 import { RestartAllDialog } from "../components/RestartAllDialog";
 import type { AgentActivity } from "../components/AgentCardTerminal";
+import { AgentActivityBadge, AgentUtilization, ActivitySparkline } from "../components/AgentActivityBadge";
 import { TaskBoard } from "../components/TaskBoard";
 import { TimelineView } from "../components/timeline/TimelineView";
 import { SideTerminalPanel } from "../components/SideTerminalPanel";
@@ -852,6 +853,8 @@ function AgentsTab({
 }: AgentsTabProps) {
   const api = useApi();
   const [agentActivities, setAgentActivities] = useState<Record<string, AgentActivity>>({});
+  const [activityHistory, setActivityHistory] = useState<Record<string, AgentActivity[]>>({});
+  const [activitySince, setActivitySince] = useState<Record<string, string>>({});
   const [gearOpen, setGearOpen] = useState<string | null>(null);
   const [cliExpanded, setCliExpanded] = useState<Record<string, boolean>>({});
 
@@ -934,7 +937,16 @@ function AgentsTab({
 
           setAgentActivities(prev => {
             if (prev[agent.id] === activity) return prev;
+            // Track when activity changed
+            setActivitySince(s => ({ ...s, [agent.id]: new Date().toISOString() }));
             return { ...prev, [agent.id]: activity };
+          });
+
+          // Record history for sparkline (keep last 20 samples)
+          setActivityHistory(prev => {
+            const hist = prev[agent.id] || [];
+            const updated = [...hist, activity].slice(-20);
+            return { ...prev, [agent.id]: updated };
           });
         } catch {
           // ignore
@@ -1248,25 +1260,19 @@ function AgentsTab({
               <span className="ac2-uptime">{formatUptime(a.startedAt)}</span>
             </div>
 
-            {/* Activity — compact */}
+            {/* Activity — badge + sparkline */}
             <div className="ac2-activity">
               <div className="ac2-current-action">
-                <span className={`ac2-action-icon ${stateClass}`}>
-                  {isCrashed ? (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-                  ) : isStopped ? (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
-                  ) : activity === "idle" ? (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                  ) : (
-                    <span className="ac2-spinner" />
-                  )}
-                </span>
-                <span className="ac2-action-text">
-                  {isCrashed ? (a.error || "Crashed")
-                    : isStopped ? "Stopped"
-                    : activityLabels[activity]}
-                </span>
+                <AgentActivityBadge
+                  activity={activity}
+                  since={activitySince[a.id]}
+                  compact
+                />
+                <ActivitySparkline
+                  history={activityHistory[a.id] || []}
+                  width={60}
+                  height={14}
+                />
                 {(a.provider || a.model) && (
                   <span className="ac2-model-inline">{[a.provider, a.model].filter(Boolean).join("/")}</span>
                 )}
@@ -1278,7 +1284,7 @@ function AgentsTab({
               )}
             </div>
 
-            {/* Stats — single inline row with dot separators */}
+            {/* Stats — single inline row with dot separators + utilization */}
             <div className="ac2-stats-row">
               <span className="ac2-stat">
                 <span className="ac2-stat-dim">{"\u2193"}</span>{typeof tokensIn === "number" ? formatTokens(tokensIn) : "--"}
@@ -1289,6 +1295,15 @@ function AgentsTab({
               <span className="ac2-stat">${formatCost(costUsd)}</span>
               <span className="ac2-stat-sep">{"\u00B7"}</span>
               <span className="ac2-stat">{formatUptime(a.startedAt)}</span>
+              <span className="ac2-stat-sep">{"\u00B7"}</span>
+              <AgentUtilization
+                utilization={(() => {
+                  const hist = activityHistory[a.id] || [];
+                  if (hist.length === 0) return activity === "working" ? 1 : 0;
+                  const active = hist.filter(h => h === "working" || h === "reading" || h === "writing" || h === "running-command").length;
+                  return active / hist.length;
+                })()}
+              />
             </div>
 
             {/* CLI Command — collapsible */}
