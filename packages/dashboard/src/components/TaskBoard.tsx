@@ -108,6 +108,31 @@ function getLabelColor(label: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
+// Extract a human-readable name from a raw agent ID (e.g., "backend3-43dab2d1" → "Backend3")
+function extractNameFromAgentId(agentId: string): string {
+  // Agent IDs follow the pattern: name-hexhash (e.g., "backend3-43dab2d1")
+  const match = agentId.match(/^(.+)-[0-9a-f]{6,}$/);
+  if (match) {
+    const rawName = match[1];
+    return rawName.charAt(0).toUpperCase() + rawName.slice(1);
+  }
+  return agentId;
+}
+
+// Resolve assignee: returns { name, isRemoved } for display
+// Checks both agent ID and name since assignedTo can be in either format
+function resolveAssignee(
+  assignedTo: string | undefined,
+  agents: { id: string; name: string }[]
+): { name: string; isRemoved: boolean } | null {
+  if (!assignedTo) return null;
+  const agent = agents.find(
+    (a) => a.id === assignedTo || a.name === assignedTo || a.name.toLowerCase() === assignedTo.toLowerCase()
+  );
+  if (agent) return { name: agent.name, isRemoved: false };
+  return { name: extractNameFromAgentId(assignedTo), isRemoved: true };
+}
+
 // Calculate due date status
 function getDueDateStatus(dueDate: string): { label: string; color: string } | null {
   if (!dueDate) return null;
@@ -174,9 +199,7 @@ function TaskCard({
   onClick: () => void;
   onDelete: () => void;
 }) {
-  const assigneeName = task.assignedTo
-    ? agents.find((a) => a.id === task.assignedTo)?.name || task.assignedTo
-    : null;
+  const assignee = resolveAssignee(task.assignedTo, agents);
 
   // Check if task is overdue
   const dueDateStatus = task.dueDate ? getDueDateStatus(task.dueDate) : null;
@@ -312,9 +335,16 @@ function TaskCard({
 
       {/* Footer: assignee, comments, time */}
       <Group justify="space-between" align="center" mt="xs" gap={4}>
-        {assigneeName ? (
-          <Badge variant="light" color="blue" size="xs">
-            {assigneeName}
+        {assignee ? (
+          <Badge
+            variant="light"
+            color={assignee.isRemoved ? "gray" : "blue"}
+            size="xs"
+            styles={assignee.isRemoved ? {
+              label: { fontStyle: "italic", opacity: 0.7 },
+            } : undefined}
+          >
+            {assignee.name}{assignee.isRemoved ? " (removed)" : ""}
           </Badge>
         ) : (
           <Text size="xs" c="var(--text-muted)">
@@ -496,6 +526,7 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
   const [commentText, setCommentText] = useState("");
   const [newDependencies, setNewDependencies] = useState<string[]>([]);
   const [activeCol, setActiveCol] = useState<ColumnId>("pending");
+  const [mobileView, setMobileView] = useState<"kanban" | "list">("list");
 
   // Filters
   const [filterAgent, setFilterAgent] = useState<string | null>(null);
@@ -686,10 +717,23 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
 
   const maxWorkload = Math.max(...Object.values(agentWorkloads), 1);
 
-  const agentSelectData = agents.map((a) => ({
-    value: a.id,
-    label: a.name,
-  }));
+  // Build agent select data including stale/removed agents from tasks
+  const activeAgentIds = new Set(agents.map((a) => a.id));
+  const activeAgentNames = new Set(agents.map((a) => a.name));
+  const staleAgentIds = Array.from(
+    new Set(
+      tasks
+        .map((t) => t.assignedTo)
+        .filter((id): id is string => !!id && !activeAgentIds.has(id) && !activeAgentNames.has(id))
+    )
+  );
+  const agentSelectData = [
+    ...agents.map((a) => ({ value: a.id, label: a.name })),
+    ...staleAgentIds.map((id) => ({
+      value: id,
+      label: `${extractNameFromAgentId(id)} (removed)`,
+    })),
+  ];
 
   // Extract all unique labels from tasks
   const allLabels = Array.from(
@@ -887,65 +931,205 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
         )}
       </Group>
 
-      {/* Mobile: column selector + single column */}
+      {/* Mobile: view toggle + kanban or list */}
       {isMobile ? (
         <Stack gap="sm">
-          {/* Column tabs */}
-          <ScrollArea type="never">
-            <Group gap="xs" wrap="nowrap">
-              {COLUMNS.map((col) => (
-                <Badge
-                  key={col}
-                  variant={activeCol === col ? "filled" : "outline"}
-                  color={COLUMN_COLORS[col]}
-                  size="lg"
-                  onClick={() => setActiveCol(col)}
-                  style={{
-                    cursor: "pointer",
-                    minHeight: 36,
-                    flexShrink: 0,
-                  }}
-                >
-                  {COLUMN_LABELS[col]} ({tasksByColumn(col).length})
-                </Badge>
-              ))}
-              <ActionIcon
-                variant="light"
-                color="blue"
-                size="lg"
-                onClick={() => setShowAddDialog(true)}
-                style={{ flexShrink: 0 }}
-              >
-                <span style={{ fontSize: 18 }}>+</span>
-              </ActionIcon>
-            </Group>
-          </ScrollArea>
+          {/* View toggle + add button */}
+          <Group justify="space-between" align="center">
+            <SegmentedControl
+              value={mobileView}
+              onChange={(v) => setMobileView(v as "kanban" | "list")}
+              data={[
+                { value: "list", label: "List" },
+                { value: "kanban", label: "Board" },
+              ]}
+              size="xs"
+              styles={{
+                root: {
+                  backgroundColor: "var(--bg-tertiary)",
+                  border: "1px solid var(--border-color)",
+                },
+                label: {
+                  color: "var(--text-primary)",
+                  fontWeight: 500,
+                  fontSize: 12,
+                  padding: "4px 12px",
+                },
+                indicator: {
+                  backgroundColor: "var(--accent-blue)",
+                  boxShadow: "none",
+                },
+              }}
+            />
+            <ActionIcon
+              variant="light"
+              color="blue"
+              size="lg"
+              onClick={() => setShowAddDialog(true)}
+            >
+              <span style={{ fontSize: 18 }}>+</span>
+            </ActionIcon>
+          </Group>
 
-          {/* Active column's cards */}
-          <Stack gap="xs">
-            {tasksByColumn(activeCol).map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                agents={agents}
-                isDragging={false}
-                onDragStart={() => {}}
-                onClick={() => setExpandedTaskId(task.id)}
-                onDelete={() => handleDeleteTask(task.id)}
-              />
-            ))}
-            {tasksByColumn(activeCol).length === 0 && (
-              <Text
-                size="sm"
-                c="var(--text-muted)"
-                ta="center"
-                py="xl"
-                fs="italic"
-              >
-                No {COLUMN_LABELS[activeCol].toLowerCase()} tasks
-              </Text>
-            )}
-          </Stack>
+          {mobileView === "kanban" ? (
+            <>
+              {/* Column tabs */}
+              <ScrollArea type="never">
+                <Group gap="xs" wrap="nowrap">
+                  {COLUMNS.map((col) => (
+                    <Badge
+                      key={col}
+                      variant={activeCol === col ? "filled" : "outline"}
+                      color={COLUMN_COLORS[col]}
+                      size="lg"
+                      onClick={() => setActiveCol(col)}
+                      style={{
+                        cursor: "pointer",
+                        minHeight: 36,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {COLUMN_LABELS[col]} ({tasksByColumn(col).length})
+                    </Badge>
+                  ))}
+                </Group>
+              </ScrollArea>
+
+              {/* Active column's cards */}
+              <Stack gap="xs">
+                {tasksByColumn(activeCol).map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    agents={agents}
+                    isDragging={false}
+                    onDragStart={() => {}}
+                    onClick={() => setExpandedTaskId(task.id)}
+                    onDelete={() => handleDeleteTask(task.id)}
+                  />
+                ))}
+                {tasksByColumn(activeCol).length === 0 && (
+                  <Text
+                    size="sm"
+                    c="var(--text-muted)"
+                    ta="center"
+                    py="xl"
+                    fs="italic"
+                  >
+                    No {COLUMN_LABELS[activeCol].toLowerCase()} tasks
+                  </Text>
+                )}
+              </Stack>
+            </>
+          ) : (
+            /* List view: all tasks grouped by status */
+            <Stack gap="md">
+              {COLUMNS.map((col) => {
+                const colTasks = tasksByColumn(col);
+                return (
+                  <Box key={col}>
+                    {/* Status group header */}
+                    <Group
+                      gap={8}
+                      align="center"
+                      mb="xs"
+                      pb={6}
+                      style={{ borderBottom: `2px solid ${COLUMN_CSS_COLORS[col]}` }}
+                    >
+                      <Box
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background: COLUMN_CSS_COLORS[col],
+                          flexShrink: 0,
+                        }}
+                      />
+                      <Text fw={600} size="sm" c="var(--text-primary)">
+                        {COLUMN_LABELS[col]}
+                      </Text>
+                      <Badge size="xs" variant="light" color={COLUMN_COLORS[col]}>
+                        {colTasks.length}
+                      </Badge>
+                    </Group>
+
+                    {/* Task rows */}
+                    {colTasks.length > 0 ? (
+                      <Stack gap={4}>
+                        {colTasks.map((task) => {
+                          const taskAssignee = resolveAssignee(task.assignedTo, agents);
+                          return (
+                            <Paper
+                              key={task.id}
+                              withBorder
+                              px="sm"
+                              py={8}
+                              style={{
+                                backgroundColor: task.blocked ? "var(--bg-tertiary)" : "var(--bg-primary)",
+                                borderColor: "var(--border-color)",
+                                cursor: "pointer",
+                                opacity: task.blocked ? 0.7 : 1,
+                              }}
+                              onClick={() => setExpandedTaskId(task.id)}
+                            >
+                              <Group gap={8} wrap="nowrap" align="center">
+                                <Badge
+                                  color={PRIORITY_COLORS[task.priority]}
+                                  variant="filled"
+                                  size="xs"
+                                  style={{ flexShrink: 0 }}
+                                >
+                                  {task.priority}
+                                </Badge>
+                                <Text
+                                  size="sm"
+                                  fw={500}
+                                  c="var(--text-primary)"
+                                  lineClamp={1}
+                                  style={{ flex: 1 }}
+                                >
+                                  {task.title}
+                                </Text>
+                                {taskAssignee && (
+                                  <Badge
+                                    variant="light"
+                                    color={taskAssignee.isRemoved ? "gray" : "blue"}
+                                    size="xs"
+                                    style={{ flexShrink: 0 }}
+                                    styles={taskAssignee.isRemoved ? {
+                                      label: { fontStyle: "italic", opacity: 0.7 },
+                                    } : undefined}
+                                  >
+                                    {taskAssignee.name}{taskAssignee.isRemoved ? " ✕" : ""}
+                                  </Badge>
+                                )}
+                                <ActionIcon
+                                  variant="subtle"
+                                  color="red"
+                                  size="xs"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteTask(task.id);
+                                  }}
+                                  style={{ opacity: 0.4, flexShrink: 0 }}
+                                >
+                                  <span style={{ fontSize: 14, lineHeight: 1 }}>&times;</span>
+                                </ActionIcon>
+                              </Group>
+                            </Paper>
+                          );
+                        })}
+                      </Stack>
+                    ) : (
+                      <Text size="xs" c="var(--text-muted)" ta="center" py="sm" fs="italic">
+                        No tasks
+                      </Text>
+                    )}
+                  </Box>
+                );
+              })}
+            </Stack>
+          )}
         </Stack>
       ) : (
         /* Desktop / Tablet: grid columns */
@@ -1348,10 +1532,15 @@ function TaskDetailModal({
     setEditDueDate(task.dueDate || null);
   }, [task.id, task.title, task.description, task.assignedTo, task.labels, task.dueDate]);
 
-  const agentSelectData = agents.map((a) => ({
-    value: a.id,
-    label: a.name,
-  }));
+  const assignee = resolveAssignee(task.assignedTo, agents);
+
+  // Build agent select data, including a "(removed)" entry if the assigned agent is stale
+  const agentSelectData = [
+    ...agents.map((a) => ({ value: a.id, label: a.name })),
+    ...(assignee?.isRemoved && task.assignedTo
+      ? [{ value: task.assignedTo, label: `${assignee.name} (removed)` }]
+      : []),
+  ];
 
   const saveField = async (field: string, value: string) => {
     setSaving(true);
