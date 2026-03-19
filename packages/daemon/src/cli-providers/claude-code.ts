@@ -128,15 +128,15 @@ export const claudeCodeProvider: CLIProvider = {
 
 function parseTokenCount(str: string): number {
   // Handle "12,345" or "12.4k" or "12345"
-  const cleaned = str.replace(/,/g, "");
+  const cleaned = str.trim().replace(/,/g, "");
   const num = parseFloat(cleaned);
 
   if (isNaN(num)) {
     return 0;
   }
 
-  // Check if the original string has a "k" suffix (case-insensitive)
-  if (/k$/i.test(str)) {
+  // Check if the cleaned string has a "k" suffix (case-insensitive)
+  if (/k$/i.test(cleaned)) {
     return num * 1000;
   }
 
