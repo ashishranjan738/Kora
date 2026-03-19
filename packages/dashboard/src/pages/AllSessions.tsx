@@ -64,6 +64,7 @@ export function AllSessions() {
   const [creating, setCreating] = useState(false);
   const [newMessagingMode, setNewMessagingMode] = useState<"mcp" | "terminal" | "manual">("mcp");
   const [newWorktreeMode, setNewWorktreeMode] = useState<"isolated" | "shared">("isolated");
+  const [recentPaths, setRecentPaths] = useState<string[]>([]);
 
   // Playbook state
   const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
@@ -125,6 +126,17 @@ export function AllSessions() {
   const totalCost = sessions.reduce((sum, s) => {
     return sum + (typeof s.cost === "number" ? s.cost : 0);
   }, 0);
+
+  // Open create session dialog and load recent paths
+  async function openCreateDialog() {
+    setShowCreateDialog(true);
+    try {
+      const data = await api.getRecentPaths(10);
+      setRecentPaths(data.paths || []);
+    } catch {
+      // Non-fatal: suggestions are optional
+    }
+  }
 
   // Create session from scratch
   async function handleCreate() {
@@ -440,7 +452,7 @@ export function AllSessions() {
           <div className="empty-state-actions">
             <button
               className="primary"
-              onClick={() => setShowCreateDialog(true)}
+              onClick={() => openCreateDialog()}
               style={{ padding: "10px 24px", fontSize: 15 }}
             >
               Create From Scratch
@@ -712,7 +724,7 @@ export function AllSessions() {
             {/* Create From Scratch card */}
             <div
               className="card session-card create-option-card"
-              onClick={() => setShowCreateDialog(true)}
+              onClick={() => openCreateDialog()}
             >
               <div className="create-option-icon">
                 <svg
@@ -817,7 +829,13 @@ export function AllSessions() {
                 value={newPath}
                 onChange={(e) => setNewPath(e.target.value)}
                 placeholder="/path/to/project"
+                list="recent-paths-datalist"
               />
+              <datalist id="recent-paths-datalist">
+                {recentPaths.map((path, i) => (
+                  <option key={i} value={path} />
+                ))}
+              </datalist>
             </div>
             <div className="form-group">
               <label>Messaging Mode</label>

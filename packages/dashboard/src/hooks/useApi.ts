@@ -162,5 +162,9 @@ export function useApi() {
       apiFetch<{ nudged: boolean; unreadCount: number }>(`/sessions/${sid}/agents/${aid}/nudge`, { method: "POST" }),
     deleteTerminal: (sid: string, tid: string) =>
       apiFetch<{ deleted: boolean; id: string }>(`/sessions/${sid}/terminals/${tid}`, { method: "DELETE" }),
+    getRecentPaths: (limit?: number) =>
+      apiFetch<{ paths: string[] }>(`/suggestions/paths?limit=${limit || 10}`),
+    getRecentFlags: (limit?: number) =>
+      apiFetch<{ flags: string[] }>(`/suggestions/flags?limit=${limit || 10}`),
   };
 }

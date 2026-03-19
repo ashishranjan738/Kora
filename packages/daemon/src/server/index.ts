@@ -9,6 +9,7 @@ import type { SessionManager } from "../core/session-manager.js";
 import type { Orchestrator } from "../core/orchestrator.js";
 import type { CLIProviderRegistry } from "../cli-providers/provider-registry.js";
 import type { IPtyBackend } from "../core/pty-backend.js";
+import type { SuggestionsDatabase } from "../core/suggestions-db.js";
 import type { WSEvent } from "@kora/shared";
 import { getRuntimeTmuxPrefix } from "@kora/shared";
 import { PtyManager } from "../core/pty-manager.js";
@@ -23,6 +24,7 @@ export interface ServerDeps {
   tmux: IPtyBackend;
   startTime: number;
   globalConfigDir: string;
+  suggestionsDb: SuggestionsDatabase;
 }
 
 export interface ServerOptions {
