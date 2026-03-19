@@ -10,7 +10,7 @@
  * Socket location: /tmp/dt-{UID}/{name}.sock (or HOLDPTY_DIR env override)
  */
 
-import { execFile as execFileCb } from "child_process";
+import { execFile as execFileCb, type ChildProcess } from "child_process";
 import { promisify } from "util";
 import * as net from "net";
 import * as fs from "fs";
@@ -50,6 +50,9 @@ async function getPlatform() {
 export class HoldptyController implements IPtyBackend {
   /** PtyManager reference for routing sendKeys through dashboard terminal connections */
   private ptyManager: PtyManager | null = null;
+
+  /** Track spawned pipe processes (holdpty logs --follow) for proper cleanup */
+  private pipeProcesses = new Map<string, ChildProcess>();
 
   /**
    * Resolved holdpty CLI path — pre-resolved on construction for fast access.
@@ -189,6 +192,9 @@ export class HoldptyController implements IPtyBackend {
    * Forces cleanup of socket + metadata files even if holdpty stop fails.
    */
   async killSession(name: string): Promise<void> {
+    // Kill any pipe process before stopping the session
+    await this.pipePaneStop(name);
+
     try {
       await this.runCli("stop", name);
       logger.debug({ sessionName: name }, "[HoldptyController] Successfully called holdpty stop");
@@ -428,18 +434,34 @@ export class HoldptyController implements IPtyBackend {
 
   /**
    * Start piping session output to a log file via CLI logs --follow.
+   * Tracks the spawned child process for proper cleanup via pipePaneStop().
    */
   async pipePaneStart(session: string, outputFile: string): Promise<void> {
     try {
+      // Kill any existing pipe process for this session before starting a new one
+      await this.pipePaneStop(session);
+
       const cmd = this.cliPath === "npx" ? "npx" : this.cliPath;
       const args = this.cliPath === "npx"
         ? ["holdpty", "logs", session, "--follow"]
         : ["logs", session, "--follow"];
 
-      const child = require("child_process").spawn(cmd, args, {
+      const { spawn } = require("child_process");
+      const child = spawn(cmd, args, {
         stdio: ["ignore", fs.openSync(outputFile, "a"), "ignore"],
         detached: true,
       });
+
+      // Track the child process for cleanup
+      this.pipeProcesses.set(session, child);
+      logger.debug({ session, pid: child.pid }, "[HoldptyController] Started pipe process");
+
+      // Auto-cleanup from map when process exits naturally
+      child.on("exit", (code: number | null) => {
+        logger.debug({ session, pid: child.pid, exitCode: code }, "[HoldptyController] Pipe process exited");
+        this.pipeProcesses.delete(session);
+      });
+
       child.unref();
     } catch (err) {
       logger.error({ err: err }, `[HoldptyController] Failed to start pipe for ${session}:`);
@@ -447,10 +469,49 @@ export class HoldptyController implements IPtyBackend {
   }
 
   /**
-   * Stop piping (no-op — the detached logs process dies when session stops).
+   * Stop piping session output by killing the tracked child process.
    */
-  async pipePaneStop(_session: string): Promise<void> {
-    // No-op
+  async pipePaneStop(session: string): Promise<void> {
+    const child = this.pipeProcesses.get(session);
+    if (!child) return;
+
+    try {
+      if (child.pid && !child.killed) {
+        // Kill the entire process group (detached process)
+        try {
+          process.kill(-child.pid, "SIGTERM");
+        } catch {
+          // Process group kill failed, try direct kill
+          child.kill("SIGTERM");
+        }
+        logger.debug({ session, pid: child.pid }, "[HoldptyController] Killed pipe process");
+      }
+    } catch (err) {
+      logger.debug({ session, err }, "[HoldptyController] Error killing pipe process (may already be dead)");
+    } finally {
+      this.pipeProcesses.delete(session);
+    }
+  }
+
+  /**
+   * Stop all tracked pipe processes (for daemon shutdown / cleanup).
+   */
+  cleanupAllPipeProcesses(): void {
+    for (const [session, child] of this.pipeProcesses) {
+      try {
+        if (child.pid && !child.killed) {
+          try {
+            process.kill(-child.pid, "SIGTERM");
+          } catch {
+            child.kill("SIGTERM");
+          }
+          logger.debug({ session, pid: child.pid }, "[HoldptyController] Cleanup: killed pipe process");
+        }
+      } catch {
+        // Ignore — process already dead
+      }
+    }
+    this.pipeProcesses.clear();
   }
 
   /**
