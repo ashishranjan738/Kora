@@ -383,7 +383,7 @@ export class AgentManager extends EventEmitter {
     // 1. Stop health monitoring
     this.healthMonitor.stopMonitoring(agentId);
 
-    // 2. Gracefully stop tmux session (if it still exists)
+    // 2. Gracefully stop tmux/holdpty session
     const sessionExists = await this.tmux.hasSession(tmuxSession);
     if (sessionExists) {
       try { await this.tmux.pipePaneStop(tmuxSession); } catch {}
@@ -397,13 +397,12 @@ export class AgentManager extends EventEmitter {
         if (!alive) break;
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
-
-      // Force kill if still alive
-      const stillAlive = await this.tmux.hasSession(tmuxSession);
-      if (stillAlive) {
-        try { await this.tmux.killSession(tmuxSession); } catch {}
-      }
     }
+
+    // 3. Always call killSession to clean up socket/metadata files
+    // Even if session is already dead, HoldptyController.killSession()
+    // cleans up orphaned socket + metadata files on disk.
+    try { await this.tmux.killSession(tmuxSession); } catch {}
 
     // 6. Clean up git worktree (if one was created for this agent)
     const wtInfo = this.worktreeInfo.get(agentId);
