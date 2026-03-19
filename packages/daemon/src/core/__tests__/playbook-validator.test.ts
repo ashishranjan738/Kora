@@ -45,7 +45,7 @@ agents: [
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes("name is required"))).toBe(true);
+      expect(result.errors.some(e => e.includes("missing required property \"name\""))).toBe(true);
     });
 
     it("requires at least one agent", () => {
@@ -55,7 +55,7 @@ agents: [
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes("at least one agent is required"))).toBe(true);
+      expect(result.errors.some(e => e.includes("should have at least 1 item"))).toBe(true);
     });
 
     it("requires agent name", () => {
@@ -65,7 +65,7 @@ agents: [
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes("name is required"))).toBe(true);
+      expect(result.errors.some(e => e.includes("missing required property \"name\""))).toBe(true);
     });
 
     it("requires agent role", () => {
@@ -75,7 +75,7 @@ agents: [
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes("role is required"))).toBe(true);
+      expect(result.errors.some(e => e.includes("missing required property \"role\""))).toBe(true);
     });
 
     it("validates agent role values", () => {
@@ -85,7 +85,7 @@ agents: [
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes("role must be"))).toBe(true);
+      expect(result.errors.some(e => e.includes("should be one of") && e.includes("master, worker"))).toBe(true);
     });
 
     it("requires model if no default", () => {
@@ -95,7 +95,7 @@ agents: [
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes("model required"))).toBe(true);
+      expect(result.errors.some(e => e.includes("requires a model"))).toBe(true);
     });
 
     it("accepts model from defaults", () => {
@@ -118,7 +118,7 @@ agents: [
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes("at least one master agent is required"))).toBe(true);
+      expect(result.errors.some(e => e.includes("At least one master agent is required"))).toBe(true);
     });
 
     it("warns about multiple master agents", () => {
@@ -131,7 +131,7 @@ agents: [
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(true);
-      expect(result.warnings.some(w => w.includes("multiple master agents"))).toBe(true);
+      expect(result.warnings.some(w => w.includes("Multiple master agents found"))).toBe(true);
     });
 
     it("detects duplicate agent names", () => {
@@ -144,7 +144,7 @@ agents: [
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes("duplicate agent name"))).toBe(true);
+      expect(result.errors.some(e => e.includes("Duplicate agent name"))).toBe(true);
     });
   });
 
@@ -160,7 +160,7 @@ agents: [
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes("title is required"))).toBe(true);
+      expect(result.errors.some(e => e.includes("missing required property \"title\""))).toBe(true);
     });
 
     it("warns about invalid assignedTo", () => {
@@ -173,7 +173,7 @@ agents: [
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(true);
-      expect(result.warnings.some(w => w.includes("not found in agents"))).toBe(true);
+      expect(result.warnings.some(w => w.includes("is not in the agents list"))).toBe(true);
     });
 
     it("validates task priority", () => {
@@ -186,7 +186,7 @@ agents: [
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes("priority must be one of"))).toBe(true);
+      expect(result.errors.some(e => e.includes("should be one of") && e.includes("P0, P1, P2, P3"))).toBe(true);
     });
   });
 
@@ -205,7 +205,7 @@ agents: [
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(true);
-      expect(result.warnings.some(w => w.includes("{{framework}} used but not declared"))).toBe(true);
+      expect(result.warnings.some(w => w.includes("\"{{framework}}\" is used but not declared"))).toBe(true);
     });
 
     it("accepts declared variables", () => {
@@ -241,7 +241,7 @@ agents: [
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes("worktreeMode must be"))).toBe(true);
+      expect(result.errors.some(e => e.includes("should be one of") && e.includes("isolated, shared"))).toBe(true);
     });
 
     it("validates messagingMode", () => {
@@ -252,7 +252,7 @@ agents: [
       };
       const result = validatePlaybook(playbook);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes("messagingMode must be"))).toBe(true);
+      expect(result.errors.some(e => e.includes("should be one of") && e.includes("mcp, acknowledge"))).toBe(true);
     });
   });
 
