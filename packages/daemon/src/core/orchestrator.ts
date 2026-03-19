@@ -404,6 +404,14 @@ export class Orchestrator extends EventEmitter {
   }
 
   /**
+   * Get all known agents (for cleanup/diagnostics).
+   * Returns ALL agents including stopped, crashed, and running agents.
+   */
+  getAgents(): AgentState[] {
+    return this.agentManager.listAgents();
+  }
+
+  /**
    * Restore agents from persisted state after daemon restart.
    * Checks which tmux sessions are still alive and reconnects to them.
    * Dead agents are marked as "stopped".
