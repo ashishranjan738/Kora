@@ -120,12 +120,15 @@ function extractNameFromAgentId(agentId: string): string {
 }
 
 // Resolve assignee: returns { name, isRemoved } for display
+// Checks both agent ID and name since assignedTo can be in either format
 function resolveAssignee(
   assignedTo: string | undefined,
   agents: { id: string; name: string }[]
 ): { name: string; isRemoved: boolean } | null {
   if (!assignedTo) return null;
-  const agent = agents.find((a) => a.id === assignedTo || a.name === assignedTo);
+  const agent = agents.find(
+    (a) => a.id === assignedTo || a.name === assignedTo || a.name.toLowerCase() === assignedTo.toLowerCase()
+  );
   if (agent) return { name: agent.name, isRemoved: false };
   return { name: extractNameFromAgentId(assignedTo), isRemoved: true };
 }
@@ -523,6 +526,7 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
   const [commentText, setCommentText] = useState("");
   const [newDependencies, setNewDependencies] = useState<string[]>([]);
   const [activeCol, setActiveCol] = useState<ColumnId>("pending");
+  const [mobileView, setMobileView] = useState<"kanban" | "list">("list");
 
   // Filters
   const [filterAgent, setFilterAgent] = useState<string | null>(null);
@@ -715,11 +719,12 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
 
   // Build agent select data including stale/removed agents from tasks
   const activeAgentIds = new Set(agents.map((a) => a.id));
+  const activeAgentNames = new Set(agents.map((a) => a.name));
   const staleAgentIds = Array.from(
     new Set(
       tasks
         .map((t) => t.assignedTo)
-        .filter((id): id is string => !!id && !activeAgentIds.has(id))
+        .filter((id): id is string => !!id && !activeAgentIds.has(id) && !activeAgentNames.has(id))
     )
   );
   const agentSelectData = [
