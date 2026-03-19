@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useSessionStore } from "../stores/sessionStore";
 import { useApi } from "../hooks/useApi";
 import { StopSessionDialog } from "../components/StopSessionDialog";
+import { PlaybookGrid, PlaybookPreview, PlaybookUploadModal, VariableForm } from "../components/playbook";
 
 interface PlaybookAgent {
   name: string;
@@ -13,10 +14,19 @@ interface PlaybookAgent {
   initialTask?: string;
 }
 
+interface VariableDefinition {
+  description?: string;
+  default?: string;
+  options?: string[];
+}
+
 interface Playbook {
   name: string;
   description?: string;
   agents: PlaybookAgent[];
+  variables?: Record<string, VariableDefinition>;
+  tags?: string[];
+  source?: "builtin" | "global" | "project";
 }
 
 const KNOWN_PROVIDERS = ["claude-code", "codex", "gemini-cli", "aider", "goose", "custom"] as const;
@@ -85,6 +95,10 @@ export function AllSessions() {
   const [playbookWorktreeMode, setPlaybookWorktreeMode] = useState<"isolated" | "shared">("isolated");
   const [topologyExpanded, setTopologyExpanded] = useState(false);
   const [expandedCliFlags, setExpandedCliFlags] = useState<Record<number, boolean>>({});
+
+  // Playbook variables state
+  const [playbookVariables, setPlaybookVariables] = useState<Record<string, string>>({});
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   // Daemon status
   const [daemonStatus, setDaemonStatus] = useState<{
@@ -205,6 +219,15 @@ export function AllSessions() {
     setAgentModelOverrides(modelOverrides);
     setAgentProviderOverrides(providerOverrides);
     setDefaultModelForAll("");
+
+    // Initialize variables with defaults
+    const initialVars: Record<string, string> = {};
+    if (pb.variables) {
+      Object.entries(pb.variables).forEach(([key, def]) => {
+        initialVars[key] = def.default || "";
+      });
+    }
+    setPlaybookVariables(initialVars);
   }
 
   function handleDefaultModelChange(value: string) {
@@ -216,6 +239,12 @@ export function AllSessions() {
       });
       setAgentModelOverrides(overrides);
     }
+  }
+
+  // Helper: Interpolate variables in text (replaces {{varName}} with values)
+  function interpolateVariables(text: string | undefined, vars: Record<string, string>): string | undefined {
+    if (!text) return text;
+    return text.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
   }
 
   // Launch playbook
@@ -231,7 +260,7 @@ export function AllSessions() {
       });
       useSessionStore.getState().addSession(sessionResult);
 
-      // Spawn all agents from the playbook with overrides
+      // Spawn all agents from the playbook with overrides and variable interpolation
       for (let i = 0; i < selectedPlaybook.agents.length; i++) {
         const agent = selectedPlaybook.agents[i];
         try {
@@ -240,8 +269,8 @@ export function AllSessions() {
             role: agent.role || "worker",
             provider: agentProviderOverrides[i] || agent.provider,
             model: agentModelOverrides[i] || agent.model,
-            persona: agent.persona,
-            initialTask: agent.initialTask,
+            persona: interpolateVariables(agent.persona, playbookVariables),
+            initialTask: interpolateVariables(agent.initialTask, playbookVariables),
             extraCliArgs: agentCliArgsOverrides[i]?.trim()
               ? agentCliArgsOverrides[i].trim().split(/\s+/)
               : (agent as any).extraCliArgs,
@@ -262,6 +291,7 @@ export function AllSessions() {
       setPlaybookMessagingMode("mcp");
       setPlaybookWorktreeMode("isolated");
       setTopologyExpanded(false);
+      setPlaybookVariables({});
       setExpandedCliFlags({});
       navigate(`/session/${sessionResult.id}`);
     } catch (err: any) {
@@ -968,6 +998,7 @@ export function AllSessions() {
             setPlaybookWorktreeMode("isolated");
             setTopologyExpanded(false);
             setExpandedCliFlags({});
+            setPlaybookVariables({});
           }}
         >
           <div
@@ -977,60 +1008,30 @@ export function AllSessions() {
           >
             {!selectedPlaybook ? (
               <>
-                <h2>Choose a Playbook</h2>
-                {loadingPlaybooks && (
-                  <p
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <h2 style={{ margin: 0 }}>Choose a Playbook</h2>
+                  <button
+                    onClick={() => setShowUploadModal(true)}
                     style={{
-                      color: "var(--text-secondary)",
-                      padding: "24px 0",
-                      textAlign: "center",
+                      backgroundColor: "var(--accent-blue)",
+                      color: "white",
+                      border: "none",
+                      padding: "8px 16px",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      fontSize: 14,
                     }}
                   >
-                    Loading playbooks...
-                  </p>
-                )}
-                {!loadingPlaybooks && playbooks.length === 0 && (
-                  <div
-                    style={{
-                      textAlign: "center",
-                      padding: "32px 0",
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    <p style={{ marginBottom: 8 }}>No playbooks found.</p>
-                    <p style={{ fontSize: 13 }}>
-                      Create playbooks in your project to get started.
-                    </p>
-                  </div>
-                )}
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 12,
-                    maxHeight: 400,
-                    overflowY: "auto",
-                  }}
-                >
-                  {playbooks.map((pb) => (
-                    <div
-                      key={pb.name}
-                      className="playbook-card"
-                      onClick={() => selectPlaybook(pb)}
-                    >
-                      <div className="playbook-card-header">
-                        <h3 className="playbook-card-name">{pb.name}</h3>
-                        <span className="badge badge-purple">
-                          {pb.agents.length} agent
-                          {pb.agents.length !== 1 ? "s" : ""}
-                        </span>
-                      </div>
-                      {pb.description && (
-                        <p className="playbook-card-desc">{pb.description}</p>
-                      )}
-                      {renderPlaybookVisual(pb)}
-                    </div>
-                  ))}
+                    Upload
+                  </button>
+                </div>
+                <div style={{ maxHeight: "calc(80vh - 200px)", overflowY: "auto" }}>
+                  <PlaybookGrid
+                    playbooks={playbooks}
+                    selectedPlaybook={selectedPlaybook}
+                    onSelectPlaybook={selectPlaybook}
+                    loading={loadingPlaybooks}
+                  />
                 </div>
                 <div
                   className="form-actions"
@@ -1040,6 +1041,7 @@ export function AllSessions() {
                     onClick={() => {
                       setShowPlaybookPicker(false);
                       setSelectedPlaybook(null);
+                      setPlaybookVariables({});
                     }}
                   >
                     Cancel
@@ -1126,6 +1128,22 @@ export function AllSessions() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Section: Variables */}
+                  {selectedPlaybook.variables && Object.keys(selectedPlaybook.variables).length > 0 && (
+                    <div className="playbook-section">
+                      <div className="playbook-section-title">Variables</div>
+                      <div style={{ marginTop: 12 }}>
+                        <VariableForm
+                          variables={selectedPlaybook.variables}
+                          values={playbookVariables}
+                          onChange={(key, value) => {
+                            setPlaybookVariables(prev => ({ ...prev, [key]: value }));
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {/* Section: Agent Topology (collapsible, default collapsed) */}
                   <div className="playbook-section playbook-section-collapsible">
@@ -1250,7 +1268,10 @@ export function AllSessions() {
 
                 {/* Fixed footer */}
                 <div className="playbook-launch-footer">
-                  <button onClick={() => setSelectedPlaybook(null)}>
+                  <button onClick={() => {
+                    setSelectedPlaybook(null);
+                    setPlaybookVariables({});
+                  }}>
                     Back
                   </button>
                   <button
@@ -1288,6 +1309,16 @@ export function AllSessions() {
           success={stopSuccess}
         />
       )}
+
+      {/* Playbook Upload Modal */}
+      <PlaybookUploadModal
+        opened={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onSuccess={() => {
+          setShowUploadModal(false);
+          loadPlaybooks(); // Reload playbooks after successful upload
+        }}
+      />
     </div>
   );
 }
