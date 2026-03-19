@@ -141,6 +141,7 @@ export function MultiAgentView() {
   // Terminal sessions from shared Zustand store
   const addTerminalSession = useTerminalSessionStore((state) => state.addSession);
   const removeTerminalSession = useTerminalSessionStore((state) => state.removeSession);
+  const pruneStaleTerminals = useTerminalSessionStore((state) => state.pruneStale);
 
   // Named layout save/reload
   const [savedLayouts, setSavedLayouts] = useState<Record<string, any>>({});
@@ -242,16 +243,22 @@ export function MultiAgentView() {
     };
   }, []);
 
-  // Fetch existing terminals from server on mount so they appear in the mosaic
+  // Fetch terminals + validate entire mosaic on mount (agents + terminals + editor tiles)
   useEffect(() => {
     if (!sessionId) return;
-    async function fetchTerminals() {
+    async function validateAndSyncMosaic() {
       try {
-        const data = await api.getTerminals(sessionId!);
-        const serverTerminals = data?.terminals || [];
+        // Fetch agents and terminals in parallel
+        const [agentData, terminalData] = await Promise.all([
+          api.getAgents(sessionId!),
+          api.getTerminals(sessionId!),
+        ]);
+
+        const serverAgentIds = new Set((agentData?.agents || []).map((a: any) => a.id));
+        const serverTerminals = terminalData?.terminals || [];
         const serverTerminalIds = new Set(serverTerminals.map((t: any) => t.id));
 
-        // Add all terminal sessions to shared Zustand store
+        // Sync Zustand store: add server terminals, prune stale ones
         serverTerminals.forEach((term: any) => {
           addTerminalSession({
             id: term.id,
@@ -262,24 +269,36 @@ export function MultiAgentView() {
             createdAt: term.createdAt || new Date().toISOString(),
           });
         });
+        pruneStaleTerminals(serverTerminalIds);
 
-        // Update mosaic: add missing terminal tiles & remove stale ones
+        // Validate all mosaic tiles: remove stale agents + stale terminals
         setMosaicValue((prev) => {
           if (!prev) return prev;
           const currentIds = getLeafIds(prev);
           let updated: MosaicNode<string> | null = prev;
 
-          // Remove stale terminal tiles not on server (but keep agent/editor tiles)
-          const staleTermIds = currentIds.filter(
-            (id) => id.startsWith("term-") && !id.startsWith("term-pending-") && !serverTerminalIds.has(id)
-          );
-          for (const staleId of staleTermIds) {
-            if (updated) updated = removeMosaicLeaf(updated, staleId);
+          for (const id of currentIds) {
+            // Keep editor tiles and pending terminals
+            if (id.startsWith("editor-") || id.startsWith("term-pending-")) continue;
+
+            // Terminal tile: validate against server terminal list
+            if (id.startsWith("term-")) {
+              if (!serverTerminalIds.has(id)) {
+                updated = updated ? removeMosaicLeaf(updated, id) : null;
+              }
+              continue;
+            }
+
+            // Agent tile: validate against server agent list
+            if (!serverAgentIds.has(id)) {
+              updated = updated ? removeMosaicLeaf(updated, id) : null;
+            }
           }
 
           // Add terminal tiles from server that aren't in mosaic yet
+          const updatedIds = updated ? getLeafIds(updated) : [];
           for (const term of serverTerminals) {
-            if (!currentIds.includes(term.id)) {
+            if (!updatedIds.includes(term.id)) {
               updated = updated
                 ? { type: "split", direction: "row", children: [updated, term.id], splitPercentages: [70, 30] } as any
                 : term.id;
@@ -292,10 +311,10 @@ export function MultiAgentView() {
           return updated;
         });
       } catch (err) {
-        console.debug("Could not fetch terminals for Command Center:", err);
+        console.debug("Could not validate mosaic for Command Center:", err);
       }
     }
-    fetchTerminals();
+    validateAndSyncMosaic();
   }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load saved mosaic layout on mount
