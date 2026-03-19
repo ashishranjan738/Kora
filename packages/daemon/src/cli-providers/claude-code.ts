@@ -55,10 +55,14 @@ export const claudeCodeProvider: CLIProvider = {
   parseOutput(rawOutput: string): ParsedOutput {
     const result: ParsedOutput = {};
 
+    // Strip ANSI escape codes for reliable parsing
+    const cleanOutput = rawOutput.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+
     // Look for token counts — Claude Code formats
     // Pattern: "nput tokens: X" or "nput: X" (handles "Input tokens: 12,345" and "input: 12.4k")
-    const inputMatch = rawOutput.match(/[Ii]nput(?:\s+tokens)?:\s*([\d,\.]+)\s*k?/);
-    const outputMatch = rawOutput.match(/[Oo]utput(?:\s+tokens)?:\s*([\d,\.]+)\s*k?/);
+    // Capture the full value including optional "k" suffix
+    const inputMatch = cleanOutput.match(/[Ii]nput(?:\s+tokens)?:\s*([\d,\.]+\s*k?)/i);
+    const outputMatch = cleanOutput.match(/[Oo]utput(?:\s+tokens)?:\s*([\d,\.]+\s*k?)/i);
 
     if (inputMatch || outputMatch) {
       result.tokenUsage = {
@@ -68,22 +72,22 @@ export const claudeCodeProvider: CLIProvider = {
     }
 
     // Look for cost — "$X.XX" pattern (e.g. "Cost: $0.42" or "sonnet-4-6 · $0.42")
-    const costMatch = rawOutput.match(/\$(\d+\.?\d*)/);
+    const costMatch = cleanOutput.match(/\$(\d+\.?\d*)/);
     if (costMatch) {
       result.costUsd = parseFloat(costMatch[1]);
     }
 
     // Detect activity
-    if (rawOutput.includes("Reading") || rawOutput.includes("Searching")) {
+    if (cleanOutput.includes("Reading") || cleanOutput.includes("Searching")) {
       result.currentActivity = "reading";
-    } else if (rawOutput.includes("Writing") || rawOutput.includes("Editing")) {
+    } else if (cleanOutput.includes("Writing") || cleanOutput.includes("Editing")) {
       result.currentActivity = "writing";
-    } else if (rawOutput.includes("Running")) {
+    } else if (cleanOutput.includes("Running")) {
       result.currentActivity = "running command";
     }
 
     // Detect waiting for input
-    if (rawOutput.includes("\u276F") || rawOutput.includes("> ")) {
+    if (cleanOutput.includes("\u276F") || cleanOutput.includes("> ")) {
       result.isWaitingForInput = true;
     }
 
@@ -124,9 +128,17 @@ export const claudeCodeProvider: CLIProvider = {
 
 function parseTokenCount(str: string): number {
   // Handle "12,345" or "12.4k" or "12345"
-  const cleaned = str.replace(/,/g, "");
-  if (cleaned.endsWith("k") || cleaned.endsWith("K")) {
-    return parseFloat(cleaned) * 1000;
+  const cleaned = str.trim().replace(/,/g, "");
+  const num = parseFloat(cleaned);
+
+  if (isNaN(num)) {
+    return 0;
   }
-  return parseFloat(cleaned) || 0;
+
+  // Check if the cleaned string has a "k" suffix (case-insensitive)
+  if (/k$/i.test(cleaned)) {
+    return num * 1000;
+  }
+
+  return num;
 }
