@@ -1864,15 +1864,75 @@ export function createApiRouter(deps: {
   });
 
   // POST /playbooks/:id/run - execute playbook (spawn agents)
-  // TODO: Implementation paused pending architecture review
-  // Research questions:
-  // - Should we adopt an existing workflow format (GitHub Actions, Ansible)?
-  // - Should execution use an existing workflow engine?
-  // - Is SQLite the right storage long-term?
   router.post("/playbooks/:id/run", async (req: Request, res: Response) => {
-    res.status(501).json({
-      error: "Playbook execution not yet implemented - architecture review in progress",
-    });
+    try {
+      const playbookId = String(req.params.id);
+      const { sessionId, task, variables = {}, dryRun } = req.body as {
+        sessionId: string;
+        task?: string;
+        variables?: Record<string, string>;
+        dryRun?: boolean;
+      };
+
+      if (!sessionId) {
+        res.status(400).json({ error: "sessionId is required" });
+        return;
+      }
+
+      const session = sessionManager.getSession(sessionId);
+      if (!session) {
+        res.status(404).json({ error: `Session "${sessionId}" not found` });
+        return;
+      }
+
+      const orch = orchestrators.get(sessionId);
+      if (!orch) {
+        res.status(500).json({ error: `No orchestrator for session "${sessionId}"` });
+        return;
+      }
+
+      const playbook = await loadPlaybook(globalConfigDir, playbookId);
+      if (!playbook) {
+        res.status(404).json({ error: `Playbook "${playbookId}" not found` });
+        return;
+      }
+
+      const { PlaybookExecutor } = await import("../core/playbook-executor.js");
+      const executor = new PlaybookExecutor(orch, providerRegistry, session.config, playbook, variables, session.runtimeDir);
+
+      // Phase 1: SETUP (sync — validate, interpolate)
+      try {
+        const execution = executor.setup();
+        if (dryRun) {
+          res.json({ dryRun: true, valid: true, plan: execution });
+          return;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        res.status(400).json({ error: msg });
+        return;
+      }
+
+      // Wire WebSocket events
+      executor.on("playbook-progress", (data: any) => broadcastEvent({ event: "playbook-progress", ...data }));
+      executor.on("playbook-complete", (data: any) => broadcastEvent({ event: "playbook-complete", ...data }));
+      executor.on("playbook-failed", (data: any) => broadcastEvent({ event: "playbook-failed", ...data }));
+
+      // Phase 2+3: EXECUTE + FINALIZE (async, fire-and-forget)
+      executor.run(task).catch((err) => {
+        logger.error({ err }, "[playbook-run] Execution failed");
+      });
+
+      // Return 202 immediately
+      res.status(202).json({
+        executionId: executor.execution.id,
+        status: "running",
+        agents: executor.execution.agents,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
   });
 
   // ─── Launch Playbook into Existing Session ─────────────────────────
