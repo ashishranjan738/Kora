@@ -41,6 +41,7 @@ import { saveTerminalStates, loadTerminalStates, restoreTerminalsWithHealthCheck
 import type { StandaloneTerminal } from "../core/terminal-persistence.js";
 import { WebhookNotifier } from "../core/webhook-notifier.js";
 import type { WebhookConfig } from "@kora/shared";
+import { analyzeTerminalOutput } from "../core/terminal-analyzer.js";
 
 // Cache strip-ansi import (ESM module loaded once at startup)
 let stripAnsiFunc: ((text: string) => string) | null = null;
@@ -1132,6 +1133,67 @@ export function createApiRouter(deps: {
           output: outputLines,
         });
       }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // ─── Terminal Status (inferred from output) ──────────────────────────
+
+  router.get("/sessions/:sid/agents/:aid/terminal-status", async (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const lines = parseInt(req.query.lines as string) || 15;
+
+      const orchestrator = orchestrators.get(String(sid));
+      if (!orchestrator) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const am = orchestrator.agentManager;
+      const agent = am.getAgent(String(aid));
+      if (!agent) {
+        res.status(404).json({ error: `Agent "${aid}" not found in session "${sid}"` });
+        return;
+      }
+
+      // Fetch terminal output (use cache if available)
+      const cacheKey = `${sid}-${aid}`;
+      let outputLines: string[];
+      const cached = outputCache.get(cacheKey);
+
+      if (cached) {
+        outputLines = cached.lines;
+      } else {
+        const rawOutput = await tmux.capturePane(agent.config.tmuxSession, lines);
+        outputLines = rawOutput.split("\n");
+        outputCache.set(cacheKey, rawOutput, outputLines);
+      }
+
+      // Strip ANSI codes for cleaner analysis
+      if (stripAnsiFunc !== null) {
+        const stripFn = stripAnsiFunc;
+        outputLines = outputLines.map(line => stripFn(line));
+      }
+
+      // Take last N lines for analysis
+      const analysisLines = outputLines.slice(-lines);
+
+      // Determine last activity timestamp
+      const lastActivity = agent.lastOutputAt
+        || agent.lastActivityAt
+        || agent.startedAt
+        || new Date().toISOString();
+
+      const result = analyzeTerminalOutput(
+        String(aid),
+        analysisLines,
+        lastActivity,
+      );
+
+      res.json(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });

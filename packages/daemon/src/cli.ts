@@ -22,6 +22,7 @@ import type { PtyBackendType } from "@kora/shared";
 import { logger } from "./core/logger.js";
 import { SuggestionsDatabase } from "./core/suggestions-db.js";
 import { PlaybookDatabase } from "./core/playbook-database.js";
+import { AutoCheckpoint } from "./core/auto-checkpoint.js";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -176,13 +177,34 @@ async function handleStart(): Promise<void> {
     }
   }, 5 * 60 * 1000); // 5 minutes
 
+  // 5c. Start auto-checkpointing for each session (every 5 minutes)
+  const checkpoints: AutoCheckpoint[] = [];
+  for (const [sid, orch] of orchestrators) {
+    const runtimeDir = path.join(
+      sessionManager.listSessions().find(s => s.id === sid)?.projectPath || "",
+      getRuntimeDaemonDir(isDev),
+    );
+    const cp = new AutoCheckpoint({
+      runtimeDir,
+      sessionId: sid,
+      getAgents: () => orch.getAgents(),
+      startTime: Date.now(),
+    });
+    cp.start();
+    checkpoints.push(cp);
+  }
+
   // 6. Graceful shutdown on SIGINT / SIGTERM
   //    Persist state but DON'T kill agents — holdpty --bg sessions persist independently
   const shutdown = async () => {
     logger.info("\nShutting down daemon...");
 
-    // Stop cleanup interval
+    // Stop cleanup interval and checkpoints
     clearInterval(cleanupInterval);
+    for (const cp of checkpoints) {
+      try { await cp.save(); } catch {} // Final checkpoint before exit
+      cp.stop();
+    }
 
     // Persist all session/agent state to disk
     for (const [sid, orch] of orchestrators) {

@@ -15,7 +15,9 @@ export interface IPtyBackend {
   /** Kill/stop a session */
   killSession(name: string): Promise<void>;
 
-  /** Send keystrokes to a session. If literal, don't append Enter. */
+  /** Send keystrokes to a session. Always appends Enter (\r).
+   *  The `literal` option originates from tmux's -l flag (no shell expansion)
+   *  but in holdpty all input is already literal. Enter is always sent. */
   sendKeys(session: string, keys: string, options?: { literal?: boolean }): Promise<void>;
 
   /** Send raw terminal input (no Enter appended) */

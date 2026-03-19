@@ -259,6 +259,53 @@ describe("HoldptyController detached mode", () => {
     expect(mockSession.isSessionActive).toHaveBeenCalledWith("my-session");
   });
 
+  // Test 9: sendKeys with literal:true still appends Enter (fixes MCP notification bug)
+  it("appends Enter (\\r) even when literal:true — fixes MCP notification delivery", async () => {
+    const ptyManager = new MockPtyManager();
+    ptyManager.addSession("my-session");
+    controller.setPtyManager(ptyManager as any);
+
+    const notification = "[New message from Architect. Use check_messages tool to read it.]";
+    await controller.sendKeys("my-session", notification, { literal: true });
+
+    // Must include \r so Claude Code processes the notification
+    expect(ptyManager.write).toHaveBeenCalledWith("my-session", notification + "\r");
+  });
+
+  // Test 10: sendRawInput does NOT append Enter (for interactive terminal input)
+  it("sendRawInput does not append Enter — for xterm.js keystroke forwarding", async () => {
+    const ptyManager = new MockPtyManager();
+    ptyManager.addSession("my-session");
+    controller.setPtyManager(ptyManager as any);
+
+    await controller.sendRawInput("my-session", "a");
+
+    // Raw input should NOT have \r appended
+    expect(ptyManager.write).toHaveBeenCalledWith("my-session", "a");
+  });
+
+  // Test 11: sendRawInput falls back to socket without Enter
+  it("sendRawInput uses socket without appending Enter when no dashboard", async () => {
+    const ptyManager = new MockPtyManager();
+    controller.setPtyManager(ptyManager as any);
+
+    await controller.sendRawInput("my-session", "partial text");
+
+    // PtyManager write should NOT be called (no active session)
+    expect(ptyManager.write).not.toHaveBeenCalled();
+
+    // Socket connection SHOULD be used
+    expect(net.createConnection).toHaveBeenCalledWith(
+      "/tmp/holdpty-test/my-session.sock",
+      expect.any(Function)
+    );
+
+    // DATA_IN frame should contain raw text WITHOUT \r
+    expect(mockProtocol.encodeDataIn).toHaveBeenCalledWith(
+      Buffer.from("partial text", "utf-8")
+    );
+  });
+
   // Bonus test: verify env vars are applied during launch
   it("applies stored env vars during newSession via env command", async () => {
     await controller.setEnvironment("my-session", "FOO", "bar");
