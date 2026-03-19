@@ -3,6 +3,7 @@ import { AgentManager } from "./agent-manager.js";
 import { EventLog } from "./event-log.js";
 import { MessageQueue } from "./message-queue.js";
 import type { AgentState, MessagingMode } from "@kora/shared";
+import { logger } from "./logger.js";
 
 /**
  * Monitors agent terminal output for @mention patterns and auto-relays messages.
@@ -138,7 +139,7 @@ export class AutoRelay {
   private async deliverRelay(from: AgentState, to: AgentState, message: string): Promise<void> {
     // Rate limit: if source agent has sent too many @mention messages, stop relaying
     if (this.isRelayRateLimited(from.id)) {
-      console.warn(`[AutoRelay] Agent ${from.config.name} is rate limited — too many messages in 60s`);
+      logger.warn(`[AutoRelay] Agent ${from.config.name} is rate limited — too many messages in 60s`);
       return;
     }
 

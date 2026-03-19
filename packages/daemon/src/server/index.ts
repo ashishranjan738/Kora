@@ -13,6 +13,7 @@ import type { WSEvent } from "@kora/shared";
 import { getRuntimeTmuxPrefix } from "@kora/shared";
 import { PtyManager } from "../core/pty-manager.js";
 import { HoldptyController } from "../core/holdpty-controller.js";
+import { logger } from "../core/logger.js";
 
 export interface ServerDeps {
   sessionManager: SessionManager;
@@ -82,7 +83,7 @@ export function createServer(options: ServerOptions) {
   wss.on("connection", (ws, req) => {
     if (!validateWsToken(req.url || "", token)) {
       const sanitizedUrl = req.url?.split('?')[0] || 'unknown';
-      console.warn(`[ws] Unauthorized connection attempt: ${sanitizedUrl}`);
+      logger.warn(`[ws] Unauthorized connection attempt: ${sanitizedUrl}`);
       ws.close(4001, "Unauthorized");
       return;
     }

@@ -31,6 +31,7 @@ import { listPlaybooks, loadPlaybook, savePlaybook } from "../core/playbook-load
 import { buildPersona } from "../core/persona-builder.js";
 import { discoverModels } from "../core/model-discovery.js";
 import { DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS } from "@kora/shared";
+import { logger } from "../core/logger.js";
 
 export function createApiRouter(deps: {
   sessionManager: SessionManager;

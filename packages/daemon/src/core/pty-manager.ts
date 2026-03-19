@@ -7,6 +7,7 @@ import * as pty from "node-pty";
 import type { WebSocket } from "ws";
 import { MAX_TERMINAL_CONNECTIONS_PER_AGENT } from "@kora/shared";
 import type { IPtyBackend } from "./pty-backend.js";
+import { logger } from "./logger.js";
 
 interface PtySession {
   ptyProcess: pty.IPty;
@@ -31,7 +32,7 @@ export class PtyManager {
    */
   attach(sessionName: string, ws: WebSocket, cols: number = 120, rows: number = 40): boolean {
     if (!this.backend) {
-      console.error("[pty-manager] No backend configured — call setBackend() first");
+      logger.error("[pty-manager] No backend configured — call setBackend() first");
       return false;
     }
 
@@ -51,7 +52,7 @@ export class PtyManager {
           env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
         });
       } catch (err) {
-        console.error(`[pty-manager] Failed to spawn PTY for ${sessionName}:`, err);
+        logger.error({ err: err }, `[pty-manager] Failed to spawn PTY for ${sessionName}:`);
         return false;
       }
 

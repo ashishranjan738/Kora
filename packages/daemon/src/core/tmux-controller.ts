@@ -1,6 +1,7 @@
 import { execFile as execFileCb } from "child_process";
 import { promisify } from "util";
 import type { IPtyBackend } from "./pty-backend.js";
+import { logger } from "./logger.js";
 
 const execFile = promisify(execFileCb);
 
@@ -37,7 +38,7 @@ export class TmuxController implements IPtyBackend {
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : String(error);
-      process.stderr.write(`[TmuxController] Error running tmux ${args[0]}: ${message}\n`);
+      logger.error(`[TmuxController] Error running tmux ${args[0]}: ${message}\n`);
       throw error;
     }
   }
@@ -141,7 +142,7 @@ export class TmuxController implements IPtyBackend {
         message.includes("session not found") ||
         message.includes("can't find")
       ) {
-        process.stderr.write(`[TmuxController] Ignoring stale session error for ${session}: ${message}\n`);
+        logger.error(`[TmuxController] Ignoring stale session error for ${session}: ${message}\n`);
         return;
       }
       throw error;

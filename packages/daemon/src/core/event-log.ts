@@ -7,6 +7,7 @@ import { randomUUID } from "crypto";
 import { EventEmitter } from "events";
 import type { OrchestratorEvent, EventType } from "@kora/shared";
 import type { AppDatabase } from "./database.js";
+import { logger } from "./logger.js";
 
 export class EventLog extends EventEmitter {
   private database: AppDatabase | null = null;
@@ -41,7 +42,7 @@ export class EventLog extends EventEmitter {
           timestamp: fullEvent.timestamp,
         });
       } catch (err) {
-        console.error("[EventLog] SQLite write failed, falling back to JSONL:", err);
+        logger.error({ err: err }, "[EventLog] SQLite write failed, falling back to JSONL:");
         await this.appendToJsonl(fullEvent, now);
       }
     } else {
@@ -75,7 +76,7 @@ export class EventLog extends EventEmitter {
           timestamp: r.timestamp,
         }));
       } catch (err) {
-        console.error("[EventLog] SQLite query failed, falling back to JSONL:", err);
+        logger.error({ err: err }, "[EventLog] SQLite query failed, falling back to JSONL:");
       }
     }
 
