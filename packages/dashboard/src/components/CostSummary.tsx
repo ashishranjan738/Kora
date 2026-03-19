@@ -1,5 +1,19 @@
 import { Badge, Group, Paper, Text, Tooltip, Progress } from "@mantine/core";
 
+// ── Types ────────────────────────────────────────────────────
+
+/** Fields that may carry cost data on an agent API response */
+interface AgentCostFields {
+  id: string;
+  name?: string;
+  config?: { name?: string };
+  cost?: { totalCostUsd?: number; totalTokensIn?: number; totalTokensOut?: number } | number;
+  tokensIn?: number;
+  tokensOut?: number;
+  tokens_in?: number;
+  tokens_out?: number;
+}
+
 interface AgentCostData {
   id: string;
   name: string;
@@ -8,42 +22,52 @@ interface AgentCostData {
   costUsd: number;
 }
 
+// ── Constants ────────────────────────────────────────────────
+
+/** Approximate cost per million tokens (used for input/output split estimate) */
+const INPUT_COST_PER_M = 3;
+const OUTPUT_COST_PER_M = 15;
+/** Threshold below which we show "<$0.01" */
+const MIN_DISPLAY_COST = 0.01;
+
+// ── Utilities ────────────────────────────────────────────────
+
 /** Extract cost data from an agent object (handles different API shapes) */
-export function extractCostData(agent: any): { tokensIn: number; tokensOut: number; costUsd: number } {
-  const tokensIn = agent.cost?.totalTokensIn ?? agent.tokensIn ?? agent.tokens_in ?? 0;
-  const tokensOut = agent.cost?.totalTokensOut ?? agent.tokensOut ?? agent.tokens_out ?? 0;
-  const costUsd = agent.cost?.totalCostUsd ?? (typeof agent.cost === "number" ? agent.cost : 0);
+export function extractCostData(agent: AgentCostFields): { tokensIn: number; tokensOut: number; costUsd: number } {
+  const cost = agent.cost;
+  const costObj = typeof cost === "object" ? cost : undefined;
+  const tokensIn = costObj?.totalTokensIn ?? agent.tokensIn ?? agent.tokens_in ?? 0;
+  const tokensOut = costObj?.totalTokensOut ?? agent.tokensOut ?? agent.tokens_out ?? 0;
+  const costUsd = costObj?.totalCostUsd ?? (typeof cost === "number" ? cost : 0);
   return { tokensIn, tokensOut, costUsd };
 }
 
 /** Check if any agent has real cost data */
-export function hasCostData(agents: any[]): boolean {
+export function hasCostData(agents: AgentCostFields[]): boolean {
   return agents.some((a) => {
     const { costUsd, tokensIn, tokensOut } = extractCostData(a);
     return costUsd > 0 || tokensIn > 0 || tokensOut > 0;
   });
 }
 
-/** Format cost display — shows "No data" instead of "$0.00" when no data exists */
+/** Format cost — shows "--" when no data, "<$0.01" for tiny amounts */
 export function formatCostSmart(cost: number | undefined, hasData: boolean): string {
   if (!hasData && (cost == null || cost === 0)) return "--";
   if (cost == null || cost === 0) return "$0.00";
-  if (cost < 0.01) return "<$0.01";
+  if (cost < MIN_DISPLAY_COST) return "<$0.01";
   return "$" + cost.toFixed(2);
 }
 
-/** Format token count */
 function fmtTokens(n: number): string {
   if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
   if (n >= 1000) return (n / 1000).toFixed(1) + "k";
   return String(n);
 }
 
-/** Estimate cost split (rough: input tokens ~$3/M, output ~$15/M for Claude) */
 function estimateCostSplit(tokensIn: number, tokensOut: number, totalCost: number) {
   if (totalCost === 0) return { inputCost: 0, outputCost: 0 };
-  const inputWeight = tokensIn * 3;
-  const outputWeight = tokensOut * 15;
+  const inputWeight = tokensIn * INPUT_COST_PER_M;
+  const outputWeight = tokensOut * OUTPUT_COST_PER_M;
   const totalWeight = inputWeight + outputWeight || 1;
   return {
     inputCost: totalCost * (inputWeight / totalWeight),
@@ -51,8 +75,10 @@ function estimateCostSplit(tokensIn: number, tokensOut: number, totalCost: numbe
   };
 }
 
+// ── Component ────────────────────────────────────────────────
+
 interface SessionCostSummaryProps {
-  agents: any[];
+  agents: AgentCostFields[];
 }
 
 /** Session-level cost summary widget */
@@ -72,7 +98,6 @@ export function SessionCostSummary({ agents }: SessionCostSummaryProps) {
   const totalTokensIn = agentCosts.reduce((sum, a) => sum + a.tokensIn, 0);
   const totalTokensOut = agentCosts.reduce((sum, a) => sum + a.tokensOut, 0);
   const hasData = hasCostData(agents);
-  const maxAgentCost = Math.max(...agentCosts.map((a) => a.costUsd), 0.01);
 
   if (agents.length === 0) return null;
 
@@ -102,13 +127,12 @@ export function SessionCostSummary({ agents }: SessionCostSummaryProps) {
         </Group>
       </Group>
 
-      {/* Per-agent cost bars */}
       {hasData && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {agentCosts
             .sort((a, b) => b.costUsd - a.costUsd)
             .map((agent) => {
-              const pct = Math.round((agent.costUsd / maxAgentCost) * 100);
+              const pct = totalCost > 0 ? Math.round((agent.costUsd / totalCost) * 100) : 0;
               const { inputCost, outputCost } = estimateCostSplit(agent.tokensIn, agent.tokensOut, agent.costUsd);
 
               return (
@@ -147,39 +171,5 @@ export function SessionCostSummary({ agents }: SessionCostSummaryProps) {
         </Text>
       )}
     </Paper>
-  );
-}
-
-/** Small inline cost sparkline showing cost accumulation over time */
-interface CostSparklineProps {
-  /** Array of cumulative cost values over time */
-  history: number[];
-  width?: number;
-  height?: number;
-}
-
-export function CostSparkline({ history, width = 60, height = 14 }: CostSparklineProps) {
-  if (history.length < 2) return null;
-
-  const max = Math.max(...history, 0.01);
-  const points = history.map((val, i) => {
-    const x = (i / (history.length - 1)) * width;
-    const y = height - (val / max) * height;
-    return `${x},${y}`;
-  }).join(" ");
-
-  return (
-    <Tooltip label={`Cost: $${history[history.length - 1]?.toFixed(2) || "0.00"}`} withArrow>
-      <svg width={width} height={height} style={{ display: "block" }}>
-        <polyline
-          points={points}
-          fill="none"
-          stroke="var(--accent-green)"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </Tooltip>
   );
 }
