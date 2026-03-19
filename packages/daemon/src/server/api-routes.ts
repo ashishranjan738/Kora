@@ -39,6 +39,8 @@ import { DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS } from "@kora/sh
 import { logger } from "../core/logger.js";
 import { saveTerminalStates, loadTerminalStates } from "../core/terminal-persistence.js";
 import type { StandaloneTerminal } from "../core/terminal-persistence.js";
+import { WebhookNotifier } from "../core/webhook-notifier.js";
+import type { WebhookConfig } from "@kora/shared";
 
 // Cache strip-ansi import (ESM module loaded once at startup)
 let stripAnsiFunc: ((text: string) => string) | null = null;
@@ -163,6 +165,7 @@ export function createApiRouter(deps: {
   // Terminal connections (wsType === 'terminal') are excluded to prevent
   // raw JSON from appearing in agent terminal output.
   // Respects Tier 1 (session) and Tier 2 (event-type) filters.
+  // Also sends webhook notifications if configured (fire-and-forget).
   const broadcastEvent = (event: any) => {
     const message = JSON.stringify(event);
     wss.clients.forEach((client) => {
@@ -186,6 +189,20 @@ export function createApiRouter(deps: {
 
       client.send(message);
     });
+
+    // Send webhook notifications if configured (fire-and-forget)
+    if (event.sessionId) {
+      const session = sessionManager.getSession(event.sessionId);
+      if (session?.config.webhooks && session.config.webhooks.length > 0) {
+        const notifier = new WebhookNotifier(session.config.webhooks);
+        notifier.notify({
+          ...event,
+          timestamp: Date.now(),
+        }).catch(err => {
+          logger.warn({ err, sessionId: event.sessionId, eventType: event.event }, "Failed to send webhook notification");
+        });
+      }
+    }
   };
 
   // ─── Status ──────────────────────────────────────────────────────────
@@ -498,6 +515,141 @@ export function createApiRouter(deps: {
       } else {
         res.status(500).json({ error: message });
       }
+    }
+  });
+
+  // ─── Webhooks CRUD ───────────────────────────────────────────────────
+
+  router.get("/sessions/:sid/webhooks", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const session = sessionManager.getSession(sid);
+      if (!session) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const webhooks = session.config.webhooks || [];
+      res.json({ webhooks });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  router.post("/sessions/:sid/webhooks", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const session = sessionManager.getSession(sid);
+      if (!session) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const body = req.body as { url: string; events: string[]; enabled?: boolean };
+
+      // Validate request body
+      if (!body.url || typeof body.url !== "string" || !body.url.startsWith("http")) {
+        res.status(400).json({ error: "Invalid webhook URL" });
+        return;
+      }
+      if (!Array.isArray(body.events) || body.events.length === 0) {
+        res.status(400).json({ error: "Webhook must have at least one event" });
+        return;
+      }
+
+      const webhooks = session.config.webhooks || [];
+
+      // Check if webhook URL already exists
+      if (webhooks.some(wh => wh.url === body.url)) {
+        res.status(400).json({ error: "Webhook URL already exists" });
+        return;
+      }
+
+      const newWebhook: WebhookConfig = {
+        url: body.url,
+        events: body.events,
+        enabled: body.enabled !== false, // Default to true
+      };
+
+      webhooks.push(newWebhook);
+      await sessionManager.updateSession(sid, { webhooks });
+      await sessionManager.save();
+
+      res.status(201).json({ webhook: newWebhook });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  router.put("/sessions/:sid/webhooks/:url", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const webhookUrl = decodeURIComponent(String(req.params.url));
+      const session = sessionManager.getSession(sid);
+      if (!session) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const body = req.body as { events?: string[]; enabled?: boolean };
+      const webhooks = session.config.webhooks || [];
+      const index = webhooks.findIndex(wh => wh.url === webhookUrl);
+
+      if (index === -1) {
+        res.status(404).json({ error: "Webhook not found" });
+        return;
+      }
+
+      // Update webhook
+      if (body.events !== undefined) {
+        if (!Array.isArray(body.events) || body.events.length === 0) {
+          res.status(400).json({ error: "Webhook must have at least one event" });
+          return;
+        }
+        webhooks[index].events = body.events;
+      }
+      if (body.enabled !== undefined) {
+        webhooks[index].enabled = body.enabled;
+      }
+
+      await sessionManager.updateSession(sid, { webhooks });
+      await sessionManager.save();
+
+      res.json({ webhook: webhooks[index] });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  router.delete("/sessions/:sid/webhooks/:url", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const webhookUrl = decodeURIComponent(String(req.params.url));
+      const session = sessionManager.getSession(sid);
+      if (!session) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const webhooks = session.config.webhooks || [];
+      const index = webhooks.findIndex(wh => wh.url === webhookUrl);
+
+      if (index === -1) {
+        res.status(404).json({ error: "Webhook not found" });
+        return;
+      }
+
+      webhooks.splice(index, 1);
+      await sessionManager.updateSession(sid, { webhooks });
+      await sessionManager.save();
+
+      res.status(204).send();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
     }
   });
 

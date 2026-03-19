@@ -25,6 +25,14 @@ export interface SessionConfig {
   messagingMode?: MessagingMode;
   /** Whether agents get isolated git worktrees or share the project directory. Default: "isolated" */
   worktreeMode?: WorktreeMode;
+  /** Webhook configurations for event notifications */
+  webhooks?: WebhookConfig[];
+}
+
+export interface WebhookConfig {
+  url: string;
+  events: string[]; // e.g., ["agent-crash", "task-complete", "*"]
+  enabled?: boolean;
 }
 
 export interface CustomModel {
