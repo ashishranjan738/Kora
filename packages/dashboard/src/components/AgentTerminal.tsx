@@ -177,14 +177,14 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
         transition: "opacity 0.3s ease-in",
       }} />
 
-      {/* Tail indicator / button — top-left, next to connection status */}
+      {/* Tail indicator / button — bottom-right of terminal */}
       {hasData && (
         <button
           onClick={scrolledUp ? handleResumeLiveFeed : handleToggleManualPause}
           style={{
             position: "absolute",
-            top: 8,
-            left: 12,
+            bottom: 8,
+            right: 8,
             zIndex: 15,
             display: "flex",
             alignItems: "center",
