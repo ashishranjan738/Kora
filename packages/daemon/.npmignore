@@ -1,0 +1,23 @@
+# Source files
+src/
+*.test.ts
+*.test.js
+__tests__/
+
+# Config files
+tsconfig.json
+vitest.config.ts
+.eslintrc*
+
+# Build artifacts
+*.map
+*.tsbuildinfo
+
+# Development
+node_modules/
+.DS_Store
+.vscode/
+.idea/
+
+# Scripts
+scripts/

@@ -42,6 +42,37 @@ export interface CreateAppOptions {
 }
 
 /**
+ * Resolve dashboard path:
+ * - Production (npm): dist/dashboard (bundled)
+ * - Development: ../../dashboard/dist (relative from dist/server/)
+ *
+ * Checks bundled path first, falls back to dev path.
+ */
+function resolveDashboardPath(): string {
+  // Bundled path: dist/dashboard (npm package structure)
+  const bundledPath = path.resolve(__dirname, '../dashboard');
+
+  // Dev path: packages/dashboard/dist (monorepo structure)
+  const devPath = path.resolve(__dirname, '../../..', 'dashboard/dist');
+
+  // Try bundled first (npm package)
+  if (fs.existsSync(path.join(bundledPath, 'index.html'))) {
+    logger.info(`  [dashboard] Using bundled: ${bundledPath}`);
+    return bundledPath;
+  }
+
+  // Fallback to dev path (monorepo)
+  if (fs.existsSync(path.join(devPath, 'index.html'))) {
+    logger.info(`  [dashboard] Using dev path: ${devPath}`);
+    return devPath;
+  }
+
+  logger.error('Dashboard not found. Run: cd packages/dashboard && npm run build');
+  // Return dev path as fallback (will show error message in browser)
+  return devPath;
+}
+
+/**
  * Create an Express app for integration testing (no WebSocket, no HTTP server).
  */
 export function createApp(options: CreateAppOptions) {
@@ -62,11 +93,7 @@ export function createApp(options: CreateAppOptions) {
   app.use("/api/v1", createApiRouter(deps, mockWss));
 
   if (!skipDashboard) {
-    const dashboardDistPath = path.resolve(
-      __dirname,
-      "../../..",
-      "dashboard/dist"
-    );
+    const dashboardDistPath = resolveDashboardPath();
     app.use(express.static(dashboardDistPath, { index: false }));
   }
 
@@ -120,11 +147,7 @@ export function createServer(options: ServerOptions) {
   }
 
   // Serve the built React dashboard
-  const dashboardDistPath = path.resolve(
-    __dirname,
-    "../../..", // go up from dist/server/ to packages/
-    "dashboard/dist"
-  );
+  const dashboardDistPath = resolveDashboardPath();
 
   // Read index.html once and inject the token so the dashboard can auth API calls
   let indexHtml = "";
