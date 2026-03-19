@@ -112,12 +112,29 @@ export function createApiRouter(deps: {
   // Helper function to broadcast events to dashboard WebSocket clients only.
   // Terminal connections (wsType === 'terminal') are excluded to prevent
   // raw JSON from appearing in agent terminal output.
+  // Respects Tier 1 (session) and Tier 2 (event-type) filters.
   const broadcastEvent = (event: any) => {
     const message = JSON.stringify(event);
     wss.clients.forEach((client) => {
-      if (client.readyState === 1 && (client as any).wsType !== 'terminal') {
-        client.send(message);
+      if (client.readyState !== 1 || (client as any).wsType === 'terminal') {
+        return; // Skip terminal connections and non-ready clients
       }
+
+      // Check session filter (Tier 1)
+      const subscribedSessionId = (client as any).subscribedSessionId as string | undefined;
+      if (subscribedSessionId && event.sessionId && event.sessionId !== subscribedSessionId) {
+        return; // Client only wants events from a specific session
+      }
+
+      // Check event type filter (Tier 2)
+      const subscribedEventTypes = (client as any).subscribedEventTypes as Set<string> | undefined;
+      if (subscribedEventTypes && !subscribedEventTypes.has('*')) {
+        if (!event.event || !subscribedEventTypes.has(event.event)) {
+          return; // Client is not subscribed to this event type
+        }
+      }
+
+      client.send(message);
     });
   };
 

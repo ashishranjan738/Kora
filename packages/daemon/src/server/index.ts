@@ -148,8 +148,32 @@ export function createServer(options: ServerOptions) {
 
     // Regular event forwarding connection — tag as dashboard
     (ws as any).wsType = 'dashboard';
+
+    // Tier 2: Event-type filtering
+    // Track which event types this client is subscribed to (default: wildcard = all events)
+    (ws as any).subscribedEventTypes = new Set<string>(['*']);
+
     const listeners: Array<{ emitter: Orchestrator; event: string; handler: (...args: any[]) => void }> = [];
-    const subscriptions = new Set<string>(); // Track which sessionIds this WS is subscribed to
+    const subscriptions = new Set<string>(); // Track which sessionIds this WS is subscribed to (Tier 1)
+
+    // Helper to check if an event should be sent to this client (Tier 2)
+    const shouldSendEvent = (event: WSEvent, eventSessionId: string): boolean => {
+      const eventTypes = (ws as any).subscribedEventTypes as Set<string> | undefined;
+
+      // Check session filter (Tier 1)
+      // Only send if client is subscribed to this event's session
+      if (!subscriptions.has(eventSessionId)) {
+        return false;
+      }
+
+      // Check event type filter (Tier 2)
+      // If eventTypes is undefined or contains wildcard, allow all events
+      if (!eventTypes || eventTypes.has('*')) {
+        return true;
+      }
+
+      return eventTypes.has(event.event);
+    };
 
     const subscribe = (sessionId: string) => {
       // Skip if already subscribed
@@ -166,13 +190,17 @@ export function createServer(options: ServerOptions) {
       const onSpawned = (...args: any[]) => {
         const agent = args[0];
         const evt: WSEvent = { event: "agent-spawned", sessionId, agent } as WSEvent;
-        ws.send(JSON.stringify(evt));
+        if (shouldSendEvent(evt, sessionId)) {
+          ws.send(JSON.stringify(evt));
+        }
       };
 
       const onRemoved = (...args: any[]) => {
         const [agentId, reason] = args as [string, string];
         const evt: WSEvent = { event: "agent-removed", sessionId, agentId, reason };
-        ws.send(JSON.stringify(evt));
+        if (shouldSendEvent(evt, sessionId)) {
+          ws.send(JSON.stringify(evt));
+        }
       };
 
       orchestrator.on("agent-update", onSpawned);
@@ -218,8 +246,18 @@ export function createServer(options: ServerOptions) {
     ws.on("message", (data) => {
       try {
         const msg = JSON.parse(data.toString());
-        if (msg.type === "subscribe" && msg.sessionId) {
-          subscribe(msg.sessionId);
+
+        if (msg.type === "subscribe") {
+          // Tier 1: Session filtering
+          if (msg.sessionId) {
+            subscribe(msg.sessionId);
+          }
+
+          // Tier 2: Event-type filtering
+          if (Array.isArray(msg.eventTypes)) {
+            (ws as any).subscribedEventTypes = new Set(msg.eventTypes);
+            logger.debug({ eventTypes: msg.eventTypes }, 'WebSocket event-type filter updated');
+          }
         } else if (msg.type === "unsubscribe" && msg.sessionId) {
           unsubscribe(msg.sessionId);
         }
