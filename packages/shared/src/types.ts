@@ -247,12 +247,15 @@ export interface ControlResponse {
 
 // --- Tasks ---
 
+export type TaskPriority = "P0" | "P1" | "P2" | "P3";
+
 export interface Task {
   id: string;
   sessionId: string;
   title: string;
   description: string;
   status: TaskStatus;
+  priority: TaskPriority;
   assignedTo?: string;
   createdBy: string;
   dependencies?: string[];
