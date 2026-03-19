@@ -11,7 +11,7 @@ import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
 import { Indicator, Tooltip } from "@mantine/core";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
 import { setMessageNotificationCallback } from "../stores/terminalRegistry";
-import { formatCost, formatTokens } from "../utils/formatters";
+import { formatCost, formatTokens, formatLastSeen } from "../utils/formatters";
 
 const PANEL_BORDER_COLORS = [
   "#58a6ff",
@@ -206,8 +206,8 @@ export function MultiAgentView() {
       // Only update agents if something actually changed
       const newAgents = a.agents || [];
       setAgents(prev => {
-        const prevKey = prev.map(a => `${a.id}:${a.status}:${a.config?.model}`).join("|");
-        const newKey = newAgents.map((a: any) => `${a.id}:${a.status}:${a.config?.model}`).join("|");
+        const prevKey = prev.map(a => `${a.id}:${a.status}:${a.config?.model}:${a.lastOutputAt}`).join("|");
+        const newKey = newAgents.map((a: any) => `${a.id}:${a.status}:${a.config?.model}:${a.lastOutputAt}`).join("|");
         return prevKey === newKey ? prev : newAgents;
       });
     } catch (err) {
@@ -832,6 +832,23 @@ export function MultiAgentView() {
               </span>
             )}
 
+            {/* Last seen indicator */}
+            <Tooltip label={`Last terminal output: ${agent.lastOutputAt ? new Date(agent.lastOutputAt).toLocaleTimeString() : "unknown"}`}>
+              <span style={{
+                fontSize: 11,
+                color: (() => {
+                  if (!agent.lastOutputAt) return "var(--text-muted)";
+                  const ago = Date.now() - new Date(agent.lastOutputAt).getTime();
+                  if (ago < 30000) return "var(--accent-green)";
+                  if (ago < 180000) return "var(--text-secondary)";
+                  return "var(--accent-yellow)";
+                })(),
+                whiteSpace: "nowrap",
+              }}>
+                {formatLastSeen(agent.lastOutputAt)}
+              </span>
+            </Tooltip>
+
             {/* Nudge button */}
             <Tooltip label={`${agent.unreadMessages || 0} unread — nudge`}>
               <Indicator disabled={!agent.unreadMessages} label={agent.unreadMessages || 0} size={12} color="red" offset={2}>
@@ -966,6 +983,20 @@ export function MultiAgentView() {
                 In: {formatTokens(tokenIn)} | Out: {formatTokens(tokenOut)} | {formatCost(cost)}
               </span>
               <span style={{ color: agent.status === 'running' ? '#3fb950' : '#8b949e', fontSize: 12 }}>{agent.status}</span>
+              <Tooltip label={`Last terminal output: ${agent.lastOutputAt ? new Date(agent.lastOutputAt).toLocaleTimeString() : "unknown"}`}>
+                <span style={{
+                  fontSize: 12,
+                  color: (() => {
+                    if (!agent.lastOutputAt) return "var(--text-muted)";
+                    const ago = Date.now() - new Date(agent.lastOutputAt).getTime();
+                    if (ago < 30000) return "var(--accent-green)";
+                    if (ago < 180000) return "var(--text-secondary)";
+                    return "var(--accent-yellow)";
+                  })(),
+                }}>
+                  {formatLastSeen(agent.lastOutputAt)}
+                </span>
+              </Tooltip>
               <div style={{ flex: 1 }} />
               <button
                 onClick={() => toggleFullscreen(agent.id)}

@@ -58,3 +58,26 @@ export function formatUptimeSeconds(seconds: number): string {
   const s = Math.floor(seconds % 60);
   return `${h}h ${m}m ${s}s`;
 }
+
+/**
+ * Format a "last seen" relative timestamp from an ISO date string.
+ * Shows how long ago the last terminal output change was detected.
+ * @param timestamp - ISO timestamp string (may be undefined)
+ * @returns Formatted string like "just now", "2m ago", "1h ago", or "--"
+ */
+export function formatLastSeen(timestamp: string | undefined): string {
+  if (!timestamp) return "--";
+  const diff = Date.now() - new Date(timestamp).getTime();
+  if (diff < 0 || isNaN(diff)) return "--";
+
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (seconds < 30) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${days}d ago`;
+}

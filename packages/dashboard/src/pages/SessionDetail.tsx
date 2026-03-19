@@ -26,7 +26,7 @@ import { useApprovalRequests, type ApprovalRequest } from "../hooks/useApprovalR
 import { ApprovalPrompt } from "../components/ApprovalPrompt";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
 import { hasTerminal } from "../stores/terminalRegistry";
-import { formatCost, formatTokens, formatUptime } from "../utils/formatters";
+import { formatCost, formatTokens, formatUptime, formatLastSeen } from "../utils/formatters";
 import {
   ActionIcon,
   Indicator,
@@ -1547,6 +1547,20 @@ function AgentsTab({
               <span className="ac2-stat">{formatCostSmart(costUsd, agentHasCost)}</span>
               <span className="ac2-stat-sep">{"\u00B7"}</span>
               <span className="ac2-stat">{formatUptime(a.startedAt)}</span>
+              <span className="ac2-stat-sep">{"\u00B7"}</span>
+              <Tooltip label={`Last terminal output: ${a.lastOutputAt ? new Date(a.lastOutputAt).toLocaleTimeString() : "unknown"}`}>
+                <span className="ac2-stat" style={{
+                  color: (() => {
+                    if (!a.lastOutputAt) return undefined;
+                    const ago = Date.now() - new Date(a.lastOutputAt).getTime();
+                    if (ago < 30000) return "var(--accent-green)";
+                    if (ago < 180000) return undefined;
+                    return "var(--accent-yellow)";
+                  })(),
+                }}>
+                  {formatLastSeen(a.lastOutputAt)}
+                </span>
+              </Tooltip>
               <span className="ac2-stat-sep">{"\u00B7"}</span>
               <AgentUtilization
                 utilization={(() => {
