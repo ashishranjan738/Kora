@@ -408,6 +408,11 @@ export class Orchestrator extends EventEmitter {
    * Checks which tmux sessions are still alive and reconnects to them.
    * Dead agents are marked as "stopped".
    */
+  /** Get all known agents (for cleanup/diagnostics). */
+  getAgents(): AgentState[] {
+    return this.agentManager.listAgents();
+  }
+
   async restore(): Promise<{ restored: number; dead: number }> {
     const savedAgents = await loadAgentStates(this.config.runtimeDir);
     if (savedAgents.length === 0) return { restored: 0, dead: 0 };
