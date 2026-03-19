@@ -1,4 +1,4 @@
-import { Badge, Popover, Stack, Text, Tooltip, Group, Box } from "@mantine/core";
+import { Badge, Popover, Stack, Text, Tooltip, Box } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 
 // Simple flag SVG icon (inline to avoid @tabler/icons dep)
@@ -25,7 +25,7 @@ interface FlagIndicatorProps {
 }
 
 export function FlagIndicator({ flags }: FlagIndicatorProps) {
-  const [opened, { toggle, close }] = useDisclosure(false);
+  const [opened, { open, close }] = useDisclosure(false);
 
   if (!flags || flags.length === 0) return null;
 
@@ -48,7 +48,7 @@ export function FlagIndicator({ flags }: FlagIndicatorProps) {
     );
   }
 
-  // Multiple flags or long single flag: count badge with popover
+  // Multiple flags or long single flag: count badge with hover popover
   return (
     <Popover
       opened={opened}
@@ -69,16 +69,15 @@ export function FlagIndicator({ flags }: FlagIndicatorProps) {
           color="yellow"
           size="xs"
           leftSection={<FlagIcon size={9} />}
-          onClick={(e) => {
-            e.stopPropagation();
-            toggle();
-          }}
+          onMouseEnter={open}
+          onMouseLeave={close}
+          onClick={(e) => e.stopPropagation()}
           style={{ cursor: "pointer" }}
         >
           {flags.length}
         </Badge>
       </Popover.Target>
-      <Popover.Dropdown>
+      <Popover.Dropdown onMouseEnter={open} onMouseLeave={close}>
         <Stack gap={4}>
           <Text size="xs" fw={600} c="var(--text-secondary)" mb={2}>
             CLI Flags
@@ -131,7 +130,7 @@ interface ChannelIndicatorProps {
 }
 
 export function ChannelIndicator({ channels }: ChannelIndicatorProps) {
-  const [opened, { toggle, close }] = useDisclosure(false);
+  const [opened, { open, close }] = useDisclosure(false);
 
   if (!channels || channels.length === 0) return null;
 
@@ -149,7 +148,7 @@ export function ChannelIndicator({ channels }: ChannelIndicatorProps) {
     );
   }
 
-  // Multiple channels: count badge with popover
+  // Multiple channels: count badge with hover popover
   return (
     <Popover
       opened={opened}
@@ -170,16 +169,15 @@ export function ChannelIndicator({ channels }: ChannelIndicatorProps) {
           color="blue"
           size="xs"
           leftSection={<HashIcon size={9} />}
-          onClick={(e) => {
-            e.stopPropagation();
-            toggle();
-          }}
+          onMouseEnter={open}
+          onMouseLeave={close}
+          onClick={(e) => e.stopPropagation()}
           style={{ cursor: "pointer" }}
         >
           {channels.length}
         </Badge>
       </Popover.Target>
-      <Popover.Dropdown>
+      <Popover.Dropdown onMouseEnter={open} onMouseLeave={close}>
         <Stack gap={4}>
           <Text size="xs" fw={600} c="var(--text-secondary)" mb={2}>
             Channels
