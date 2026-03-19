@@ -111,7 +111,14 @@ describe("Agent Output API", () => {
           }
           currentType = "command";
           currentEntry.push(trimmed);
-        } else if (trimmed.startsWith('[') || trimmed.includes('Tool:') || trimmed.includes('ERROR:')) {
+        } else if (
+          trimmed.match(/^\[Tool:\s/) ||
+          trimmed.match(/^\[Message\s/) ||
+          trimmed.match(/^\[System/i) ||
+          trimmed.match(/^ERROR:/i) ||
+          trimmed.match(/^WARNING:/i) ||
+          trimmed.match(/^FATAL:/i)
+        ) {
           if (currentEntry.length > 0) {
             entries.push({ type: currentType, content: currentEntry.join('\n') });
             currentEntry = [];
@@ -181,6 +188,35 @@ describe("Agent Output API", () => {
       expect(structured[1].type).toBe("response");
       expect(structured[2].type).toBe("command");
       expect(structured[3].type).toBe("response");
+    });
+
+    it("should not treat JSON arrays as system messages", () => {
+      const lines = [
+        "$ node script.js",
+        '["item1", "item2", "item3"]',
+        '{"key": [1, 2, 3]}',
+      ];
+
+      const structured = parseStructuredOutput(lines);
+
+      expect(structured).toHaveLength(2);
+      expect(structured[0].type).toBe("command");
+      expect(structured[1].type).toBe("response");
+      expect(structured[1].content).toContain("item1");
+    });
+
+    it("should detect specific system message patterns", () => {
+      const lines = [
+        "[Tool: Read] Reading file",
+        "[Message from Agent] Hello",
+        "ERROR: File not found",
+        "WARNING: Deprecated API",
+      ];
+
+      const structured = parseStructuredOutput(lines);
+
+      expect(structured).toHaveLength(4);
+      expect(structured.every(e => e.type === "system")).toBe(true);
     });
   });
 

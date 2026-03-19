@@ -40,6 +40,13 @@ import { logger } from "../core/logger.js";
 import { saveTerminalStates, loadTerminalStates } from "../core/terminal-persistence.js";
 import type { StandaloneTerminal } from "../core/terminal-persistence.js";
 
+// Cache strip-ansi import (ESM module loaded once at startup)
+let stripAnsiFunc: ((text: string) => string) | null = null;
+(async () => {
+  const stripAnsiModule = await import("strip-ansi");
+  stripAnsiFunc = stripAnsiModule.default;
+})();
+
 // Output cache to avoid repeated capturePane calls
 interface CachedOutput {
   raw: string;
@@ -665,6 +672,10 @@ export function createApiRouter(deps: {
 
       await am.stopAgent(String(aid), "user removed");
 
+      // Clear output cache for this agent
+      const cacheKey = `${sid}-${aid}`;
+      outputCache.clear(cacheKey);
+
       // Broadcast agent-removed event via WebSocket
       broadcastEvent({ event: "agent-removed", sessionId: String(sid), agentId: String(aid) });
 
@@ -922,7 +933,7 @@ export function createApiRouter(deps: {
       const lines = parseInt(req.query.lines as string) || 100;
       const format = req.query.format as string || "raw";
       const stripAnsiCodes = req.query.stripAnsi === "true";
-      const sinceTimestamp = req.query.since ? parseInt(req.query.since as string) : null;
+      // TODO: Implement ?since=timestamp for incremental polling (requires timestamp extraction from output)
 
       const am = orchestrators.get(String(sid))?.agentManager;
       if (!am) {
@@ -952,18 +963,10 @@ export function createApiRouter(deps: {
         outputCache.set(cacheKey, rawOutput, outputLines);
       }
 
-      // Filter by timestamp if requested
-      if (sinceTimestamp !== null && format === "structured") {
-        // For structured format, we can filter by timestamp
-        // For now, just return all (timestamp parsing would need to be added)
-      }
-
       // Strip ANSI codes if requested
-      if (stripAnsiCodes) {
-        // Use dynamic import for strip-ansi (ESM module)
-        const stripAnsiModule = await import("strip-ansi");
-        const stripAnsiFunc = stripAnsiModule.default;
-        outputLines = outputLines.map(line => stripAnsiFunc(line));
+      if (stripAnsiCodes && stripAnsiFunc !== null) {
+        const stripFn = stripAnsiFunc; // TypeScript type narrowing
+        outputLines = outputLines.map(line => stripFn(line));
       }
 
       // Format response based on requested format
@@ -996,12 +999,10 @@ export function createApiRouter(deps: {
   function parseStructuredOutput(lines: string[]): Array<{
     type: "command" | "response" | "system";
     content: string;
-    timestamp?: number;
   }> {
     const entries: Array<{
       type: "command" | "response" | "system";
       content: string;
-      timestamp?: number;
     }> = [];
 
     let currentEntry: string[] = [];
@@ -1024,8 +1025,15 @@ export function createApiRouter(deps: {
         currentType = "command";
         currentEntry.push(trimmed);
       }
-      // Detect tool calls or system messages
-      else if (trimmed.startsWith('[') || trimmed.includes('Tool:') || trimmed.includes('ERROR:')) {
+      // Detect tool calls or system messages with specific patterns
+      else if (
+        trimmed.match(/^\[Tool:\s/) ||           // [Tool: Read]
+        trimmed.match(/^\[Message\s/) ||         // [Message from ...]
+        trimmed.match(/^\[System/i) ||           // [System ...]
+        trimmed.match(/^ERROR:/i) ||             // ERROR: ...
+        trimmed.match(/^WARNING:/i) ||           // WARNING: ...
+        trimmed.match(/^FATAL:/i)                // FATAL: ...
+      ) {
         if (currentEntry.length > 0) {
           entries.push({
             type: currentType,
