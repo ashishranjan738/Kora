@@ -141,7 +141,7 @@ Bearer token generated on daemon start, injected into HTML as `<script>window.__
 
 ### MCP Inter-Agent Messaging
 - MCP server runs per-agent as a child process (JSON-RPC over stdio)
-- Tools: `send_message`, `check_messages`, `list_agents`, `broadcast`, `list_tasks`, `update_task`
+- Tools: `send_message`, `check_messages`, `list_agents`, `broadcast`, `list_tasks`, `update_task`, `create_task`, `get_task`, `spawn_agent`, `remove_agent`, `peek_agent`, `nudge_agent`, `report_idle`, `request_task`, `prepare_pr`
 - Messages delivered via file-based inbox (`{project}/.kora/messages/inbox-{agentId}/`)
 - Short tmux notification sent after file write: `[New message from X. Use check_messages tool to read it.]`
 - Token/port read dynamically from `~/.kora/` (or `~/.kora-dev/`) on every API call — survives daemon restarts
@@ -151,7 +151,7 @@ Bearer token generated on daemon start, injected into HTML as `<script>window.__
 - `messagingMode`: "mcp" (default), "terminal", or "manual"
 - MCP mode: writes full message to inbox file, sends short notification to tmux
 - Terminal mode: collapses newlines to `" | "`, truncates to 500 chars, sends via tmux send-keys
-- Rate limiting: 10 messages per agent per 60 seconds
+- Rate limiting: role-based (master: 25/min, worker: 10/min) — check BEFORE dequeue, buffer on limit
 - Conversation loop detection: 8 messages between same pair per 2 minutes
 - Prompt detection: checks for `❯`, `>`, `$`, `%`, `? for shortcuts` before delivering
 - 60-second timeout: force delivers if agent never reaches prompt
@@ -159,7 +159,7 @@ Bearer token generated on daemon start, injected into HTML as `<script>window.__
 ### SQLite (better-sqlite3)
 - One `data.db` per session at `{project}/.kora/data.db`
 - WAL mode for concurrent reads during writes
-- Tables: `events`, `tasks`, `task_comments`
+- Tables: `events` (with agent_id column), `tasks` (with priority, labels, due_date), `task_comments`, `suggestions` (paths + CLI flags)
 - All task operations are synchronous (better-sqlite3 is sync)
 - Events are indexed by `(session_id, timestamp DESC)` and `(type)`
 - EventLog class has SQLite primary path with JSONL fallback
@@ -238,7 +238,7 @@ node packages/daemon/dist/cli.js stop
 5. **Event routing (Tier 1+2)** — Session-scoped WS filtering + event-type filtering. See `ORCHESTRATOR_EVENT_ROUTING.md`
 6. **Cost tracking shows $0** — UsageMonitor code exists but doesn't parse actual token usage from CLI output
 7. **Bundle size optimization** — Dashboard JS is ~1.2MB (Mantine + Monaco + xterm). Needs code-splitting.
-8. **Unit tests** — 54 tests in place (vitest): worktree-mode (21), message-queue (18), MCP tools (15). Run: `npm run test -w packages/daemon`
+8. **Unit tests** — 328+ tests in place (vitest): worktree-mode (21), message-queue (18), MCP tools (15). Run: `npm run test -w packages/daemon`
 9. **API rate limiting** — No Express rate-limiter middleware
 
 ### Priority 3 — Features
@@ -268,8 +268,8 @@ All colors must use CSS variables (no hardcoded `#hex`). Check both `[data-theme
 
 ## Codebase Stats
 
-- **90+ source files** across 3 packages
-- **~22,000 lines** of TypeScript/TSX/CSS
+- **120+ source files** across 3 packages
+- **~28,000 lines** of TypeScript/TSX/CSS
 - **Shared**: 5 files, ~500 LOC
 - **Daemon**: 40+ files, ~8,500 LOC
 - **Dashboard**: 45+ files, ~13,000 LOC
@@ -464,6 +464,17 @@ PR #1  feat: frontend worktree mode + UI
 | #51 | feat: events API with filtering/pagination | Query params: type, types, agentId, before, search, limit, order |
 | #52 | feat: Recent Paths & CLI Flags Suggestions | Autocomplete paths + flags from SQLite |
 | #54 | feat: integration testing framework | 247 API tests with createApp + MockPtyBackend |
+| #55 | fix: standalone terminal persist across restart | Terminal session persistence to disk |
+| #56 | feat: Idle Detection + Activity Status | report_idle/request_task MCP tools, idle timeout events |
+| #57 | feat: Broadcast-Rebase SOP | Auto-rebase reminders before PRs |
+| #58 | feat: structured agent personas | 6 builtin templates with constraints/SOP/scope |
+| #59 | feat: WS event-type filter (Tier 2) | Session-scoped + event-type WebSocket filtering |
+| #61 | feat: Activity Status UI | Color-coded activity badges with idle/working detection |
+| #62 | fix: post-merge rebase broadcast | Auto-broadcast rebase reminders after merges |
+| #64 | feat: prepare_pr MCP tool | Agents can prepare PRs with auto-rebase |
+| #65 | feat: Dashboard message buffer visibility | UI for buffered/expired message indicators |
+| #66 | fix: Persona SOP updates | Blocker escalation + expanded backend identity |
+| #67 | fix: message rate limit buffer | Never silently drop — buffer + priority queue + role-based limits |
 
 #### Architecture Changes (Sprint 3)
 
@@ -476,6 +487,11 @@ PR #1  feat: frontend worktree mode + UI
 - **Pino Logging**: Structured JSON logging replacing console.log/debug
 - **Integration Tests**: 247 tests using createApp() factory + MockPtyBackend for isolated testing
 - **Suggestions DB**: SQLite-backed recent paths and CLI flags for autocomplete
+- **Builtin Personas**: 6 structured templates (Identity→Goal→Constraints→SOP→Scope). `builtin:frontend` syntax in playbooks. Common constraints auto-injected (Co-Authored-By ban, dev-only). Constraints placed EARLY for max LLM attention.
+- **Message Rate Limit Buffer**: Critical fix — check rate limit BEFORE dequeue (never silently drop). Priority queue (critical>high>normal>low), role-based limits (master 25/min, worker 10/min), TTL expiry, buffer cap 50.
+- **Idle Detection**: `report_idle` + `request_task` MCP tools. Agents report idle status, orchestrator can assign new work.
+- **prepare_pr MCP Tool**: Agents can prepare PRs with auto-rebase onto main before creation.
+- **WS Event Filtering (Tier 2)**: Dashboard subscribes to specific event types per session, reducing unnecessary WS traffic.
 
 #### Key Bug Fixes (Sprint 3)
 
@@ -489,7 +505,7 @@ PR #1  feat: frontend worktree mode + UI
 
 #### Pending Work (Next Sprint)
 1. Upstream PR: holdpty `send` command + macOS ARM fix
-2. Event routing Tier 2+3 (event-type WS filtering + agent-aware MCP routing)
+2. Event routing Tier 3 (agent-aware MCP routing) — Tier 1+2 done
 3. Move messages from file-based to SQLite
 4. Cost tracking parser refinement (multi-provider)
 5. npm packaging for `npx kora start`
@@ -511,7 +527,7 @@ npx tsc -p packages/daemon/tsconfig.json
 cd packages/dashboard && npm install && npm run build && cd ../..
 
 # 3. Run tests
-npm run test -w packages/daemon  # 54 tests should pass
+npm run test -w packages/daemon  # 328+ tests should pass
 
 # 4. Start dev daemon
 node packages/daemon/dist/cli.js start --dev
