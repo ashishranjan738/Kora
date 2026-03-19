@@ -327,4 +327,5 @@ export type EventType =
   | "session-paused"
   | "session-resumed"
   | "session-stopped"
-  | "cost-threshold-reached";
+  | "cost-threshold-reached"
+  | "message-escalation";
