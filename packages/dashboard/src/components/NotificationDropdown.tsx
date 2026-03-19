@@ -109,7 +109,7 @@ export function NotificationDropdown({ sessionId }: NotificationDropdownProps) {
       <Menu.Target>
         <Indicator
           inline
-          label={unreadCount > 0 ? unreadCount : undefined}
+          label={unreadCount > 0 ? (unreadCount >= 10 ? "9+" : unreadCount) : undefined}
           size={16}
           disabled={unreadCount === 0}
           color="red"
