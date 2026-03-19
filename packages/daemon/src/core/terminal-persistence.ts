@@ -6,6 +6,8 @@
 import fs from "fs/promises";
 import path from "path";
 import { STATE_DIR } from "@kora/shared";
+import type { IPtyBackend } from "./pty-backend.js";
+import { logger } from "./logger.js";
 
 const TERMINALS_FILE = "terminals.json";
 
@@ -47,4 +49,68 @@ export async function loadTerminalStates(
   } catch {
     return [];
   }
+}
+
+/**
+ * Verify that a terminal's socket file exists (for holdpty sessions).
+ * Returns true if the socket exists and is accessible, false otherwise.
+ */
+export async function verifySocketExists(
+  backend: IPtyBackend,
+  sessionName: string,
+): Promise<boolean> {
+  try {
+    // Check if backend supports getSocketPathForSession (HoldptyController)
+    if (typeof (backend as any).getSocketPathForSession === "function") {
+      const socketPath = await (backend as any).getSocketPathForSession(sessionName);
+      await fs.access(socketPath);
+      return true;
+    }
+    // For non-holdpty backends (e.g., tmux), socket verification is not needed
+    return true;
+  } catch (err) {
+    logger.debug({ sessionName, err }, "Socket file does not exist or is not accessible");
+    return false;
+  }
+}
+
+/**
+ * Restore standalone terminals with health checks.
+ * Verifies both session existence (via hasSession) and socket file existence (for holdpty).
+ * Returns { alive, dead } arrays of terminals.
+ */
+export async function restoreTerminalsWithHealthCheck(
+  backend: IPtyBackend,
+  persisted: StandaloneTerminal[],
+  sessionId: string,
+): Promise<{ alive: StandaloneTerminal[]; dead: StandaloneTerminal[] }> {
+  const alive: StandaloneTerminal[] = [];
+  const dead: StandaloneTerminal[] = [];
+
+  for (const term of persisted) {
+    try {
+      // Check if session exists
+      const sessionExists = await backend.hasSession(term.tmuxSession);
+      if (!sessionExists) {
+        logger.debug({ sessionId, terminalId: term.id, sessionName: term.tmuxSession }, "Terminal session no longer exists");
+        dead.push(term);
+        continue;
+      }
+
+      // For holdpty sessions, verify socket file exists
+      const socketExists = await verifySocketExists(backend, term.tmuxSession);
+      if (!socketExists) {
+        logger.warn({ sessionId, terminalId: term.id, sessionName: term.tmuxSession }, "Terminal socket file missing — skipping restore");
+        dead.push(term);
+        continue;
+      }
+
+      alive.push(term);
+    } catch (err) {
+      logger.error({ err, sessionId, terminalId: term.id }, "Error during terminal health check");
+      dead.push(term);
+    }
+  }
+
+  return { alive, dead };
 }

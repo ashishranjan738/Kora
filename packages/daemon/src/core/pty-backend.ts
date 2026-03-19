@@ -44,4 +44,7 @@ export interface IPtyBackend {
 
   /** Get the command + args to spawn for attaching to a session (for terminal streaming via node-pty) */
   getAttachCommand(session: string): { command: string; args: string[] };
+
+  /** Get the Unix socket path for a session (holdpty only, optional) */
+  getSocketPathForSession?(session: string): Promise<string>;
 }

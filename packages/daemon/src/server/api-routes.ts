@@ -37,7 +37,7 @@ import { buildPersona } from "../core/persona-builder.js";
 import { discoverModels } from "../core/model-discovery.js";
 import { DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS } from "@kora/shared";
 import { logger } from "../core/logger.js";
-import { saveTerminalStates, loadTerminalStates } from "../core/terminal-persistence.js";
+import { saveTerminalStates, loadTerminalStates, restoreTerminalsWithHealthCheck } from "../core/terminal-persistence.js";
 import type { StandaloneTerminal } from "../core/terminal-persistence.js";
 import { WebhookNotifier } from "../core/webhook-notifier.js";
 import type { WebhookConfig } from "@kora/shared";
@@ -115,16 +115,8 @@ export function createApiRouter(deps: {
         const persisted = await loadTerminalStates(runtimeDir);
         if (persisted.length === 0) continue;
 
-        // Verify each terminal's holdpty session still exists
-        const alive: StandaloneTerminal[] = [];
-        for (const term of persisted) {
-          const exists = await tmux.hasSession(term.tmuxSession);
-          if (exists) {
-            alive.push(term);
-          } else {
-            logger.debug({ sessionId: sessionConfig.id, terminalId: term.id }, "Standalone terminal died during daemon downtime");
-          }
-        }
+        // Verify each terminal's session exists AND socket file is accessible (for holdpty)
+        const { alive, dead } = await restoreTerminalsWithHealthCheck(tmux, persisted, sessionConfig.id);
 
         // Populate in-memory Map with alive terminals
         if (alive.length > 0) {
@@ -132,11 +124,11 @@ export function createApiRouter(deps: {
           alive.forEach(t => termMap.set(t.id, t));
           standaloneTerminals.set(sessionConfig.id, termMap);
 
-          logger.info({ sessionId: sessionConfig.id, restored: alive.length, dead: persisted.length - alive.length }, "Restored standalone terminals");
+          logger.info({ sessionId: sessionConfig.id, restored: alive.length, dead: dead.length }, "Restored standalone terminals");
         }
 
-        // Re-persist if any terminals died
-        if (alive.length !== persisted.length) {
+        // Re-persist if any terminals died (clean up stale entries)
+        if (dead.length > 0) {
           await saveTerminalStates(runtimeDir, alive);
         }
       } catch (err) {
