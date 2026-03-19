@@ -373,6 +373,12 @@ export function createApiRouter(deps: {
       // Broadcast session-stopped event
       broadcastEvent({ event: "session-stopped", sessionId: sid });
 
+      // Log to SQLite for timeline
+      const orch_ss = orchestrators.get(sid);
+      if (orch_ss) {
+        orch_ss.eventLog.log({ sessionId: sid, type: "session-stopped" as any, data: {} });
+      }
+
       await sessionManager.stopSession(sid);
       res.status(204).send();
     } catch (err) {
@@ -1154,6 +1160,12 @@ export function createApiRouter(deps: {
       // Broadcast task-created event via WebSocket
       broadcastEvent({ event: "task-created", sessionId: sid, taskId: task.id });
 
+      // Log to SQLite for timeline
+      const orch_tc = orchestrators.get(sid);
+      if (orch_tc) {
+        orch_tc.eventLog.log({ sessionId: sid, type: "task-created" as any, data: { taskId: task.id, title: task.title, assignedTo: task.assignedTo || null } });
+      }
+
       res.status(201).json(db.getTask(task.id));
     } catch (err) {
       res.status(500).json({ error: String(err) });
@@ -1228,6 +1240,12 @@ export function createApiRouter(deps: {
       // Broadcast task-updated event via WebSocket
       broadcastEvent({ event: "task-updated", sessionId: sid, taskId: tid });
 
+      // Log to SQLite for timeline
+      const orch_tu = orchestrators.get(sid);
+      if (orch_tu) {
+        orch_tu.eventLog.log({ sessionId: sid, type: "task-updated" as any, data: { taskId: tid, title: task.title, status: task.status } });
+      }
+
       res.json(task);
     } catch (err) {
       res.status(500).json({ error: String(err) });
@@ -1246,6 +1264,12 @@ export function createApiRouter(deps: {
 
       // Broadcast task-deleted event via WebSocket
       broadcastEvent({ event: "task-deleted", sessionId: sid, taskId: tid });
+
+      // Log to SQLite for timeline
+      const orch_td = orchestrators.get(sid);
+      if (orch_td) {
+        orch_td.eventLog.log({ sessionId: sid, type: "task-deleted" as any, data: { taskId: tid } });
+      }
 
       res.json({ deleted: true, id: tid });
     } catch (err) {
