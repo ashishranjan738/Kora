@@ -3151,6 +3151,9 @@ textarea:focus {
   animation: slideDown 0.15s ease;
 }
 
+/* Mobile-only elements: hidden on desktop */
+.mobile-only-log { display: none; }
+
 /* ===========================
    Tablet (768px and below)
    =========================== */
@@ -3475,13 +3478,15 @@ textarea:focus {
     white-space: nowrap;
   }
 
-  /* ── Hide Command Center mosaic on mobile — show agent list instead ── */
+  /* ── Hide Command Center mosaic on mobile — unusable on phone ── */
   .mosaic-window,
   .mosaic-root,
   .mosaic {
     display: none !important;
   }
-  .mobile-agent-list { display: block !important; }
+
+  /* ── Mobile inline log viewer in agent cards ── */
+  .mobile-only-log { display: block; margin-top: 8px; }
 
   /* ── Compact agent cards on mobile ── */
   .agent-card-v2 {

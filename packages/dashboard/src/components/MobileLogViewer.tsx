@@ -38,7 +38,7 @@ export function MobileLogViewer({ sessionId, agentId, maxLines = 100 }: MobileLo
     fetchOutput();
     const interval = setInterval(fetchOutput, 3000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [sessionId, agentId, maxLines, api]);
+  }, [sessionId, agentId, maxLines]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scroll to bottom when new lines arrive
   useEffect(() => {
