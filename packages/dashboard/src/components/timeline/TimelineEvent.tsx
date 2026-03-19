@@ -256,10 +256,31 @@ export function TimelineEvent({
         </button>
       )}
 
-      {/* Expanded detail */}
-      {expanded && density !== "compact" && (
+      {/* Expanded detail (manual expand OR detailed density mode) */}
+      {(expanded || density === "detailed") && density !== "compact" && (
         <div className="tl-term-output">
-          {JSON.stringify(event.data, null, 2)}
+          {/* Show description if available */}
+          {event.description && (
+            <div style={{ marginBottom: 8, color: "var(--text-secondary)" }}>{event.description}</div>
+          )}
+          {/* Show all metadata fields */}
+          {event.data && Object.keys(event.data).length > 0 && (
+            <div>
+              {Object.entries(event.data).map(([key, value]) => {
+                // Skip content field if already shown in message preview
+                if (key === "content" && messageContent) return null;
+                const displayValue = typeof value === "object" ? JSON.stringify(value) : String(value ?? "");
+                if (!displayValue || displayValue === "undefined") return null;
+                return (
+                  <div key={key} style={{ marginBottom: 2 }}>
+                    <span style={{ color: "var(--accent-blue)", fontWeight: 500 }}>{key}</span>
+                    <span style={{ color: "var(--text-muted)" }}>: </span>
+                    <span style={{ color: "var(--text-secondary)", wordBreak: "break-word" }}>{displayValue}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

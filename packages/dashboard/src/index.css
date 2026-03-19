@@ -3833,7 +3833,9 @@ textarea:focus {
 .tl-compact .tl-event-header { font-size: 12px; }
 
 /* Detailed mode */
+.tl-detailed .tl-event { padding: 14px 16px; margin-bottom: 10px; }
 .tl-detailed .tl-msg-preview { -webkit-line-clamp: unset; }
+.tl-detailed .tl-term-output { display: block; }
 
 /* New events banner */
 .tl-new-events-banner {
