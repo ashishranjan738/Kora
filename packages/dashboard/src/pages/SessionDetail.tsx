@@ -16,6 +16,7 @@ import { EditorTile } from "../components/EditorTile";
 import { GitChanges } from "../components/GitChanges";
 import type { TerminalTab } from "../components/SideTerminalPanel";
 import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
+import { MobileLogViewer } from "../components/MobileLogViewer";
 import { useMessageBufferEvents, MessageBufferBadge } from "../components/MessageBufferIndicator";
 import { SessionCostSummary, extractCostData, formatCostSmart, hasCostData } from "../components/CostSummary";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
@@ -1474,6 +1475,13 @@ function AgentsTab({
                 </>
               )}
             </div>
+
+            {/* Mobile: inline read-only log viewer (hidden on desktop via CSS) */}
+            {a.status === "running" && (
+              <div className="mobile-only-log">
+                <MobileLogViewer sessionId={sessionId} agentId={a.id} maxLines={50} />
+              </div>
+            )}
           </div>
         );
       })}

@@ -160,6 +160,8 @@ export function useApi() {
       apiFetch<{ diff: string; original: string; modified: string; path: string }>(`/sessions/${sid}/git/diff?path=${encodeURIComponent(filePath)}&repo=${encodeURIComponent(repo || ".")}`),
     nudgeAgent: (sid: string, aid: string) =>
       apiFetch<{ nudged: boolean; unreadCount: number }>(`/sessions/${sid}/agents/${aid}/nudge`, { method: "POST" }),
+    getAgentOutput: (sid: string, aid: string, lines?: number) =>
+      apiFetch<{ output: string[] }>(`/sessions/${sid}/agents/${aid}/output?lines=${lines || 100}`),
     deleteTerminal: (sid: string, tid: string) =>
       apiFetch<{ deleted: boolean; id: string }>(`/sessions/${sid}/terminals/${tid}`, { method: "DELETE" }),
     getRecentPaths: (limit?: number) =>
