@@ -220,7 +220,16 @@ export function SessionDetail() {
     }
   }, [sessionId, loadData]);
 
-  useWebSocket(handleWsEvent);
+  const { subscribe, unsubscribe } = useWebSocket(handleWsEvent);
+
+  // Subscribe to this session's events
+  useEffect(() => {
+    if (!sessionId) return;
+    subscribe(sessionId);
+    return () => {
+      unsubscribe(sessionId);
+    };
+  }, [sessionId, subscribe, unsubscribe]);
 
   // Polling as fallback — slower since WebSocket handles instant updates
   useEffect(() => {

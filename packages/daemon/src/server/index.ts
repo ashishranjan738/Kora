@@ -149,8 +149,20 @@ export function createServer(options: ServerOptions) {
     // Regular event forwarding connection — tag as dashboard
     (ws as any).wsType = 'dashboard';
     const listeners: Array<{ emitter: Orchestrator; event: string; handler: (...args: any[]) => void }> = [];
+    const subscriptions = new Set<string>(); // Track which sessionIds this WS is subscribed to
 
-    const subscribe = (sessionId: string, orchestrator: Orchestrator) => {
+    const subscribe = (sessionId: string) => {
+      // Skip if already subscribed
+      if (subscriptions.has(sessionId)) {
+        return;
+      }
+
+      const orchestrator = deps.orchestrators.get(sessionId);
+      if (!orchestrator) {
+        logger.warn({ sessionId }, 'WebSocket subscribe: session not found');
+        return;
+      }
+
       const onSpawned = (...args: any[]) => {
         const agent = args[0];
         const evt: WSEvent = { event: "agent-spawned", sessionId, agent } as WSEvent;
@@ -170,12 +182,51 @@ export function createServer(options: ServerOptions) {
         { emitter: orchestrator, event: "agent-update", handler: onSpawned },
         { emitter: orchestrator, event: "agent-removed", handler: onRemoved },
       );
+
+      subscriptions.add(sessionId);
+      logger.debug({ sessionId }, 'WebSocket subscribed to session');
     };
 
-    // Subscribe to all existing orchestrators
-    for (const [sessionId, orchestrator] of deps.orchestrators) {
-      subscribe(sessionId, orchestrator);
-    }
+    const unsubscribe = (sessionId: string) => {
+      if (!subscriptions.has(sessionId)) {
+        return;
+      }
+
+      // Remove listeners for this session
+      const toRemove = listeners.filter(l => {
+        // Check if this listener belongs to the session we're unsubscribing from
+        const orchestrator = deps.orchestrators.get(sessionId);
+        return l.emitter === orchestrator;
+      });
+
+      for (const { emitter, event, handler } of toRemove) {
+        emitter.removeListener(event, handler);
+      }
+
+      // Remove from listeners array
+      for (let i = listeners.length - 1; i >= 0; i--) {
+        if (toRemove.includes(listeners[i])) {
+          listeners.splice(i, 1);
+        }
+      }
+
+      subscriptions.delete(sessionId);
+      logger.debug({ sessionId }, 'WebSocket unsubscribed from session');
+    };
+
+    // Handle incoming messages for subscribe/unsubscribe
+    ws.on("message", (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === "subscribe" && msg.sessionId) {
+          subscribe(msg.sessionId);
+        } else if (msg.type === "unsubscribe" && msg.sessionId) {
+          unsubscribe(msg.sessionId);
+        }
+      } catch (err) {
+        logger.warn({ err }, 'WebSocket: failed to parse message');
+      }
+    });
 
     ws.on("close", () => {
       // Unsubscribe from all events
@@ -183,6 +234,7 @@ export function createServer(options: ServerOptions) {
         emitter.removeListener(event, handler);
       }
       listeners.length = 0;
+      subscriptions.clear();
     });
   });
 

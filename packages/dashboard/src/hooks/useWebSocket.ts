@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 export function useWebSocket(onEvent: (event: any) => void) {
   const [connected, setConnected] = useState(false);
@@ -6,7 +6,35 @@ export function useWebSocket(onEvent: (event: any) => void) {
   const wsRef = useRef<WebSocket | null>(null);
   const retriesRef = useRef(0);
   const onEventRef = useRef(onEvent);
+  const subscribedSessionsRef = useRef<Set<string>>(new Set());
   onEventRef.current = onEvent;
+
+  const subscribe = useCallback((sessionId: string) => {
+    if (!sessionId) return;
+    if (subscribedSessionsRef.current.has(sessionId)) return;
+
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "subscribe", sessionId }));
+      subscribedSessionsRef.current.add(sessionId);
+      console.debug('[ws] subscribed to session', sessionId);
+    } else {
+      // Queue for when connection opens
+      subscribedSessionsRef.current.add(sessionId);
+    }
+  }, []);
+
+  const unsubscribe = useCallback((sessionId: string) => {
+    if (!sessionId) return;
+    if (!subscribedSessionsRef.current.has(sessionId)) return;
+
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "unsubscribe", sessionId }));
+      subscribedSessionsRef.current.delete(sessionId);
+      console.debug('[ws] unsubscribed from session', sessionId);
+    } else {
+      subscribedSessionsRef.current.delete(sessionId);
+    }
+  }, []);
 
   useEffect(() => {
     let unmounted = false;
@@ -37,6 +65,12 @@ export function useWebSocket(onEvent: (event: any) => void) {
         setConnected(true);
         setReconnecting(false);
         retriesRef.current = 0;
+
+        // Re-subscribe to any sessions that were subscribed before disconnect
+        for (const sessionId of subscribedSessionsRef.current) {
+          ws.send(JSON.stringify({ type: "subscribe", sessionId }));
+          console.debug('[ws] re-subscribed to session', sessionId);
+        }
       };
 
       ws.onmessage = (event) => {
@@ -81,5 +115,5 @@ export function useWebSocket(onEvent: (event: any) => void) {
     };
   }, []);
 
-  return { connected, reconnecting };
+  return { connected, reconnecting, subscribe, unsubscribe };
 }
