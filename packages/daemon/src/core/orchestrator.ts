@@ -70,11 +70,6 @@ export class Orchestrator extends EventEmitter {
     this.usageMonitor = new UsageMonitor(
       config.tmux,
       this.costTracker,
-      (agentId: string) => {
-        const agent = this.agentManager.getAgent(agentId);
-        if (!agent) return undefined;
-        return config.providerRegistry.get(agent.config.cliProvider);
-      },
     );
     this.autoRelay = new AutoRelay(config.tmux, this.agentManager, this.eventLog, config.sessionId, config.messagingMode);
     this.messageQueue = new MessageQueue(config.tmux, config.runtimeDir, config.messagingMode || "mcp");
