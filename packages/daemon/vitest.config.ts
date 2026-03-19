@@ -11,6 +11,12 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["src/**/__tests__/**/*.test.ts"],
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/.kora/**",
+      "**/.kora-dev/**",
+    ],
     typecheck: {
       tsconfig: "./tsconfig.json",
     },
