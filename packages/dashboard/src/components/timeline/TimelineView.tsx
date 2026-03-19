@@ -63,12 +63,12 @@ export function TimelineView({
         setNewEventCount((prev) => prev + (sorted.length - lastEventCountRef.current));
       }
       lastEventCountRef.current = sorted.length;
-    } catch {
-      // ignore
+    } catch (err) {
+      console.debug("[timeline] Failed to fetch events:", err);
     } finally {
       setLoading(false);
     }
-  }, [sessionId, api]);
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initial fetch
   useEffect(() => {
