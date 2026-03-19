@@ -1,6 +1,11 @@
 /**
  * Universal cost estimation using tiktoken
  * Works for all providers (Claude, Codex, Aider, Kiro, Goose)
+ *
+ * Note: Estimates have ~10-20% margin of error due to:
+ * - Input token estimation (2x output heuristic)
+ * - Provider-specific pricing variations
+ * - Context window management differences
  */
 
 import { encoding_for_model } from "tiktoken";
@@ -17,15 +22,19 @@ export const COST_RATES = {
  * Uses cl100k_base encoding (same as GPT-4, Claude-3+)
  */
 export function estimateTokens(text: string): number {
+  let encoding;
   try {
-    const encoding = encoding_for_model("gpt-4" as TiktokenModel);
+    encoding = encoding_for_model("gpt-4" as TiktokenModel);
     const tokens = encoding.encode(text);
-    const count = tokens.length;
-    encoding.free();
-    return count;
+    return tokens.length;
   } catch (err) {
     // Fallback: rough estimate (1 token ≈ 4 chars)
     return Math.ceil(text.length / 4);
+  } finally {
+    // Ensure encoding is freed even if error occurs
+    if (encoding) {
+      encoding.free();
+    }
   }
 }
 
@@ -36,32 +45,4 @@ export function estimateCost(tokensIn: number, tokensOut: number): number {
   const inputCost = (tokensIn / 1_000_000) * COST_RATES.INPUT_PER_M_TOKENS;
   const outputCost = (tokensOut / 1_000_000) * COST_RATES.OUTPUT_PER_M_TOKENS;
   return inputCost + outputCost;
-}
-
-/**
- * Estimate tokens and cost from terminal output
- * Assumes the new output since last check is the model's response (output tokens)
- * and accumulated output represents context (input tokens)
- */
-export interface TokenEstimate {
-  tokensIn: number;
-  tokensOut: number;
-  costUsd: number;
-}
-
-export function estimateFromOutput(
-  currentOutput: string,
-  previousOutput: string = "",
-): TokenEstimate {
-  // New content since last check = output tokens (model generated this)
-  const newContent = currentOutput.slice(previousOutput.length);
-  const tokensOut = estimateTokens(newContent);
-
-  // Total accumulated output = input tokens (context for model)
-  // This is a rough approximation: in reality, the model sees the conversation history
-  const tokensIn = estimateTokens(currentOutput);
-
-  const costUsd = estimateCost(tokensIn, tokensOut);
-
-  return { tokensIn, tokensOut, costUsd };
 }

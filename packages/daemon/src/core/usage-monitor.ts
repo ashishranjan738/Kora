@@ -6,7 +6,7 @@ import { estimateTokens, estimateCost } from "./cost-estimator.js";
 
 export class UsageMonitor {
   private intervals = new Map<string, NodeJS.Timeout>();
-  private lastOutput = new Map<string, string>();
+  private lastTokenCount = new Map<string, number>();
   private cumulativeTokensIn = new Map<string, number>();
   private cumulativeTokensOut = new Map<string, number>();
 
@@ -18,6 +18,7 @@ export class UsageMonitor {
   /** Start monitoring an agent's token usage */
   startMonitoring(agent: AgentState): void {
     // Initialize cumulative tracking
+    this.lastTokenCount.set(agent.id, 0);
     this.cumulativeTokensIn.set(agent.id, 0);
     this.cumulativeTokensOut.set(agent.id, 0);
 
@@ -26,34 +27,35 @@ export class UsageMonitor {
         // Capture last 200 lines of terminal output
         const output = await this.tmux.capturePane(agent.config.tmuxSession, 200, false);
 
-        // Skip if output hasn't changed
-        const lastOut = this.lastOutput.get(agent.id) || "";
-        if (output === lastOut) return;
+        // Calculate token count for current output
+        const currentTotalTokens = estimateTokens(output);
+        const previousTotalTokens = this.lastTokenCount.get(agent.id) || 0;
 
-        // Calculate new content (model's response since last check)
-        const newContent = output.slice(lastOut.length);
-        const newTokensOut = estimateTokens(newContent);
+        // Skip if no new tokens
+        if (currentTotalTokens === previousTotalTokens) return;
 
-        // Estimate input tokens from full accumulated output (context)
-        const newTokensIn = estimateTokens(output);
+        // Delta = new tokens since last check
+        const newTokens = currentTotalTokens - previousTotalTokens;
+        this.lastTokenCount.set(agent.id, currentTotalTokens);
 
-        // Update cumulative totals
-        const totalTokensIn = this.cumulativeTokensIn.get(agent.id)! + newTokensIn;
-        const totalTokensOut = this.cumulativeTokensOut.get(agent.id)! + newTokensOut;
-        this.cumulativeTokensIn.set(agent.id, totalTokensIn);
-        this.cumulativeTokensOut.set(agent.id, totalTokensOut);
+        // All new terminal content is OUTPUT tokens (model generated this)
+        const currentOut = this.cumulativeTokensOut.get(agent.id)! + newTokens;
+        this.cumulativeTokensOut.set(agent.id, currentOut);
+
+        // Estimate INPUT tokens as 2x output (rough heuristic: prompts + context ≈ 2x response)
+        const currentIn = this.cumulativeTokensIn.get(agent.id)! + (newTokens * 2);
+        this.cumulativeTokensIn.set(agent.id, currentIn);
 
         // Calculate total cost
-        const totalCostUsd = estimateCost(totalTokensIn, totalTokensOut);
+        const totalCostUsd = estimateCost(currentIn, currentOut);
 
         // Update cost tracker with cumulative values
         const parsed: ParsedOutput = {
-          tokenUsage: { input: totalTokensIn, output: totalTokensOut },
+          tokenUsage: { input: currentIn, output: currentOut },
           costUsd: totalCostUsd,
         };
 
         this.costTracker.updateFromOutput(agent.id, parsed);
-        this.lastOutput.set(agent.id, output);
       } catch {
         // Agent may be dead, ignore
       }
@@ -69,7 +71,7 @@ export class UsageMonitor {
       clearInterval(interval);
       this.intervals.delete(agentId);
     }
-    this.lastOutput.delete(agentId);
+    this.lastTokenCount.delete(agentId);
     this.cumulativeTokensIn.delete(agentId);
     this.cumulativeTokensOut.delete(agentId);
   }
