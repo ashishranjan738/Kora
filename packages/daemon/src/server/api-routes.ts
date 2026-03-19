@@ -253,6 +253,10 @@ export function createApiRouter(deps: {
         worktreeMode: config.worktreeMode,
       });
       await orch.start();
+      // Wire WebSocket broadcast for message queue events (buffered/expired)
+      orch.messageQueue.setBroadcastCallback((event) => {
+        broadcastEvent({ ...event, sessionId: config.id });
+      });
       orchestrators.set(config.id, orch);
 
       const agents = orch.agentManager.listAgents();
