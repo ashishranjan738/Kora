@@ -1179,11 +1179,39 @@ async function handleToolCall(
     }
 
     case "nudge_agent": {
+      // Input validation: agent ID
+      if (!toolArgs.agentId || typeof toolArgs.agentId !== 'string' || toolArgs.agentId.trim().length === 0) {
+        return {
+          success: false,
+          error: "Invalid agentId: must be a non-empty string. Example: nudge_agent('Backend', 'Your task is ready')"
+        };
+      }
+
+      // Input validation: message length (10KB max)
+      const MAX_MESSAGE_LENGTH = 10 * 1024; // 10KB
+      if (toolArgs.message && typeof toolArgs.message === 'string' && toolArgs.message.length > MAX_MESSAGE_LENGTH) {
+        return {
+          success: false,
+          error: `Message too long: ${toolArgs.message.length} bytes (max ${MAX_MESSAGE_LENGTH} bytes). Please shorten your message.`
+        };
+      }
+
+      // Sanitize message: remove control characters except newlines and tabs
+      let sanitizedMessage = toolArgs.message;
+      if (sanitizedMessage && typeof sanitizedMessage === 'string') {
+        sanitizedMessage = sanitizedMessage
+          .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '') // Remove control chars except \n (0x0A) and \t (0x09)
+          .trim();
+      }
+
       // Rate limit: 5 nudges per minute
       const nudgeNow = Date.now();
       const nudgeWindow = nudgeRateLimit.get(toolArgs.agentId);
       if (nudgeWindow && nudgeNow - nudgeWindow.windowStart < 60000 && nudgeWindow.count >= 5) {
-        return { success: false, error: "Rate limited: max 5 nudges per minute per agent" };
+        return {
+          success: false,
+          error: `Rate limited: You've sent 5 nudges to "${toolArgs.agentId}" in the last minute. Please wait ${Math.ceil((60000 - (nudgeNow - nudgeWindow.windowStart)) / 1000)} seconds before trying again.`
+        };
       }
 
       // Resolve agent name → ID
@@ -1192,17 +1220,24 @@ async function handleToolCall(
         `/api/v1/sessions/${SESSION_ID}/agents`,
       )) as AgentsResponse;
 
-      const search2 = (toolArgs.agentId || "").toLowerCase();
+      const search2 = toolArgs.agentId.trim().toLowerCase();
       const target2 = (agents2.agents || []).find((a) => {
         const name = (a.config?.name || "").toLowerCase();
         return name === search2 || name.includes(search2) || a.id.toLowerCase().includes(search2);
       });
 
       if (!target2) {
-        return { success: false, error: `Agent "${toolArgs.agentId}" not found` };
+        // Provide helpful suggestion
+        const availableAgents = (agents2.agents || [])
+          .map((a) => a.config?.name || a.id)
+          .join(', ');
+        return {
+          success: false,
+          error: `Agent "${toolArgs.agentId}" not found in session "${SESSION_ID}". Available agents: ${availableAgents}`
+        };
       }
 
-      const msg = toolArgs.message || "You have pending messages. Run check_messages now.";
+      const msg = sanitizedMessage || "You have pending messages. Run check_messages now.";
       await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents/${target2.id}/nudge`, {
         message: msg,
       });
