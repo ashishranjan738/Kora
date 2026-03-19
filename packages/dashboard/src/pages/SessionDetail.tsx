@@ -10,6 +10,7 @@ import { RestartAllDialog } from "../components/RestartAllDialog";
 import type { AgentActivity } from "../components/AgentCardTerminal";
 import { AgentActivityBadge, AgentUtilization, ActivitySparkline } from "../components/AgentActivityBadge";
 import { TaskBoard } from "../components/TaskBoard";
+import { SessionSummary } from "../components/SessionSummary";
 import { TimelineView } from "../components/timeline/TimelineView";
 import { SideTerminalPanel } from "../components/SideTerminalPanel";
 import { EditorTile } from "../components/EditorTile";
@@ -1239,6 +1240,20 @@ function AgentsTab({
     )}
 
     {/* Session Cost Summary */}
+    {/* Session Summary Dashboard */}
+    <SessionSummary
+      sessionId={sessionId}
+      agents={agents}
+      onNudgeAgent={async (agentId) => {
+        try { await api.nudgeAgent(sessionId, agentId); } catch {}
+      }}
+      onBroadcast={() => {
+        // Focus broadcast input if it exists, or open inline message
+        const input = document.querySelector<HTMLInputElement>(".broadcast-input");
+        if (input) input.focus();
+      }}
+    />
+
     <SessionCostSummary agents={agents} />
 
     <div className="agent-grid">
