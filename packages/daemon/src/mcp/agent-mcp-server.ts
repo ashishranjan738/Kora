@@ -736,23 +736,6 @@ interface AgentsResponse {
   agents?: AgentInfo[];
 }
 
-interface EventData {
-  to?: string;
-  toName?: string;
-  from?: string;
-  fromName?: string;
-  content?: string;
-}
-
-interface EventEntry {
-  data?: EventData;
-  timestamp?: string;
-}
-
-interface EventsResponse {
-  events?: EventEntry[];
-}
-
 // Circuit breaker: track send_message calls per agent
 const sendMessageLog: { timestamp: number }[] = [];
 const CIRCUIT_BREAKER_MAX = 10;
@@ -906,33 +889,8 @@ async function handleToolCall(
         apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}/ack-read`).catch(() => {});
       }
 
-      // Skip events API fallback if we have messages from any source
-      if (allMessages.length > 0) {
-        return { messages: allMessages, count: allMessages.length };
-      }
-
-      // Fallback: query events API for agents with no inbox/pending/sqlite
-      const events = (await apiCall(
-        "GET",
-        `/api/v1/sessions/${SESSION_ID}/events?limit=20&type=message-sent`,
-      )) as EventsResponse;
-
-      const incoming = (events.events || []).filter(
-        (e) => e.data?.to === AGENT_ID || e.data?.toName === AGENT_ID,
-      );
-
-      const apiMessages = incoming.map((e) => ({
-        from: e.data?.fromName || e.data?.from || "unknown",
-        content: e.data?.content || "",
-        timestamp: e.timestamp || "",
-      }));
-
-      // Also ack-read on fallback path
-      if (apiMessages.length > 0) {
-        apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}/ack-read`).catch(() => {});
-      }
-
-      return { messages: apiMessages, count: apiMessages.length };
+      // Return whatever messages we found (may be empty — that's correct)
+      return { messages: allMessages, count: allMessages.length };
     }
 
     case "list_agents": {

@@ -172,6 +172,27 @@ make stop-dev
 
 **Purpose:** Build confidence that the feature actually works.
 
+### 🚨 No PR Merge Without Browser E2E
+
+**Effective immediately — NO EXCEPTIONS.**
+
+After the fullscreen regression (PR #128 merged without browser E2E and broke prod), we are enforcing:
+
+1. **Every PR that touches dashboard UI MUST have browser E2E screenshots** showing the feature working in Chrome at http://localhost:7891
+2. **The Architect will NOT merge any PR** without seeing E2E screenshots in the PR description or completion message
+3. **If the dev daemon can't be restarted** (live session running), the PR MUST WAIT — do not accept "unit tests are sufficient" for UI changes
+4. **E2E test plan must be reviewed** by the Tester before execution — not just the code
+5. **Fullscreen, scroll, navigation, and layout changes** require EXTRA verification: test in both normal and fullscreen modes, both themes, mobile viewport
+
+**The tester's E2E workflow:**
+
+1. Write E2E test plan
+2. Get plan reviewed by Reviewer
+3. Execute plan in Chrome at http://localhost:7891
+4. Take screenshots at every step
+5. Include screenshots in completion message
+6. Only then can the PR be merged
+
 ---
 
 ## 🔄 Git Workflow
