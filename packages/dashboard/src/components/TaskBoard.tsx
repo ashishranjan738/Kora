@@ -1172,7 +1172,22 @@ function AddTaskModal({
           value={newDueDate ? new Date(newDueDate) : null}
           onChange={handleDateChange(setNewDueDate)}
           clearable
-          styles={inputStyles}
+          popoverProps={{
+            styles: {
+              dropdown: {
+                backgroundColor: "var(--bg-secondary)",
+                borderColor: "var(--border-color)",
+              },
+            },
+          }}
+          styles={{
+            ...inputStyles,
+            calendarHeader: { backgroundColor: "var(--bg-secondary)" },
+            calendarHeaderControl: { color: "var(--text-primary)" },
+            calendarHeaderLevel: { color: "var(--text-primary)" },
+            weekday: { color: "var(--text-muted)" },
+            day: { color: "var(--text-primary)" },
+          }}
         />
 
         {incompleteTasks.length > 0 && (
@@ -1618,12 +1633,25 @@ function TaskDetailModal({
               onChange={handleDateChange((v) => handleDueDateChange(v))}
               clearable
               size="sm"
+              popoverProps={{
+                styles: {
+                  dropdown: {
+                    backgroundColor: "var(--bg-secondary)",
+                    borderColor: "var(--border-color)",
+                  },
+                },
+              }}
               styles={{
                 input: {
                   backgroundColor: "var(--bg-tertiary)",
                   borderColor: "var(--border-color)",
                   color: "var(--text-primary)",
                 },
+                calendarHeader: { backgroundColor: "var(--bg-secondary)" },
+                calendarHeaderControl: { color: "var(--text-primary)" },
+                calendarHeaderLevel: { color: "var(--text-primary)" },
+                weekday: { color: "var(--text-muted)" },
+                day: { color: "var(--text-primary)" },
               }}
             />
           </Box>
