@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useApi } from "../../hooks/useApi";
 import { useWebSocket } from "../../hooks/useWebSocket";
+import { useDebounce } from "../../hooks/useDebounce";
 import { TimelineFilters, type EventFilter, type DensityMode } from "./TimelineFilters";
 import { TimelineEvent, type TimelineEventData } from "./TimelineEvent";
 import { DateDivider, getDateLabel, getDateKey } from "./DateDivider";
@@ -17,10 +18,10 @@ interface TimelineViewProps {
 // Event type filter groups
 const FILTER_GROUPS: Record<EventFilter, string[] | null> = {
   all: null,
-  agents: ["agent-spawned", "agent-removed", "agent-crashed", "agent-restarted"],
-  messages: ["message-sent"],
+  agents: ["agent-spawned", "agent-removed", "agent-crashed", "agent-restarted", "agent-status-changed"],
+  messages: ["message-sent", "message-received"],
   tasks: ["task-created", "task-updated", "task-deleted"],
-  system: ["session-created", "session-paused", "session-resumed", "session-stopped"],
+  system: ["session-created", "session-paused", "session-resumed", "session-stopped", "user-interaction", "cost-threshold-reached"],
 };
 
 export function TimelineView({
@@ -33,6 +34,8 @@ export function TimelineView({
   const api = useApi();
   const [events, setEvents] = useState<TimelineEventData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [filter, setFilter] = useState<EventFilter>("all");
   const [density, setDensity] = useState<DensityMode>("normal");
   const [search, setSearch] = useState("");
@@ -42,43 +45,119 @@ export function TimelineView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastEventCountRef = useRef(0);
 
+  // Debounce search to avoid excessive filtering
+  const debouncedSearch = useDebounce(search, 300);
+
   // Agent list for filter dropdown
   const agentOptions = useMemo(
     () => agents.map((a) => ({ id: a.id, name: a.config?.name || a.name || a.id })),
     [agents]
   );
 
-  // Fetch events
-  const fetchEvents = useCallback(async () => {
+  // Fetch events with filters
+  const fetchEvents = useCallback(async (append = false) => {
+    if (append) {
+      setLoadingMore(true);
+    }
+
     try {
-      const data = await api.getEvents(sessionId, 200);
-      const sorted = (data.events || []).sort(
+      // Build filter options
+      const options: any = {
+        limit: 50,
+      };
+
+      // Add type filter
+      const allowedTypes = FILTER_GROUPS[filter];
+      if (allowedTypes) {
+        options.types = allowedTypes;
+      }
+
+      // Add agent filter (can be multiple agents)
+      if (agentFilter) {
+        const agentIds = agentFilter.split(',').filter(Boolean);
+        if (agentIds.length > 0) {
+          // Backend expects single agentId, so we'll handle multiple on frontend
+          // If only one agent selected, pass to backend for efficiency
+          if (agentIds.length === 1) {
+            options.agentId = agentIds[0];
+          }
+        }
+      }
+
+      // Add search filter (use debounced value)
+      if (debouncedSearch.trim()) {
+        options.search = debouncedSearch.trim();
+      }
+
+      // Add before cursor for pagination
+      if (append && events.length > 0) {
+        const oldestEvent = events[events.length - 1];
+        options.before = oldestEvent.timestamp;
+      }
+
+      const data = await api.getEvents(sessionId, options);
+      const newEvents = (data.events || []).sort(
         (a: TimelineEventData, b: TimelineEventData) =>
           new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
       );
-      setEvents(sorted);
 
-      // Track new events for banner
-      if (lastEventCountRef.current > 0 && sorted.length > lastEventCountRef.current) {
-        setNewEventCount((prev) => prev + (sorted.length - lastEventCountRef.current));
+      // Check if we have more events to load
+      if (newEvents.length < 50) {
+        setHasMore(false);
       }
-      lastEventCountRef.current = sorted.length;
+
+      if (append) {
+        setEvents((prev) => [...prev, ...newEvents]);
+      } else {
+        setEvents(newEvents);
+        setHasMore(newEvents.length >= 50); // Reset hasMore on fresh fetch
+        // Track new events for banner
+        if (lastEventCountRef.current > 0 && newEvents.length > lastEventCountRef.current) {
+          setNewEventCount((prev) => prev + (newEvents.length - lastEventCountRef.current));
+        }
+        lastEventCountRef.current = newEvents.length;
+      }
     } catch (err) {
       console.debug("[timeline] Failed to fetch events:", err);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionId, filter, agentFilter, debouncedSearch, events, api]);
+
+  // Load more events (pagination)
+  const loadMore = useCallback(() => {
+    if (!hasMore || loading || loadingMore) return;
+    fetchEvents(true);
+  }, [hasMore, loading, loadingMore, fetchEvents]);
 
   // Initial fetch
   useEffect(() => {
     setLoading(true);
-    fetchEvents();
-  }, [sessionId, fetchEvents]);
+    setHasMore(true); // Reset pagination state on filter change
+    fetchEvents(false);
+  }, [sessionId, filter, agentFilter, debouncedSearch]); // Re-fetch when filters change
+
+  // Scroll detection for pagination
+  useEffect(() => {
+    const scrollElement = scrollRef.current;
+    if (!scrollElement) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = scrollElement;
+      // Trigger load more when scrolled within 300px of bottom
+      if (scrollHeight - scrollTop - clientHeight < 300 && hasMore && !loadingMore) {
+        loadMore();
+      }
+    };
+
+    scrollElement.addEventListener('scroll', handleScroll);
+    return () => scrollElement.removeEventListener('scroll', handleScroll);
+  }, [hasMore, loadingMore, loadMore]);
 
   // Polling (slower when not in live mode)
   useEffect(() => {
-    const interval = setInterval(fetchEvents, liveMode ? 3000 : 15000);
+    const interval = setInterval(() => fetchEvents(false), liveMode ? 3000 : 15000);
     return () => clearInterval(interval);
   }, [fetchEvents, liveMode]);
 
@@ -104,21 +183,24 @@ export function TimelineView({
       result = result.filter((evt) => allowedTypes.includes(evt.type));
     }
 
-    // Agent filter
+    // Agent filter (supports multiple agents)
     if (agentFilter) {
-      result = result.filter((evt) => {
-        const data = (evt.data || {}) as Record<string, string | undefined>;
-        return (
-          data.agentId === agentFilter ||
-          data.from === agentFilter ||
-          data.to === agentFilter
-        );
-      });
+      const agentIds = agentFilter.split(',').filter(Boolean);
+      if (agentIds.length > 0) {
+        result = result.filter((evt) => {
+          const data = (evt.data || {}) as Record<string, string | undefined>;
+          return agentIds.some(id =>
+            data.agentId === id ||
+            data.from === id ||
+            data.to === id
+          );
+        });
+      }
     }
 
-    // Search filter
-    if (search.trim()) {
-      const q = search.toLowerCase();
+    // Search filter (debounced to avoid excessive filtering)
+    if (debouncedSearch.trim()) {
+      const q = debouncedSearch.toLowerCase();
       result = result.filter((evt) => {
         const data = (evt.data || {}) as Record<string, string | undefined>;
         return (
@@ -134,7 +216,7 @@ export function TimelineView({
     }
 
     return result;
-  }, [events, filter, agentFilter, search]);
+  }, [events, filter, agentFilter, debouncedSearch]);
 
   // Group events by date
   const groupedEvents = useMemo(() => {
@@ -213,7 +295,7 @@ export function TimelineView({
       )}
 
       {!loading && filteredEvents.length > 0 && (
-        <div ref={scrollRef} className={`tl-timeline ${densityClass}`}>
+        <div ref={scrollRef} className={`tl-timeline ${densityClass}`} style={{ maxHeight: '70vh', overflowY: 'auto' }}>
           {groupedEvents.map((group) => (
             <div key={group.dateKey}>
               <DateDivider label={group.label} />
@@ -231,6 +313,21 @@ export function TimelineView({
               </div>
             </div>
           ))}
+
+          {/* Loading more indicator */}
+          {loadingMore && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, justifyContent: "center" }}>
+              <Loader size="sm" />
+              <Text size="sm" c="dimmed">Loading more events...</Text>
+            </div>
+          )}
+
+          {/* No more events indicator */}
+          {!hasMore && events.length > 0 && (
+            <div style={{ textAlign: "center", padding: 16 }}>
+              <Text size="sm" c="dimmed">No more events to load</Text>
+            </div>
+          )}
         </div>
       )}
     </div>

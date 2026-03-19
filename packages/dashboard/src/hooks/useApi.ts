@@ -67,10 +67,29 @@ export function useApi() {
         `/sessions/${sid}/agents/${aid}/output?lines=${lines || 100}`
       ),
     getProviders: () => apiFetch<{ providers: any[] }>("/providers"),
-    getEvents: (sid: string, limit?: number) =>
-      apiFetch<{ events: any[] }>(
-        `/sessions/${sid}/events?limit=${limit || 50}`
-      ),
+    getEvents: (sid: string, options?: {
+      limit?: number;
+      types?: string[];
+      agentId?: string;
+      search?: string;
+      before?: string;
+    }) => {
+      const params = new URLSearchParams();
+      params.set('limit', String(options?.limit || 50));
+      if (options?.types && options.types.length > 0) {
+        params.set('types', options.types.join(','));
+      }
+      if (options?.agentId) {
+        params.set('agentId', options.agentId);
+      }
+      if (options?.search) {
+        params.set('search', options.search);
+      }
+      if (options?.before) {
+        params.set('before', options.before);
+      }
+      return apiFetch<{ events: any[] }>(`/sessions/${sid}/events?${params.toString()}`);
+    },
     getEventsByTypes: (sid: string, types: string[], limit?: number) =>
       apiFetch<{ events: any[] }>(
         `/sessions/${sid}/events?types=${types.join(",")}&limit=${limit || 1000}`

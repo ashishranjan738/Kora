@@ -24,7 +24,9 @@ const EVENT_CONFIG: Record<string, { color: string; bulletClass: string; label: 
   "agent-removed": { color: "gray", bulletClass: "gray", label: "Removed" },
   "agent-crashed": { color: "red", bulletClass: "red", label: "Crashed" },
   "agent-restarted": { color: "yellow", bulletClass: "yellow", label: "Restarted" },
+  "agent-status-changed": { color: "gray", bulletClass: "gray", label: "Status Changed" },
   "message-sent": { color: "blue", bulletClass: "blue", label: "Message" },
+  "message-received": { color: "blue", bulletClass: "blue", label: "Message" },
   "session-created": { color: "green", bulletClass: "green", label: "Session Created" },
   "session-paused": { color: "yellow", bulletClass: "yellow", label: "Paused" },
   "session-resumed": { color: "green", bulletClass: "green", label: "Resumed" },
@@ -32,6 +34,8 @@ const EVENT_CONFIG: Record<string, { color: string; bulletClass: string; label: 
   "task-created": { color: "grape", bulletClass: "purple", label: "Task Created" },
   "task-updated": { color: "grape", bulletClass: "purple", label: "Task Updated" },
   "task-deleted": { color: "gray", bulletClass: "gray", label: "Task Deleted" },
+  "user-interaction": { color: "yellow", bulletClass: "yellow", label: "User Input" },
+  "cost-threshold-reached": { color: "yellow", bulletClass: "yellow", label: "Cost Alert" },
 };
 
 // Message subtype styling
@@ -69,7 +73,10 @@ function getTitle(event: TimelineEventData): string {
       return `${data.name || data.agentId || "Agent"} removed`;
     case "agent-restarted":
       return `${data.name || data.agentId || "Agent"} restarted`;
-    case "message-sent": {
+    case "agent-status-changed":
+      return `${data.name || data.agentId || "Agent"} → ${data.newStatus || data.status || "unknown"}`;
+    case "message-sent":
+    case "message-received": {
       const from = data.fromName || data.from || "?";
       const to = data.toName || data.to || "?";
       const msgType = data.messageType || "text";
@@ -78,6 +85,10 @@ function getTitle(event: TimelineEventData): string {
       }
       return `${from} \u2192 ${to}`;
     }
+    case "user-interaction":
+      return `User → ${data.agentName || data.agentId || "Agent"}`;
+    case "cost-threshold-reached":
+      return `Cost alert: $${data.amount || data.cost || "0.00"}`;
     case "task-created":
     case "task-updated":
     case "task-deleted":
@@ -108,8 +119,8 @@ function getSubtitle(event: TimelineEventData): string | null {
 }
 
 function getMessageContent(event: TimelineEventData): string | null {
-  if (event.type !== "message-sent") return null;
-  return ((event.data as any)?.content as string) || null;
+  if (event.type !== "message-sent" && event.type !== "message-received" && event.type !== "user-interaction") return null;
+  return ((event.data as any)?.content as string) || ((event.data as any)?.message as string) || null;
 }
 
 export function TimelineEvent({
