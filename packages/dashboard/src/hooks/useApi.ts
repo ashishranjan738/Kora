@@ -146,6 +146,8 @@ export function useApi() {
       apiFetch<{ opened: boolean; path: string }>(`/sessions/${sid}/open-vscode`, { method: "POST" }),
     openTerminal: (sid: string) =>
       apiFetch<{ id: string; tmuxSession: string; projectPath: string }>(`/sessions/${sid}/terminal`, { method: "POST" }),
+    getTerminals: (sid: string) =>
+      apiFetch<{ terminals: any[] }>(`/sessions/${sid}/terminals`),
     listFiles: (sid: string, subpath?: string) =>
       apiFetch<{ items: any[]; currentPath: string }>(`/sessions/${sid}/files?path=${encodeURIComponent(subpath || "")}`),
     readFile: (sid: string, filePath: string) =>

@@ -9,6 +9,7 @@ import { Mosaic, MosaicWindow, MosaicNode, MosaicPath, MosaicWindowProps, getLea
 import "react-mosaic-component/react-mosaic-component.css";
 import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
 import { Indicator, Tooltip } from "@mantine/core";
+import { useTerminalSessionStore } from "../stores/terminalSessionStore";
 
 const PANEL_BORDER_COLORS = [
   "#58a6ff",
@@ -137,8 +138,9 @@ export function MultiAgentView() {
   // Fullscreen state — CSS position:fixed on tile content (transform removed from terminalSlideIn)
   const [fullscreenAgentId, setFullscreenAgentId] = useState<string | null>(null);
 
-  // Plain terminal sessions: termId -> tmuxSession name
-  const [terminalSessions, setTerminalSessions] = useState<Map<string, string>>(new Map());
+  // Terminal sessions from shared Zustand store
+  const addTerminalSession = useTerminalSessionStore((state) => state.addSession);
+  const removeTerminalSession = useTerminalSessionStore((state) => state.removeSession);
 
   // Named layout save/reload
   const [savedLayouts, setSavedLayouts] = useState<Record<string, any>>({});
@@ -239,6 +241,62 @@ export function MultiAgentView() {
       if (toastTimer.current) clearTimeout(toastTimer.current);
     };
   }, []);
+
+  // Fetch existing terminals from server on mount so they appear in the mosaic
+  useEffect(() => {
+    if (!sessionId) return;
+    async function fetchTerminals() {
+      try {
+        const data = await api.getTerminals(sessionId!);
+        const serverTerminals = data?.terminals || [];
+        const serverTerminalIds = new Set(serverTerminals.map((t: any) => t.id));
+
+        // Add all terminal sessions to shared Zustand store
+        serverTerminals.forEach((term: any) => {
+          addTerminalSession({
+            id: term.id,
+            tmuxSession: term.tmuxSession,
+            name: term.name || `Terminal`,
+            type: term.type || "standalone",
+            agentName: term.agentName,
+            createdAt: term.createdAt || new Date().toISOString(),
+          });
+        });
+
+        // Update mosaic: add missing terminal tiles & remove stale ones
+        setMosaicValue((prev) => {
+          if (!prev) return prev;
+          const currentIds = getLeafIds(prev);
+          let updated: MosaicNode<string> | null = prev;
+
+          // Remove stale terminal tiles not on server (but keep agent/editor tiles)
+          const staleTermIds = currentIds.filter(
+            (id) => id.startsWith("term-") && !id.startsWith("term-pending-") && !serverTerminalIds.has(id)
+          );
+          for (const staleId of staleTermIds) {
+            if (updated) updated = removeMosaicLeaf(updated, staleId);
+          }
+
+          // Add terminal tiles from server that aren't in mosaic yet
+          for (const term of serverTerminals) {
+            if (!currentIds.includes(term.id)) {
+              updated = updated
+                ? { type: "split", direction: "row", children: [updated, term.id], splitPercentages: [70, 30] } as any
+                : term.id;
+            }
+          }
+
+          if (updated !== prev) {
+            setTimeout(() => window.dispatchEvent(new Event("resize")), 200);
+          }
+          return updated;
+        });
+      } catch (err) {
+        console.debug("Could not fetch terminals for Command Center:", err);
+      }
+    }
+    fetchTerminals();
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load saved mosaic layout on mount
   useEffect(() => {
@@ -462,10 +520,13 @@ export function MultiAgentView() {
 
     try {
       const result = await api.openTerminal(sessionId);
-      setTerminalSessions((prev) => {
-        const m = new Map(prev);
-        m.set(result.id, result.tmuxSession);
-        return m;
+      // Add to shared Zustand store so other views can see it
+      addTerminalSession({
+        id: result.id,
+        tmuxSession: result.tmuxSession,
+        name: `Terminal`,
+        type: "standalone",
+        createdAt: new Date().toISOString(),
       });
       // Replace temp tile with real terminal
       setMosaicValue((prev) => replaceMosaicLeaf(prev, tempId, result.id));
@@ -477,11 +538,7 @@ export function MultiAgentView() {
   }
 
   function closeTerminal(termId: string) {
-    setTerminalSessions((prev) => {
-      const m = new Map(prev);
-      m.delete(termId);
-      return m;
-    });
+    removeTerminalSession(termId);
     // Remove from mosaic by filtering out the terminal leaf
     setMosaicValue((prev) => {
       if (!prev) return null;
@@ -811,6 +868,7 @@ export function MultiAgentView() {
         )}
       >
         <div
+          className={fullscreenAgentId === agent.id ? "agent-panel-fullscreen" : undefined}
           style={{ display: "flex", flexDirection: "column", height: "100%" }}
           onClick={() => setFocusedPanel(agent.id)}
         >
