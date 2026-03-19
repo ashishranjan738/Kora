@@ -75,11 +75,27 @@ export class MessageQueue {
   private notificationAttempts = new Map<string, number>();
   /** Last notification timestamp per agent (rate limiting) */
   private lastNotificationTime = new Map<string, number>();
+  /** Timestamp when unread messages first appeared for each agent (for time-based escalation) */
+  private firstUnreadTime = new Map<string, number>();
+  /** Track whether architect has been alerted for an agent (avoid repeated alerts) */
+  private architectAlerted = new Set<string>();
   private renotifyInterval: ReturnType<typeof setTimeout> | null = null;
   /** Callback to get unread count for an agent — set by orchestrator */
   private getUnreadCountFn: ((agentId: string) => Promise<number>) | null = null;
   /** Callback to get agent tmux session — set by orchestrator */
   private getAgentTmuxSessionFn: ((agentId: string) => string | null) | null = null;
+  /** Callback to alert orchestrator/architect when messages go unread too long */
+  private onEscalationFn: ((agentId: string, unreadCount: number, elapsedMs: number) => void) | null = null;
+
+  /** Configurable escalation thresholds (milliseconds) */
+  private escalationThresholds = {
+    /** First re-notification with ⚠️ prefix */
+    warning: 30_000,
+    /** Urgent re-notification with 🔴 prefix */
+    urgent: 60_000,
+    /** Alert architect / log critical warning */
+    critical: 120_000,
+  };
 
   // ─── Tier 3: Delivery tracking ──────────────────────────────
   private database: any | null = null;
@@ -101,16 +117,24 @@ export class MessageQueue {
     this.startMetricsBroadcast();
   }
 
-  /** Start periodic metrics broadcast (every 10 seconds) */
+  /** Start periodic metrics broadcast with dynamic interval based on agent count */
   private startMetricsBroadcast(): void {
     if (this.metricsInterval || !this.broadcastFn) return;
+    this.scheduleMetricsBroadcast();
+  }
 
-    this.metricsInterval = setInterval(() => {
+  /** Schedule the next metrics broadcast with adaptive interval */
+  private scheduleMetricsBroadcast(): void {
+    // Dynamic interval: scale up for large sessions to reduce WS event volume
+    const agentCount = this.mcpAgents.size;
+    const interval = agentCount > 20 ? 60_000 : agentCount > 10 ? 30_000 : 10_000;
+
+    this.metricsInterval = setTimeout(() => {
       try {
-        // Broadcast metrics for all agents with messages
+        // Only broadcast metrics for agents that have actual message activity
         for (const agentId of this.mcpAgents) {
           const metrics = this.getDeliveryMetrics(agentId);
-          if (metrics && this.broadcastFn) {
+          if (metrics && metrics.totalMessages > 0 && this.broadcastFn) {
             this.broadcastFn({
               event: "delivery-metrics-updated",
               agentId,
@@ -120,15 +144,20 @@ export class MessageQueue {
           }
         }
       } catch (err) {
-        logger.debug({ err }, "[MessageQueue] Metrics broadcast error");
+        logger.warn({ err }, "[MessageQueue] Metrics broadcast error");
       }
-    }, 10_000); // Every 10 seconds
+
+      // Reschedule if not stopped
+      if (this.metricsInterval) {
+        this.scheduleMetricsBroadcast();
+      }
+    }, interval);
   }
 
   /** Stop periodic metrics broadcast */
   private stopMetricsBroadcast(): void {
     if (this.metricsInterval) {
-      clearInterval(this.metricsInterval);
+      clearTimeout(this.metricsInterval);
       this.metricsInterval = null;
     }
   }
@@ -488,7 +517,7 @@ export class MessageQueue {
           priority,
         });
       } catch (err) {
-        logger.debug({ err }, "[MessageQueue] Failed to track delivery in DB");
+        logger.warn({ err, agentId, messageId }, "[MessageQueue] Delivery tracking failed — sent status not recorded");
       }
     }
 
@@ -520,7 +549,7 @@ export class MessageQueue {
           try {
             this.database.updateMessageDeliveryStatus(messageId, agentId, 'delivered');
           } catch (err) {
-            logger.debug({ err }, "[MessageQueue] Failed to update delivery status in DB");
+            logger.warn({ err, agentId: msg.agentId, messageId }, "[MessageQueue] Delivery tracking failed — delivered status not recorded");
           }
         }
 
@@ -702,13 +731,15 @@ export class MessageQueue {
     this.mcpAgents.add(agentId);
   }
 
-  /** Remove all queued messages for an agent */
+  /** Remove all queued messages and escalation state for an agent */
   removeAgent(agentId: string): void {
     this.queues.delete(agentId);
     this.mcpAgents.delete(agentId);
     this.agentRoles.delete(agentId);
     this.notificationAttempts.delete(agentId);
     this.lastNotificationTime.delete(agentId);
+    this.firstUnreadTime.delete(agentId);
+    this.architectAlerted.delete(agentId);
   }
 
   /** Get queue depth for an agent (for monitoring) */
@@ -744,15 +775,24 @@ export class MessageQueue {
   setRenotifyCallbacks(
     getUnreadCount: (agentId: string) => Promise<number>,
     getAgentTmuxSession: (agentId: string) => string | null,
+    onEscalation?: (agentId: string, unreadCount: number, elapsedMs: number) => void,
   ): void {
     this.getUnreadCountFn = getUnreadCount;
     this.getAgentTmuxSessionFn = getAgentTmuxSession;
+    if (onEscalation) this.onEscalationFn = onEscalation;
+  }
+
+  /** Configure escalation thresholds (in milliseconds). Partial updates supported. */
+  setEscalationThresholds(thresholds: Partial<typeof this.escalationThresholds>): void {
+    Object.assign(this.escalationThresholds, thresholds);
   }
 
   /** Reset notification attempts for an agent (called when agent reads messages) */
   resetNotificationAttempts(agentId: string): void {
     this.notificationAttempts.delete(agentId);
     this.lastNotificationTime.delete(agentId);
+    this.firstUnreadTime.delete(agentId);
+    this.architectAlerted.delete(agentId);
   }
 
   /** Get notification attempts count for an agent */
@@ -793,42 +833,88 @@ export class MessageQueue {
     }
   }
 
-  /** Process re-notifications for all MCP agents with unread messages */
+  /** Process re-notifications for all MCP agents with unread messages.
+   *  Uses time-based escalation: normal → ⚠️ (30s) → 🔴 (60s) → architect alert (120s) */
   private async processRenotifications(): Promise<void> {
     if (!this.getUnreadCountFn || !this.getAgentTmuxSessionFn) return;
+
+    const now = Date.now();
 
     for (const agentId of this.mcpAgents) {
       try {
         const unread = await this.getUnreadCountFn(agentId);
         if (unread === 0) {
-          // Clear attempts when no unread messages
+          // Clear all escalation state when no unread messages
           this.notificationAttempts.delete(agentId);
           this.lastNotificationTime.delete(agentId);
+          this.firstUnreadTime.delete(agentId);
+          this.architectAlerted.delete(agentId);
           continue;
+        }
+
+        // Track when unread messages first appeared
+        if (!this.firstUnreadTime.has(agentId)) {
+          this.firstUnreadTime.set(agentId, now);
         }
 
         // Rate limit: skip if last notification was <10s ago
         const lastTime = this.lastNotificationTime.get(agentId) || 0;
-        if (Date.now() - lastTime < 10_000) continue;
+        if (now - lastTime < 10_000) continue;
 
         const tmuxSession = this.getAgentTmuxSessionFn(agentId);
         if (!tmuxSession) continue;
 
-        // Deliver re-notifications immediately — they are small non-disruptive text.
+        const elapsedMs = now - this.firstUnreadTime.get(agentId)!;
         const attempts = this.notificationAttempts.get(agentId) || 0;
         let notification: string;
 
-        if (attempts === 0) {
+        if (elapsedMs < this.escalationThresholds.warning) {
+          // Tier 0: Normal notification (< 30s)
           notification = `[You have ${unread} unread message(s). Run check_messages to read.]`;
-        } else if (attempts < 3) {
-          notification = `\n⚠️ ${unread} UNREAD MESSAGE(S) waiting. Please run check_messages.\n`;
+        } else if (elapsedMs < this.escalationThresholds.urgent) {
+          // Tier 1: Warning escalation (30s - 60s)
+          notification = `\n⚠️ ${unread} UNREAD MESSAGE(S) waiting for ${Math.round(elapsedMs / 1000)}s. Please run check_messages.\n`;
+        } else if (elapsedMs < this.escalationThresholds.critical) {
+          // Tier 2: Urgent escalation (60s - 120s)
+          notification = `\n🔴 URGENT: ${unread} unread message(s) waiting ${Math.round(elapsedMs / 1000)}s! Run check_messages NOW.\n`;
         } else {
-          notification = `\n🔴 URGENT: ${unread} unread message(s)! Run check_messages NOW.\n`;
+          // Tier 3: Critical — alert architect (120s+)
+          notification = `\n🚨 CRITICAL: ${unread} unread message(s) waiting ${Math.round(elapsedMs / 1000)}s! Run check_messages IMMEDIATELY.\n`;
+
+          // Alert architect once per escalation cycle
+          if (!this.architectAlerted.has(agentId)) {
+            this.architectAlerted.add(agentId);
+            logger.warn(
+              { agentId, unreadCount: unread, elapsedMs, attempts },
+              "[MessageQueue] Agent has not read messages for >120s — escalating to architect",
+            );
+
+            // Notify orchestrator/architect via callback
+            if (this.onEscalationFn) {
+              try {
+                this.onEscalationFn(agentId, unread, elapsedMs);
+              } catch (err) {
+                logger.warn({ err, agentId }, "[MessageQueue] Escalation callback failed");
+              }
+            }
+
+            // Broadcast escalation event for dashboard
+            if (this.broadcastFn) {
+              this.broadcastFn({
+                event: "message-escalation",
+                agentId,
+                unreadCount: unread,
+                elapsedMs,
+                tier: "critical",
+                timestamp: now,
+              });
+            }
+          }
         }
 
         await this.tmux.sendKeys(tmuxSession, notification, { literal: false });
         this.notificationAttempts.set(agentId, attempts + 1);
-        this.lastNotificationTime.set(agentId, Date.now());
+        this.lastNotificationTime.set(agentId, now);
       } catch {
         // Agent may be dead — ignore
       }

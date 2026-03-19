@@ -86,6 +86,26 @@ export class Orchestrator extends EventEmitter {
         const agent = this.agentManager.getAgent(agentId);
         return agent?.config.tmuxSession || null;
       },
+      // Escalation callback: log event when agent ignores messages for >120s
+      (agentId: string, unreadCount: number, elapsedMs: number) => {
+        const agent = this.agentManager.getAgent(agentId);
+        const agentName = agent?.config.name || agentId;
+        logger.warn(
+          { agentId, agentName, unreadCount, elapsedMs },
+          `[Orchestrator] Agent ${agentName} has ${unreadCount} unread message(s) for ${Math.round(elapsedMs / 1000)}s — escalating`,
+        );
+        this.eventLog.log({
+          sessionId: config.sessionId,
+          type: "message-escalation" as any,
+          data: {
+            agentId,
+            agentName,
+            unreadCount,
+            elapsedMs,
+            message: `Agent ${agentName} has ${unreadCount} unread message(s) for ${Math.round(elapsedMs / 1000)}s`,
+          },
+        }).catch(() => {});
+      },
     );
 
     // Wire delivery tracking (Tier 3 event routing)
