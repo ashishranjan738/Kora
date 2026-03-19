@@ -79,28 +79,42 @@ export function parseYAML(yamlContent: string): ValidationResult {
   }
 }
 
+// Valid priority values
+const VALID_PRIORITIES = ["P0", "P1", "P2", "P3"] as const;
+
 /**
  * Validate playbook schema
  */
-export function validatePlaybook(raw: any): ValidationResult {
+export function validatePlaybook(raw: unknown): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
+  // Type guard
+  if (!raw || typeof raw !== "object") {
+    return {
+      valid: false,
+      errors: ["Playbook must be an object"],
+      warnings: [],
+    };
+  }
+
+  const playbook = raw as any; // Cast after type guard for convenience
+
   // Required fields
-  if (!raw.name || typeof raw.name !== "string" || raw.name.trim() === "") {
+  if (!playbook.name || typeof playbook.name !== "string" || playbook.name.trim() === "") {
     errors.push("name is required and must be a non-empty string");
   }
 
-  if (!raw.agents || !Array.isArray(raw.agents) || raw.agents.length === 0) {
+  if (!playbook.agents || !Array.isArray(playbook.agents) || playbook.agents.length === 0) {
     errors.push("at least one agent is required");
   }
 
   // Agent validation
-  if (Array.isArray(raw.agents)) {
+  if (Array.isArray(playbook.agents)) {
     const agentNames = new Set<string>();
 
-    for (let i = 0; i < raw.agents.length; i++) {
-      const agent = raw.agents[i];
+    for (let i = 0; i < playbook.agents.length; i++) {
+      const agent = playbook.agents[i];
       const prefix = `agents[${i}]`;
 
       if (!agent.name || typeof agent.name !== "string") {
@@ -119,7 +133,10 @@ export function validatePlaybook(raw: any): ValidationResult {
         errors.push(`${prefix} (${agent.name}): role must be "master" or "worker", got "${agent.role}"`);
       }
 
-      if (!agent.model && !raw.defaults?.model) {
+      const hasAgentModel = agent.model && typeof agent.model === "string" && agent.model.trim() !== "";
+      const hasDefaultModel = playbook.defaults?.model && typeof playbook.defaults.model === "string" && playbook.defaults.model.trim() !== "";
+
+      if (!hasAgentModel && !hasDefaultModel) {
         errors.push(`${prefix} (${agent.name}): model required (no default model set)`);
       }
 
@@ -135,7 +152,7 @@ export function validatePlaybook(raw: any): ValidationResult {
     }
 
     // Exactly one master required
-    const masters = raw.agents.filter((a: any) => a.role === "master");
+    const masters = playbook.agents.filter((a: any) => a.role === "master");
     if (masters.length === 0) {
       errors.push("at least one master agent is required");
     }
@@ -145,21 +162,21 @@ export function validatePlaybook(raw: any): ValidationResult {
   }
 
   // Validate defaults if present
-  if (raw.defaults) {
-    if (raw.defaults.worktreeMode && !["isolated", "shared"].includes(raw.defaults.worktreeMode)) {
-      errors.push(`defaults.worktreeMode must be "isolated" or "shared", got "${raw.defaults.worktreeMode}"`);
+  if (playbook.defaults) {
+    if (playbook.defaults.worktreeMode && !["isolated", "shared"].includes(playbook.defaults.worktreeMode)) {
+      errors.push(`defaults.worktreeMode must be "isolated" or "shared", got "${playbook.defaults.worktreeMode}"`);
     }
-    if (raw.defaults.messagingMode && !["mcp", "acknowledge"].includes(raw.defaults.messagingMode)) {
-      errors.push(`defaults.messagingMode must be "mcp" or "acknowledge", got "${raw.defaults.messagingMode}"`);
+    if (playbook.defaults.messagingMode && !["mcp", "acknowledge"].includes(playbook.defaults.messagingMode)) {
+      errors.push(`defaults.messagingMode must be "mcp" or "acknowledge", got "${playbook.defaults.messagingMode}"`);
     }
   }
 
   // Validate variables if present
-  if (raw.variables) {
-    if (typeof raw.variables !== "object") {
+  if (playbook.variables) {
+    if (typeof playbook.variables !== "object") {
       errors.push("variables must be an object");
     } else {
-      for (const [key, def] of Object.entries(raw.variables)) {
+      for (const [key, def] of Object.entries(playbook.variables)) {
         if (typeof def !== "object" || def === null) {
           errors.push(`variables.${key}: must be an object with description/default/options`);
         } else {
@@ -173,19 +190,19 @@ export function validatePlaybook(raw: any): ValidationResult {
   }
 
   // Validate tasks if present
-  if (raw.tasks) {
-    if (!Array.isArray(raw.tasks)) {
+  if (playbook.tasks) {
+    if (!Array.isArray(playbook.tasks)) {
       errors.push("tasks must be an array");
     } else {
-      for (let i = 0; i < raw.tasks.length; i++) {
-        const task = raw.tasks[i];
+      for (let i = 0; i < playbook.tasks.length; i++) {
+        const task = playbook.tasks[i];
         const prefix = `tasks[${i}]`;
 
         if (!task.title || typeof task.title !== "string") {
           errors.push(`${prefix}: title is required and must be a string`);
         }
 
-        if (task.assignedTo && raw.agents && !raw.agents.some((a: any) => a.name === task.assignedTo)) {
+        if (task.assignedTo && playbook.agents && !playbook.agents.some((a: any) => a.name === task.assignedTo)) {
           warnings.push(`${prefix}: assignedTo "${task.assignedTo}" not found in agents`);
         }
 
@@ -193,16 +210,18 @@ export function validatePlaybook(raw: any): ValidationResult {
           errors.push(`${prefix}: dependencies must be an array`);
         }
 
-        if (task.priority && !["P0", "P1", "P2", "P3"].includes(task.priority)) {
-          errors.push(`${prefix}: priority must be one of P0, P1, P2, P3, got "${task.priority}"`);
+        if (task.priority && !VALID_PRIORITIES.includes(task.priority)) {
+          errors.push(`${prefix}: priority must be one of ${VALID_PRIORITIES.join(", ")}, got "${task.priority}"`);
         }
       }
     }
   }
 
-  // Check for undeclared variable references
-  const declaredVars = new Set(Object.keys(raw.variables || {}));
-  const usedVars = findTemplateVars(JSON.stringify(raw.agents || []));
+  // Check for undeclared variable references in agents and tasks
+  const declaredVars = new Set(Object.keys(playbook.variables || {}));
+  const agentVars = findTemplateVars(JSON.stringify(playbook.agents || []));
+  const taskVars = findTemplateVars(JSON.stringify(playbook.tasks || []));
+  const usedVars = new Set([...agentVars, ...taskVars]);
   for (const v of usedVars) {
     if (!declaredVars.has(v)) {
       warnings.push(`variable {{${v}}} used but not declared in variables`);
@@ -213,16 +232,17 @@ export function validatePlaybook(raw: any): ValidationResult {
     valid: errors.length === 0,
     errors,
     warnings,
-    parsed: raw,
+    parsed: playbook,
   };
 }
 
 /**
  * Find all {{variable}} references in a string
+ * Supports alphanumeric, underscore, and kebab-case (hyphens)
  */
 function findTemplateVars(text: string): Set<string> {
   const vars = new Set<string>();
-  const regex = /\{\{(\w+)\}\}/g;
+  const regex = /\{\{([\w-]+)\}\}/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
     vars.add(match[1]);

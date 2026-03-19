@@ -1680,24 +1680,34 @@ export function createApiRouter(deps: {
         return;
       }
 
-      // Check for duplicate name
+      // Check for duplicate name (advisory check - UNIQUE constraint is the source of truth)
       const existing = playbookDb.getPlaybookByName(validation.parsed.name);
       if (existing) {
         res.status(409).json({ error: `Playbook with name "${validation.parsed.name}" already exists` });
         return;
       }
 
-      // Save to database
+      // Save to database with UNIQUE constraint protection
       const id = randomUUID();
       const now = new Date().toISOString();
-      playbookDb.insertPlaybook({
-        id,
-        name: validation.parsed.name,
-        description: validation.parsed.description || "",
-        yamlContent,
-        createdAt: now,
-        updatedAt: now,
-      });
+      try {
+        playbookDb.insertPlaybook({
+          id,
+          name: validation.parsed.name,
+          description: validation.parsed.description || "",
+          yamlContent,
+          createdAt: now,
+          updatedAt: now,
+        });
+      } catch (insertErr) {
+        // Handle SQLite UNIQUE constraint violation (race condition)
+        const errMsg = insertErr instanceof Error ? insertErr.message : String(insertErr);
+        if (errMsg.includes("UNIQUE") || errMsg.includes("unique")) {
+          res.status(409).json({ error: `Playbook with name "${validation.parsed.name}" already exists` });
+          return;
+        }
+        throw insertErr; // Re-throw other errors
+      }
 
       const saved = playbookDb.getPlaybook(id);
       res.status(201).json({
