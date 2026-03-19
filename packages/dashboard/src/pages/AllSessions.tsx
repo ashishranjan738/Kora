@@ -12,6 +12,7 @@ interface PlaybookAgent {
   model?: string;
   persona?: string;
   initialTask?: string;
+  extraCliArgs?: string[];
 }
 
 interface VariableDefinition {
@@ -244,7 +245,7 @@ export function AllSessions() {
   // Helper: Interpolate variables in text (replaces {{varName}} with values)
   function interpolateVariables(text: string | undefined, vars: Record<string, string>): string | undefined {
     if (!text) return text;
-    return text.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
+    return text.replace(/\{\{([\w-]+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
   }
 
   // Launch playbook
@@ -273,7 +274,7 @@ export function AllSessions() {
             initialTask: interpolateVariables(agent.initialTask, playbookVariables),
             extraCliArgs: agentCliArgsOverrides[i]?.trim()
               ? agentCliArgsOverrides[i].trim().split(/\s+/)
-              : (agent as any).extraCliArgs,
+              : agent.extraCliArgs,
           });
         } catch {
           // continue spawning others if one fails

@@ -2,6 +2,19 @@ import { useState } from "react";
 import { Modal, Button, FileInput, Stack, Text, Alert, Code, Group, Loader } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 
+interface ParsedPlaybookAgent {
+  name: string;
+  role: string;
+  provider?: string;
+  model?: string;
+}
+
+interface ParsedPlaybook {
+  name?: string;
+  description?: string;
+  agents?: ParsedPlaybookAgent[];
+}
+
 interface PlaybookUploadModalProps {
   opened: boolean;
   onClose: () => void;
@@ -13,7 +26,7 @@ export function PlaybookUploadModal({ opened, onClose, onSuccess }: PlaybookUplo
   const [file, setFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [preview, setPreview] = useState<any>(null);
+  const [preview, setPreview] = useState<ParsedPlaybook | null>(null);
   const [error, setError] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
 
@@ -37,7 +50,7 @@ export function PlaybookUploadModal({ opened, onClose, onSuccess }: PlaybookUplo
 
       // Use js-yaml to parse (need to add this dependency)
       const yaml = await import("js-yaml");
-      const parsed = yaml.load(content) as any;
+      const parsed = yaml.load(content) as ParsedPlaybook;
 
       // Basic validation
       const validationErrors: string[] = [];
@@ -49,7 +62,7 @@ export function PlaybookUploadModal({ opened, onClose, onSuccess }: PlaybookUplo
       }
 
       // Check for master agent
-      const masterCount = parsed.agents?.filter((a: any) => a.role === "master").length || 0;
+      const masterCount = parsed.agents?.filter((a) => a.role === "master").length || 0;
       if (masterCount === 0) {
         validationErrors.push("At least one master agent is required");
       } else if (masterCount > 1) {
@@ -187,7 +200,7 @@ export function PlaybookUploadModal({ opened, onClose, onSuccess }: PlaybookUplo
                 <br />
                 <strong>Agents:</strong> {preview.agents?.length || 0}
                 <br />
-                {preview.agents?.map((a: any, i: number) => (
+                {preview.agents?.map((a, i) => (
                   <div key={i} style={{ marginLeft: 16 }}>
                     • {a.name} ({a.role})
                   </div>

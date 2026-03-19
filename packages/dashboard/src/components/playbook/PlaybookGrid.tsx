@@ -2,10 +2,19 @@ import { useState, useMemo } from "react";
 import { Grid, TextInput, Stack, Group, MultiSelect, Text, Loader } from "@mantine/core";
 import { PlaybookCard } from "./PlaybookCard";
 
+interface PlaybookAgent {
+  name: string;
+  role: string;
+  provider?: string;
+  model?: string;
+  persona?: string;
+  initialTask?: string;
+}
+
 interface Playbook {
   name: string;
   description?: string;
-  agents: any[];
+  agents: PlaybookAgent[];
   source?: "builtin" | "global" | "project";
   tags?: string[];
 }
