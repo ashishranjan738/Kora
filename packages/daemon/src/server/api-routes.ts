@@ -967,16 +967,17 @@ export function createApiRouter(deps: {
       const agents = orch.agentManager.listAgents().filter((a) => a.status === "running");
       const results: Array<{ agentId: string; name: string; sent: boolean; error?: string }> = [];
 
+      // Batch enqueue all messages, then flush once (avoids N redundant processQueues calls)
+      const broadcastMsg = `\x1b[1;33m[Broadcast]\x1b[0m: ${body.message}`;
       for (const agent of agents) {
         try {
-          // Use messageQueue-backed relayMessage so broadcast is delivered when agents are ready
-          const broadcastMsg = `\x1b[1;33m[Broadcast]\x1b[0m: ${body.message}`;
-          orch.messageQueue.enqueue(agent.id, agent.config.tmuxSession, broadcastMsg);
+          orch.messageQueue.enqueueBatch(agent.id, agent.config.tmuxSession, broadcastMsg);
           results.push({ agentId: agent.id, name: agent.config.name, sent: true });
         } catch (err) {
           results.push({ agentId: agent.id, name: agent.config.name, sent: false, error: String(err) });
         }
       }
+      orch.messageQueue.flushQueues(); // Single delivery pass for all agents
 
       // Log broadcast event to timeline
       const broadcastSession = sessionManager.getSession(sid);
@@ -2849,14 +2850,16 @@ export function createApiRouter(deps: {
       const agents = orch.agentManager.listAgents().filter((a) => a.status === "running");
       const results: Array<{ agentId: string; name: string; sent: boolean }> = [];
 
+      // Batch enqueue all, then flush once
       for (const agent of agents) {
         try {
-          orch.messageQueue.enqueue(agent.id, agent.config.tmuxSession, broadcastMsg);
+          orch.messageQueue.enqueueBatch(agent.id, agent.config.tmuxSession, broadcastMsg);
           results.push({ agentId: agent.id, name: agent.config.name, sent: true });
         } catch {
           results.push({ agentId: agent.id, name: agent.config.name, sent: false });
         }
       }
+      orch.messageQueue.flushQueues();
 
       // Log event
       const session = sessionManager.getSession(sid);
