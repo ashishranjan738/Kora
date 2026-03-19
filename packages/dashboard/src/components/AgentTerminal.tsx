@@ -91,7 +91,7 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
 
   const showLoading = !connected && !hasData;
 
-  // Live Feed controls
+  // Tail controls
   function handleResumeLiveFeed() {
     const entry = getOrCreateTerminal(sessionId, agentId, resolvedTerminalColors);
     entry.term.scrollToBottom();
@@ -115,7 +115,7 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
     }
   }
 
-  // Determine Live Feed visual state
+  // Determine Tail visual state
   const isFollowing = !scrolledUp && !manuallyPaused;
 
   return (
@@ -177,39 +177,38 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
         transition: "opacity 0.3s ease-in",
       }} />
 
-      {/* Live Feed indicator / button */}
+      {/* Tail indicator / button — top-left, next to connection status */}
       {hasData && (
         <button
           onClick={scrolledUp ? handleResumeLiveFeed : handleToggleManualPause}
           style={{
             position: "absolute",
-            bottom: 12,
-            right: 16,
+            top: 8,
+            left: 12,
             zIndex: 15,
             display: "flex",
             alignItems: "center",
-            gap: 6,
-            padding: "6px 12px",
-            fontSize: 12,
+            gap: 5,
+            padding: "4px 10px",
+            fontSize: 11,
             fontWeight: 500,
             color: isFollowing ? "var(--accent-green)" : "var(--text-primary)",
             background: "var(--bg-tertiary)",
             border: `1px solid ${isFollowing ? "rgba(63, 185, 80, 0.3)" : "var(--border-color)"}`,
-            borderRadius: 16,
+            borderRadius: 12,
             cursor: "pointer",
             backdropFilter: "blur(4px)",
-            boxShadow: isFollowing ? "none" : "0 2px 8px rgba(0,0,0,0.3)",
             transition: "all 0.2s ease",
             opacity: isFollowing ? 0.7 : 1,
           }}
-          title={scrolledUp ? "Jump to bottom and resume Live Feed" : manuallyPaused ? "Resume Live Feed" : "Pause Live Feed"}
+          title={scrolledUp ? "Jump to bottom and resume tailing" : manuallyPaused ? "Resume tailing" : "Pause tailing"}
         >
           {scrolledUp ? (
-            <>{"\u2193"} Live Feed</>
+            <>{"\u2193"} Tail</>
           ) : manuallyPaused ? (
-            <>{"\u23F8"} Live Feed</>
+            <>{"\u23F8"} Paused</>
           ) : (
-            <><span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "var(--accent-green)", display: "inline-block" }} /> Live Feed</>
+            <><span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "var(--accent-green)", display: "inline-block" }} /> Tailing</>
           )}
         </button>
       )}
