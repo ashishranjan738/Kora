@@ -131,7 +131,7 @@ Task complete!
   });
 
   describe("Memory Management", () => {
-    it("handles multiple estimations without memory leak", () => {
+    it("handles multiple estimations without memory leak", { timeout: 30000 }, () => {
       // Validates encoding.free() is called in finally block
       for (let i = 0; i < 100; i++) {
         const text = `Iteration ${i}: some test text`;

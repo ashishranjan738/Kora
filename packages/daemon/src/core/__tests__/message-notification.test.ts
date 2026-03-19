@@ -129,7 +129,7 @@ describe("MessageQueue notification handling", () => {
     );
 
     expect(notificationCall).toBeDefined();
-    expect(notificationCall![2]).toEqual({ literal: false });
+    expect(notificationCall![2]).toEqual({ literal: true });
   });
 
   // Test 5: Task assignment notifications are instant

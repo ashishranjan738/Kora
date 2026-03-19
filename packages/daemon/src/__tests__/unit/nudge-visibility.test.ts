@@ -144,6 +144,9 @@ describe("Nudge Visibility Fixes", () => {
 
       const unread = await messageQueue.nudgeAgent("agent-1", "test-session");
 
+      // nudgeAgent fires deliverDirect as fire-and-forget, wait for microtasks
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       expect(unread).toBe(3); // Mock returns 3
       expect(sendKeysCallArgs.length).toBeGreaterThan(0);
     });
@@ -166,8 +169,12 @@ describe("Nudge Visibility Fixes", () => {
 
       await messageQueue.nudgeAgent("agent-1", "test-session");
 
+      // nudgeAgent fires deliverDirect as fire-and-forget, wait for microtasks
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       const notificationCall = sendKeysCallArgs[sendKeysCallArgs.length - 1];
       // Notification is wrapped by deliverDirect, so check for generic format
+      expect(notificationCall).toBeDefined();
       expect(notificationCall.keys).toContain("message");
       expect(notificationCall.keys).toContain("check_messages");
     });
@@ -218,7 +225,11 @@ describe("Nudge Visibility Fixes", () => {
 
       await messageQueue.nudgeAgent("agent-1", "test-session");
 
+      // nudgeAgent fires deliverDirect as fire-and-forget, wait for microtasks
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       const notificationCall = sendKeysCallArgs[sendKeysCallArgs.length - 1];
+      expect(notificationCall).toBeDefined();
       // The important fix: literal flag should be true for consistent rendering
       expect(notificationCall.options?.literal).toBe(true);
     });
@@ -228,7 +239,11 @@ describe("Nudge Visibility Fixes", () => {
 
       await messageQueue.nudgeAgent("agent-1", "test-session");
 
+      // nudgeAgent fires deliverDirect as fire-and-forget, wait for microtasks
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       const notificationCall = sendKeysCallArgs[sendKeysCallArgs.length - 1];
+      expect(notificationCall).toBeDefined();
       // Notification should tell agent to check messages
       expect(notificationCall.keys).toContain("check_messages");
     });

@@ -237,7 +237,7 @@ describe("OrchestratorStateMachine", () => {
       expect(transitions).toEqual([OrchestratorState.PLANNING]);
     });
 
-    it("should calculate time in current state", () => {
+    it("should calculate time in current state", async () => {
       stateMachine.transition(OrchestratorState.PLANNING, "Start");
 
       // Wait a bit
@@ -245,10 +245,9 @@ describe("OrchestratorStateMachine", () => {
       expect(before).toBeGreaterThanOrEqual(0);
 
       // Should increase over time
-      setTimeout(() => {
-        const after = stateMachine.getTimeInCurrentState();
-        expect(after).toBeGreaterThan(before);
-      }, 10);
+      await new Promise(resolve => setTimeout(resolve, 15));
+      const after = stateMachine.getTimeInCurrentState();
+      expect(after).toBeGreaterThanOrEqual(before);
     });
   });
 

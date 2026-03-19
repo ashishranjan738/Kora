@@ -280,7 +280,11 @@ describe("cleanupOrphanedSessions", () => {
     });
   });
 });
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+// ---------------------------------------------------------------------------
+// Second test suite: HoldptyController killSession cleanup
+// ---------------------------------------------------------------------------
+
 import { HoldptyController } from "../holdpty-controller.js";
 import fs from "fs";
 import os from "os";
