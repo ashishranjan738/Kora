@@ -701,6 +701,7 @@ export function SessionDetail() {
           getPendingForAgent={getPendingForAgent}
           approve={approve}
           reject={reject}
+          onBroadcast={() => setShowBroadcastModal(true)}
         />
       )}
 
@@ -989,6 +990,7 @@ interface AgentsTabProps {
   getPendingForAgent: (agentId: string) => any[];
   approve: (agentId: string, requestId: string) => Promise<void>;
   reject: (agentId: string, requestId: string) => Promise<void>;
+  onBroadcast: () => void;
 }
 
 function AgentsTab({
@@ -1014,6 +1016,7 @@ function AgentsTab({
   getPendingForAgent,
   approve,
   reject,
+  onBroadcast,
 }: AgentsTabProps) {
   const api = useApi();
   const [agentActivities, setAgentActivities] = useState<Record<string, AgentActivity>>({});
@@ -1419,7 +1422,7 @@ function AgentsTab({
       onNudgeAgent={async (agentId) => {
         try { await api.nudgeAgent(sessionId, agentId); } catch {}
       }}
-      onBroadcast={() => setShowBroadcastModal(true)}
+      onBroadcast={onBroadcast}
     />
 
     <SessionCostSummary agents={agents} />
