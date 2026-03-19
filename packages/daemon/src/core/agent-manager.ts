@@ -1,5 +1,5 @@
 import type { AgentConfig, AgentState, AgentRole, AgentPermissions, AgentCost, MessagingMode, WorktreeMode } from "@kora/shared";
-import { AutonomyLevel, DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS, DEFAULT_MAX_RESTARTS, PERSONAS_DIR, GRACEFUL_SHUTDOWN_TIMEOUT_MS, getRuntimeTmuxPrefix, MCP_SERVER_NAME } from "@kora/shared";
+import { AutonomyLevel, DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS, DEFAULT_MAX_RESTARTS, PERSONAS_DIR, GRACEFUL_SHUTDOWN_TIMEOUT_MS, getRuntimeTmuxPrefix, MCP_SERVER_NAME, SPAWN_TIMEOUT_MS, MAX_AGENTS_PER_SESSION } from "@kora/shared";
 import type { CLIProvider } from "@kora/shared";
 import type { IPtyBackend } from "./pty-backend.js";
 import { AgentHealthMonitor } from "./agent-health.js";
@@ -55,6 +55,25 @@ export class AgentManager extends EventEmitter {
 
   /** Spawn a new agent */
   async spawnAgent(options: SpawnAgentOptions): Promise<AgentState> {
+    // 0. Check agent limit
+    const sessionAgents = Array.from(this.agents.values()).filter(
+      (a) => a.config.sessionId === options.sessionId
+    );
+    if (sessionAgents.length >= MAX_AGENTS_PER_SESSION) {
+      throw new Error(`Cannot spawn agent: session ${options.sessionId} has reached maximum of ${MAX_AGENTS_PER_SESSION} agents`);
+    }
+
+    // Wrap spawn logic with timeout
+    const spawnPromise = this._spawnAgentInternal(options);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error(`Agent spawn timeout after ${SPAWN_TIMEOUT_MS}ms`)), SPAWN_TIMEOUT_MS);
+    });
+
+    return Promise.race([spawnPromise, timeoutPromise]);
+  }
+
+  /** Internal spawn logic (extracted for timeout wrapping) */
+  private async _spawnAgentInternal(options: SpawnAgentOptions): Promise<AgentState> {
     // 1. Generate agent ID (slugify name)
     const agentId = slugify(options.name) + "-" + uuidv4().slice(0, 8);
     const isDev = process.env.KORA_DEV === "1";
