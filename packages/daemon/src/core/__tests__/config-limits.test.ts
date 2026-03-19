@@ -92,7 +92,7 @@ describe("MAX_AGENTS_PER_SESSION enforcement", () => {
       model: "test-model",
       workingDirectory: "/tmp/test",
       runtimeDir: "/tmp/test/.kora",
-      messagingMode: "file",
+      messagingMode: "mcp",
       worktreeMode: "shared",
     };
 
@@ -118,7 +118,7 @@ describe("MAX_AGENTS_PER_SESSION enforcement", () => {
       model: "test-model",
       workingDirectory: "/tmp/test",
       runtimeDir: "/tmp/test/.kora",
-      messagingMode: "file",
+      messagingMode: "mcp",
       worktreeMode: "shared",
     };
 
@@ -143,7 +143,7 @@ describe("MAX_AGENTS_PER_SESSION enforcement", () => {
       model: "test-model",
       workingDirectory: "/tmp/test",
       runtimeDir: "/tmp/test/.kora",
-      messagingMode: "file",
+      messagingMode: "mcp",
       worktreeMode: "shared",
     };
 
