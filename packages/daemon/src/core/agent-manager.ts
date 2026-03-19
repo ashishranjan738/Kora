@@ -51,6 +51,8 @@ export class AgentManager extends EventEmitter {
     super();
     // Listen for health events
     this.healthMonitor.on("agent-dead", (agentId) => this.handleAgentCrash(agentId));
+    this.healthMonitor.on("agent-idle", (agentId) => this.emit("agent-idle", agentId));
+    this.healthMonitor.on("agent-working", (agentId) => this.emit("agent-working", agentId));
   }
 
   /** Spawn a new agent */
@@ -222,6 +224,9 @@ export class AgentManager extends EventEmitter {
           // Observation + nudge tools — check worker status and send urgent pokes
           "mcp__kora__peek_agent",
           "mcp__kora__nudge_agent",
+          // Idle detection + task assignment — report idle status and request tasks
+          "mcp__kora__report_idle",
+          "mcp__kora__request_task",
         );
         // Master agents get agent management tools
         if (options.role === "master") {
@@ -336,9 +341,12 @@ export class AgentManager extends EventEmitter {
         envVars: options.envVars,
       },
       status: "running",
+      activity: "working",
       output: [],
       childAgents: [],
       startedAt: now,
+      lastActivityAt: now,
+      lastOutputAt: now,
       healthCheck: {
         lastPingAt: now,
         consecutiveFailures: 0,
@@ -488,6 +496,11 @@ export class AgentManager extends EventEmitter {
   /** List all agents */
   listAgents(): AgentState[] {
     return [...this.agents.values()];
+  }
+
+  /** Get the internal agents map (for health monitor) */
+  getAgentsMap(): Map<string, AgentState> {
+    return this.agents;
   }
 
   /**

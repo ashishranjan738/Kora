@@ -59,6 +59,9 @@ export class Orchestrator extends EventEmitter {
 
     const healthMonitor = new AgentHealthMonitor(config.tmux);
     this.agentManager = new AgentManager(config.tmux, healthMonitor);
+
+    // Pass agents map to health monitor for idle detection
+    healthMonitor.setAgentsMap(this.agentManager.getAgentsMap());
     this.messageBus = new MessageBus(config.runtimeDir);
     this.controlPlane = new AgentControlPlane(config.runtimeDir);
     this.eventLog = new EventLog(config.runtimeDir);

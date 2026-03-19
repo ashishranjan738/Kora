@@ -491,6 +491,39 @@ const TOOL_DEFINITIONS = [
       properties: {},
     },
   },
+  {
+    name: "report_idle",
+    description:
+      "Report that you are idle and available for new work. The orchestrator will update your activity status to 'idle'. Use this when you've completed your current task and are ready for more work.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        reason: {
+          type: "string",
+          description: "Optional reason for being idle (e.g. 'task completed', 'waiting for dependencies')",
+        },
+      },
+    },
+  },
+  {
+    name: "request_task",
+    description:
+      "Request a task from the session's task board. Returns the best matching unassigned task based on your skills and availability. The task will be automatically assigned to you.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        skills: {
+          type: "array",
+          items: { type: "string" },
+          description: "Your skills/specialties (e.g. ['frontend', 'react', 'css']). Used to match tasks with relevant labels.",
+        },
+        priority: {
+          type: "string",
+          description: "Preferred task priority: 'P0' (critical), 'P1' (high), 'P2' (normal), 'P3' (low). Defaults to highest available.",
+        },
+      },
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1064,6 +1097,24 @@ async function handleToolCall(
           output: stdout + "\n" + stderr,
         };
       }
+    }
+
+    case "report_idle": {
+      const reason = toolArgs.reason || "task completed";
+      const result = await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}/report-idle`, {
+        reason,
+      }) as Record<string, unknown>;
+      return { success: true, activity: "idle", reason, ...result };
+    }
+
+    case "request_task": {
+      const skills = (toolArgs as any).skills || [];
+      const priority = toolArgs.priority;
+      const result = await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}/request-task`, {
+        skills,
+        priority,
+      });
+      return result;
     }
 
     default:
