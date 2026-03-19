@@ -101,16 +101,24 @@ export class MessageQueue {
     this.startMetricsBroadcast();
   }
 
-  /** Start periodic metrics broadcast (every 10 seconds) */
+  /** Start periodic metrics broadcast with dynamic interval based on agent count */
   private startMetricsBroadcast(): void {
     if (this.metricsInterval || !this.broadcastFn) return;
+    this.scheduleMetricsBroadcast();
+  }
 
-    this.metricsInterval = setInterval(() => {
+  /** Schedule the next metrics broadcast with adaptive interval */
+  private scheduleMetricsBroadcast(): void {
+    // Dynamic interval: scale up for large sessions to reduce WS event volume
+    const agentCount = this.mcpAgents.size;
+    const interval = agentCount > 20 ? 60_000 : agentCount > 10 ? 30_000 : 10_000;
+
+    this.metricsInterval = setTimeout(() => {
       try {
-        // Broadcast metrics for all agents with messages
+        // Only broadcast metrics for agents that have actual message activity
         for (const agentId of this.mcpAgents) {
           const metrics = this.getDeliveryMetrics(agentId);
-          if (metrics && this.broadcastFn) {
+          if (metrics && metrics.totalMessages > 0 && this.broadcastFn) {
             this.broadcastFn({
               event: "delivery-metrics-updated",
               agentId,
@@ -120,9 +128,14 @@ export class MessageQueue {
           }
         }
       } catch (err) {
-        logger.debug({ err }, "[MessageQueue] Metrics broadcast error");
+        logger.warn({ err }, "[MessageQueue] Metrics broadcast error");
       }
-    }, 10_000); // Every 10 seconds
+
+      // Reschedule if not stopped
+      if (this.metricsInterval) {
+        this.scheduleMetricsBroadcast();
+      }
+    }, interval);
   }
 
   /** Stop periodic metrics broadcast */
