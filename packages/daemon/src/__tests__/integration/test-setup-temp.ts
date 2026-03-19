@@ -37,6 +37,8 @@ export function setupTestApp(): TestContext {
   const tmux = new MockPtyBackend();
   const orchestrators = new Map();
 
+  const suggestionsDb = new SuggestionsDatabase(true);
+
   const app = createApp({
     token,
     deps: {
@@ -46,13 +48,14 @@ export function setupTestApp(): TestContext {
       tmux,
       startTime: Date.now(),
       globalConfigDir: testDir,
-      suggestionsDb: new SuggestionsDatabase(true),
+      suggestionsDb,
     },
     skipDashboard: true,
   });
 
   const cleanup = () => {
     try {
+      suggestionsDb.close();
       rmSync(testDir, { recursive: true, force: true });
     } catch {
       // Ignore cleanup errors
