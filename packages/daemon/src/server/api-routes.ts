@@ -1361,12 +1361,64 @@ export function createApiRouter(deps: {
 
       if (customMessage) {
         // Direct custom message via tmux — bypass queue entirely
-        await tmux.sendKeys(agent.config.tmuxSession, `\n[Nudge]: ${customMessage}\n`, { literal: true });
-        res.json({ nudged: true, customMessage: true });
+        try {
+          await tmux.sendKeys(agent.config.tmuxSession, `\n[Nudge]: ${customMessage}\n`, { literal: true });
+          logger.info({ agentId: aid, customMessage, sessionId: sid }, "[API] Custom nudge sent successfully");
+
+          // Track nudge-sent event
+          orch.database.insertEvent({
+            id: randomUUID(),
+            sessionId: String(sid),
+            type: 'nudge-sent',
+            data: { agentId: String(aid), messageType: 'custom', customMessage },
+            agentId: String(aid),
+          });
+
+          res.json({ nudged: true, customMessage: true });
+        } catch (err) {
+          logger.error({ err, agentId: aid, customMessage, sessionId: sid }, "[API] Failed to send custom nudge");
+
+          // Track nudge-failed event
+          orch.database.insertEvent({
+            id: randomUUID(),
+            sessionId: String(sid),
+            type: 'nudge-failed',
+            data: { agentId: String(aid), messageType: 'custom', error: String(err) },
+            agentId: String(aid),
+          });
+
+          res.status(500).json({ error: "Failed to send nudge", details: String(err) });
+        }
       } else {
         // Default: nudge with unread count
-        const unread = await orch.messageQueue.nudgeAgent(String(aid), agent.config.tmuxSession);
-        res.json({ nudged: true, unreadCount: unread });
+        try {
+          const unread = await orch.messageQueue.nudgeAgent(String(aid), agent.config.tmuxSession);
+          logger.info({ agentId: aid, unreadCount: unread, sessionId: sid }, "[API] Default nudge sent successfully");
+
+          // Track nudge-sent event
+          orch.database.insertEvent({
+            id: randomUUID(),
+            sessionId: String(sid),
+            type: 'nudge-sent',
+            data: { agentId: String(aid), messageType: 'default', unreadCount: unread },
+            agentId: String(aid),
+          });
+
+          res.json({ nudged: true, unreadCount: unread });
+        } catch (err) {
+          logger.error({ err, agentId: aid, sessionId: sid }, "[API] Failed to send default nudge");
+
+          // Track nudge-failed event
+          orch.database.insertEvent({
+            id: randomUUID(),
+            sessionId: String(sid),
+            type: 'nudge-failed',
+            data: { agentId: String(aid), messageType: 'default', error: String(err) },
+            agentId: String(aid),
+          });
+
+          res.status(500).json({ error: "Failed to send nudge", details: String(err) });
+        }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
