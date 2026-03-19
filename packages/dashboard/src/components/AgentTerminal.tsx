@@ -193,7 +193,7 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
             fontSize: 12,
             fontWeight: 500,
             color: isFollowing ? "var(--accent-green)" : "var(--text-primary)",
-            background: isFollowing ? "rgba(30, 30, 30, 0.6)" : "rgba(30, 30, 30, 0.85)",
+            background: "var(--bg-tertiary)",
             border: `1px solid ${isFollowing ? "rgba(63, 185, 80, 0.3)" : "var(--border-color)"}`,
             borderRadius: 16,
             cursor: "pointer",
