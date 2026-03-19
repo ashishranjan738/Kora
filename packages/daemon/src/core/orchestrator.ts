@@ -51,7 +51,7 @@ export class Orchestrator extends EventEmitter {
   private autoRelay: AutoRelay;
   public messageQueue: MessageQueue;
   private logRotationInterval?: NodeJS.Timeout;
-  private idleNotificationSent = new Map<string, boolean>();
+  private lastIdleNotification = new Map<string, number>();
   private idleCheckInterval?: NodeJS.Timeout;
 
   constructor(private config: OrchestratorConfig) {
@@ -97,23 +97,21 @@ export class Orchestrator extends EventEmitter {
       const agents = this.agentManager.listAgents();
       const now = Date.now();
       const IDLE_NOTIFICATION_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+      const MIN_NOTIFICATION_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 
       for (const agent of agents) {
         if (agent.activity === "idle" && agent.idleSince) {
           const idleSince = new Date(agent.idleSince).getTime();
           const idleDuration = now - idleSince;
 
-          // Notify if idle for >5min and haven't notified yet
-          if (
-            idleDuration > IDLE_NOTIFICATION_THRESHOLD_MS &&
-            !this.idleNotificationSent.get(agent.id)
-          ) {
-            notificationService.agentIdle(this.config.sessionId, agent.id, agent.config.name, idleDuration);
-            this.idleNotificationSent.set(agent.id, true);
+          // Notify if idle for >5min and haven't notified in last 15min
+          if (idleDuration > IDLE_NOTIFICATION_THRESHOLD_MS) {
+            const lastSent = this.lastIdleNotification.get(agent.id) || 0;
+            if (now - lastSent >= MIN_NOTIFICATION_INTERVAL_MS) {
+              notificationService.agentIdle(this.config.sessionId, agent.id, agent.config.name, idleDuration);
+              this.lastIdleNotification.set(agent.id, now);
+            }
           }
-        } else {
-          // Agent is working, reset notification flag
-          this.idleNotificationSent.delete(agent.id);
         }
       }
     }, 60_000); // Check every minute
