@@ -1,0 +1,19 @@
+{
+  "name": "Kora Dashboard",
+  "short_name": "Kora",
+  "description": "Multi-agent orchestration platform for AI coding CLI agents",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#58a6ff",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["developer-tools", "productivity"]
+}

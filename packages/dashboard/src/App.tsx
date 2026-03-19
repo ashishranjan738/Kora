@@ -8,6 +8,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { TaskBoardPage } from "./pages/TaskBoardPage";
 import { MultiAgentView } from "./pages/MultiAgentView";
 import { useThemeStore } from "./stores/themeStore";
+import { BottomNav } from "./components/BottomNav";
 
 export function App() {
   const resolved = useThemeStore((s) => s.resolved);
@@ -29,6 +30,7 @@ export function App() {
         <Route path="/session/:sessionId/tasks" element={<TaskBoardPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Routes>
+      <BottomNav />
     </BrowserRouter>
   );
 }
