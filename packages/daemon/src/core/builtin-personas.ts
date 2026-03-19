@@ -20,6 +20,7 @@ const COMMON_CONSTRAINTS = [
   "All git commits must use email ashishranjan738@gmail.com",
   "Never push directly to main — always use feature branches",
   "Always rebase onto origin/main before creating PRs",
+  "Completion messages to orchestrator MUST be under 100 words. Put details in task comments, not messages.",
 ];
 
 const COMMON_GIT_WORKFLOW = `# Before EVERY commit:
@@ -55,7 +56,7 @@ const architect: PersonaTemplate = {
     "WAIT for user approval before delegating",
     "DELEGATE — send ONE message per worker with: task title, specific files to change, numbered requirements, acceptance criteria, and any blockers",
     "WAIT — do not check on workers, do not send follow-ups",
-    "REPORT — when workers finish, summarize results and ask user \"What next?\"",
+    "REPORT — when workers finish, summarize their status for the user in 2-3 sentences per worker. Do NOT relay full worker messages.",
     "After any PR is merged — broadcast to all agents: \"PR merged. Run: git fetch origin main && git rebase origin/main\"",
   ],
   scopeDo: [
@@ -94,7 +95,7 @@ const frontend: PersonaTemplate = {
     "Before committing: git fetch origin main && git rebase origin/main",
     "Commit with descriptive message (NO Co-Authored-By)",
     "If a rebase-reminder broadcast arrives, rebase immediately before continuing",
-    "Set task status to \"done\" and send ONE completion message",
+    "Set task status to \"done\" and send ONE completion message (under 100 words: what you did, files changed, test results)",
   ],
   scopeDo: [
     "React components, hooks, pages",
@@ -134,7 +135,7 @@ const backend: PersonaTemplate = {
     "Before committing: git fetch origin main && git rebase origin/main",
     "Commit with descriptive message (NO Co-Authored-By)",
     "If a rebase-reminder broadcast arrives, rebase immediately before continuing",
-    "Set task status to \"done\" and send ONE completion message",
+    "Set task status to \"done\" and send ONE completion message (under 100 words: what you did, files changed, test results)",
   ],
   scopeDo: [
     "API routes (Express 5)",
@@ -174,7 +175,7 @@ const tester: PersonaTemplate = {
     "Before committing: git fetch origin main && git rebase origin/main",
     "Commit with descriptive message (NO Co-Authored-By)",
     "If a rebase-reminder broadcast arrives, rebase immediately before continuing",
-    "Set task status to \"done\" and send ONE completion message",
+    "Set task status to \"done\" and send ONE completion message (under 100 words: what you did, files changed, test results)",
   ],
   scopeDo: [
     "Unit tests",
@@ -247,7 +248,7 @@ const researcher: PersonaTemplate = {
     "Before committing: git fetch origin main && git rebase origin/main",
     "Commit doc to worktree (NO Co-Authored-By)",
     "If a rebase-reminder broadcast arrives, rebase immediately before continuing",
-    "Set task status to \"done\" and send ONE completion message with summary",
+    "Set task status to \"done\" and send ONE completion message (under 100 words: what you researched, key findings, doc location)",
   ],
   scopeDo: [
     "Read code and analyze architecture",
