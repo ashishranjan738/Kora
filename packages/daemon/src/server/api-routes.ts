@@ -2719,6 +2719,72 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ── Knowledge Entries ────────────────────────────────────
+  // Read knowledge entries from .kora.yml and knowledge.md (reuses readKnowledgeEntries)
+  router.get("/sessions/:sid/knowledge", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const session = sessionManager.getSession(sid);
+      if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const entries: Array<{ text: string; source: string; timestamp?: string }> = [];
+
+      // 1. Read from .kora.yml knowledge array
+      try {
+        const { loadProjectConfig } = await import("../core/project-config.js");
+        const config = await loadProjectConfig(session.projectPath);
+        if (config?.knowledge) {
+          for (const k of config.knowledge) {
+            entries.push({ text: k, source: ".kora.yml" });
+          }
+        }
+      } catch { /* ignore */ }
+
+      // 2. Read from knowledge.md using readKnowledgeEntries (reuse existing parser)
+      try {
+        const { readKnowledgeEntries } = await import("../core/context-discovery.js");
+        const rawEntries = readKnowledgeEntries(session.projectPath, 200);
+        for (const line of rawEntries) {
+          // Format: "- [ISO_TIMESTAMP] [agent-name] entry text"
+          const match = line.match(/^-?\s*\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.+)$/);
+          if (match) {
+            entries.push({ text: match[3].trim(), source: match[2], timestamp: match[1] });
+          } else {
+            // Plain entry without timestamp/source
+            const text = line.startsWith("- ") ? line.slice(2).trim() : line.trim();
+            if (text) entries.push({ text, source: "knowledge.md" });
+          }
+        }
+      } catch { /* ignore */ }
+
+      res.json({ entries });
+    } catch (err) {
+      logger.error({ err }, "[api] GET knowledge error");
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Delete all knowledge entries (clear knowledge.md)
+  router.delete("/sessions/:sid/knowledge", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const session = sessionManager.getSession(sid);
+      if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const fs = await import("fs/promises");
+      const path = await import("path");
+      const knowledgeMdPath = path.join(session.runtimeDir, "knowledge.md");
+      try {
+        await fs.writeFile(knowledgeMdPath, "# Session Knowledge\n\n", "utf-8");
+      } catch { /* ignore */ }
+
+      res.json({ cleared: true });
+    } catch (err) {
+      logger.error({ err }, "[api] DELETE knowledge error");
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   return router;
 }
 
