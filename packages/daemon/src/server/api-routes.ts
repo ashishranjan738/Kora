@@ -976,7 +976,7 @@ export function createApiRouter(deps: {
       const priority = req.query.priority as string | undefined;
       const label = req.query.label as string | undefined;
       const due = req.query.due as string | undefined;
-      const sortBy = req.query.sortBy as string | undefined;
+      const sortBy = (req.query.sortBy || req.query.sort) as string | undefined;
       const summary = req.query.summary as string | undefined;
 
       if (assignedTo || status || priority || label || due || sortBy || summary !== undefined) {
