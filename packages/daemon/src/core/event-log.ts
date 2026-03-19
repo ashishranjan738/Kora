@@ -34,12 +34,16 @@ export class EventLog extends EventEmitter {
 
     if (this.database?.isOpen) {
       try {
+        // Extract agentId from event data for efficient filtering
+        const data = (fullEvent as any).data || {};
+        const agentId = data.agentId || data.from || data.agent?.id || undefined;
         this.database.insertEvent({
           id: fullEvent.id,
           sessionId: fullEvent.sessionId,
           type: fullEvent.type,
-          data: (fullEvent as any).data || {},
+          data,
           timestamp: fullEvent.timestamp,
+          agentId,
         });
       } catch (err) {
         logger.error({ err: err }, "[EventLog] SQLite write failed, falling back to JSONL:");
@@ -56,17 +60,31 @@ export class EventLog extends EventEmitter {
   /** Query events with filters */
   async query(params: {
     since?: string;
+    until?: string;
+    before?: string;
     limit?: number;
+    offset?: number;
     type?: EventType;
+    types?: string[];
     sessionId?: string;
+    agentId?: string;
+    search?: string;
+    order?: "asc" | "desc";
   }): Promise<OrchestratorEvent[]> {
     if (this.database?.isOpen) {
       try {
         const rows = this.database.queryEvents({
           sessionId: params.sessionId,
           since: params.since,
+          until: params.until,
+          before: params.before,
           limit: params.limit,
+          offset: params.offset,
           type: params.type,
+          types: params.types,
+          agentId: params.agentId,
+          search: params.search,
+          order: params.order,
         });
         return rows.map(r => ({
           id: r.id,
@@ -82,6 +100,36 @@ export class EventLog extends EventEmitter {
 
     // Fallback: read from JSONL files
     return this.queryFromJsonl(params);
+  }
+
+  /** Count events matching filters (for pagination) */
+  async count(params: {
+    sessionId?: string;
+    since?: string;
+    until?: string;
+    before?: string;
+    type?: EventType;
+    types?: string[];
+    agentId?: string;
+    search?: string;
+  }): Promise<number> {
+    if (this.database?.isOpen) {
+      try {
+        return this.database.countEvents({
+          sessionId: params.sessionId,
+          since: params.since,
+          until: params.until,
+          before: params.before,
+          type: params.type,
+          types: params.types,
+          agentId: params.agentId,
+          search: params.search,
+        });
+      } catch (err) {
+        logger.error({ err: err }, "[EventLog] SQLite count failed:");
+      }
+    }
+    return 0;
   }
 
   // ─── JSONL fallback (legacy) ─────────────────────────────
