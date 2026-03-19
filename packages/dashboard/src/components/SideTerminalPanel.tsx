@@ -71,7 +71,7 @@ export function SideTerminalPanel({
       }
     }
     fetchTerminals();
-  }, [sessionId, api, addSession]);
+  }, [sessionId]); // Zustand actions are stable, addSession not needed in deps
 
   // If tabs list changes and activeTabId is gone, switch to first
   useEffect(() => {
