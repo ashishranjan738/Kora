@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { AgentTerminal } from "./AgentTerminal";
+import { useTerminalSessionStore } from "../stores/terminalSessionStore";
+import { useApi } from "../hooks/useApi";
 
 export interface TerminalTab {
   id: string;          // agent ID or "term-{uuid}"
@@ -9,27 +11,67 @@ export interface TerminalTab {
 
 interface SideTerminalPanelProps {
   sessionId: string;
-  tabs: TerminalTab[];
   height: number;
   onHeightChange: (height: number) => void;
   onClose: () => void;
-  onCloseTab: (tabId: string) => void;
-  onAddTerminal: () => void;
 }
 
 export function SideTerminalPanel({
   sessionId,
-  tabs,
   height,
   onHeightChange,
   onClose,
-  onCloseTab,
-  onAddTerminal,
 }: SideTerminalPanelProps) {
-  const [activeTabId, setActiveTabId] = useState<string>(tabs[0]?.id || "");
+  const [activeTabId, setActiveTabId] = useState<string>("");
+  const [isCreatingTerminal, setIsCreatingTerminal] = useState(false);
   const dragging = useRef(false);
   const startY = useRef(0);
   const startHeight = useRef(0);
+  const api = useApi();
+
+  // Use store for terminal sessions and open tabs
+  const terminalSessions = useTerminalSessionStore((state) => state.getSessions());
+  const openTabIds = useTerminalSessionStore((state) => state.openTabs);
+  const addSession = useTerminalSessionStore((state) => state.addSession);
+  const closeTab = useTerminalSessionStore((state) => state.closeTab);
+  const openTab = useTerminalSessionStore((state) => state.openTab);
+
+  // Build tab list from open tabs and sessions
+  const tabs: TerminalTab[] = openTabIds
+    .map((id) => {
+      const session = terminalSessions.find((s) => s.id === id);
+      if (!session) return null;
+      return {
+        id: session.id,
+        name: session.name,
+        type: session.type === "standalone" ? "terminal" : "agent",
+      } as TerminalTab;
+    })
+    .filter((t): t is TerminalTab => t !== null);
+
+  // Fetch all terminals from server on mount
+  useEffect(() => {
+    async function fetchTerminals() {
+      try {
+        const data = await api.getTerminals(sessionId);
+        if (data?.terminals) {
+          data.terminals.forEach((term: any) => {
+            addSession({
+              id: term.id,
+              tmuxSession: term.tmuxSession,
+              name: term.name || `Terminal ${term.id}`,
+              type: term.type || "standalone",
+              agentName: term.agentName,
+              createdAt: term.createdAt || new Date().toISOString(),
+            });
+          });
+        }
+      } catch (err) {
+        console.debug("Could not fetch terminals from server:", err);
+      }
+    }
+    fetchTerminals();
+  }, [sessionId, api, addSession]);
 
   // If tabs list changes and activeTabId is gone, switch to first
   useEffect(() => {
@@ -96,7 +138,7 @@ export function SideTerminalPanel({
                 className="close-tab"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onCloseTab(tab.id);
+                  closeTab(tab.id);
                 }}
                 title="Close tab"
               >
@@ -106,10 +148,39 @@ export function SideTerminalPanel({
           ))}
           <button
             className="side-terminal-add-tab"
-            onClick={onAddTerminal}
+            onClick={async () => {
+              if (isCreatingTerminal) return;
+              setIsCreatingTerminal(true);
+              try {
+                // Create new standalone terminal
+                const result = await api.openTerminal(sessionId);
+                const terminalName = `Terminal ${terminalSessions.filter((t) => t.type === "standalone").length + 1}`;
+
+                // Add to session store
+                addSession({
+                  id: result.id,
+                  tmuxSession: result.tmuxSession,
+                  name: terminalName,
+                  type: "standalone",
+                  createdAt: new Date().toISOString(),
+                });
+
+                // Open tab
+                openTab(result.id);
+              } catch (err: any) {
+                console.error("Failed to create terminal:", err);
+              } finally {
+                setIsCreatingTerminal(false);
+              }
+            }}
             title="New terminal"
+            disabled={isCreatingTerminal}
+            style={{
+              opacity: isCreatingTerminal ? 0.6 : 1,
+              cursor: isCreatingTerminal ? "wait" : "pointer",
+            }}
           >
-            +
+            {isCreatingTerminal ? "..." : "+"}
           </button>
         </div>
         <button

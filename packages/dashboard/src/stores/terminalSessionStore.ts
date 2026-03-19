@@ -11,15 +11,21 @@ export interface TerminalSession {
 
 interface TerminalSessionStore {
   sessions: Map<string, TerminalSession>;
+  /** Tracks which terminal tabs are open in the side panel */
+  openTabs: string[];
   addSession: (session: TerminalSession) => void;
   removeSession: (id: string) => void;
   getSessions: () => TerminalSession[];
   getByType: (type: "agent" | "standalone") => TerminalSession[];
+  openTab: (id: string) => void;
+  closeTab: (id: string) => void;
+  setOpenTabs: (tabs: string[]) => void;
   clear: () => void;
 }
 
 export const useTerminalSessionStore = create<TerminalSessionStore>((set, get) => ({
   sessions: new Map(),
+  openTabs: [],
 
   addSession: (session) =>
     set((state) => {
@@ -32,7 +38,10 @@ export const useTerminalSessionStore = create<TerminalSessionStore>((set, get) =
     set((state) => {
       const next = new Map(state.sessions);
       next.delete(id);
-      return { sessions: next };
+      return {
+        sessions: next,
+        openTabs: state.openTabs.filter((t) => t !== id),
+      };
     }),
 
   getSessions: () => Array.from(get().sessions.values()),
@@ -40,5 +49,19 @@ export const useTerminalSessionStore = create<TerminalSessionStore>((set, get) =
   getByType: (type) =>
     Array.from(get().sessions.values()).filter((s) => s.type === type),
 
-  clear: () => set({ sessions: new Map() }),
+  openTab: (id) =>
+    set((state) => ({
+      openTabs: state.openTabs.includes(id)
+        ? state.openTabs
+        : [...state.openTabs, id],
+    })),
+
+  closeTab: (id) =>
+    set((state) => ({
+      openTabs: state.openTabs.filter((t) => t !== id),
+    })),
+
+  setOpenTabs: (tabs) => set({ openTabs: tabs }),
+
+  clear: () => set({ sessions: new Map(), openTabs: [] }),
 }));
