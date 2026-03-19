@@ -1,5 +1,6 @@
 import type { IPtyBackend } from "./pty-backend.js";
 import type { MessagingMode } from "@kora/shared";
+import { FORCE_DELIVERY_TIMEOUT_MS } from "@kora/shared";
 import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
@@ -156,8 +157,8 @@ export class MessageQueue {
     if (ready) {
       queue.shift();
       await this.deliver(msg);
-    } else if (Date.now() - msg.timestamp > 15000) {
-      // Force deliver after 15s to avoid stuck messages
+    } else if (Date.now() - msg.timestamp > FORCE_DELIVERY_TIMEOUT_MS) {
+      // Force deliver after timeout to avoid stuck messages
       queue.shift();
       await this.deliver(msg);
     }

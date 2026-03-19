@@ -31,10 +31,12 @@ export const PROCESSED_DIR = "processed";
 export const MCP_PENDING_DIR = "mcp-pending";
 
 // Agent health check
-export const HEALTH_CHECK_INTERVAL_MS = 5_000;
+export const HEALTH_CHECK_INTERVAL_MS = 10_000;
 export const MAX_CONSECUTIVE_FAILURES = 3;
 export const DEFAULT_MAX_RESTARTS = 3;
 export const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 10_000;
+export const SPAWN_TIMEOUT_MS = 30_000;
+export const MAX_AGENTS_PER_SESSION = 20;
 
 // Tmux session namespace — all Kora-managed tmux sessions use this prefix
 export const TMUX_SESSION_PREFIX = "kora--";
@@ -59,8 +61,11 @@ export function getRuntimeTmuxPrefix(isDev: boolean): string {
 export const TERMINAL_RING_BUFFER_LINES = 100_000;
 export const MAX_TERMINAL_CONNECTIONS_PER_AGENT = 3;
 
+// Message delivery
+export const FORCE_DELIVERY_TIMEOUT_MS = 30_000;
+
 // Cost tracking
-export const COST_UPDATE_INTERVAL_MS = 5_000;
+export const COST_UPDATE_INTERVAL_MS = 15_000;
 
 // Default permissions
 export const DEFAULT_MASTER_PERMISSIONS = {

@@ -246,16 +246,16 @@ describe("MessageQueue", () => {
     expect(mockSendKeys.mock.calls.length).toBeGreaterThanOrEqual(initialCalls);
   });
 
-  // ---- Force-deliver timeout (15 seconds) ----
+  // ---- Force-deliver timeout (30 seconds) ----
 
-  it("force-delivers message after 15 seconds even if agent is busy", async () => {
+  it("force-delivers message after 30 seconds even if agent is busy", async () => {
     mockCapturePane.mockResolvedValue("Running command...");
     const queue = createQueue("terminal");
     queue.start();
     queue.enqueue("agent-1", "tmux-1", "Urgent message");
 
-    // Advance past the 15-second force-deliver timeout
-    await vi.advanceTimersByTimeAsync(16000);
+    // Advance past the 30-second force-deliver timeout
+    await vi.advanceTimersByTimeAsync(31000);
 
     expect(mockSendKeys).toHaveBeenCalled();
     queue.stop();
