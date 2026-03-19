@@ -14,6 +14,7 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
   const resizeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [connected, setConnected] = useState(false);
   const [hasData, setHasData] = useState(false);
+  const [scrolledUp, setScrolledUp] = useState(false);
   const resolvedTerminalColors = useThemeStore((s) => s.resolvedTerminalColors);
 
   const handleResize = useCallback((entry: ReturnType<typeof getOrCreateTerminal>) => {
@@ -43,7 +44,12 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
         setTimeout(() => setHasData(true), 200);
       }
     };
+    // Set scroll state callback — tracks when user scrolls away from bottom
+    entry.onScrollStateChange = (isScrolledUp) => {
+      setScrolledUp(isScrolledUp);
+    };
     setConnected(entry.connected);
+    setScrolledUp(entry.userScrolledUp);
     // If already connected or terminal has content, mark as having data
     if (entry.connected || entry.term.buffer.active.length > 1) {
       setHasData(true);
@@ -68,6 +74,7 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
     return () => {
       // Detach but keep alive in registry
       entry.onConnectedChange = undefined;
+      entry.onScrollStateChange = undefined;
       resizeObserver.disconnect();
       window.removeEventListener("resize", onWindowResize);
       if (resizeTimer.current) clearTimeout(resizeTimer.current);
@@ -82,6 +89,13 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
   }, [resolvedTerminalColors, sessionId, agentId]);
 
   const showLoading = !connected && !hasData;
+
+  function handleScrollToBottom() {
+    const entry = getOrCreateTerminal(sessionId, agentId, resolvedTerminalColors);
+    entry.term.scrollToBottom();
+    entry.userScrolledUp = false;
+    setScrolledUp(false);
+  }
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height }}>
@@ -141,6 +155,37 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
         opacity: hasData ? 1 : 0,
         transition: "opacity 0.3s ease-in",
       }} />
+
+      {/* Floating auto-scroll button — shown when user has scrolled up */}
+      {scrolledUp && hasData && (
+        <button
+          onClick={handleScrollToBottom}
+          style={{
+            position: "absolute",
+            bottom: 12,
+            right: 16,
+            zIndex: 15,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "6px 12px",
+            fontSize: 12,
+            fontWeight: 500,
+            color: "var(--text-primary)",
+            background: "rgba(30, 30, 30, 0.85)",
+            border: "1px solid var(--border-color)",
+            borderRadius: 16,
+            cursor: "pointer",
+            backdropFilter: "blur(4px)",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+            transition: "opacity 0.2s ease",
+          }}
+          title="Scroll to bottom and resume auto-scroll"
+        >
+          <span style={{ fontSize: 14 }}>{"\u2193"}</span>
+          Auto-scroll
+        </button>
+      )}
     </div>
   );
 });
