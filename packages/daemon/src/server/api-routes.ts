@@ -35,7 +35,6 @@ import { DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS } from "@kora/sh
 import { logger } from "../core/logger.js";
 import { saveTerminalStates, loadTerminalStates } from "../core/terminal-persistence.js";
 import type { StandaloneTerminal } from "../core/terminal-persistence.js";
-import type { SuggestionsDatabase } from "../core/suggestions-db.js";
 
 export function createApiRouter(deps: {
   sessionManager: SessionManager;
@@ -44,7 +43,7 @@ export function createApiRouter(deps: {
   tmux: IPtyBackend;
   startTime: number;  // Date.now() at daemon start
   globalConfigDir: string;
-  suggestionsDb: SuggestionsDatabase;
+  suggestionsDb?: { recordPath(p: string): void; recordFlags(f: string): void };
 }, wss: WebSocketServer): Router {
   const { sessionManager, orchestrators, providerRegistry, tmux, startTime, globalConfigDir, suggestionsDb } = deps;
   const router = Router();
@@ -217,7 +216,7 @@ export function createApiRouter(deps: {
       });
 
       // Record the working directory for autocomplete suggestions
-      suggestionsDb.recordPath(body.projectPath);
+      suggestionsDb?.recordPath(body.projectPath);
 
       // Create an Orchestrator for this session so agents can be spawned
       const session = sessionManager.getSession(config.id);
@@ -559,8 +558,8 @@ export function createApiRouter(deps: {
       });
 
       // Record CLI flags for autocomplete suggestions
-      if (body.extraCliArgs && body.extraCliArgs.trim()) {
-        suggestionsDb.recordFlags(body.extraCliArgs.trim());
+      if (body.extraCliArgs && body.extraCliArgs.length > 0) {
+        suggestionsDb?.recordFlags(body.extraCliArgs.join(" "));
       }
 
       // Broadcast agent-spawned event via WebSocket
