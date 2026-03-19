@@ -14,6 +14,7 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
@@ -32,6 +33,7 @@
     "@xterm/xterm": "^6.0.0",
     "dayjs": "^1.11.20",
     "dompurify": "^3.2.7",
+    "js-yaml": "^4.1.1",
     "marked": "^14.0.0",
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",
