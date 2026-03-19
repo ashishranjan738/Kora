@@ -12,8 +12,24 @@ import {
   Alert,
   Card,
   Box,
+  Slider,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
+import { AutonomyLevel } from "@kora/shared";
+
+const AUTONOMY_DESCRIPTIONS: Record<AutonomyLevel, string> = {
+  [AutonomyLevel.SuggestOnly]: "Agent proposes actions and waits for approval",
+  [AutonomyLevel.AutoRead]: "Agent can explore codebase, asks before editing",
+  [AutonomyLevel.AutoApply]: "Agent edits files freely, asks before git operations",
+  [AutonomyLevel.FullAuto]: "Agent does everything including git operations",
+};
+
+const AUTONOMY_SLIDER_STYLES = {
+  track: { backgroundColor: "var(--border-color)" },
+  bar: { backgroundColor: "var(--accent-blue)" },
+  thumb: { borderColor: "var(--accent-blue)" },
+  markLabel: { color: "var(--text-muted)", fontSize: 11 },
+};
 
 interface SessionSettingsDialogProps {
   sessionId: string;
@@ -47,6 +63,10 @@ export function SessionSettingsDialog({
   const [defaultProvider, setDefaultProvider] = useState("");
   const [defaultModel, setDefaultModel] = useState("");
   const [worktreeMode, setWorktreeMode] = useState<string>("");
+  // TODO Sprint 5: Wire to session settings API, apply to new agent spawns
+  const [defaultAutonomyLevel, setDefaultAutonomyLevel] = useState<AutonomyLevel>(
+    AutonomyLevel.AutoRead
+  );
 
   const [newProvider, setNewProvider] = useState("");
   const [newModelId, setNewModelId] = useState("");
@@ -284,6 +304,33 @@ export function SessionSettingsDialog({
               : worktreeMode === "shared"
                 ? "All agents share the same working directory. Cannot be changed mid-session."
                 : "Worktree mode was not configured for this session."}
+          </Text>
+        </Box>
+
+        {/* Default Autonomy Level */}
+        <Box>
+          <Text size="sm" c="var(--text-secondary)" fw={500} mb={8}>
+            Default Autonomy Level
+          </Text>
+          <Slider
+            value={defaultAutonomyLevel}
+            onChange={setDefaultAutonomyLevel}
+            min={0}
+            max={3}
+            step={1}
+            marks={[
+              { value: 0, label: "Suggest" },
+              { value: 1, label: "Auto-read" },
+              { value: 2, label: "Auto-apply" },
+              { value: 3, label: "Full auto" },
+            ]}
+            styles={AUTONOMY_SLIDER_STYLES}
+          />
+          <Text size="xs" c="var(--text-muted)" mt={8}>
+            {AUTONOMY_DESCRIPTIONS[defaultAutonomyLevel]}
+          </Text>
+          <Text size="xs" c="var(--text-muted)" mt={4}>
+            Default autonomy level for newly spawned agents. Note: This is UI only - enforcement logic will be added in a future sprint.
           </Text>
         </Box>
 

@@ -13,8 +13,24 @@ import {
   Badge,
   Alert,
   Autocomplete,
+  Slider,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
+import { AutonomyLevel } from "@kora/shared";
+
+const AUTONOMY_DESCRIPTIONS: Record<AutonomyLevel, string> = {
+  [AutonomyLevel.SuggestOnly]: "Agent proposes actions and waits for approval",
+  [AutonomyLevel.AutoRead]: "Agent can explore codebase, asks before editing",
+  [AutonomyLevel.AutoApply]: "Agent edits files freely, asks before git operations",
+  [AutonomyLevel.FullAuto]: "Agent does everything including git operations",
+};
+
+const AUTONOMY_SLIDER_STYLES = {
+  track: { backgroundColor: "var(--border-color)" },
+  bar: { backgroundColor: "var(--accent-blue)" },
+  thumb: { borderColor: "var(--accent-blue)" },
+  markLabel: { color: "var(--text-muted)", fontSize: 11 },
+};
 
 interface SpawnAgentDialogProps {
   sessionId: string;
@@ -83,6 +99,9 @@ export function SpawnAgentDialog({
   const [spawning, setSpawning] = useState(false);
   const [error, setError] = useState("");
   const [recentFlags, setRecentFlags] = useState<string[]>([]);
+  const [autonomyLevel, setAutonomyLevel] = useState<AutonomyLevel>(
+    AutonomyLevel.AutoRead
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -210,6 +229,7 @@ export function SpawnAgentDialog({
         extraCliArgs: extraCliArgs.trim()
           ? extraCliArgs.trim().split(/\s+/)
           : undefined,
+        autonomyLevel,
       };
       const result = await api.spawnAgent(sessionId, payload);
       onSpawned(result);
@@ -430,6 +450,29 @@ export function SpawnAgentDialog({
             label: { color: "var(--text-secondary)", fontSize: 13 },
           }}
         />
+
+        <Stack gap={4}>
+          <Text size="sm" c="var(--text-secondary)" fw={500}>
+            Autonomy Level
+          </Text>
+          <Slider
+            value={autonomyLevel}
+            onChange={setAutonomyLevel}
+            min={0}
+            max={3}
+            step={1}
+            marks={[
+              { value: 0, label: "Suggest" },
+              { value: 1, label: "Auto-read" },
+              { value: 2, label: "Auto-apply" },
+              { value: 3, label: "Full auto" },
+            ]}
+            styles={AUTONOMY_SLIDER_STYLES}
+          />
+          <Text size="xs" c="var(--text-muted)" mt={4}>
+            {AUTONOMY_DESCRIPTIONS[autonomyLevel]}
+          </Text>
+        </Stack>
 
         <Group justify="flex-end" mt="md">
           <Button variant="default" onClick={onClose} disabled={spawning}
