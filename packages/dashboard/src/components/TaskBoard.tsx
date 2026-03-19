@@ -64,6 +64,7 @@ interface Task {
 
 interface TaskBoardProps {
   sessionId: string;
+  initialTaskId?: string;
 }
 
 const COLUMNS = ["pending", "in-progress", "review", "done"] as const;
@@ -475,7 +476,7 @@ function TaskColumn({
 /* ------------------------------------------------------------------ */
 /* Main TaskBoard                                                      */
 /* ------------------------------------------------------------------ */
-export function TaskBoard({ sessionId }: TaskBoardProps) {
+export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
   const api = useApi();
   const isMobile = useMediaQuery("(max-width: 48em)");
   const isTablet = useMediaQuery("(max-width: 62em)");
@@ -531,6 +532,16 @@ export function TaskBoard({ sessionId }: TaskBoardProps) {
     const interval = setInterval(fetchTasks, 5000);
     return () => clearInterval(interval);
   }, [fetchTasks]);
+
+  // Open task modal when initialTaskId is provided
+  useEffect(() => {
+    if (initialTaskId && tasks.length > 0) {
+      const task = tasks.find((t) => t.id === initialTaskId);
+      if (task) {
+        setExpandedTaskId(initialTaskId);
+      }
+    }
+  }, [initialTaskId, tasks]);
 
   const handleDragStart = (taskId: string) => setDraggedTaskId(taskId);
 

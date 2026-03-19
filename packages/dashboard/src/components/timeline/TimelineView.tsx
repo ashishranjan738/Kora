@@ -11,7 +11,7 @@ interface TimelineViewProps {
   sessionId: string;
   agents: Array<{ id: string; name: string; config?: { name?: string } }>;
   onJumpToTerminal?: (agentId: string) => void;
-  onJumpToTaskBoard?: () => void;
+  onJumpToTaskBoard?: (taskId?: string) => void;
   onRestartAgent?: (agentId: string) => void;
 }
 
