@@ -1331,120 +1331,132 @@ function TaskDetailModal({
         <Divider color="var(--border-color)" />
 
         {/* ---- Details grid ---- */}
-        <SimpleGrid cols={2} spacing="md" verticalSpacing="sm" style={{ maxWidth: 500 }}>
+        <Stack gap="md">
           {/* Status */}
-          <Text size="sm" fw={500} c="dimmed" style={{ alignSelf: "center" }}>
-            Status
-          </Text>
-          <SegmentedControl
-            value={task.status}
-            onChange={(val) => onChangeStatus(task.id, val)}
-            data={SEGMENTED_DATA}
-            size="xs"
-            styles={{
-              root: {
-                backgroundColor: "var(--bg-tertiary)",
-                border: "1px solid var(--border-color)",
-              },
-              label: {
-                color: "var(--text-primary)",
-                fontWeight: 500,
-                fontSize: 12,
-                padding: "4px 10px",
-              },
-              indicator: {
-                backgroundColor: COLUMN_CSS_COLORS[task.status] || "var(--accent-blue)",
-                boxShadow: "none",
-              },
-            }}
-          />
+          <Box>
+            <Text size="sm" fw={500} c="dimmed" mb={6}>
+              Status
+            </Text>
+            <SegmentedControl
+              value={task.status}
+              onChange={(val) => onChangeStatus(task.id, val)}
+              data={SEGMENTED_DATA}
+              size="xs"
+              fullWidth
+              styles={{
+                root: {
+                  backgroundColor: "var(--bg-tertiary)",
+                  border: "1px solid var(--border-color)",
+                },
+                label: {
+                  color: "var(--text-primary)",
+                  fontWeight: 500,
+                  fontSize: 12,
+                  padding: "6px 12px",
+                },
+                indicator: {
+                  backgroundColor: COLUMN_CSS_COLORS[task.status] || "var(--accent-blue)",
+                  boxShadow: "none",
+                },
+              }}
+            />
+          </Box>
 
           {/* Assignee */}
-          <Text size="sm" fw={500} c="dimmed" style={{ alignSelf: "center" }}>
-            Assignee
-          </Text>
-          <Select
-            placeholder="Unassigned"
-            data={agentSelectData}
-            value={editAssignee || null}
-            onChange={handleAssigneeChange}
-            clearable
-            size="xs"
-            styles={selectDropdownStyles}
-          />
+          <Box>
+            <Text size="sm" fw={500} c="dimmed" mb={6}>
+              Assignee
+            </Text>
+            <Select
+              placeholder="Unassigned"
+              data={agentSelectData}
+              value={editAssignee || null}
+              onChange={handleAssigneeChange}
+              clearable
+              size="sm"
+              styles={selectDropdownStyles}
+            />
+          </Box>
 
           {/* Priority */}
-          <Text size="sm" fw={500} c="dimmed" style={{ alignSelf: "center" }}>
-            Priority
-          </Text>
-          <SegmentedControl
-            value={task.priority}
-            onChange={(val) => saveField("priority", val)}
-            data={[
-              { value: "P0", label: "P0" },
-              { value: "P1", label: "P1" },
-              { value: "P2", label: "P2" },
-              { value: "P3", label: "P3" },
-            ]}
-            size="xs"
-            styles={{
-              root: {
-                backgroundColor: "var(--bg-tertiary)",
-                border: "1px solid var(--border-color)",
-              },
-              label: {
-                color: "var(--text-primary)",
-                fontWeight: 500,
-                fontSize: 12,
-                padding: "4px 10px",
-              },
-              indicator: {
-                backgroundColor: PRIORITY_COLORS[task.priority] === "red" ? "var(--mantine-color-red-6)" :
-                                 PRIORITY_COLORS[task.priority] === "orange" ? "var(--mantine-color-orange-6)" :
-                                 PRIORITY_COLORS[task.priority] === "blue" ? "var(--accent-blue)" :
-                                 "var(--text-muted)",
-                boxShadow: "none",
-              },
-            }}
-          />
+          <Box>
+            <Text size="sm" fw={500} c="dimmed" mb={6}>
+              Priority
+            </Text>
+            <SegmentedControl
+              value={task.priority}
+              onChange={(val) => saveField("priority", val)}
+              data={[
+                { value: "P0", label: "P0 Critical" },
+                { value: "P1", label: "P1 High" },
+                { value: "P2", label: "P2 Medium" },
+                { value: "P3", label: "P3 Low" },
+              ]}
+              size="xs"
+              fullWidth
+              styles={{
+                root: {
+                  backgroundColor: "var(--bg-tertiary)",
+                  border: "1px solid var(--border-color)",
+                },
+                label: {
+                  color: "var(--text-primary)",
+                  fontWeight: 500,
+                  fontSize: 12,
+                  padding: "6px 12px",
+                },
+                indicator: {
+                  backgroundColor: PRIORITY_COLORS[task.priority] === "red" ? "var(--mantine-color-red-6)" :
+                                   PRIORITY_COLORS[task.priority] === "orange" ? "var(--mantine-color-orange-6)" :
+                                   PRIORITY_COLORS[task.priority] === "blue" ? "var(--accent-blue)" :
+                                   "var(--text-muted)",
+                  boxShadow: "none",
+                },
+              }}
+            />
+          </Box>
 
           {/* Labels */}
-          <Text size="sm" fw={500} c="dimmed" style={{ alignSelf: "center" }}>
-            Labels
-          </Text>
-          <TagsInput
-            placeholder="Add label"
-            value={editLabels}
-            onChange={handleLabelsChange}
-            size="xs"
-            styles={{
-              input: {
-                backgroundColor: "var(--bg-tertiary)",
-                borderColor: "var(--border-color)",
-                color: "var(--text-primary)",
-              },
-            }}
-          />
+          <Box>
+            <Text size="sm" fw={500} c="dimmed" mb={6}>
+              Labels
+            </Text>
+            <TagsInput
+              placeholder="Add label"
+              value={editLabels}
+              onChange={handleLabelsChange}
+              size="sm"
+              styles={{
+                input: {
+                  backgroundColor: "var(--bg-tertiary)",
+                  borderColor: "var(--border-color)",
+                  color: "var(--text-primary)",
+                },
+              }}
+            />
+          </Box>
 
           {/* Due Date */}
-          <Text size="sm" fw={500} c="dimmed" style={{ alignSelf: "center" }}>
-            Due Date
-          </Text>
-          <DateInput
-            placeholder="Select due date"
-            value={editDueDate ? new Date(editDueDate) : null}
-            onChange={handleDateChange((v) => handleDueDateChange(v))}
-            clearable
-            size="xs"
-            styles={{
-              input: {
-                backgroundColor: "var(--bg-tertiary)",
-                borderColor: "var(--border-color)",
-                color: "var(--text-primary)",
-              },
-            }}
-          />
-        </SimpleGrid>
+          <Box>
+            <Text size="sm" fw={500} c="dimmed" mb={6}>
+              Due Date
+            </Text>
+            <DateInput
+              placeholder="Select due date"
+              value={editDueDate ? new Date(editDueDate) : null}
+              onChange={handleDateChange((v) => handleDueDateChange(v))}
+              clearable
+              size="sm"
+              styles={{
+                input: {
+                  backgroundColor: "var(--bg-tertiary)",
+                  borderColor: "var(--border-color)",
+                  color: "var(--text-primary)",
+                },
+              }}
+            />
+          </Box>
+        </Stack>
 
         {/* ---- Description ---- */}
         <Box>
