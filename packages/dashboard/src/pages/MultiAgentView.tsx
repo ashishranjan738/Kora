@@ -121,7 +121,7 @@ export function MultiAgentView() {
   // Mosaic layout state
   const [mosaicValue, setMosaicValue] = useState<MosaicNode<string> | null>(null);
   const mosaicInitialized = useRef(false);
-  const knownAgentIdsRef = useRef<string>("");
+  const knownAgentIdsRef = useRef<string>("__uninitialized__");
 
   // Broadcast state
   const [broadcastMsg, setBroadcastMsg] = useState("");
