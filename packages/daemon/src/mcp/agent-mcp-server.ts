@@ -588,6 +588,33 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: "create_pr",
+    description:
+      "Create a GitHub pull request from your current branch. Automatically detects head branch, base branch defaults to main. Requires GITHUB_TOKEN env var or github.token in .kora.yml.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        title: {
+          type: "string",
+          description: "PR title (required)",
+        },
+        body: {
+          type: "string",
+          description: "PR description/body (required)",
+        },
+        baseBranch: {
+          type: "string",
+          description: "Base branch to merge into (default: main)",
+        },
+        headBranch: {
+          type: "string",
+          description: "Head branch to merge from (default: current branch)",
+        },
+      },
+      required: ["title", "body"],
+    },
+  },
+  {
     name: "save_knowledge",
     description:
       "Save a knowledge entry that persists across sessions. Use this to record important findings, patterns, or decisions that future agents should know about. Entries are injected into all agent personas at spawn.",
@@ -1233,7 +1260,8 @@ async function handleToolCall(
           // Try to load from .kora.yml
           try {
             const configPath = nodePath.join(PROJECT_PATH, ".kora.yml");
-            const configRaw = fs.readFileSync(configPath, "utf-8");
+            const { readFile } = await import("fs/promises");
+            const configRaw = await readFile(configPath, "utf-8");
             // Simple YAML parse for github.token
             const tokenMatch = configRaw.match(/github:\s*\n\s*token:\s*['"]?([^\s'"]+)['"]?/);
             if (tokenMatch) {

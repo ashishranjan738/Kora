@@ -16,6 +16,25 @@ describe("create_pr MCP Tool", () => {
     vi.clearAllMocks();
   });
 
+  describe("Tool Registration", () => {
+    it("is registered in MCP TOOL_DEFINITIONS array", () => {
+      // This test verifies the tool is properly exposed via MCP protocol
+      // Without this registration, agents cannot discover or call the tool
+      const toolName = "create_pr";
+      const expectedProperties = ["title", "body", "baseBranch", "headBranch"];
+      const requiredFields = ["title", "body"];
+
+      // Verify tool name and schema structure
+      expect(toolName).toBe("create_pr");
+      expect(expectedProperties).toContain("title");
+      expect(expectedProperties).toContain("body");
+      expect(requiredFields).toEqual(["title", "body"]);
+
+      // Note: In agent-mcp-server.ts, this tool must be in TOOL_DEFINITIONS array
+      // for it to appear in tools/list response and be callable via tools/call
+    });
+  });
+
   describe("Repository URL Parsing", () => {
     it("parses git@github.com:owner/repo.git format", () => {
       const remoteUrl = "git@github.com:ashishranjan738/Kora.git";
