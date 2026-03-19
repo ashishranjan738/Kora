@@ -14,6 +14,10 @@ import * as readline from "readline";
 import * as http from "http";
 import * as fs from "fs";
 import * as nodePath from "path";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 
 // ---------------------------------------------------------------------------
 // Parse CLI args
@@ -476,6 +480,15 @@ const TOOL_DEFINITIONS = [
         },
       },
       required: ["agentId"],
+    },
+  },
+  {
+    name: "prepare_pr",
+    description:
+      "Prepare your branch for PR: fetch latest main, rebase onto it, and force-push. Run this BEFORE creating a PR to prevent stale branch issues and merge conflicts.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
     },
   },
 ];
@@ -983,6 +996,74 @@ async function handleToolCall(
       }
 
       return { success: true, nudged: target2.config?.name || target2.id };
+    }
+
+    case "prepare_pr": {
+      // Get the calling agent's working directory
+      const agentsResp = (await apiCall(
+        "GET",
+        `/api/v1/sessions/${SESSION_ID}/agents`,
+      )) as AgentsResponse;
+
+      const currentAgent = (agentsResp.agents || []).find((a) => a.id === AGENT_ID);
+      if (!currentAgent || !(currentAgent.config as any)?.workingDirectory) {
+        return { success: false, error: "Could not determine your working directory" };
+      }
+
+      const workDir = (currentAgent.config as any).workingDirectory;
+
+      try {
+        // Step 1: Fetch latest main
+        const { stdout: fetchOut, stderr: fetchErr } = await execFileAsync("git", ["fetch", "origin", "main"], { cwd: workDir });
+
+        // Step 2: Check how many commits behind main
+        let commitsBehind = 0;
+        try {
+          const { stdout: revListOut } = await execFileAsync("git", ["rev-list", "--count", "HEAD..origin/main"], { cwd: workDir });
+          commitsBehind = parseInt(revListOut.trim(), 10) || 0;
+        } catch {
+          // Ignore errors (might be on detached HEAD or orphan branch)
+        }
+
+        // Step 3: Rebase onto origin/main
+        const { stdout: rebaseOut, stderr: rebaseErr } = await execFileAsync("git", ["rebase", "origin/main"], { cwd: workDir });
+
+        // Step 4: Force-push (with lease to prevent accidental overwrites)
+        const { stdout: pushOut, stderr: pushErr } = await execFileAsync("git", ["push", "origin", "HEAD", "--force-with-lease"], { cwd: workDir });
+
+        return {
+          success: true,
+          commitsBehind,
+          message: commitsBehind > 0
+            ? `Rebased successfully! Your branch was ${commitsBehind} commit(s) behind main.`
+            : "Already up to date with main. Branch pushed.",
+          output: {
+            fetch: fetchOut + fetchErr,
+            rebase: rebaseOut + rebaseErr,
+            push: pushOut + pushErr,
+          },
+        };
+      } catch (err: unknown) {
+        const error = err as { stdout?: string; stderr?: string; message?: string };
+        const stderr = error.stderr || "";
+        const stdout = error.stdout || "";
+
+        // Check if it's a rebase conflict
+        if (stderr.includes("CONFLICT") || stdout.includes("CONFLICT")) {
+          return {
+            success: false,
+            error: "Rebase conflict detected. You need to resolve conflicts manually.",
+            conflicts: true,
+            output: stdout + "\n" + stderr,
+          };
+        }
+
+        return {
+          success: false,
+          error: error.message || "Git operation failed",
+          output: stdout + "\n" + stderr,
+        };
+      }
     }
 
     default:
