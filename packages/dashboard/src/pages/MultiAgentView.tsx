@@ -278,8 +278,14 @@ export function MultiAgentView() {
           let updated: MosaicNode<string> | null = prev;
 
           for (const id of currentIds) {
-            // Keep editor tiles and pending terminals
-            if (id.startsWith("editor-") || id.startsWith("term-pending-")) continue;
+            // Keep editor tiles
+            if (id.startsWith("editor-")) continue;
+
+            // Remove orphaned pending terminals from previous mount
+            if (id.startsWith("term-pending-")) {
+              updated = updated ? removeMosaicLeaf(updated, id) : null;
+              continue;
+            }
 
             // Terminal tile: validate against server terminal list
             if (id.startsWith("term-")) {
@@ -527,8 +533,11 @@ export function MultiAgentView() {
     loadData();
   }
 
+  const [isCreatingTerminal, setIsCreatingTerminal] = useState(false);
+
   async function handleAddTerminal() {
-    if (!sessionId) return;
+    if (!sessionId || isCreatingTerminal) return;
+    setIsCreatingTerminal(true);
 
     // Optimistic: add tile immediately with pending ID
     const tempId = `term-pending-${Date.now()}`;
@@ -537,8 +546,16 @@ export function MultiAgentView() {
       return { type: "split", direction: "row", children: [prev, tempId], splitPercentages: [70, 30] };
     });
 
+    // 30s timeout: remove pending tile if creation takes too long
+    const timeoutId = setTimeout(() => {
+      setMosaicValue((prev) => prev ? removeMosaicLeaf(prev, tempId) : prev);
+      setIsCreatingTerminal(false);
+      showToast("Terminal creation timed out");
+    }, 30000);
+
     try {
       const result = await api.openTerminal(sessionId);
+      clearTimeout(timeoutId);
       // Add to shared Zustand store so other views can see it
       addTerminalSession({
         id: result.id,
@@ -550,9 +567,12 @@ export function MultiAgentView() {
       // Replace temp tile with real terminal
       setMosaicValue((prev) => replaceMosaicLeaf(prev, tempId, result.id));
     } catch (err: any) {
+      clearTimeout(timeoutId);
       // Remove optimistic tile on failure
       setMosaicValue((prev) => prev ? removeMosaicLeaf(prev, tempId) : prev);
       showToast(`Failed to open terminal: ${err.message}`);
+    } finally {
+      setIsCreatingTerminal(false);
     }
   }
 
@@ -1239,8 +1259,10 @@ export function MultiAgentView() {
         <button
           className="split-add-agent-btn"
           onClick={handleAddTerminal}
+          disabled={isCreatingTerminal}
+          style={isCreatingTerminal ? { opacity: 0.6, cursor: "wait" } : undefined}
         >
-          + Terminal
+          {isCreatingTerminal ? "Opening..." : "+ Terminal"}
         </button>
 
         {/* Add Editor button */}
