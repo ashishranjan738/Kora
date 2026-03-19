@@ -39,13 +39,17 @@ export class MockPtyBackend implements IPtyBackend {
   async sendKeys(session: string, keys: string, options?: { literal?: boolean }): Promise<void> {
     const sess = this.sessions.get(session);
     if (sess && sess.alive) {
-      const data = options?.literal ? keys : keys + "\n";
-      sess.output.push(`> ${data}`);
+      // Always append newline — mirrors holdpty/tmux behavior where Enter is always sent
+      sess.output.push(`> ${keys}\n`);
     }
   }
 
   async sendRawInput(session: string, data: string): Promise<void> {
-    return this.sendKeys(session, data, { literal: true });
+    // Raw input: no Enter appended (for xterm.js keystroke forwarding)
+    const sess = this.sessions.get(session);
+    if (sess && sess.alive) {
+      sess.output.push(`> ${data}`);
+    }
   }
 
   async capturePane(session: string, lines: number = 1000, _escapeSequences: boolean = false): Promise<string> {
