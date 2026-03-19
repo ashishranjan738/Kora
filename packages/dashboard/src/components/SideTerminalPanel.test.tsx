@@ -58,7 +58,7 @@ describe('SideTerminalPanel - Notification Features', () => {
   describe('Badge "9+" Display', () => {
     it('should show exact count for unread messages < 10', () => {
       // Test the badge display logic directly
-      const unreadCount = 5;
+      const unreadCount: number = 5;
       const displayText = unreadCount >= 10 ? "9+" : unreadCount;
       const titleText = `${unreadCount} unread message${unreadCount !== 1 ? 's' : ''}`;
 
@@ -67,7 +67,7 @@ describe('SideTerminalPanel - Notification Features', () => {
     });
 
     it('should show "9+" for unread count >= 10', () => {
-      const unreadCount = 15;
+      const unreadCount: number = 15;
       const displayText = unreadCount >= 10 ? "9+" : unreadCount;
       const titleText = `${unreadCount} unread message${unreadCount !== 1 ? 's' : ''}`;
 

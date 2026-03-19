@@ -47,8 +47,8 @@ describe('Terminal Notification Flow - Integration Tests', () => {
 
     it('should increment unread count when notification received for inactive tab', () => {
       // Simulate notification flow when tab is inactive
-      const activeTabId = 'agent-1';
-      const notificationTabId = 'agent-2';
+      const activeTabId: string = 'agent-1';
+      const notificationTabId: string = 'agent-2';
       const unreadCounts: Record<string, number> = {
         'agent-1': 0,
         'agent-2': 0,

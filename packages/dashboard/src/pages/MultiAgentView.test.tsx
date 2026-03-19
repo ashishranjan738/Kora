@@ -23,8 +23,8 @@ describe('MultiAgentView - Fullscreen Terminal Fix', () => {
     });
 
     it('should render terminal in mosaic when different agent is fullscreen', () => {
-      const fullscreenAgentId = 'agent-2';
-      const agentId = 'agent-1';
+      const fullscreenAgentId: string = 'agent-2';
+      const agentId: string = 'agent-1';
 
       // When different agent is fullscreen, mosaic terminal should render
       const shouldRenderInMosaic = fullscreenAgentId !== agentId;

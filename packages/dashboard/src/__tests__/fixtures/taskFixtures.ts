@@ -106,7 +106,7 @@ export const mockAgents = [
   },
 ];
 
-export const createMockApi = (overrides?: Partial<ReturnType<typeof createMockApi>>) => ({
+export const createMockApi = (overrides?: Record<string, any>) => ({
   getTasks: vi.fn().mockResolvedValue({ tasks: mockTasks }),
   createTask: vi.fn().mockResolvedValue({ task: mockTasks[0] }),
   updateTask: vi.fn().mockResolvedValue({ task: mockTasks[0] }),
