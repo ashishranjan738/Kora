@@ -243,8 +243,11 @@ export class HoldptyController implements IPtyBackend {
     keys: string,
     options?: { literal?: boolean },
   ): Promise<void> {
-    // PTY terminals use \r (carriage return) for Enter, not \n
-    const data = options?.literal ? keys : keys + "\r";
+    // PTY terminals use \r (carriage return) for Enter, not \n.
+    // Always append \r — in holdpty, everything is already literal (raw terminal input),
+    // so the `literal` flag has no effect. The tmux-controller equivalent always sends
+    // Enter after keys regardless of -l flag (line 136 in tmux-controller.ts).
+    const data = keys + "\r";
 
     // Fast path: route through PtyManager if dashboard terminal is connected
     if (this.ptyManager?.hasActiveSession(session)) {
@@ -287,9 +290,47 @@ export class HoldptyController implements IPtyBackend {
 
   /**
    * Send raw terminal input (no Enter appended).
+   * Used for interactive terminal streaming from xterm.js — user keystrokes
+   * are forwarded verbatim without adding a carriage return.
    */
   async sendRawInput(session: string, data: string): Promise<void> {
-    await this.sendKeys(session, data, { literal: true });
+    // Fast path: route through PtyManager if dashboard terminal is connected
+    if (this.ptyManager?.hasActiveSession(session)) {
+      this.ptyManager.write(session, data);
+      return;
+    }
+
+    // Fallback: direct socket attach (no Enter appended)
+    const proto = await getProtocol();
+    const socketPath = await this.getSocketPath(session);
+
+    return new Promise<void>((resolve) => {
+      const socket = net.createConnection(socketPath, () => {
+        const hello = proto.encodeHello({ mode: "attach", protocolVersion: 1 });
+        socket.write(hello);
+      });
+
+      let gotAck = false;
+      socket.on("data", (chunk: Buffer) => {
+        if (!gotAck && chunk.length >= 5 && chunk[0] === proto.MSG.HELLO_ACK) {
+          gotAck = true;
+          const dataFrame = proto.encodeDataIn(Buffer.from(data, "utf-8"));
+          socket.write(dataFrame);
+          setTimeout(() => { socket.destroy(); resolve(); }, 50);
+        }
+      });
+
+      socket.on("error", (err) => {
+        const msg = err.message;
+        if (msg.includes("ENOENT") || msg.includes("ECONNREFUSED") || msg.includes("no such file")
+            || msg.includes("ECONNRESET") || msg.includes("already attached")) {
+          logger.error(`[HoldptyController] Ignoring sendRawInput error for ${session}: ${msg}\n`);
+        }
+        resolve();
+      });
+
+      setTimeout(() => { socket.destroy(); resolve(); }, 5000);
+    });
   }
 
   /**
