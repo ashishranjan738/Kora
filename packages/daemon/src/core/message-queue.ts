@@ -66,6 +66,8 @@ export class MessageQueue {
   private agentRoles = new Map<string, string>();
   /** Callback for TTL expiry events */
   private onExpiry: ((agentId: string, message: string, priority: MessagePriority) => void) | null = null;
+  /** Callback to broadcast WebSocket events (message-buffered, message-expired) */
+  private broadcastFn: ((event: Record<string, unknown>) => void) | null = null;
 
   // ─── Re-notification state ──────────────────────────────
   /** Notification attempt counters per agent (reset when agent reads messages) */
@@ -125,6 +127,11 @@ export class MessageQueue {
     this.onExpiry = cb;
   }
 
+  /** Set callback to broadcast WebSocket events to dashboard */
+  setBroadcastCallback(cb: (event: Record<string, unknown>) => void): void {
+    this.broadcastFn = cb;
+  }
+
   /** Queue a message for delivery to an agent. Returns false if dropped (loop). */
   enqueue(agentId: string, tmuxSession: string, message: string, fromAgentId?: string): boolean {
     // Conversation loop detection — max 8 messages between same pair in 2 minutes
@@ -161,6 +168,9 @@ export class MessageQueue {
       logger.warn({ agentId, evictedPriority: evicted.priority }, "[MessageQueue] Queue full, evicted lowest-priority message");
       if (this.onExpiry) {
         this.onExpiry(agentId, evicted.message, evicted.priority);
+      }
+      if (this.broadcastFn) {
+        this.broadcastFn({ event: "message-expired", agentId, priority: evicted.priority });
       }
     }
 
@@ -243,6 +253,9 @@ export class MessageQueue {
         if (this.onExpiry) {
           this.onExpiry(expired.agentId, expired.message, expired.priority);
         }
+        if (this.broadcastFn) {
+          this.broadcastFn({ event: "message-expired", agentId: expired.agentId, priority: expired.priority });
+        }
       }
     }
 
@@ -254,6 +267,9 @@ export class MessageQueue {
     // Check rate limit BEFORE dequeuing. If over limit, KEEP in queue for next cycle.
     if (this.isRateLimited(msg.agentId)) {
       logger.debug({ agentId: msg.agentId }, "[MessageQueue] Rate limited — keeping in queue for next cycle");
+      if (this.broadcastFn) {
+        this.broadcastFn({ event: "message-buffered", agentId: msg.agentId, queueSize: queue.length });
+      }
       return; // Don't dequeue, don't drop. Will retry on next poll.
     }
 
