@@ -124,6 +124,40 @@ export function SessionDetail() {
       } as TerminalTab;
     })
     .filter((t): t is TerminalTab => t !== null);
+
+  // Optimistic terminal creation — show tab immediately, create session async
+  const createTerminalOptimistic = useCallback(() => {
+    const pendingId = `term-pending-${Date.now()}`;
+    const terminalName = `Terminal ${terminalSessions.filter((t) => t.type === "standalone").length + 1}`;
+
+    // Show tab immediately with pending ID
+    addSession({
+      id: pendingId,
+      name: terminalName,
+      type: "standalone",
+      createdAt: new Date().toISOString(),
+    });
+    openTab(pendingId);
+
+    // Create session in background
+    api.openTerminal(sessionId!).then((result) => {
+      // Replace pending entry with real one
+      useTerminalSessionStore.getState().removeSession(pendingId);
+      useTerminalSessionStore.getState().closeTab(pendingId);
+      addSession({
+        id: result.id,
+        tmuxSession: result.tmuxSession,
+        name: terminalName,
+        type: "standalone",
+        createdAt: new Date().toISOString(),
+      });
+      openTab(result.id);
+    }).catch(() => {
+      // Remove pending tab on failure
+      useTerminalSessionStore.getState().removeSession(pendingId);
+    });
+  }, [sessionId, terminalSessions, addSession, openTab, api]);
+
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [stoppingSession, setStoppingSession] = useState(false);
   const [stopSuccess, setStopSuccess] = useState(false);
@@ -391,26 +425,7 @@ export function SessionDetail() {
             &#128187; Open in VS Code
           </button>
           <button
-            onClick={async () => {
-              try {
-                const result = await api.openTerminal(sessionId!);
-                const terminalName = `Terminal ${terminalSessions.filter((t) => t.type === "standalone").length + 1}`;
-
-                // Add to session store
-                addSession({
-                  id: result.id,
-                  tmuxSession: result.tmuxSession,
-                  name: terminalName,
-                  type: "standalone",
-                  createdAt: new Date().toISOString(),
-                });
-
-                // Open tab
-                openTab(result.id);
-              } catch (err: any) {
-                alert(`Failed to open terminal: ${err.message}`);
-              }
-            }}
+            onClick={createTerminalOptimistic}
           >
             &#128421; Terminal
           </button>
@@ -539,24 +554,7 @@ export function SessionDetail() {
 
               {/* New terminal */}
               <button
-                onClick={async () => {
-                  try {
-                    const result = await api.openTerminal(sessionId!);
-                    const terminalName = `Terminal ${terminalSessions.filter((t) => t.type === "standalone").length + 1}`;
-
-                    // Add to session store
-                    addSession({
-                      id: result.id,
-                      tmuxSession: result.tmuxSession,
-                      name: terminalName,
-                      type: "standalone",
-                      createdAt: new Date().toISOString(),
-                    });
-
-                    // Open tab
-                    openTab(result.id);
-                  } catch {}
-                }}
+                onClick={createTerminalOptimistic}
                 style={{
                   background: "var(--bg-tertiary)", border: "1px solid var(--border-color)", color: "var(--text-secondary)",
                   padding: "3px 10px", borderRadius: 4, cursor: "pointer", fontSize: 11,
@@ -1325,63 +1323,63 @@ function AgentsTab({
 
     {/* Terminals Section */}
     <div style={{ marginTop: 48 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-          Active Terminals
-          <Badge
-            variant="light"
-            color="blue"
-            size="sm"
-            style={{ marginLeft: 8 }}
-          >
-            {terminalSessions.length}
-          </Badge>
-        </h2>
+      {/* Filter to standalone only — agents are shown in the Agents section */}
+      {(() => {
+        const standaloneTerminals = terminalSessions.filter(t => t.type === "standalone");
+
+        return (
+          <>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+                Terminals
+                <Badge
+                  variant="light"
+                  color="blue"
+                  size="sm"
+                  style={{ marginLeft: 8 }}
+                >
+                  {standaloneTerminals.length}
+                </Badge>
+              </h2>
         <Button
           size="sm"
-          onClick={async () => {
-            try {
-              const result = await api.openTerminal(sessionId);
-              const terminalName = `Terminal ${terminalSessions.filter((t) => t.type === "standalone").length + 1}`;
-
-              // Add to terminal session store
-              addSession({
-                id: result.id,
-                tmuxSession: result.tmuxSession,
-                name: terminalName,
-                type: "standalone",
-                createdAt: new Date().toISOString(),
-              });
-
-              // Open tab in side panel
+          onClick={() => {
+            const pendingId = `term-pending-${Date.now()}`;
+            const terminalName = `Terminal ${terminalSessions.filter((t) => t.type === "standalone").length + 1}`;
+            addSession({ id: pendingId, name: terminalName, type: "standalone", createdAt: new Date().toISOString() });
+            openTab(pendingId);
+            api.openTerminal(sessionId).then((result) => {
+              useTerminalSessionStore.getState().removeSession(pendingId);
+              useTerminalSessionStore.getState().closeTab(pendingId);
+              addSession({ id: result.id, tmuxSession: result.tmuxSession, name: terminalName, type: "standalone", createdAt: new Date().toISOString() });
               openTab(result.id);
-            } catch (err: any) {
-              alert(`Failed to create terminal: ${err.message}`);
-            }
+            }).catch(() => {
+              useTerminalSessionStore.getState().removeSession(pendingId);
+            });
           }}
           styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)" } }}
         >
           + New Terminal
         </Button>
-      </div>
+            </div>
 
-      {terminalSessions.length === 0 ? (
-        <Paper
-          p="xl"
-          withBorder
-          style={{
-            backgroundColor: "var(--bg-secondary)",
-            borderColor: "var(--border-color)",
-            textAlign: "center",
-          }}
-        >
-          <Text size="sm" c="dimmed">
-            No active terminals. Click "+ New Terminal" to create one.
-          </Text>
-        </Paper>
-      ) : (
-        <div style={{ display: "grid", gap: 12 }}>
-          {terminalSessions.map((terminal) => {
+            {standaloneTerminals.length === 0 ? (
+              <Paper
+                p="xl"
+                withBorder
+                style={{
+                  backgroundColor: "var(--bg-secondary)",
+                  borderColor: "var(--border-color)",
+                  textAlign: "center",
+                }}
+              >
+                <Text size="sm" c="dimmed">
+                  No standalone terminals. Click "+ New Terminal" to create one.
+                </Text>
+              </Paper>
+            ) : (
+              <div style={{ display: "grid", gap: 12 }}>
+                {standaloneTerminals.map((terminal) => {
             const isAgent = terminal.type === "agent";
             const createdDate = new Date(terminal.createdAt);
             const relativeTime = formatUptime(terminal.createdAt);
@@ -1509,9 +1507,12 @@ function AgentsTab({
                 </Group>
               </Paper>
             );
-          })}
-        </div>
-      )}
+                })}
+              </div>
+            )}
+          </>
+        );
+      })()}
     </div>
     </>
   );
