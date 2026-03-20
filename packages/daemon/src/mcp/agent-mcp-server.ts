@@ -467,7 +467,7 @@ const TOOL_DEFINITIONS = [
         },
         status: {
           type: "string",
-          description: 'New status - "pending", "in-progress", "review", "done"',
+          description: 'New status — use list_tasks to see valid workflow states for this session. Common states: "pending", "in-progress", "review", "e2e-testing", "done"',
         },
         title: {
           type: "string",
@@ -1038,6 +1038,22 @@ async function handleToolCall(
       const { taskId, status, comment, title, description, priority, assignedTo, dueDate } = toolArgs;
       const labels = (toolArgs as any).labels; // array type from MCP
       const results: { statusUpdate?: unknown; commentAdded?: unknown } = {};
+
+      // Validate status against session's configured workflow states
+      if (status) {
+        try {
+          const wsResponse = (await apiCall("GET", `/api/v1/sessions/${SESSION_ID}/workflow-states`)) as { workflowStates?: Array<{ id: string; label: string }> };
+          const validStates = wsResponse.workflowStates?.map(s => s.id) || ["pending", "in-progress", "review", "e2e-testing", "done"];
+          if (!validStates.includes(status)) {
+            return {
+              success: false,
+              error: `Invalid status "${status}". Valid workflow states for this session: ${validStates.join(", ")}`,
+            };
+          }
+        } catch {
+          // Fallback: let the API endpoint validate (non-fatal pre-check failure)
+        }
+      }
 
       // If setting to "in-progress", check dependency gating first
       if (status === "in-progress") {

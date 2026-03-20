@@ -25,6 +25,7 @@ import {
   ARCHIVE_DIR,
   PERSONAS_DIR,
   KNOWLEDGE_DIR,
+  DEFAULT_WORKFLOW_STATES,
 } from "@kora/shared";
 import { EventLog } from "./event-log.js";
 import { logger } from "./logger.js";
@@ -60,6 +61,11 @@ export class SessionManager {
 
         // Migrate from flat .kora/ layout if session dir doesn't exist yet
         await this.migrateFromFlatLayout(config.projectPath, config.id, isDev);
+
+        // Ensure workflow states exist (migration for pre-workflow sessions)
+        if (!config.workflowStates || config.workflowStates.length === 0) {
+          config.workflowStates = [...DEFAULT_WORKFLOW_STATES];
+        }
 
         this.sessions.set(config.id, {
           config,
@@ -130,6 +136,7 @@ export class SessionManager {
       status: "active" as SessionStatus,
       messagingMode: config.messagingMode ?? "mcp",
       worktreeMode: config.worktreeMode ?? "isolated",
+      workflowStates: [...DEFAULT_WORKFLOW_STATES],
     };
 
     // 3. Write session.json inside the runtime dir

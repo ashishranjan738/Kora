@@ -27,7 +27,20 @@ export interface SessionConfig {
   worktreeMode?: WorktreeMode;
   /** Webhook configurations for event notifications */
   webhooks?: WebhookConfig[];
+  /** Configurable task workflow states. Default: DEFAULT_WORKFLOW_STATES */
+  workflowStates?: WorkflowState[];
 }
+
+/** A workflow state for task management (e.g., "pending", "in-progress", "e2e-testing") */
+export interface WorkflowState {
+  id: string;           // Machine-readable ID used in task status field (e.g., "in-progress")
+  label: string;        // Display label (e.g., "In Progress")
+  color?: string;       // Optional hex color for UI (e.g., "#3b82f6")
+  category?: WorkflowCategory; // Grouping: "not-started", "active", "closed". Used for filtering.
+}
+
+/** Workflow state category for grouping/filtering */
+export type WorkflowCategory = "not-started" | "active" | "closed";
 
 export interface WebhookConfig {
   url: string;

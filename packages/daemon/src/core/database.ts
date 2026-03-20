@@ -337,7 +337,8 @@ export class AppDatabase extends EventEmitter {
 
     if (filters.status) {
       if (filters.status === "active") {
-        conditions.push("status IN ('pending', 'in-progress', 'review')");
+        // "active" = all non-closed states (anything except "done" and custom closed states)
+        conditions.push("status != 'done'");
       } else {
         conditions.push("status = ?");
         values.push(filters.status);

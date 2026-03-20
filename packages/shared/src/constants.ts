@@ -84,3 +84,12 @@ export const DEFAULT_WORKER_PERMISSIONS = {
   canModifyFiles: true,
   maxSubAgents: 0,
 } as const;
+
+// Default task workflow states for new sessions
+export const DEFAULT_WORKFLOW_STATES = [
+  { id: "pending",      label: "Pending",      color: "#6b7280", category: "not-started" as const },
+  { id: "in-progress",  label: "In Progress",  color: "#3b82f6", category: "active" as const },
+  { id: "review",       label: "Review",       color: "#f59e0b", category: "active" as const },
+  { id: "e2e-testing",  label: "E2E Testing",  color: "#8b5cf6", category: "active" as const },
+  { id: "done",         label: "Done",         color: "#22c55e", category: "closed" as const },
+] as const;

@@ -9,7 +9,9 @@ import {
   getRuntimeTmuxPrefix,
   getRuntimeDaemonDir,
   SESSIONS_SUBDIR,
+  DEFAULT_WORKFLOW_STATES,
 } from "@kora/shared";
+import type { WorkflowState } from "@kora/shared";
 import type {
   DaemonStatusResponse,
   SessionResponse,
@@ -641,6 +643,80 @@ export function createApiRouter(deps: {
       await sessionManager.save();
 
       res.status(204).send();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // ─── Workflow States ──────────────────────────────────────────────────
+
+  /** GET /sessions/:sid/workflow-states — get configured workflow states */
+  router.get("/sessions/:sid/workflow-states", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const session = sessionManager.getSession(sid);
+      if (!session) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const states = session.config.workflowStates || [...DEFAULT_WORKFLOW_STATES];
+      res.json({ workflowStates: states });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  /** PUT /sessions/:sid/workflow-states — update workflow states (add/remove/reorder) */
+  router.put("/sessions/:sid/workflow-states", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const session = sessionManager.getSession(sid);
+      if (!session) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+
+      const { workflowStates } = req.body as { workflowStates: WorkflowState[] };
+
+      // Validate input
+      if (!Array.isArray(workflowStates) || workflowStates.length === 0) {
+        res.status(400).json({ error: "workflowStates must be a non-empty array" });
+        return;
+      }
+
+      // Validate each state has required fields
+      for (const state of workflowStates) {
+        if (!state.id || typeof state.id !== "string") {
+          res.status(400).json({ error: "Each workflow state must have a non-empty string 'id'" });
+          return;
+        }
+        if (!state.label || typeof state.label !== "string") {
+          res.status(400).json({ error: `Workflow state "${state.id}" must have a non-empty string 'label'` });
+          return;
+        }
+        if (state.color !== undefined && typeof state.color !== "string") {
+          res.status(400).json({ error: `Workflow state "${state.id}" color must be a string` });
+          return;
+        }
+      }
+
+      // Check for duplicate IDs
+      const ids = workflowStates.map(s => s.id);
+      const duplicates = ids.filter((id, i) => ids.indexOf(id) !== i);
+      if (duplicates.length > 0) {
+        res.status(400).json({ error: `Duplicate workflow state IDs: ${[...new Set(duplicates)].join(", ")}` });
+        return;
+      }
+
+      // Update session config
+      await sessionManager.updateSession(sid, { workflowStates });
+
+      // Broadcast update via WebSocket
+      broadcastEvent({ event: "workflow-states-updated", sessionId: sid });
+
+      res.json({ workflowStates });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
@@ -1946,7 +2022,10 @@ export function createApiRouter(deps: {
         res.status(400).json({ error: "title must be a non-empty string" });
         return;
       }
-      const validStatuses = ["pending", "in-progress", "review", "done"];
+      // Validate status against session's configured workflow states
+      const session = sessionManager.getSession(sid);
+      const workflowStates = session?.config.workflowStates || [...DEFAULT_WORKFLOW_STATES];
+      const validStatuses = workflowStates.map(s => s.id);
       if (body.status !== undefined && !validStatuses.includes(body.status)) {
         res.status(400).json({ error: `status must be one of: ${validStatuses.join(", ")}` });
         return;
