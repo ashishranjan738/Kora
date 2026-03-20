@@ -77,6 +77,12 @@ export function AllSessions() {
   const [creating, setCreating] = useState(false);
   const [newMessagingMode, setNewMessagingMode] = useState<"mcp" | "terminal" | "manual">("mcp");
   const [newWorktreeMode, setNewWorktreeMode] = useState<"isolated" | "shared">("isolated");
+  const [newWorkflowStates, setNewWorkflowStates] = useState([
+    { id: "pending", label: "Pending", color: "#6b7280", category: "not-started" as const, transitions: ["in-progress"] as string[], skippable: false },
+    { id: "in-progress", label: "In Progress", color: "#3b82f6", category: "active" as const, transitions: ["review"] as string[], skippable: false },
+    { id: "review", label: "Review", color: "#f59e0b", category: "active" as const, transitions: ["done"] as string[], skippable: false },
+    { id: "done", label: "Done", color: "#22c55e", category: "closed" as const, transitions: [] as string[], skippable: false },
+  ]);
   const [recentPaths, setRecentPaths] = useState<string[]>([]);
 
   // Playbook state
@@ -167,6 +173,17 @@ export function AllSessions() {
         projectPath: newPath,
         messagingMode: newMessagingMode,
         worktreeMode: newWorktreeMode,
+        workflowStates: newWorkflowStates.length > 0
+          ? newWorkflowStates.map((s, i, arr) => ({
+              ...s,
+              // Auto-generate transitions: each state → next state (+ back to previous active)
+              transitions: s.transitions?.length ? s.transitions : (
+                i < arr.length - 1
+                  ? [arr[i + 1].id, ...(i > 0 ? [arr[i - 1].id] : [])]
+                  : [] // terminal state
+              ),
+            }))
+          : undefined,
       });
       useSessionStore.getState().addSession(result);
       setShowCreateDialog(false);
@@ -955,6 +972,111 @@ export function AllSessions() {
                 {newWorktreeMode === "isolated"
                   ? "Each agent gets its own git worktree branch. Safe for parallel file edits."
                   : "All agents share the same working directory. Use when agents work on different files."}
+              </div>
+            </div>
+            <div className="form-group">
+              <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>Task Pipeline</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = `custom-${Date.now()}`;
+                    setNewWorkflowStates(prev => {
+                      const insertIdx = prev.length > 0 ? prev.length - 1 : 0; // Before "done"
+                      const newState = { id, label: "New State", color: "#8b5cf6", category: "active" as const, transitions: [] as string[], skippable: false };
+                      const updated = [...prev];
+                      updated.splice(insertIdx, 0, newState);
+                      return updated;
+                    });
+                  }}
+                  style={{
+                    fontSize: 11, padding: "3px 10px", background: "var(--accent-blue)",
+                    border: "none", borderRadius: 4, color: "white", cursor: "pointer",
+                  }}
+                >
+                  + Add State
+                </button>
+              </label>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
+                Define the task workflow pipeline. States are frozen after session creation. Agents will be instructed to follow this pipeline.
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {newWorkflowStates.map((state, i) => (
+                  <div key={state.id} style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "6px 10px", borderRadius: 6,
+                    background: "var(--bg-tertiary)", border: "1px solid var(--border-color)",
+                  }}>
+                    <input
+                      type="color"
+                      value={state.color}
+                      onChange={(e) => {
+                        const updated = [...newWorkflowStates];
+                        updated[i] = { ...updated[i], color: e.target.value };
+                        setNewWorkflowStates(updated);
+                      }}
+                      style={{ width: 24, height: 24, border: "none", background: "none", cursor: "pointer", padding: 0 }}
+                    />
+                    <input
+                      value={state.label}
+                      onChange={(e) => {
+                        const updated = [...newWorkflowStates];
+                        const newId = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+                        updated[i] = { ...updated[i], label: e.target.value, id: newId || state.id };
+                        setNewWorkflowStates(updated);
+                      }}
+                      style={{
+                        flex: 1, fontSize: 12, padding: "4px 8px", fontWeight: 600,
+                        background: "var(--bg-secondary)", border: "1px solid var(--border-color)",
+                        borderRadius: 4, color: "var(--text-primary)",
+                      }}
+                    />
+                    <select
+                      value={state.category}
+                      onChange={(e) => {
+                        const updated = [...newWorkflowStates];
+                        updated[i] = { ...updated[i], category: e.target.value as any };
+                        setNewWorkflowStates(updated);
+                      }}
+                      style={{
+                        fontSize: 11, padding: "4px 6px", background: "var(--bg-secondary)",
+                        border: "1px solid var(--border-color)", borderRadius: 4,
+                        color: "var(--text-secondary)", cursor: "pointer",
+                      }}
+                    >
+                      <option value="not-started">Not Started</option>
+                      <option value="active">Active</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 3, whiteSpace: "nowrap" }}>
+                      <input
+                        type="checkbox"
+                        checked={state.skippable}
+                        onChange={(e) => {
+                          const updated = [...newWorkflowStates];
+                          updated[i] = { ...updated[i], skippable: e.target.checked };
+                          setNewWorkflowStates(updated);
+                        }}
+                      />
+                      Skip
+                    </label>
+                    {newWorkflowStates.length > 2 && (
+                      <button
+                        type="button"
+                        onClick={() => setNewWorkflowStates(prev => prev.filter((_, j) => j !== i))}
+                        style={{
+                          background: "none", border: "none", color: "var(--accent-red)",
+                          cursor: "pointer", fontSize: 14, padding: "0 4px",
+                        }}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+                Pipeline: {newWorkflowStates.map(s => s.skippable ? `${s.label}?` : s.label).join(" → ")}
               </div>
             </div>
             <div className="form-actions">
