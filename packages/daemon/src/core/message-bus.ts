@@ -5,6 +5,14 @@ import { v4 as uuidv4 } from "uuid";
 import type { AgentMessage } from "@kora/shared";
 import { MESSAGES_DIR, PROCESSED_DIR } from "@kora/shared";
 import { logger } from "./logger.js";
+import type { AppDatabase } from "./database.js";
+
+// ============================================================
+// Constants
+// ============================================================
+
+/** Default message expiry: 7 days in milliseconds */
+const MESSAGE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 // ============================================================
 // Helpers
@@ -37,9 +45,17 @@ export class MessageBus extends EventEmitter {
   private watchers: Map<string, fs.FileHandle | ReturnType<typeof import("fs").watch>> = new Map();
   private fsWatchers: Map<string, ReturnType<typeof import("fs").watch>> = new Map();
   private watching = false;
+  private database: AppDatabase | null = null;
+  private sessionId: string | null = null;
 
   constructor(private runtimeDir: string) {
     super();
+  }
+
+  /** Set the database for SQLite-backed message storage */
+  setDatabase(database: AppDatabase, sessionId: string): void {
+    this.database = database;
+    this.sessionId = sessionId;
   }
 
   // ----------------------------------------------------------
@@ -102,14 +118,33 @@ export class MessageBus extends EventEmitter {
   // Message delivery
   // ----------------------------------------------------------
 
-  /** Write a message to an agent's inbox (used by orchestrator to route messages). */
+  /** Write a message to an agent's inbox (SQLite primary, file fallback). */
   async deliverToInbox(agentId: string, message: AgentMessage): Promise<void> {
+    // Primary: write to SQLite
+    if (this.database?.isOpen && this.sessionId) {
+      try {
+        this.database.insertMessage({
+          id: message.id,
+          sessionId: this.sessionId,
+          fromAgentId: message.from || "system",
+          toAgentId: agentId,
+          messageType: message.type || "text",
+          content: message.content || JSON.stringify(message),
+          createdAt: Date.now(),
+          expiresAt: Date.now() + MESSAGE_EXPIRY_MS, // 7 days
+        });
+      } catch (err) {
+        logger.error({ err }, `[MessageBus] Failed to insert message to SQLite for ${agentId}, falling back to file`);
+      }
+    }
+
+    // Fallback: write to file (backward compatibility)
     try {
       const filename = generateMessageFilename(message.id);
       const filePath = path.join(this.inboxDir(agentId), filename);
       await atomicWriteJson(filePath, message);
     } catch (err) {
-      logger.error({ err: err }, `[MessageBus] Failed to deliver message to inbox of ${agentId}:`);
+      logger.error({ err: err }, `[MessageBus] Failed to deliver message to inbox file of ${agentId}:`);
     }
   }
 
@@ -268,8 +303,16 @@ export class MessageBus extends EventEmitter {
   // Unread count
   // ----------------------------------------------------------
 
-  /** Count unread messages in an agent's inbox (files not yet moved to processed/) */
+  /** Count unread messages for an agent (SQLite primary, file fallback) */
   async getUnreadCount(agentId: string): Promise<number> {
+    // Primary: check SQLite — if available, this is the source of truth
+    if (this.database?.isOpen) {
+      try {
+        return this.database.getUnreadMessageCount(agentId);
+      } catch { /* SQLite query failed, fall through to file count */ }
+    }
+
+    // Fallback: count file-based messages (only if SQLite unavailable)
     let count = 0;
 
     // Count .md files in inbox (legacy MCP mode)
@@ -286,6 +329,86 @@ export class MessageBus extends EventEmitter {
     } catch { /* pending dir may not exist */ }
 
     return count;
+  }
+
+  /**
+   * Migrate existing file-based inbox messages to SQLite.
+   * Scans all inbox directories and imports unprocessed messages.
+   * Idempotent — skips messages that already exist in SQLite.
+   */
+  async migrateFilesToSqlite(): Promise<number> {
+    if (!this.database?.isOpen || !this.sessionId) return 0;
+
+    let migrated = 0;
+    const messagesRoot = path.join(this.runtimeDir, MESSAGES_DIR);
+
+    try {
+      const entries = await fs.readdir(messagesRoot, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory() || !entry.name.startsWith("inbox-")) continue;
+
+        const agentId = entry.name.slice("inbox-".length);
+        const inboxPath = path.join(messagesRoot, entry.name);
+
+        try {
+          const files = await fs.readdir(inboxPath);
+          const processedPath = path.join(inboxPath, PROCESSED_DIR);
+          await fs.mkdir(processedPath, { recursive: true });
+
+          for (const file of files) {
+            if (!file.endsWith(".json") && !file.endsWith(".md")) continue;
+
+            const filePath = path.join(inboxPath, file);
+            try {
+              const stat = await fs.stat(filePath);
+              if (!stat.isFile()) continue;
+
+              const raw = await fs.readFile(filePath, "utf-8");
+
+              if (file.endsWith(".json")) {
+                const msg = JSON.parse(raw) as AgentMessage;
+                this.database!.insertMessage({
+                  id: msg.id || uuidv4(),
+                  sessionId: this.sessionId!,
+                  fromAgentId: msg.from || "system",
+                  toAgentId: agentId,
+                  messageType: msg.type || "text",
+                  content: msg.content || raw,
+                  createdAt: new Date(msg.timestamp).getTime() || Date.now(),
+                  expiresAt: Date.now() + MESSAGE_EXPIRY_MS,
+                });
+              } else {
+                // .md files: content is the message text
+                this.database!.insertMessage({
+                  id: uuidv4(),
+                  sessionId: this.sessionId!,
+                  fromAgentId: "system",
+                  toAgentId: agentId,
+                  messageType: "text",
+                  content: raw,
+                  createdAt: stat.mtimeMs,
+                  expiresAt: Date.now() + MESSAGE_EXPIRY_MS,
+                });
+              }
+
+              // Move migrated file to processed/ to avoid double-counting
+              try {
+                await fs.rename(filePath, path.join(processedPath, file));
+              } catch { /* best effort move */ }
+
+              migrated++;
+            } catch {
+              // Skip malformed files or duplicate IDs (INSERT OR REPLACE handles dupes)
+            }
+          }
+        } catch { /* inbox dir read error */ }
+      }
+    } catch { /* messages root may not exist */ }
+
+    if (migrated > 0) {
+      logger.info(`[MessageBus] Migrated ${migrated} file-based messages to SQLite`);
+    }
+    return migrated;
   }
 
   // ----------------------------------------------------------

@@ -67,6 +67,7 @@ export class Orchestrator extends EventEmitter {
     // Pass agents map to health monitor for idle detection
     healthMonitor.setAgentsMap(this.agentManager.getAgentsMap());
     this.messageBus = new MessageBus(config.runtimeDir);
+    this.messageBus.setDatabase(this.database, config.sessionId);
     this.controlPlane = new AgentControlPlane(config.runtimeDir);
     this.eventLog = new EventLog(config.runtimeDir);
     this.eventLog.setDatabase(this.database);
@@ -647,6 +648,10 @@ export class Orchestrator extends EventEmitter {
   /** Start the orchestrator (begin watching files) */
   async start(): Promise<void> {
     await this.controlPlane.loadProcessedIds();
+
+    // Migrate existing file-based messages to SQLite (idempotent)
+    await this.messageBus.migrateFilesToSqlite();
+
     this.messageBus.startWatching();
     this.controlPlane.startWatching();
     this.messageQueue.start();
