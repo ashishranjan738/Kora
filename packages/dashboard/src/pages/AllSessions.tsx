@@ -1062,19 +1062,25 @@ export function AllSessions() {
                       <option value="active">Active</option>
                       <option value="closed">Closed</option>
                     </select>
-                    <label style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 3, whiteSpace: "nowrap" }}>
-                      <input
-                        type="checkbox"
-                        checked={state.skippable}
-                        onChange={(e) => {
-                          const updated = [...newWorkflowStates];
-                          updated[i] = { ...updated[i], skippable: e.target.checked };
-                          setNewWorkflowStates(updated);
-                        }}
-                      />
-                      Skip
-                    </label>
-                    {newWorkflowStates.length > 2 && (
+                    {/* Only show skippable for middle states (not first or last) */}
+                    {i > 0 && i < newWorkflowStates.length - 1 ? (
+                      <label style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 3, whiteSpace: "nowrap" }}>
+                        <input
+                          type="checkbox"
+                          checked={state.skippable}
+                          onChange={(e) => {
+                            const updated = [...newWorkflowStates];
+                            updated[i] = { ...updated[i], skippable: e.target.checked };
+                            setNewWorkflowStates(updated);
+                          }}
+                        />
+                        Skippable
+                      </label>
+                    ) : (
+                      <span style={{ width: 70 }} />
+                    )}
+                    {/* Don't allow deleting first or last state */}
+                    {i > 0 && i < newWorkflowStates.length - 1 && newWorkflowStates.length > 2 ? (
                       <button
                         type="button"
                         onClick={() => setNewWorkflowStates(prev => prev.filter((_, j) => j !== i))}
@@ -1085,12 +1091,17 @@ export function AllSessions() {
                       >
                         ×
                       </button>
+                    ) : (
+                      <span style={{ width: 18 }} />
                     )}
                   </div>
                 ))}
               </div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
                 Pipeline: {newWorkflowStates.map(s => s.skippable ? `${s.label}?` : s.label).join(" → ")}
+              </div>
+              <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, fontStyle: "italic" }}>
+                Skippable: When checked, tasks can skip this state and move directly to the next one. Useful for optional steps like E2E testing that not every task needs.
               </div>
             </div>
             <div className="form-actions">
@@ -1290,20 +1301,25 @@ export function AllSessions() {
                             u[i] = { ...u[i], label: e.target.value, id: newId || state.id };
                             setPlaybookWorkflowStates(u);
                           }} placeholder="State name" style={{ flex: 1, fontSize: 12, padding: "3px 6px", background: "var(--bg-primary)", border: "1px solid var(--border-color)", borderRadius: 4, color: "var(--text-primary)" }} />
-                          <label style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 2, whiteSpace: "nowrap" }}>
-                            <input type="checkbox" checked={state.skippable} onChange={(e) => {
-                              const u = [...playbookWorkflowStates]; u[i] = { ...u[i], skippable: e.target.checked }; setPlaybookWorkflowStates(u);
-                            }} /> Skip
-                          </label>
-                          {playbookWorkflowStates.length > 2 && (
+                          {i > 0 && i < playbookWorkflowStates.length - 1 ? (
+                            <label style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 2, whiteSpace: "nowrap" }}>
+                              <input type="checkbox" checked={state.skippable} onChange={(e) => {
+                                const u = [...playbookWorkflowStates]; u[i] = { ...u[i], skippable: e.target.checked }; setPlaybookWorkflowStates(u);
+                              }} /> Skippable
+                            </label>
+                          ) : <span style={{ width: 60 }} />}
+                          {i > 0 && i < playbookWorkflowStates.length - 1 && playbookWorkflowStates.length > 2 ? (
                             <button type="button" onClick={() => setPlaybookWorkflowStates(prev => prev.filter((_, j) => j !== i))}
                               style={{ background: "none", border: "none", color: "var(--accent-red)", cursor: "pointer", fontSize: 12, padding: "0 3px" }}>×</button>
-                          )}
+                          ) : <span style={{ width: 14 }} />}
                         </div>
                       ))}
                     </div>
                     <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
                       {playbookWorkflowStates.map(s => s.skippable ? `${s.label}?` : s.label).join(" → ")}
+                    </div>
+                    <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 2, fontStyle: "italic" }}>
+                      Skippable: Tasks can skip this state and move to the next. Useful for optional steps.
                     </div>
                   </div>
 
