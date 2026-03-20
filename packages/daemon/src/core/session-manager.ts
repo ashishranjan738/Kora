@@ -3,7 +3,7 @@
 // ============================================================
 
 import { randomUUID } from "crypto";
-import { mkdir, readFile, writeFile, access, stat } from "fs/promises";
+import { mkdir, readFile, writeFile, access, stat, rename, cp } from "fs/promises";
 import path from "path";
 import type {
   SessionConfig,
@@ -54,11 +54,17 @@ export class SessionManager {
     try {
       const raw = await readFile(this.sessionsFile, "utf-8");
       const configs: SessionConfig[] = JSON.parse(raw);
+      const isDev = process.env.KORA_DEV === "1";
       for (const config of configs) {
+        const runtimeDir = path.join(config.projectPath, getRuntimeDaemonDir(isDev), SESSIONS_SUBDIR, config.id);
+
+        // Migrate from flat .kora/ layout if session dir doesn't exist yet
+        await this.migrateFromFlatLayout(config.projectPath, config.id, isDev);
+
         this.sessions.set(config.id, {
           config,
           agents: {},
-          runtimeDir: path.join(config.projectPath, getRuntimeDaemonDir(process.env.KORA_DEV === "1"), SESSIONS_SUBDIR, config.id),
+          runtimeDir,
         });
       }
     } catch (err: unknown) {
@@ -278,6 +284,94 @@ export class SessionManager {
   }
 
   // ----- Private helpers -----
+
+  /**
+   * Migrate from legacy flat .kora/ layout to session-scoped .kora/sessions/{id}/.
+   * If the new session dir doesn't exist but the old flat dir has per-session data
+   * (data.db, state/, messages/, etc.), move it into the new session-scoped path.
+   * Only migrates if exactly one session uses this projectPath (safe single-session case).
+   */
+  private async migrateFromFlatLayout(projectPath: string, sessionId: string, isDev: boolean): Promise<void> {
+    const daemonDir = getRuntimeDaemonDir(isDev);
+    const flatDir = path.join(projectPath, daemonDir);
+    const sessionDir = path.join(flatDir, SESSIONS_SUBDIR, sessionId);
+
+    // Skip if session dir already exists (already migrated or new session)
+    try {
+      await access(sessionDir);
+      return; // Already exists, nothing to migrate
+    } catch {
+      // Session dir doesn't exist — check if flat layout has data
+    }
+
+    // Check if the flat layout has session data (data.db is the strongest signal)
+    const flatDbPath = path.join(flatDir, "data.db");
+    try {
+      await access(flatDbPath);
+    } catch {
+      // No data.db in flat layout — nothing to migrate, just create fresh dirs
+      return;
+    }
+
+    // Only migrate for single-session case to avoid ambiguity
+    const sessionsUsingThisPath = Array.from(this.sessions.values())
+      .filter(s => s.config.projectPath === projectPath).length;
+    // Note: current session isn't in the map yet during load(), so check count
+    // If there are already other sessions using this path, skip migration
+    if (sessionsUsingThisPath > 0) {
+      logger.warn(`[SessionManager] Multiple sessions share projectPath "${projectPath}" — skipping auto-migration for "${sessionId}". Manual migration required.`);
+      return;
+    }
+
+    logger.info(`[SessionManager] Migrating session "${sessionId}" from flat .kora/ to .kora/sessions/${sessionId}/`);
+
+    // Create the session directory
+    await mkdir(sessionDir, { recursive: true });
+
+    // Move per-session subdirectories and files
+    const itemsToMigrate = [
+      ...SESSION_SUBDIRS, // messages, control, tasks, state, events, archive, personas, knowledge
+      "data.db",
+      "data.db-wal",
+      "data.db-shm",
+      "session.json",
+      "mcp",
+      "worktrees",
+    ];
+
+    for (const item of itemsToMigrate) {
+      const src = path.join(flatDir, item);
+      const dst = path.join(sessionDir, item);
+      try {
+        await access(src);
+        await rename(src, dst);
+        logger.info(`[SessionManager] Migrated ${item} → sessions/${sessionId}/${item}`);
+      } catch {
+        // Item doesn't exist in flat layout — skip
+      }
+    }
+
+    // Also move agent log files (*.log) and persona files
+    try {
+      const { readdir } = await import("fs/promises");
+      const entries = await readdir(flatDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isFile() && entry.name.endsWith(".log")) {
+          const src = path.join(flatDir, entry.name);
+          const dst = path.join(sessionDir, entry.name);
+          try {
+            await rename(src, dst);
+          } catch {
+            // Non-fatal
+          }
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
+
+    logger.info(`[SessionManager] Migration complete for session "${sessionId}"`);
+  }
 
   /** Add .kora/ to .gitignore if project is a git repo */
   private async addToGitignore(projectPath: string): Promise<void> {

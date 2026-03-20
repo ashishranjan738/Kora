@@ -8,6 +8,7 @@ import {
   API_VERSION,
   getRuntimeTmuxPrefix,
   getRuntimeDaemonDir,
+  SESSIONS_SUBDIR,
 } from "@kora/shared";
 import type {
   DaemonStatusResponse,
@@ -112,7 +113,7 @@ export function createApiRouter(deps: {
       if (sessionConfig.status === "stopped") continue;
 
       try {
-        const runtimeDir = path.join(sessionConfig.projectPath, getRuntimeDaemonDir(process.env.KORA_DEV === "1"), "sessions", sessionConfig.id);
+        const runtimeDir = path.join(sessionConfig.projectPath, getRuntimeDaemonDir(process.env.KORA_DEV === "1"), SESSIONS_SUBDIR, sessionConfig.id);
         const persisted = await loadTerminalStates(runtimeDir);
         if (persisted.length === 0) continue;
 
