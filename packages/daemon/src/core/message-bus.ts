@@ -8,6 +8,13 @@ import { logger } from "./logger.js";
 import type { AppDatabase } from "./database.js";
 
 // ============================================================
+// Constants
+// ============================================================
+
+/** Default message expiry: 7 days in milliseconds */
+const MESSAGE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+
+// ============================================================
 // Helpers
 // ============================================================
 
@@ -124,7 +131,7 @@ export class MessageBus extends EventEmitter {
           messageType: message.type || "text",
           content: message.content || JSON.stringify(message),
           createdAt: Date.now(),
-          expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
+          expiresAt: Date.now() + MESSAGE_EXPIRY_MS, // 7 days
         });
       } catch (err) {
         logger.error({ err }, `[MessageBus] Failed to insert message to SQLite for ${agentId}, falling back to file`);
@@ -298,16 +305,16 @@ export class MessageBus extends EventEmitter {
 
   /** Count unread messages for an agent (SQLite primary, file fallback) */
   async getUnreadCount(agentId: string): Promise<number> {
-    let count = 0;
-
-    // Primary: check SQLite
+    // Primary: check SQLite — if available, this is the source of truth
     if (this.database?.isOpen) {
       try {
-        count += this.database.getUnreadMessageCount(agentId);
-      } catch { /* SQLite may not be available */ }
+        return this.database.getUnreadMessageCount(agentId);
+      } catch { /* SQLite query failed, fall through to file count */ }
     }
 
-    // Fallback: count file-based messages
+    // Fallback: count file-based messages (only if SQLite unavailable)
+    let count = 0;
+
     // Count .md files in inbox (legacy MCP mode)
     try {
       const inboxEntries = await fs.readdir(this.inboxDir(agentId));
@@ -345,6 +352,9 @@ export class MessageBus extends EventEmitter {
 
         try {
           const files = await fs.readdir(inboxPath);
+          const processedPath = path.join(inboxPath, PROCESSED_DIR);
+          await fs.mkdir(processedPath, { recursive: true });
+
           for (const file of files) {
             if (!file.endsWith(".json") && !file.endsWith(".md")) continue;
 
@@ -365,7 +375,7 @@ export class MessageBus extends EventEmitter {
                   messageType: msg.type || "text",
                   content: msg.content || raw,
                   createdAt: new Date(msg.timestamp).getTime() || Date.now(),
-                  expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+                  expiresAt: Date.now() + MESSAGE_EXPIRY_MS,
                 });
               } else {
                 // .md files: content is the message text
@@ -377,9 +387,15 @@ export class MessageBus extends EventEmitter {
                   messageType: "text",
                   content: raw,
                   createdAt: stat.mtimeMs,
-                  expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+                  expiresAt: Date.now() + MESSAGE_EXPIRY_MS,
                 });
               }
+
+              // Move migrated file to processed/ to avoid double-counting
+              try {
+                await fs.rename(filePath, path.join(processedPath, file));
+              } catch { /* best effort move */ }
+
               migrated++;
             } catch {
               // Skip malformed files or duplicate IDs (INSERT OR REPLACE handles dupes)
