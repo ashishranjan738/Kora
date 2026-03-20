@@ -734,11 +734,11 @@ describe("Event Routing Tier 3 - Database Migration", () => {
     }).not.toThrow();
   });
 
-  it("should set user_version to 6 after migration", () => {
+  it("should set user_version to 7 after migration", () => {
     const database = new AppDatabase(testRuntimeDir);
 
     const version = database.db.pragma("user_version", { simple: true });
-    expect(version).toBe(6);
+    expect(version).toBe(7);
 
     database.close();
   });

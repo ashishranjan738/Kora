@@ -210,6 +210,22 @@ export function useApi() {
       }),
     deletePersona: (id: string) =>
       apiFetch<{ deleted: boolean }>(`/personas/${id}`, { method: "DELETE" }),
+    // Stale task watchdog
+    getNudgeHistory: (sid: string, tid: string) =>
+      apiFetch<{ nudges: any[] }>(`/sessions/${sid}/tasks/${tid}/nudges`),
+    getSessionNudges: (sid: string, limit?: number) =>
+      apiFetch<{ nudges: any[] }>(`/sessions/${sid}/nudges?limit=${limit || 50}`),
+    getNudgePolicies: (sid: string) =>
+      apiFetch<{ policies: any }>(`/sessions/${sid}/nudge-policies`),
+    updateNudgePolicies: (sid: string, policies: any) =>
+      apiFetch<{ updated: boolean }>(`/sessions/${sid}/nudge-policies`, {
+        method: "PUT",
+        body: JSON.stringify({ policies }),
+      }),
+    nudgeTask: (sid: string, tid: string) =>
+      apiFetch<{ success: boolean; nudgedAgent?: string }>(`/sessions/${sid}/tasks/${tid}/nudge`, {
+        method: "POST",
+      }),
     // Orchestrator blocking
     getBlockingState: (sid: string, aid: string) =>
       apiFetch<{ blocked: boolean; state: string; reason?: string; since?: string; bufferedMessages: number }>(`/sessions/${sid}/agents/${aid}/blocking`),

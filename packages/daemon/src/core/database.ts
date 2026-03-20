@@ -167,6 +167,34 @@ export class AppDatabase extends EventEmitter {
         PRAGMA user_version = 6;
       `);
     }
+
+    if (version < 7) {
+      this.db.exec(`
+        -- Add status_changed_at to tasks (tracks when status last changed)
+        ALTER TABLE tasks ADD COLUMN status_changed_at TEXT;
+        -- Backfill: set status_changed_at = updated_at for existing tasks
+        UPDATE tasks SET status_changed_at = updated_at WHERE status_changed_at IS NULL;
+
+        -- Task nudge history table
+        CREATE TABLE IF NOT EXISTS task_nudges (
+          id TEXT PRIMARY KEY,
+          task_id TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          status_at_nudge TEXT NOT NULL,
+          target_agent_id TEXT,
+          target_type TEXT NOT NULL,
+          nudge_count INTEGER NOT NULL DEFAULT 1,
+          is_escalation INTEGER NOT NULL DEFAULT 0,
+          message TEXT,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_nudges_task ON task_nudges(task_id);
+        CREATE INDEX IF NOT EXISTS idx_task_nudges_session ON task_nudges(session_id);
+
+        PRAGMA user_version = 7;
+      `);
+    }
   }
 
   // ─── Events ──────────────────────────────────────────────
@@ -444,9 +472,13 @@ export class AppDatabase extends EventEmitter {
     const newDueDate = updates.dueDate !== undefined ? (updates.dueDate || null) : task.due_date;
     const now = new Date().toISOString();
 
+    // Track when status actually changed (for stale task detection)
+    const statusChanged = task.status !== newStatus;
+    const statusChangedAt = statusChanged ? now : (task.status_changed_at || now);
+
     this.db.prepare(
-      `UPDATE tasks SET title = ?, description = ?, status = ?, assigned_to = ?, priority = ?, labels = ?, due_date = ?, updated_at = ? WHERE id = ?`
-    ).run(newTitle, newDesc, newStatus, newAssigned, newPriority, newLabels, newDueDate, now, taskId);
+      `UPDATE tasks SET title = ?, description = ?, status = ?, assigned_to = ?, priority = ?, labels = ?, due_date = ?, updated_at = ?, status_changed_at = ? WHERE id = ?`
+    ).run(newTitle, newDesc, newStatus, newAssigned, newPriority, newLabels, newDueDate, now, statusChangedAt, taskId);
 
     // Emit task-completed event if status changed to "done"
     const wasCompleted = task.status !== "done" && newStatus === "done";
@@ -615,6 +647,52 @@ export class AppDatabase extends EventEmitter {
       enqueuedAt: r.enqueued_at,
       priority: r.priority,
     }));
+  }
+
+  // ─── Task Nudges (Stale Task Watchdog) ─────────────────────
+
+  insertNudge(nudge: {
+    id: string;
+    taskId: string;
+    sessionId: string;
+    statusAtNudge: string;
+    targetAgentId?: string;
+    targetType: string;
+    nudgeCount: number;
+    isEscalation: boolean;
+    message?: string;
+  }): void {
+    this.db.prepare(
+      `INSERT INTO task_nudges (id, task_id, session_id, status_at_nudge, target_agent_id, target_type, nudge_count, is_escalation, message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(nudge.id, nudge.taskId, nudge.sessionId, nudge.statusAtNudge, nudge.targetAgentId || null, nudge.targetType, nudge.nudgeCount, nudge.isEscalation ? 1 : 0, nudge.message || null, new Date().toISOString());
+  }
+
+  getNudgeCount(taskId: string, status: string): number {
+    const row = this.db.prepare(
+      `SELECT COUNT(*) as count FROM task_nudges WHERE task_id = ? AND status_at_nudge = ?`
+    ).get(taskId, status) as any;
+    return row?.count ?? 0;
+  }
+
+  getNudgeHistory(taskId: string, limit = 20): any[] {
+    return this.db.prepare(
+      `SELECT * FROM task_nudges WHERE task_id = ? ORDER BY created_at DESC LIMIT ?`
+    ).all(taskId, limit) as any[];
+  }
+
+  getSessionNudgeHistory(sessionId: string, limit = 50): any[] {
+    return this.db.prepare(
+      `SELECT n.*, t.title as task_title, t.assigned_to FROM task_nudges n JOIN tasks t ON n.task_id = t.id WHERE n.session_id = ? ORDER BY n.created_at DESC LIMIT ?`
+    ).all(sessionId, limit) as any[];
+  }
+
+  /** Get stale tasks — tasks where status hasn't changed in more than `thresholdMinutes` */
+  getStaleTasks(sessionId: string, statuses: string[], thresholdMinutes: number): any[] {
+    const cutoff = new Date(Date.now() - thresholdMinutes * 60 * 1000).toISOString();
+    const placeholders = statuses.map(() => "?").join(", ");
+    return this.db.prepare(
+      `SELECT * FROM tasks WHERE session_id = ? AND status IN (${placeholders}) AND status != 'done' AND status != 'pending' AND (status_changed_at IS NULL OR status_changed_at < ?) ORDER BY status_changed_at ASC`
+    ).all(sessionId, ...statuses, cutoff) as any[];
   }
 
   /** Clean up old delivery records (keep last 7 days) */
