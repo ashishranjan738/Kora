@@ -105,6 +105,7 @@ export class SessionManager {
     defaultProvider?: string;
     messagingMode?: MessagingMode;
     worktreeMode?: WorktreeMode;
+    workflowStates?: import("@kora/shared").WorkflowState[];
   }): Promise<SessionConfig> {
     const id = slugify(config.name);
 
@@ -130,6 +131,7 @@ export class SessionManager {
       status: "active" as SessionStatus,
       messagingMode: config.messagingMode ?? "mcp",
       worktreeMode: config.worktreeMode ?? "isolated",
+      workflowStates: config.workflowStates, // Frozen at session creation
     };
 
     // 3. Write session.json inside the runtime dir

@@ -37,6 +37,7 @@ export interface CreateSessionRequest {
   masterModel?: string;
   messagingMode?: MessagingMode; // defaults to "mcp"
   worktreeMode?: WorktreeMode;   // defaults to "isolated"
+  workflowStates?: import("./types.js").WorkflowState[]; // Custom pipeline states (frozen at creation)
 }
 
 export interface UpdateSessionRequest {
