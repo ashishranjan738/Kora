@@ -784,6 +784,7 @@ export function SessionDetail() {
           approve={approve}
           reject={reject}
           onBroadcast={() => setShowBroadcastModal(true)}
+          onCloseTerminal={(id, name) => setConfirmCloseTerminal({ id, name })}
         />
       )}
 
@@ -842,10 +843,10 @@ export function SessionDetail() {
         opened={!!confirmCloseTerminal}
         onClose={() => setConfirmCloseTerminal(null)}
         onConfirm={async () => {
-          if (!confirmCloseTerminal) return;
+          if (!confirmCloseTerminal || !sessionId) return;
           try {
             await api.deleteTerminal(sessionId, confirmCloseTerminal.id);
-            removeSession(confirmCloseTerminal.id);
+            useTerminalSessionStore.getState().removeSession(confirmCloseTerminal.id);
           } catch (err: any) {
             showError(err.message, "Failed to close terminal");
           }
@@ -1233,6 +1234,7 @@ interface AgentsTabProps {
   approve: (agentId: string, requestId: string) => Promise<void>;
   reject: (agentId: string, requestId: string) => Promise<void>;
   onBroadcast: () => void;
+  onCloseTerminal: (id: string, name: string) => void;
 }
 
 function AgentsTab({
@@ -1258,6 +1260,7 @@ function AgentsTab({
   approve,
   reject,
   onBroadcast,
+  onCloseTerminal,
 }: AgentsTabProps) {
   const api = useApi();
   const [agentActivities, setAgentActivities] = useState<Record<string, AgentActivity>>({});
@@ -1964,7 +1967,7 @@ function AgentsTab({
                         color="red"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setConfirmCloseTerminal({ id: terminal.id, name: terminal.name });
+                          onCloseTerminal(terminal.id, terminal.name);
                         }}
                         style={{ color: "var(--text-secondary)" }}
                       >
