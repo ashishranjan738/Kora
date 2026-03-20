@@ -141,15 +141,20 @@ export function useApi() {
         method: "PUT",
         body: JSON.stringify({ model }),
       }),
-    replaceAgent: (sid: string, aid: string, opts?: { contextLines?: number; extraContext?: string; freshStart?: boolean }) =>
+    replaceAgent: (sid: string, aid: string) =>
       apiFetch<any>(`/sessions/${sid}/agents/${aid}/replace`, {
+        method: "POST",
+      }),
+    restartAgent: (sid: string, aid: string, opts?: { carryContext?: boolean }) =>
+      apiFetch<any>(`/sessions/${sid}/agents/${aid}/restart`, {
         method: "POST",
         body: JSON.stringify(opts ?? {}),
       }),
-    restartAgent: (sid: string, aid: string) =>
-      apiFetch<any>(`/sessions/${sid}/agents/${aid}/restart`, { method: "POST" }),
-    restartAllAgents: (sid: string) =>
-      apiFetch<any>(`/sessions/${sid}/restart-all`, { method: "POST" }),
+    restartAllAgents: (sid: string, opts?: { carryContext?: boolean }) =>
+      apiFetch<any>(`/sessions/${sid}/restart-all`, {
+        method: "POST",
+        body: JSON.stringify(opts ?? {}),
+      }),
     broadcastMessage: (sid: string, message: string) =>
       apiFetch<any>(`/sessions/${sid}/broadcast`, { method: "POST", body: JSON.stringify({ message }) }),
     relayMessage: (sid: string, from: string, to: string, message: string) =>
