@@ -1725,11 +1725,97 @@ textarea:focus {
 
 /* Toast notification */
 .toast-notification {
-  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  position: fixed; bottom: 56px; left: 50%; transform: translateX(-50%);
   background: #1f6feb; color: #fff; padding: 8px 20px; border-radius: 8px;
   font-size: 13px; font-weight: 500; z-index: 100; pointer-events: none;
   animation: toastSlideUp 0.3s ease-out;
   box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+
+/* Command Center Quick-Action Toolbar */
+.cc-quick-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.cc-toolbar-summary {
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.cc-toolbar-broadcast {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.cc-toolbar-broadcast input {
+  flex: 1;
+  min-width: 100px;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+}
+.cc-toolbar-broadcast input:focus {
+  border-color: var(--accent-blue);
+  outline: none;
+}
+.cc-toolbar-broadcast button {
+  padding: 4px 10px;
+  font-size: 12px;
+  background: var(--accent-blue);
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.cc-toolbar-broadcast button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.cc-toolbar-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.cc-toolbar-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cc-toolbar-btn:hover {
+  background: var(--bg-primary);
+  border-color: var(--text-muted);
+}
+.cc-toolbar-hints {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.cc-toolbar-hints span {
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 2px 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  white-space: nowrap;
 }
 
 /* Pulsing send icon animation */
@@ -3447,6 +3533,15 @@ textarea:focus {
   .broadcast-bar input {
     min-width: 0;
     flex: 1 1 100%;
+  }
+
+  .cc-quick-toolbar {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 12px;
+  }
+  .cc-toolbar-hints {
+    display: none;
   }
 
   /* Mosaic panel header */

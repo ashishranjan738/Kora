@@ -116,6 +116,8 @@ export function useApi() {
       }),
     pauseSession: (sid: string) =>
       apiFetch(`/sessions/${sid}/pause`, { method: "POST" }),
+    resumeSession: (sid: string) =>
+      apiFetch(`/sessions/${sid}/resume`, { method: "POST" }),
     stopSession: (sid: string) =>
       apiFetch(`/sessions/${sid}`, { method: "DELETE" }),
     getPlaybooks: () => apiFetch<{ playbooks: string[] }>("/playbooks"),
