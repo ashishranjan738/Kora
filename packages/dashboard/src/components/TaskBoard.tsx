@@ -67,12 +67,13 @@ interface TaskBoardProps {
   initialTaskId?: string;
 }
 
-// Default workflow states — used as fallback when backend API is unavailable
+// Default workflow states — must match Backend's DEFAULT_WORKFLOW_STATES in @kora/shared/constants
 const DEFAULT_WORKFLOW_STATES: WorkflowState[] = [
-  { id: "pending", label: "Backlog", color: "gray" },
-  { id: "in-progress", label: "In Progress", color: "blue" },
-  { id: "review", label: "Review", color: "yellow" },
-  { id: "done", label: "Done", color: "green" },
+  { id: "pending", label: "Pending", color: "#6b7280", category: "not-started" },
+  { id: "in-progress", label: "In Progress", color: "#3b82f6", category: "active" },
+  { id: "review", label: "Review", color: "#f59e0b", category: "active" },
+  { id: "e2e-testing", label: "E2E Testing", color: "#8b5cf6", category: "active" },
+  { id: "done", label: "Done", color: "#22c55e", category: "closed" },
 ];
 
 // Map Mantine color names to CSS variable colors for column headers
@@ -93,8 +94,33 @@ const COLOR_TO_CSS: Record<string, string> = {
   grape: "#be4bdb",
 };
 
-function getCssColor(color: string): string {
+// Map hex colors to Mantine color names for Badge color prop
+const HEX_TO_MANTINE: Record<string, string> = {
+  "#6b7280": "gray",
+  "#3b82f6": "blue",
+  "#f59e0b": "yellow",
+  "#8b5cf6": "violet",
+  "#22c55e": "green",
+  "#ef4444": "red",
+  "#f97316": "orange",
+  "#06b6d4": "cyan",
+  "#14b8a6": "teal",
+  "#ec4899": "pink",
+  "#6366f1": "indigo",
+  "#a855f7": "purple",
+};
+
+function getCssColor(color: string | undefined): string {
+  if (!color) return "var(--text-muted)";
+  // If it's already a CSS variable or hex, return directly
+  if (color.startsWith("var(") || color.startsWith("#")) return color;
   return COLOR_TO_CSS[color] || color;
+}
+
+function getMantineColor(color: string | undefined): string {
+  if (!color) return "gray";
+  if (color.startsWith("#")) return HEX_TO_MANTINE[color] || "gray";
+  return color;
 }
 
 // Build lookup maps from workflow states for O(1) access
@@ -104,7 +130,7 @@ function buildColumnMaps(states: WorkflowState[]) {
   const cssColors: Record<string, string> = {};
   for (const s of states) {
     labels[s.id] = s.label;
-    colors[s.id] = s.color;
+    colors[s.id] = getMantineColor(s.color);
     cssColors[s.id] = getCssColor(s.color);
   }
   return { labels, colors, cssColors };
@@ -600,8 +626,8 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
   const fetchWorkflowStates = useCallback(async () => {
     try {
       const data = await api.getWorkflowStates(sessionId);
-      if (data.states && data.states.length > 0) {
-        setWorkflowStates(data.states);
+      if (data.workflowStates && data.workflowStates.length > 0) {
+        setWorkflowStates(data.workflowStates);
       }
     } catch {
       // API not available yet — use defaults

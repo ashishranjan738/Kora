@@ -81,17 +81,31 @@ export function SessionSettingsDialog({
 
   // Workflow states
   const DEFAULT_WORKFLOW_STATES: WorkflowState[] = [
-    { id: "pending", label: "Backlog", color: "gray" },
-    { id: "in-progress", label: "In Progress", color: "blue" },
-    { id: "review", label: "Review", color: "yellow" },
-    { id: "done", label: "Done", color: "green" },
+    { id: "pending", label: "Pending", color: "#6b7280", category: "not-started" },
+    { id: "in-progress", label: "In Progress", color: "#3b82f6", category: "active" },
+    { id: "review", label: "Review", color: "#f59e0b", category: "active" },
+    { id: "e2e-testing", label: "E2E Testing", color: "#8b5cf6", category: "active" },
+    { id: "done", label: "Done", color: "#22c55e", category: "closed" },
   ];
-  const AVAILABLE_COLORS = ["gray", "blue", "yellow", "green", "red", "orange", "purple", "cyan", "teal", "pink", "indigo", "violet"];
+  const AVAILABLE_COLORS = [
+    { value: "#6b7280", label: "Gray" },
+    { value: "#3b82f6", label: "Blue" },
+    { value: "#f59e0b", label: "Yellow" },
+    { value: "#22c55e", label: "Green" },
+    { value: "#ef4444", label: "Red" },
+    { value: "#f97316", label: "Orange" },
+    { value: "#8b5cf6", label: "Violet" },
+    { value: "#06b6d4", label: "Cyan" },
+    { value: "#14b8a6", label: "Teal" },
+    { value: "#ec4899", label: "Pink" },
+    { value: "#6366f1", label: "Indigo" },
+    { value: "#a855f7", label: "Purple" },
+  ];
   const [workflowStates, setWorkflowStates] = useState<WorkflowState[]>(DEFAULT_WORKFLOW_STATES);
   const [loadingWorkflow, setLoadingWorkflow] = useState(true);
   const [savingWorkflow, setSavingWorkflow] = useState(false);
   const [newStateName, setNewStateName] = useState("");
-  const [newStateColor, setNewStateColor] = useState("blue");
+  const [newStateColor, setNewStateColor] = useState("#3b82f6");
   const [workflowDirty, setWorkflowDirty] = useState(false);
 
   useEffect(() => {
@@ -204,8 +218,8 @@ export function SessionSettingsDialog({
     async function loadWorkflow() {
       try {
         const data = await api.getWorkflowStates(sessionId);
-        if (!cancelled && data.states?.length > 0) {
-          setWorkflowStates(data.states);
+        if (!cancelled && data.workflowStates?.length > 0) {
+          setWorkflowStates(data.workflowStates);
         }
       } catch {
         // API not available — use defaults
@@ -236,9 +250,9 @@ export function SessionSettingsDialog({
       setError(`State "${id}" already exists.`);
       return;
     }
-    setWorkflowStates((prev) => [...prev, { id, label: newStateName.trim(), color: newStateColor }]);
+    setWorkflowStates((prev) => [...prev, { id, label: newStateName.trim(), color: newStateColor, category: "active" }]);
     setNewStateName("");
-    setNewStateColor("blue");
+    setNewStateColor("#3b82f6");
     setWorkflowDirty(true);
     setError("");
   }
@@ -482,7 +496,7 @@ export function SessionSettingsDialog({
                 >
                   <Group justify="space-between" align="center" wrap="nowrap">
                     <Group gap="sm" align="center" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
-                      <ColorSwatch color={`var(--mantine-color-${state.color}-6)`} size={16} />
+                      <ColorSwatch color={state.color || "#6b7280"} size={16} />
                       <Text size="sm" c="var(--text-primary)" fw={500} truncate>
                         {state.label}
                       </Text>
@@ -551,9 +565,9 @@ export function SessionSettingsDialog({
                   />
                   <Select
                     placeholder="Color"
-                    data={AVAILABLE_COLORS.map((c) => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) }))}
+                    data={AVAILABLE_COLORS}
                     value={newStateColor}
-                    onChange={(v) => setNewStateColor(v || "blue")}
+                    onChange={(v) => setNewStateColor(v || "#3b82f6")}
                     size="sm"
                     w={isMobile ? "100%" : 120}
                     styles={selectDropdownStyles}

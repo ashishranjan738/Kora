@@ -213,17 +213,21 @@ export function useApi() {
         body: JSON.stringify({ requestId }),
       }),
     getWorkflowStates: (sid: string) =>
-      apiFetch<{ states: WorkflowState[] }>(`/sessions/${sid}/workflow-states`),
-    updateWorkflowStates: (sid: string, states: WorkflowState[]) =>
-      apiFetch<{ states: WorkflowState[] }>(`/sessions/${sid}/workflow-states`, {
+      apiFetch<{ workflowStates: WorkflowState[] }>(`/sessions/${sid}/workflow-states`),
+    updateWorkflowStates: (sid: string, workflowStates: WorkflowState[]) =>
+      apiFetch<{ workflowStates: WorkflowState[] }>(`/sessions/${sid}/workflow-states`, {
         method: "PUT",
-        body: JSON.stringify({ states }),
+        body: JSON.stringify({ workflowStates }),
       }),
   };
 }
 
+// TODO: Import from @kora/shared once PR #159 merges WorkflowState into shared types
+export type WorkflowCategory = "not-started" | "active" | "closed";
+
 export interface WorkflowState {
   id: string;
   label: string;
-  color: string;
+  color?: string;
+  category?: WorkflowCategory;
 }
