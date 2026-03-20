@@ -833,17 +833,21 @@ export function createApiRouter(deps: {
     }
   });
 
-  // Restart all agents in a session (fresh start — picks up latest MCP server code)
+  // Restart all agents — preserves agent IDs and worktrees (restart semantics)
   router.post("/sessions/:sid/restart-all", async (req: Request, res: Response) => {
     try {
       const sid = String(req.params.sid);
+      const body = req.body as { carryContext?: boolean } | undefined;
       const orch = orchestrators.get(sid);
       if (!orch) { res.status(404).json({ error: "Session not found" }); return; }
 
       const agents = orch.agentManager.listAgents().filter(a => a.status === "running");
       const results = await Promise.all(agents.map(async (agent) => {
         try {
-          const newAgent = await orch.replaceAgent(agent.id, { freshStart: true, shutdownTimeoutMs: 3000 });
+          const newAgent = await orch.restartAgent(agent.id, {
+            carryContext: body?.carryContext ?? false,
+            shutdownTimeoutMs: 3000,
+          });
           return { oldId: agent.id, newId: newAgent?.id, name: agent.config.name, success: true };
         } catch (err) {
           return { oldId: agent.id, name: agent.config.name, success: false, error: String(err) };
@@ -855,11 +859,12 @@ export function createApiRouter(deps: {
     }
   });
 
-  // Restart a crashed/stopped agent — re-spawns with same config (fresh start)
+  // Restart agent — same agent ID, preserves worktree, message inbox, and task assignments
   router.post("/sessions/:sid/agents/:aid/restart", async (req: Request, res: Response) => {
     try {
       const sid = String(req.params.sid);
       const aid = String(req.params.aid);
+      const body = req.body as { contextLines?: number; extraContext?: string; carryContext?: boolean } | undefined;
 
       const orch = orchestrators.get(sid);
       if (!orch) {
@@ -867,7 +872,11 @@ export function createApiRouter(deps: {
         return;
       }
 
-      const newAgent = await orch.replaceAgent(aid, { freshStart: true });
+      const newAgent = await orch.restartAgent(aid, {
+        contextLines: body?.contextLines ?? 50,
+        extraContext: body?.extraContext,
+        carryContext: body?.carryContext ?? true,
+      });
       if (!newAgent) {
         res.status(404).json({ error: `Agent "${aid}" not found or provider unavailable` });
         return;
@@ -880,12 +889,11 @@ export function createApiRouter(deps: {
     }
   });
 
-  // Replace agent — kills old, spawns fresh with terminal context for recovery
+  // Replace agent — new agent ID, new worktree, no context carried over
   router.post("/sessions/:sid/agents/:aid/replace", async (req: Request, res: Response) => {
     try {
       const sid = String(req.params.sid);
       const aid = String(req.params.aid);
-      const body = req.body as { contextLines?: number; extraContext?: string; freshStart?: boolean };
 
       const orch = orchestrators.get(sid);
       if (!orch) {
@@ -893,11 +901,7 @@ export function createApiRouter(deps: {
         return;
       }
 
-      const newAgent = await orch.replaceAgent(aid, {
-        contextLines: body.contextLines ?? 50,
-        extraContext: body.extraContext,
-        freshStart: body.freshStart ?? false,
-      });
+      const newAgent = await orch.replaceAgent(aid);
 
       if (!newAgent) {
         res.status(404).json({ error: `Agent "${aid}" not found or provider unavailable` });

@@ -28,6 +28,8 @@ export interface SpawnAgentOptions {
   messagingMode?: MessagingMode;
   worktreeMode?: WorktreeMode;
   skipArgValidation?: boolean;
+  /** Reuse a specific agent ID instead of generating a new one (used by restart to preserve identity) */
+  forceAgentId?: string;
 }
 
 /** Convert a name like "CSS Expert" to "css-expert" */
@@ -76,8 +78,8 @@ export class AgentManager extends EventEmitter {
 
   /** Internal spawn logic (extracted for timeout wrapping) */
   private async _spawnAgentInternal(options: SpawnAgentOptions): Promise<AgentState> {
-    // 1. Generate agent ID (slugify name)
-    const agentId = slugify(options.name) + "-" + uuidv4().slice(0, 8);
+    // 1. Generate agent ID (slugify name) — or reuse existing ID for restarts
+    const agentId = options.forceAgentId ?? (slugify(options.name) + "-" + uuidv4().slice(0, 8));
     const isDev = process.env.KORA_DEV === "1";
     const tmuxSession = `${getRuntimeTmuxPrefix(isDev)}${options.sessionId}-${agentId}`;
 
@@ -374,7 +376,7 @@ export class AgentManager extends EventEmitter {
   }
 
   /** Stop an agent gracefully */
-  async stopAgent(agentId: string, reason: string, timeoutMs?: number): Promise<void> {
+  async stopAgent(agentId: string, reason: string, timeoutMs?: number, opts?: { skipWorktreeRemoval?: boolean }): Promise<void> {
     const agent = this.agents.get(agentId);
     if (!agent) throw new Error(`Agent ${agentId} not found`);
 
@@ -405,14 +407,18 @@ export class AgentManager extends EventEmitter {
     try { await this.tmux.killSession(tmuxSession); } catch {}
 
     // 6. Clean up git worktree (if one was created for this agent)
-    const wtInfo = this.worktreeInfo.get(agentId);
-    if (wtInfo) {
-      try {
-        await this.worktreeManager.removeWorktree(wtInfo.projectPath, wtInfo.runtimeDir, agentId);
-      } catch (err) {
-        logger.error({ err: err }, `[agent-manager] Failed to remove worktree for ${agentId}:`);
+    if (!opts?.skipWorktreeRemoval) {
+      const wtInfo = this.worktreeInfo.get(agentId);
+      if (wtInfo) {
+        try {
+          await this.worktreeManager.removeWorktree(wtInfo.projectPath, wtInfo.runtimeDir, agentId);
+        } catch (err) {
+          logger.error({ err: err }, `[agent-manager] Failed to remove worktree for ${agentId}:`);
+        }
+        this.worktreeInfo.delete(agentId);
       }
-      this.worktreeInfo.delete(agentId);
+    } else {
+      logger.info(`[agent-manager] Preserving worktree for ${agentId} (restart mode)`);
     }
 
     // 7. Remove from agents map
