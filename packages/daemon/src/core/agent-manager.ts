@@ -542,6 +542,15 @@ export class AgentManager extends EventEmitter {
   }
 
   /**
+   * Clear MCP idle protection for an agent. Called when a user explicitly
+   * sends a message to the agent — the agent is about to receive new work,
+   * so terminal polling should detect the activity transition.
+   */
+  clearIdleProtection(agentId: string): void {
+    this.healthMonitor.clearIdleProtection(agentId);
+  }
+
+  /**
    * Restore an agent from persisted state — re-registers without spawning tmux.
    * Used after daemon restart to reconnect to still-running tmux sessions.
    */
