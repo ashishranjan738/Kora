@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Editor from "@monaco-editor/react";
 import { useApi } from "../hooks/useApi";
 import { useThemeStore } from "../stores/themeStore";
+import { showError } from "../utils/notifications";
 
 interface EditorTileProps {
   sessionId: string;
@@ -107,7 +108,7 @@ export function EditorTile({ sessionId }: EditorTileProps) {
       setOpenTabs(prev => [...prev, newTab]);
       setActiveTabPath(data.path);
     } catch (err: any) {
-      alert(`Failed to open file: ${err.message}`);
+      showError(err.message, "Failed to open file");
     }
   }
 
@@ -147,7 +148,7 @@ export function EditorTile({ sessionId }: EditorTileProps) {
         t.path === activePath ? { ...t, modified: false } : t
       ));
     } catch (err: any) {
-      alert(`Failed to save: ${err.message}`);
+      showError(err.message, "Failed to save");
     } finally {
       setSaving(false);
     }

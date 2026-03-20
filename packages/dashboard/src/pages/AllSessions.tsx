@@ -4,6 +4,7 @@ import { useSessionStore } from "../stores/sessionStore";
 import { useApi } from "../hooks/useApi";
 import { StopSessionDialog } from "../components/StopSessionDialog";
 import { PlaybookGrid, PlaybookPreview, PlaybookUploadModal, VariableForm } from "../components/playbook";
+import { showError } from "../utils/notifications";
 
 interface PlaybookAgent {
   name: string;
@@ -174,7 +175,7 @@ export function AllSessions() {
         navigate(`/session/${result.id}`);
       }
     } catch (err: any) {
-      alert(`Failed to create session: ${err.message}`);
+      showError(err.message, "Failed to create session");
     } finally {
       setCreating(false);
     }
@@ -296,7 +297,7 @@ export function AllSessions() {
       setExpandedCliFlags({});
       navigate(`/session/${sessionResult.id}`);
     } catch (err: any) {
-      alert(`Failed to launch playbook: ${err.message}`);
+      showError(err.message, "Failed to launch playbook");
     } finally {
       setLaunchingPlaybook(false);
     }
@@ -317,7 +318,7 @@ export function AllSessions() {
       }, 1500);
     } catch (err: any) {
       setStopping(false);
-      alert(`Failed to stop session: ${err.message}`);
+      showError(err.message, "Failed to stop session");
     }
   }
 

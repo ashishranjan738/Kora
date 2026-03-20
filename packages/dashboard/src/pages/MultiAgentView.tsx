@@ -9,10 +9,12 @@ import { EditorTile } from "../components/EditorTile";
 import { Mosaic, MosaicWindow, MosaicNode, MosaicPath, MosaicWindowProps, getLeaves, createBalancedTreeFromLeaves } from "react-mosaic-component";
 import "react-mosaic-component/react-mosaic-component.css";
 import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
-import { Badge, Indicator, Tooltip } from "@mantine/core";
+import { Badge, Indicator, Tooltip, Modal, Button, Group, Text, Stack, TextInput } from "@mantine/core";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
 import { setMessageNotificationCallback } from "../stores/terminalRegistry";
 import { formatCost, formatTokens, formatLastSeen } from "../utils/formatters";
+import { showError } from "../utils/notifications";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 
 const PANEL_BORDER_COLORS = [
   "#58a6ff",
@@ -128,6 +130,11 @@ export function MultiAgentView() {
   // Dialog state
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
   const [replaceTarget, setReplaceTarget] = useState<{ id: string; name: string } | null>(null);
+  const [confirmRestartAgentId, setConfirmRestartAgentId] = useState<string | null>(null);
+  const [confirmRemoveAgentId, setConfirmRemoveAgentId] = useState<string | null>(null);
+  const [confirmRestartAll, setConfirmRestartAll] = useState(false);
+  const [showLayoutNameModal, setShowLayoutNameModal] = useState(false);
+  const [layoutName, setLayoutName] = useState("");
 
   // Fullscreen state — CSS position:fixed on tile content (transform removed from terminalSlideIn)
   const [fullscreenAgentId, setFullscreenAgentId] = useState<string | null>(null);
@@ -171,12 +178,18 @@ export function MultiAgentView() {
   }, [showLayoutMenu]);
 
   function saveCurrentLayout() {
-    const name = prompt("Save layout as:");
-    if (!name || !mosaicValue) return;
-    const updated = { ...savedLayouts, [name]: mosaicValue };
+    setLayoutName("");
+    setShowLayoutNameModal(true);
+  }
+
+  function confirmSaveLayout() {
+    if (!layoutName.trim() || !mosaicValue) return;
+    const updated = { ...savedLayouts, [layoutName.trim()]: mosaicValue };
     setSavedLayouts(updated);
     localStorage.setItem(LAYOUTS_KEY, JSON.stringify(updated));
-    showToast(`Layout "${name}" saved`);
+    showToast(`Layout "${layoutName.trim()}" saved`);
+    setShowLayoutNameModal(false);
+    setLayoutName("");
   }
 
   function loadLayout(name: string) {
@@ -529,35 +542,45 @@ export function MultiAgentView() {
       setMessages((prev) => ({ ...prev, [agentId]: "" }));
       setInlineMsgOpen(null);
     } catch (err: any) {
-      alert(`Failed to send message: ${err.message}`);
+      showError(err.message, "Failed to send message");
     } finally {
       setSendingMap((prev) => ({ ...prev, [agentId]: false }));
     }
   }
 
   async function handleRestart(agentId: string) {
-    if (!confirm("Restart this agent?")) return;
+    setConfirmRestartAgentId(agentId);
+  }
+
+  async function executeRestart() {
+    if (!confirmRestartAgentId) return;
     try {
-      await api.restartAgent(sessionId!, agentId);
+      await api.restartAgent(sessionId!, confirmRestartAgentId);
       setMenuOpen(null);
+      setConfirmRestartAgentId(null);
       showToast("Agent restarting...");
       loadData();
     } catch (err: any) {
-      alert(`Failed to restart agent: ${err.message}`);
+      showError(err.message, "Failed to restart agent");
     }
   }
 
   async function handleRemove(agentId: string) {
-    if (!confirm("Remove this agent?")) return;
+    setConfirmRemoveAgentId(agentId);
+  }
+
+  async function executeRemove() {
+    if (!confirmRemoveAgentId) return;
     try {
-      await api.removeAgent(sessionId!, agentId);
+      await api.removeAgent(sessionId!, confirmRemoveAgentId);
       setMenuOpen(null);
+      setConfirmRemoveAgentId(null);
       // Immediately remove from local state AND mosaic
-      setAgents((prev) => prev.filter((a) => a.id !== agentId));
-      setMosaicValue((prev) => prev ? removeMosaicLeaf(prev, agentId) : prev);
+      setAgents((prev) => prev.filter((a) => a.id !== confirmRemoveAgentId));
+      setMosaicValue((prev) => prev ? removeMosaicLeaf(prev, confirmRemoveAgentId) : prev);
       showToast("Agent removed");
     } catch (err: any) {
-      alert(`Failed to remove agent: ${err.message}`);
+      showError(err.message, "Failed to remove agent");
     }
   }
 
@@ -1297,17 +1320,10 @@ export function MultiAgentView() {
             )}
           </span>
           <button
-            onClick={async () => {
+            onClick={() => {
               const running = agents.filter(a => a.status === "running");
               if (running.length === 0) { showToast("No running agents to restart."); return; }
-              if (!confirm(`This will restart all ${running.length} agents with fresh sessions. They'll pick up the latest configuration. Continue?`)) return;
-              try {
-                const result = await api.restartAllAgents(sessionId!);
-                showToast(`Restarted ${result.restarted} agent(s)`);
-                loadData();
-              } catch (err: any) {
-                showToast(`Failed: ${err.message}`);
-              }
+              setConfirmRestartAll(true);
             }}
             style={{
               background: "var(--accent-yellow)",
@@ -1564,6 +1580,91 @@ export function MultiAgentView() {
       {toast && (
         <div className="toast-notification">{toast}</div>
       )}
+
+      {/* Confirm Dialogs */}
+      <ConfirmDialog
+        opened={!!confirmRestartAgentId}
+        onClose={() => setConfirmRestartAgentId(null)}
+        onConfirm={executeRestart}
+        title="Restart Agent"
+        message="Restart this agent? It will get a fresh session with the latest configuration."
+        confirmLabel="Restart"
+        confirmColor="yellow"
+      />
+      <ConfirmDialog
+        opened={!!confirmRemoveAgentId}
+        onClose={() => setConfirmRemoveAgentId(null)}
+        onConfirm={executeRemove}
+        title="Remove Agent"
+        message={`Remove agent "${agents.find(a => a.id === confirmRemoveAgentId)?.config?.name || confirmRemoveAgentId}"? This will stop the agent and clean up its resources.`}
+        confirmLabel="Remove"
+        confirmColor="red"
+      />
+      <ConfirmDialog
+        opened={confirmRestartAll}
+        onClose={() => setConfirmRestartAll(false)}
+        onConfirm={async () => {
+          try {
+            const result = await api.restartAllAgents(sessionId!);
+            showToast(`Restarted ${result.restarted} agent(s)`);
+            setConfirmRestartAll(false);
+            loadData();
+          } catch (err: any) {
+            showError(err.message, "Failed to restart agents");
+          }
+        }}
+        title="Restart All Agents"
+        message={`This will restart all ${agents.filter(a => a.status === "running").length} running agents with fresh sessions. They'll pick up the latest configuration.`}
+        confirmLabel="Restart All"
+        confirmColor="yellow"
+      />
+
+      {/* Save Layout Name Modal */}
+      <Modal
+        opened={showLayoutNameModal}
+        onClose={() => setShowLayoutNameModal(false)}
+        title="Save Layout"
+        centered
+        size="sm"
+        styles={{
+          header: { backgroundColor: "var(--bg-secondary)", borderBottom: "1px solid var(--border-color)" },
+          body: { backgroundColor: "var(--bg-secondary)" },
+          content: { backgroundColor: "var(--bg-secondary)" },
+          title: { color: "var(--text-primary)", fontWeight: 600, fontSize: 16 },
+          close: { color: "var(--text-secondary)" },
+        }}
+      >
+        <Stack gap="md">
+          <TextInput
+            label="Layout name"
+            placeholder="My Layout"
+            value={layoutName}
+            onChange={(e) => setLayoutName(e.currentTarget.value)}
+            autoFocus
+            onKeyDown={(e) => { if (e.key === "Enter") confirmSaveLayout(); }}
+            styles={{
+              input: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" },
+              label: { color: "var(--text-secondary)", fontSize: 13 },
+            }}
+          />
+          <Group justify="flex-end" gap="sm">
+            <Button
+              variant="default"
+              onClick={() => setShowLayoutNameModal(false)}
+              styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" } }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmSaveLayout}
+              disabled={!layoutName.trim()}
+              styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)" } }}
+            >
+              Save
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       {/* Spawn Agent Dialog */}
       {showSpawnDialog && sessionId && (

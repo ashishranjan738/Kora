@@ -28,6 +28,8 @@ import { ApprovalPrompt } from "../components/ApprovalPrompt";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
 import { hasTerminal } from "../stores/terminalRegistry";
 import { formatCost, formatTokens, formatUptime, formatLastSeen } from "../utils/formatters";
+import { showSuccess, showError } from "../utils/notifications";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import {
   ActionIcon,
   Indicator,
@@ -113,6 +115,7 @@ export function SessionDetail() {
   const [sendingBroadcast, setSendingBroadcast] = useState(false);
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const [showReport, setShowReport] = useState(false);
+  const [confirmRemoveAgentId, setConfirmRemoveAgentId] = useState<string | null>(null);
 
   // Use terminal session store for tabs
   const terminalSessionsMap = useTerminalSessionStore((state) => state.sessions);
@@ -262,12 +265,17 @@ export function SessionDetail() {
   }, [activeTab]);
 
   async function handleRemoveAgent(agentId: string) {
-    if (!confirm("Remove this agent?")) return;
+    setConfirmRemoveAgentId(agentId);
+  }
+
+  async function executeRemoveAgent() {
+    if (!confirmRemoveAgentId) return;
     try {
-      await api.removeAgent(sessionId!, agentId);
+      await api.removeAgent(sessionId!, confirmRemoveAgentId);
+      setConfirmRemoveAgentId(null);
       loadData();
     } catch (err: any) {
-      alert(`Failed to remove agent: ${err.message}`);
+      showError(err.message, "Failed to remove agent");
     }
   }
 
@@ -279,7 +287,7 @@ export function SessionDetail() {
       setQuickMessage("");
       setSendingTo(null);
     } catch (err: any) {
-      alert(`Failed to send message: ${err.message}`);
+      showError(err.message, "Failed to send message");
     } finally {
       setSendingMsg(false);
     }
@@ -290,7 +298,7 @@ export function SessionDetail() {
       await api.restartAgent(sessionId!, agentId);
       loadData();
     } catch (err: any) {
-      alert(`Failed to restart agent: ${err.message}`);
+      showError(err.message, "Failed to restart agent");
     }
   }
 
@@ -301,9 +309,9 @@ export function SessionDetail() {
       await api.broadcastMessage(sessionId!, broadcastMessage);
       setShowBroadcastModal(false);
       setBroadcastMessage("");
-      alert(`Broadcast sent to ${agents.length} agent${agents.length !== 1 ? "s" : ""}!`);
+      showSuccess(`Broadcast sent to ${agents.length} agent${agents.length !== 1 ? "s" : ""}!`);
     } catch (err: any) {
-      alert(`Failed to broadcast message: ${err.message}`);
+      showError(err.message, "Failed to broadcast message");
     } finally {
       setSendingBroadcast(false);
     }
@@ -329,7 +337,7 @@ export function SessionDetail() {
       await api.pauseSession(sessionId!);
       loadData();
     } catch (err: any) {
-      alert(`Failed to pause session: ${err.message}`);
+      showError(err.message, "Failed to pause session");
     }
   }
 
@@ -341,7 +349,7 @@ export function SessionDetail() {
       setTimeout(() => navigate("/"), 1500);
     } catch (err: any) {
       setStoppingSession(false);
-      alert(`Failed to stop session: ${err.message}`);
+      showError(err.message, "Failed to stop session");
     }
   }
 
@@ -523,7 +531,7 @@ export function SessionDetail() {
               try {
                 await api.openVscodeSession(sessionId!);
               } catch (err: any) {
-                alert(`Failed to open VS Code: ${err.message}`);
+                showError(err.message, "Failed to open VS Code");
               }
             }}
           >
@@ -827,6 +835,17 @@ export function SessionDetail() {
       {activeTab === "knowledge" && sessionId && (
         <KnowledgeViewer sessionId={sessionId} />
       )}
+
+      {/* Remove Agent Confirm Dialog */}
+      <ConfirmDialog
+        opened={!!confirmRemoveAgentId}
+        onClose={() => setConfirmRemoveAgentId(null)}
+        onConfirm={executeRemoveAgent}
+        title="Remove Agent"
+        message={`Remove agent "${agents.find(a => a.id === confirmRemoveAgentId)?.config?.name || confirmRemoveAgentId}"? This will stop the agent and clean up its resources.`}
+        confirmLabel="Remove"
+        confirmColor="red"
+      />
 
       {/* Spawn Agent Dialog */}
       {showSpawnDialog && sessionId && (
@@ -1924,13 +1943,12 @@ function AgentsTab({
                         color="red"
                         onClick={async (e) => {
                           e.stopPropagation();
-                          if (!confirm(`Close terminal "${terminal.name}"?`)) return;
                           try {
                             await api.deleteTerminal(sessionId, terminal.id);
                             // Remove from store (this also closes the tab)
                             removeSession(terminal.id);
                           } catch (err: any) {
-                            alert(`Failed to close terminal: ${err.message}`);
+                            showError(err.message, "Failed to close terminal");
                           }
                         }}
                         style={{ color: "var(--text-secondary)" }}

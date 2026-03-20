@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useApi } from "../hooks/useApi";
+import { showError, showInfo } from "../utils/notifications";
+import { ConfirmDialog } from "./ConfirmDialog";
 import {
   Modal,
   Button,
@@ -525,6 +527,7 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const [newDependencies, setNewDependencies] = useState<string[]>([]);
+  const [confirmDeleteTaskId, setConfirmDeleteTaskId] = useState<string | null>(null);
   const [activeCol, setActiveCol] = useState<ColumnId>("pending");
   const [mobileView, setMobileView] = useState<"kanban" | "list">("list");
 
@@ -592,8 +595,9 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
     }
 
     if (task.blocked && column === "in-progress") {
-      alert(
-        `Cannot start: ${task.blockedReason || "This task has incomplete dependencies"}`
+      showInfo(
+        task.blockedReason || "This task has incomplete dependencies",
+        "Cannot start task"
       );
       setDraggedTaskId(null);
       return;
@@ -637,11 +641,16 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
     } catch {}
   };
 
-  const handleDeleteTask = async (taskId: string) => {
-    if (!confirm("Delete this task?")) return;
-    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+  const handleDeleteTask = (taskId: string) => {
+    setConfirmDeleteTaskId(taskId);
+  };
+
+  const executeDeleteTask = async () => {
+    if (!confirmDeleteTaskId) return;
+    setTasks((prev) => prev.filter((t) => t.id !== confirmDeleteTaskId));
+    setConfirmDeleteTaskId(null);
     try {
-      await api.deleteTask(sessionId, taskId);
+      await api.deleteTask(sessionId, confirmDeleteTaskId);
     } catch {
       fetchTasks();
     }
@@ -660,8 +669,9 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
     const task = tasks.find((t) => t.id === taskId);
     if (!task || task.status === newStatus) return;
     if (task.blocked && newStatus === "in-progress") {
-      alert(
-        `Cannot start: ${task.blockedReason || "This task has incomplete dependencies"}`
+      showInfo(
+        task.blockedReason || "This task has incomplete dependencies",
+        "Cannot start task"
       );
       return;
     }
@@ -839,6 +849,17 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
   /* ---- Board ---- */
   return (
     <div style={{ position: "relative" }}>
+      {/* Delete Task Confirm */}
+      <ConfirmDialog
+        opened={!!confirmDeleteTaskId}
+        onClose={() => setConfirmDeleteTaskId(null)}
+        onConfirm={executeDeleteTask}
+        title="Delete Task"
+        message={`Delete task "${tasks.find(t => t.id === confirmDeleteTaskId)?.title || "this task"}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        confirmColor="red"
+      />
+
       {/* Filters */}
       <Group gap="md" mb="md" wrap="wrap">
         <Select
