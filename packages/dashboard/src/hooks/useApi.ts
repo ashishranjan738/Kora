@@ -212,5 +212,18 @@ export function useApi() {
         method: "POST",
         body: JSON.stringify({ requestId }),
       }),
+    getWorkflowStates: (sid: string) =>
+      apiFetch<{ states: WorkflowState[] }>(`/sessions/${sid}/workflow-states`),
+    updateWorkflowStates: (sid: string, states: WorkflowState[]) =>
+      apiFetch<{ states: WorkflowState[] }>(`/sessions/${sid}/workflow-states`, {
+        method: "PUT",
+        body: JSON.stringify({ states }),
+      }),
   };
+}
+
+export interface WorkflowState {
+  id: string;
+  label: string;
+  color: string;
 }

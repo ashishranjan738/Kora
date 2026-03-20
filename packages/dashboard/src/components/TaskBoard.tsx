@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useApi } from "../hooks/useApi";
+import { useApi, type WorkflowState } from "../hooks/useApi";
 import {
   Modal,
   Button,
@@ -67,29 +67,59 @@ interface TaskBoardProps {
   initialTaskId?: string;
 }
 
-const COLUMNS = ["pending", "in-progress", "review", "done"] as const;
-type ColumnId = (typeof COLUMNS)[number];
+// Default workflow states — used as fallback when backend API is unavailable
+const DEFAULT_WORKFLOW_STATES: WorkflowState[] = [
+  { id: "pending", label: "Backlog", color: "gray" },
+  { id: "in-progress", label: "In Progress", color: "blue" },
+  { id: "review", label: "Review", color: "yellow" },
+  { id: "done", label: "Done", color: "green" },
+];
 
-const COLUMN_LABELS: Record<string, string> = {
-  pending: "Backlog",
-  "in-progress": "In Progress",
-  review: "Review",
-  done: "Done",
+// Map Mantine color names to CSS variable colors for column headers
+const COLOR_TO_CSS: Record<string, string> = {
+  gray: "var(--text-muted)",
+  blue: "var(--accent-blue)",
+  yellow: "var(--accent-yellow)",
+  green: "var(--accent-green)",
+  red: "var(--accent-red)",
+  purple: "var(--accent-purple)",
+  orange: "#e3795c",
+  cyan: "#22b8cf",
+  teal: "#20c997",
+  pink: "#e64980",
+  indigo: "#5c7cfa",
+  lime: "#94d82d",
+  violet: "#7950f2",
+  grape: "#be4bdb",
 };
 
-const COLUMN_COLORS: Record<string, string> = {
-  pending: "gray",
-  "in-progress": "blue",
-  review: "yellow",
-  done: "green",
-};
+function getCssColor(color: string): string {
+  return COLOR_TO_CSS[color] || color;
+}
 
-const COLUMN_CSS_COLORS: Record<string, string> = {
-  pending: "var(--text-muted)",
-  "in-progress": "var(--accent-blue)",
-  review: "var(--accent-yellow)",
-  done: "var(--accent-green)",
-};
+// Build lookup maps from workflow states for O(1) access
+function buildColumnMaps(states: WorkflowState[]) {
+  const labels: Record<string, string> = {};
+  const colors: Record<string, string> = {};
+  const cssColors: Record<string, string> = {};
+  for (const s of states) {
+    labels[s.id] = s.label;
+    colors[s.id] = s.color;
+    cssColors[s.id] = getCssColor(s.color);
+  }
+  return { labels, colors, cssColors };
+}
+
+// Legacy aliases — these are dynamically rebuilt from workflow states
+let COLUMN_LABELS: Record<string, string> = {};
+let COLUMN_COLORS: Record<string, string> = {};
+let COLUMN_CSS_COLORS: Record<string, string> = {};
+
+// Initialize with defaults
+const _defaultMaps = buildColumnMaps(DEFAULT_WORKFLOW_STATES);
+COLUMN_LABELS = _defaultMaps.labels;
+COLUMN_COLORS = _defaultMaps.colors;
+COLUMN_CSS_COLORS = _defaultMaps.cssColors;
 
 const PRIORITY_COLORS: Record<string, string> = {
   P0: "red",
@@ -511,6 +541,19 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
   const isMobile = useMediaQuery("(max-width: 48em)");
   const isTablet = useMediaQuery("(max-width: 62em)");
 
+  // Dynamic workflow states — fetched from API, falls back to defaults
+  const [workflowStates, setWorkflowStates] = useState<WorkflowState[]>(DEFAULT_WORKFLOW_STATES);
+  const columns = workflowStates.map((s) => s.id);
+  const columnMaps = buildColumnMaps(workflowStates);
+
+  // Update module-level maps when workflow states change (for TaskColumn which reads them directly)
+  useEffect(() => {
+    const maps = buildColumnMaps(workflowStates);
+    COLUMN_LABELS = maps.labels;
+    COLUMN_COLORS = maps.colors;
+    COLUMN_CSS_COLORS = maps.cssColors;
+  }, [workflowStates]);
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
@@ -525,7 +568,7 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const [newDependencies, setNewDependencies] = useState<string[]>([]);
-  const [activeCol, setActiveCol] = useState<ColumnId>("pending");
+  const [activeCol, setActiveCol] = useState<string>(DEFAULT_WORKFLOW_STATES[0].id);
   const [mobileView, setMobileView] = useState<"kanban" | "list">("list");
 
   // Filters
@@ -554,10 +597,22 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
     } catch {}
   }, [sessionId]);
 
+  const fetchWorkflowStates = useCallback(async () => {
+    try {
+      const data = await api.getWorkflowStates(sessionId);
+      if (data.states && data.states.length > 0) {
+        setWorkflowStates(data.states);
+      }
+    } catch {
+      // API not available yet — use defaults
+    }
+  }, [sessionId]);
+
   useEffect(() => {
     fetchTasks();
     fetchAgents();
-  }, [fetchTasks, fetchAgents]);
+    fetchWorkflowStates();
+  }, [fetchTasks, fetchAgents, fetchWorkflowStates]);
 
   useEffect(() => {
     const interval = setInterval(fetchTasks, 5000);
@@ -976,7 +1031,7 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
               {/* Column tabs */}
               <ScrollArea type="never">
                 <Group gap="xs" wrap="nowrap">
-                  {COLUMNS.map((col) => (
+                  {columns.map((col) => (
                     <Badge
                       key={col}
                       variant={activeCol === col ? "filled" : "outline"}
@@ -1024,7 +1079,7 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
           ) : (
             /* List view: all tasks grouped by status */
             <Stack gap="md">
-              {COLUMNS.map((col) => {
+              {columns.map((col) => {
                 const colTasks = tasksByColumn(col);
                 return (
                   <Box key={col}>
@@ -1133,8 +1188,8 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
         </Stack>
       ) : (
         /* Desktop / Tablet: grid columns */
-        <SimpleGrid cols={isTablet ? 2 : 4} spacing="md">
-          {COLUMNS.map((col) => (
+        <SimpleGrid cols={isTablet ? 2 : Math.min(columns.length, 6)} spacing="md">
+          {columns.map((col) => (
             <TaskColumn
               key={col}
               column={col}
@@ -1210,6 +1265,7 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
           onNavigateTask={setExpandedTaskId}
           inputStyles={inputStyles}
           fetchTasks={fetchTasks}
+          columns={columns}
         />
       )}
     </div>
@@ -1497,6 +1553,7 @@ function TaskDetailModal({
   onNavigateTask,
   inputStyles,
   fetchTasks,
+  columns,
 }: {
   task: Task;
   tasks: Task[];
@@ -1512,6 +1569,7 @@ function TaskDetailModal({
   onNavigateTask: (taskId: string) => void;
   inputStyles: any;
   fetchTasks: () => void;
+  columns: string[];
 }) {
   const api = useApi();
   const [editingTitle, setEditingTitle] = useState(false);
@@ -1615,7 +1673,7 @@ function TaskDetailModal({
     option: { color: "var(--text-primary)" },
   };
 
-  const SEGMENTED_DATA = COLUMNS.map((col) => ({
+  const SEGMENTED_DATA = columns.map((col) => ({
     value: col,
     label: COLUMN_LABELS[col],
   }));

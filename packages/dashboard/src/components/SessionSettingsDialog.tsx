@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useApi } from "../hooks/useApi";
+import { useEffect, useState, useCallback } from "react";
+import { useApi, type WorkflowState } from "../hooks/useApi";
 import {
   Modal,
   Button,
@@ -14,6 +14,10 @@ import {
   Box,
   Slider,
   Divider,
+  Badge,
+  ActionIcon,
+  ColorSwatch,
+  Paper,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { AutonomyLevel } from "@kora/shared";
@@ -74,6 +78,21 @@ export function SessionSettingsDialog({
   const [newLabel, setNewLabel] = useState("");
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
+
+  // Workflow states
+  const DEFAULT_WORKFLOW_STATES: WorkflowState[] = [
+    { id: "pending", label: "Backlog", color: "gray" },
+    { id: "in-progress", label: "In Progress", color: "blue" },
+    { id: "review", label: "Review", color: "yellow" },
+    { id: "done", label: "Done", color: "green" },
+  ];
+  const AVAILABLE_COLORS = ["gray", "blue", "yellow", "green", "red", "orange", "purple", "cyan", "teal", "pink", "indigo", "violet"];
+  const [workflowStates, setWorkflowStates] = useState<WorkflowState[]>(DEFAULT_WORKFLOW_STATES);
+  const [loadingWorkflow, setLoadingWorkflow] = useState(true);
+  const [savingWorkflow, setSavingWorkflow] = useState(false);
+  const [newStateName, setNewStateName] = useState("");
+  const [newStateColor, setNewStateColor] = useState("blue");
+  const [workflowDirty, setWorkflowDirty] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,6 +196,70 @@ export function SessionSettingsDialog({
     } catch (err: any) {
       setError(err.message || "Failed to remove custom model");
     }
+  }
+
+  // Fetch workflow states
+  useEffect(() => {
+    let cancelled = false;
+    async function loadWorkflow() {
+      try {
+        const data = await api.getWorkflowStates(sessionId);
+        if (!cancelled && data.states?.length > 0) {
+          setWorkflowStates(data.states);
+        }
+      } catch {
+        // API not available — use defaults
+      } finally {
+        if (!cancelled) setLoadingWorkflow(false);
+      }
+    }
+    loadWorkflow();
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
+  const handleSaveWorkflow = useCallback(async () => {
+    setSavingWorkflow(true);
+    try {
+      await api.updateWorkflowStates(sessionId, workflowStates);
+      setWorkflowDirty(false);
+    } catch (err: any) {
+      setError(err.message || "Failed to save workflow states");
+    } finally {
+      setSavingWorkflow(false);
+    }
+  }, [sessionId, workflowStates]);
+
+  function handleAddState() {
+    if (!newStateName.trim()) return;
+    const id = newStateName.trim().toLowerCase().replace(/\s+/g, "-");
+    if (workflowStates.some((s) => s.id === id)) {
+      setError(`State "${id}" already exists.`);
+      return;
+    }
+    setWorkflowStates((prev) => [...prev, { id, label: newStateName.trim(), color: newStateColor }]);
+    setNewStateName("");
+    setNewStateColor("blue");
+    setWorkflowDirty(true);
+    setError("");
+  }
+
+  function handleRemoveState(stateId: string) {
+    setWorkflowStates((prev) => prev.filter((s) => s.id !== stateId));
+    setWorkflowDirty(true);
+  }
+
+  function handleMoveState(index: number, direction: "up" | "down") {
+    const newIndex = direction === "up" ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= workflowStates.length) return;
+    const updated = [...workflowStates];
+    [updated[index], updated[newIndex]] = [updated[newIndex], updated[index]];
+    setWorkflowStates(updated);
+    setWorkflowDirty(true);
+  }
+
+  function handleResetWorkflow() {
+    setWorkflowStates(DEFAULT_WORKFLOW_STATES);
+    setWorkflowDirty(true);
   }
 
   const providerSelectData = providers.map((p) => ({
@@ -348,6 +431,148 @@ export function SessionSettingsDialog({
           </Text>
           <Text size="xs" c="var(--text-muted)" mt={4}>
             Default for newly spawned agents. Enforcement logic coming in a future sprint.
+          </Text>
+        </Box>
+
+        <Divider color="var(--border-color)" />
+
+        {/* Workflow States Section */}
+        <Box>
+          <Group justify="space-between" align="center" mb="sm">
+            <Text fw={600} size="sm" c="var(--text-primary)">
+              Workflow States
+            </Text>
+            <Group gap="xs">
+              {workflowDirty && (
+                <Button
+                  size="compact-xs"
+                  variant="filled"
+                  onClick={handleSaveWorkflow}
+                  loading={savingWorkflow}
+                  styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)" } }}
+                >
+                  Save
+                </Button>
+              )}
+              <Button
+                size="compact-xs"
+                variant="subtle"
+                color="gray"
+                onClick={handleResetWorkflow}
+              >
+                Reset
+              </Button>
+            </Group>
+          </Group>
+
+          {loadingWorkflow ? (
+            <Text size="xs" c="var(--text-muted)" py="sm">Loading workflow states...</Text>
+          ) : (
+            <Stack gap="xs">
+              {/* Current states list */}
+              {workflowStates.map((state, idx) => (
+                <Paper
+                  key={state.id}
+                  p="xs"
+                  withBorder
+                  style={{
+                    backgroundColor: "var(--bg-tertiary)",
+                    borderColor: "var(--border-color)",
+                  }}
+                >
+                  <Group justify="space-between" align="center" wrap="nowrap">
+                    <Group gap="sm" align="center" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
+                      <ColorSwatch color={`var(--mantine-color-${state.color}-6)`} size={16} />
+                      <Text size="sm" c="var(--text-primary)" fw={500} truncate>
+                        {state.label}
+                      </Text>
+                      <Badge size="xs" variant="outline" color="gray">
+                        {state.id}
+                      </Badge>
+                    </Group>
+                    <Group gap={4} wrap="nowrap">
+                      <ActionIcon
+                        variant="subtle"
+                        size="xs"
+                        disabled={idx === 0}
+                        onClick={() => handleMoveState(idx, "up")}
+                        title="Move up"
+                        style={{ color: "var(--text-secondary)" }}
+                      >
+                        <span style={{ fontSize: 12 }}>▲</span>
+                      </ActionIcon>
+                      <ActionIcon
+                        variant="subtle"
+                        size="xs"
+                        disabled={idx === workflowStates.length - 1}
+                        onClick={() => handleMoveState(idx, "down")}
+                        title="Move down"
+                        style={{ color: "var(--text-secondary)" }}
+                      >
+                        <span style={{ fontSize: 12 }}>▼</span>
+                      </ActionIcon>
+                      <ActionIcon
+                        variant="subtle"
+                        size="xs"
+                        color="red"
+                        disabled={workflowStates.length <= 2}
+                        onClick={() => handleRemoveState(state.id)}
+                        title="Remove state"
+                      >
+                        <span style={{ fontSize: 14 }}>×</span>
+                      </ActionIcon>
+                    </Group>
+                  </Group>
+                </Paper>
+              ))}
+
+              {/* Add new state form */}
+              <Card
+                withBorder
+                padding="sm"
+                radius="md"
+                style={{
+                  backgroundColor: "var(--bg-tertiary)",
+                  borderColor: "var(--border-color)",
+                }}
+              >
+                <Text fw={600} size="xs" c="var(--text-primary)" mb="xs">
+                  Add State
+                </Text>
+                <Group gap="sm" align="end" wrap={isMobile ? "wrap" : "nowrap"}>
+                  <TextInput
+                    placeholder="e.g. E2E Testing"
+                    value={newStateName}
+                    onChange={(e) => setNewStateName(e.currentTarget.value)}
+                    size="sm"
+                    style={{ flex: 1 }}
+                    styles={inputStyles}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleAddState(); }}
+                  />
+                  <Select
+                    placeholder="Color"
+                    data={AVAILABLE_COLORS.map((c) => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) }))}
+                    value={newStateColor}
+                    onChange={(v) => setNewStateColor(v || "blue")}
+                    size="sm"
+                    w={isMobile ? "100%" : 120}
+                    styles={selectDropdownStyles}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleAddState}
+                    disabled={!newStateName.trim()}
+                    styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)" } }}
+                  >
+                    Add
+                  </Button>
+                </Group>
+              </Card>
+            </Stack>
+          )}
+
+          <Text size="xs" c="var(--text-muted)" mt={8}>
+            Workflow states define the columns on the Task Board. Drag tasks between columns to change status.
           </Text>
         </Box>
 
