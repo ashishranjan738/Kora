@@ -112,7 +112,7 @@ export function createApiRouter(deps: {
       if (sessionConfig.status === "stopped") continue;
 
       try {
-        const runtimeDir = path.join(sessionConfig.projectPath, getRuntimeDaemonDir(process.env.KORA_DEV === "1"));
+        const runtimeDir = path.join(sessionConfig.projectPath, getRuntimeDaemonDir(process.env.KORA_DEV === "1"), "sessions", sessionConfig.id);
         const persisted = await loadTerminalStates(runtimeDir);
         if (persisted.length === 0) continue;
 

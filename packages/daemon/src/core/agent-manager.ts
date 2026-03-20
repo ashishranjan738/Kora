@@ -176,7 +176,7 @@ export class AgentManager extends EventEmitter {
                 "--agent-role", options.role,
                 "--daemon-url", `http://localhost:${daemonPort}`,
                 "--token", daemonToken,
-                "--project-path", path.resolve(options.runtimeDir, ".."),
+                "--project-path", options.workingDirectory,
               ],
               env: {
                 KORA_DEV: isDev ? "1" : "0",

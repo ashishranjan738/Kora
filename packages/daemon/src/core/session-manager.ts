@@ -15,6 +15,7 @@ import type {
 import {
   DAEMON_DIR,
   getRuntimeDaemonDir,
+  SESSIONS_SUBDIR,
   SESSIONS_FILE,
   MESSAGES_DIR,
   CONTROL_DIR,
@@ -57,7 +58,7 @@ export class SessionManager {
         this.sessions.set(config.id, {
           config,
           agents: {},
-          runtimeDir: path.join(config.projectPath, getRuntimeDaemonDir(process.env.KORA_DEV === "1")),
+          runtimeDir: path.join(config.projectPath, getRuntimeDaemonDir(process.env.KORA_DEV === "1"), SESSIONS_SUBDIR, config.id),
         });
       }
     } catch (err: unknown) {
@@ -105,7 +106,7 @@ export class SessionManager {
       throw new Error(`Session with id "${id}" already exists`);
     }
 
-    const runtimeDir = path.join(config.projectPath, getRuntimeDaemonDir(process.env.KORA_DEV === "1"));
+    const runtimeDir = path.join(config.projectPath, getRuntimeDaemonDir(process.env.KORA_DEV === "1"), SESSIONS_SUBDIR, id);
 
     // 1. Create the runtime directory and all subdirectories
     for (const sub of SESSION_SUBDIRS) {
