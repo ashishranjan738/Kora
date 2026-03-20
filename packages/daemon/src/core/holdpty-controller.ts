@@ -205,13 +205,92 @@ export class HoldptyController implements IPtyBackend {
 
   /**
    * Checks whether a holdpty session exists and is alive.
+   *
+   * Two-phase check:
+   * 1. Fast path: metadata + PID check via isSessionActive()
+   * 2. Socket liveness probe: connect to the Unix socket with a short timeout
+   *    and verify HELLO_ACK handshake. This catches stale sessions where:
+   *    - The holder crashed (SIGKILL/OOM) but the socket file persists
+   *    - The PID was recycled by the OS (kill(pid, 0) returns true for wrong process)
+   *
+   * If the socket probe fails, cleans up stale socket + metadata files.
    */
   async hasSession(name: string): Promise<boolean> {
     try {
       const session = await getSessionModule();
-      return session.isSessionActive(name);
+      if (!session.isSessionActive(name)) {
+        return false;
+      }
+
+      // Phase 2: Verify the socket is actually connectable
+      const alive = await this.probeSocket(name);
+      if (!alive) {
+        // Stale session — clean up orphaned files
+        logger.debug({ sessionName: name }, "[HoldptyController] hasSession: PID alive but socket dead — cleaning stale session");
+        await this.cleanupStaleSession(name);
+        return false;
+      }
+
+      return true;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Probe a holdpty socket with a HELLO handshake to verify liveness.
+   * Returns true if socket responds with HELLO_ACK within timeout.
+   */
+  private async probeSocket(name: string): Promise<boolean> {
+    try {
+      const proto = await getProtocol();
+      const socketPath = await this.getSocketPath(name);
+
+      return await new Promise<boolean>((resolve) => {
+        const socket = net.createConnection(socketPath, () => {
+          // Send HELLO in "logs" mode (read-only, no exclusive lock)
+          const hello = proto.encodeHello({ mode: "logs", protocolVersion: 1 });
+          socket.write(hello);
+        });
+
+        const timeout = setTimeout(() => {
+          socket.destroy();
+          resolve(false);
+        }, 1000); // 1-second timeout
+
+        socket.on("data", (chunk: Buffer) => {
+          clearTimeout(timeout);
+          socket.destroy();
+          // Any response means the holder is alive
+          resolve(chunk.length > 0);
+        });
+
+        socket.on("error", () => {
+          clearTimeout(timeout);
+          socket.destroy();
+          resolve(false);
+        });
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Clean up stale socket + metadata files for a dead session.
+   */
+  private async cleanupStaleSession(name: string): Promise<void> {
+    try {
+      const socketPath = await this.getSocketPath(name);
+      const metadataPath = socketPath.replace(/\.sock$/, ".json");
+
+      try { fs.unlinkSync(socketPath); } catch { /* may already be gone */ }
+      try { fs.unlinkSync(metadataPath); } catch { /* may already be gone */ }
+
+      logger.debug({ sessionName: name }, "[HoldptyController] Cleaned up stale session files");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.debug({ sessionName: name, err: message }, "[HoldptyController] Failed to clean stale session");
     }
   }
 
