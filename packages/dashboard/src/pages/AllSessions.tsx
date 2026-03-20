@@ -103,6 +103,12 @@ export function AllSessions() {
   const [agentCliArgsOverrides, setAgentCliArgsOverrides] = useState<Record<number, string>>({});
   const [playbookMessagingMode, setPlaybookMessagingMode] = useState<"mcp" | "terminal" | "manual">("mcp");
   const [playbookWorktreeMode, setPlaybookWorktreeMode] = useState<"isolated" | "shared">("isolated");
+  const [playbookWorkflowStates, setPlaybookWorkflowStates] = useState([
+    { id: "pending", label: "Pending", color: "#6b7280", category: "not-started" as const, transitions: ["in-progress"] as string[], skippable: false },
+    { id: "in-progress", label: "In Progress", color: "#3b82f6", category: "active" as const, transitions: ["review"] as string[], skippable: false },
+    { id: "review", label: "Review", color: "#f59e0b", category: "active" as const, transitions: ["done"] as string[], skippable: false },
+    { id: "done", label: "Done", color: "#22c55e", category: "closed" as const, transitions: [] as string[], skippable: false },
+  ]);
   const [topologyExpanded, setTopologyExpanded] = useState(false);
   const [expandedCliFlags, setExpandedCliFlags] = useState<Record<number, boolean>>({});
 
@@ -279,6 +285,14 @@ export function AllSessions() {
         projectPath: playbookPath,
         messagingMode: playbookMessagingMode,
         worktreeMode: playbookWorktreeMode,
+        workflowStates: playbookWorkflowStates.length > 0
+          ? playbookWorkflowStates.map((s, i, arr) => ({
+              ...s,
+              transitions: s.transitions?.length ? s.transitions : (
+                i < arr.length - 1 ? [arr[i + 1].id, ...(i > 0 ? [arr[i - 1].id] : [])] : []
+              ),
+            }))
+          : undefined,
       });
       useSessionStore.getState().addSession(sessionResult);
 
@@ -849,7 +863,7 @@ export function AllSessions() {
           className="dialog-overlay"
           onClick={() => setShowCreateDialog(false)}
         >
-          <div className="dialog" onClick={(e) => e.stopPropagation()}>
+          <div className="dialog" onClick={(e) => e.stopPropagation()} style={{ maxHeight: "90vh", overflowY: "auto" }}>
             <h2>Create New Session</h2>
             <div className="form-group">
               <label>Session Name</label>
@@ -1238,6 +1252,58 @@ export function AllSessions() {
                             : "All agents share the same working directory."}
                         </div>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Section: Task Pipeline */}
+                  <div className="playbook-section">
+                    <div className="playbook-section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>Task Pipeline</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const id = `custom-${Date.now()}`;
+                          setPlaybookWorkflowStates(prev => {
+                            const idx = prev.length > 0 ? prev.length - 1 : 0;
+                            const updated = [...prev];
+                            updated.splice(idx, 0, { id, label: "New State", color: "#8b5cf6", category: "active" as const, transitions: [] as string[], skippable: false });
+                            return updated;
+                          });
+                        }}
+                        style={{ fontSize: 11, padding: "3px 10px", background: "var(--accent-blue)", border: "none", borderRadius: 4, color: "white", cursor: "pointer" }}
+                      >
+                        + Add
+                      </button>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>
+                      {playbookWorkflowStates.map((state, i) => (
+                        <div key={state.id} style={{
+                          display: "flex", alignItems: "center", gap: 6, padding: "4px 8px",
+                          borderRadius: 4, background: "var(--bg-tertiary)", border: "1px solid var(--border-color)",
+                        }}>
+                          <input type="color" value={state.color} onChange={(e) => {
+                            const u = [...playbookWorkflowStates]; u[i] = { ...u[i], color: e.target.value }; setPlaybookWorkflowStates(u);
+                          }} style={{ width: 20, height: 20, border: "none", background: "none", cursor: "pointer", padding: 0 }} />
+                          <input value={state.label} onChange={(e) => {
+                            const u = [...playbookWorkflowStates];
+                            const newId = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+                            u[i] = { ...u[i], label: e.target.value, id: newId || state.id };
+                            setPlaybookWorkflowStates(u);
+                          }} placeholder="State name" style={{ flex: 1, fontSize: 12, padding: "3px 6px", background: "var(--bg-primary)", border: "1px solid var(--border-color)", borderRadius: 4, color: "var(--text-primary)" }} />
+                          <label style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 2, whiteSpace: "nowrap" }}>
+                            <input type="checkbox" checked={state.skippable} onChange={(e) => {
+                              const u = [...playbookWorkflowStates]; u[i] = { ...u[i], skippable: e.target.checked }; setPlaybookWorkflowStates(u);
+                            }} /> Skip
+                          </label>
+                          {playbookWorkflowStates.length > 2 && (
+                            <button type="button" onClick={() => setPlaybookWorkflowStates(prev => prev.filter((_, j) => j !== i))}
+                              style={{ background: "none", border: "none", color: "var(--accent-red)", cursor: "pointer", fontSize: 12, padding: "0 3px" }}>×</button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+                      {playbookWorkflowStates.map(s => s.skippable ? `${s.label}?` : s.label).join(" → ")}
                     </div>
                   </div>
 
