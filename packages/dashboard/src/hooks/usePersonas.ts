@@ -1,15 +1,19 @@
 /**
  * usePersonas - Hook for managing agent personas
  *
- * Provides pre-built personas for agent spawning.
- * Future: Will support custom personas with localStorage/API persistence.
+ * Combines pre-built personas with custom ones stored in the daemon database.
+ * Custom personas persist across sessions and browsers (server-side storage).
  */
+
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useApi } from "./useApi";
 
 export interface Persona {
   id: string;
   name: string;
   description: string;
   fullText: string;
+  isCustom?: boolean;
 }
 
 const PREDEFINED_PERSONAS: Persona[] = [
@@ -64,7 +68,46 @@ const PREDEFINED_PERSONAS: Persona[] = [
 ];
 
 export function usePersonas() {
+  const api = useApi();
+  const [customPersonas, setCustomPersonas] = useState<Persona[]>([]);
+  const [loading, setLoading] = useState(true);
+  const apiRef = useRef(api);
+  apiRef.current = api;
+
+  const fetchCustom = useCallback(async () => {
+    try {
+      const data = await apiRef.current.getPersonas();
+      setCustomPersonas((data.personas || []).map(p => ({ ...p, isCustom: true })));
+    } catch {
+      // Non-fatal
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCustom();
+  }, [fetchCustom]);
+
+  const addPersona = useCallback(async (persona: { name: string; description: string; fullText: string }): Promise<Persona> => {
+    const result = await apiRef.current.createPersona(persona);
+    const newPersona: Persona = { ...result, isCustom: true };
+    setCustomPersonas(prev => [newPersona, ...prev]);
+    return newPersona;
+  }, []);
+
+  const deletePersona = useCallback(async (id: string) => {
+    await apiRef.current.deletePersona(id);
+    setCustomPersonas(prev => prev.filter(p => p.id !== id));
+  }, []);
+
   return {
-    personas: PREDEFINED_PERSONAS,
+    personas: [...customPersonas, ...PREDEFINED_PERSONAS],
+    customPersonas,
+    builtinPersonas: PREDEFINED_PERSONAS,
+    loading,
+    addPersona,
+    deletePersona,
+    refresh: fetchCustom,
   };
 }

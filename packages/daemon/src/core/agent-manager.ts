@@ -230,6 +230,9 @@ export class AgentManager extends EventEmitter {
           // Idle detection + task assignment — report idle status and request tasks
           "mcp__kora__report_idle",
           "mcp__kora__request_task",
+          // Persona library — available to all agents
+          "mcp__kora__list_personas",
+          "mcp__kora__save_persona",
         );
         // Master agents get agent management tools
         if (options.role === "master") {
@@ -300,7 +303,27 @@ export class AgentManager extends EventEmitter {
     }
 
     // 8. Send the command to tmux via sendKeys (join args with spaces)
-    await this.tmux.sendKeys(tmuxSession, command.join(" "), { literal: false });
+    const fullCommand = command.join(" ");
+    logger.info(`[agent-manager] Sending CLI command for ${agentId}: ${command[0]} (${command.length} args)`);
+    await this.tmux.sendKeys(tmuxSession, fullCommand, { literal: false });
+
+    // 8b. Fire-and-forget verification: after a delay, check if the CLI command
+    //     actually reached the terminal. If sendKeys failed silently (e.g. holdpty
+    //     socket race), retry once. This runs async to avoid blocking spawn.
+    setTimeout(async () => {
+      try {
+        const verifyOutput = await this.tmux.capturePane(tmuxSession, 10, false);
+        const cliBinary = command[0]; // e.g. "claude", "aider", "codex"
+        // Only retry if we got real terminal output but the command is missing
+        if (verifyOutput.length > 20 && !verifyOutput.includes(cliBinary)) {
+          logger.warn(`[agent-manager] CLI command not detected in terminal for ${agentId}, retrying sendKeys...`);
+          await new Promise(r => setTimeout(r, 800));
+          await this.tmux.sendKeys(tmuxSession, fullCommand, { literal: false });
+        }
+      } catch {
+        // capturePane may fail for mock backends — skip verification
+      }
+    }, 1500);
 
     // 9. If initialTask, wait 5 seconds then send it via sendKeys
     //    (Claude Code needs time to fully start up)

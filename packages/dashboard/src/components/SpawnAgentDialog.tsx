@@ -134,12 +134,30 @@ export function SpawnAgentDialog({
         // Non-fatal: suggestions are optional
       }
     }
+    async function loadRecentConfigs() {
+      try {
+        const data = await api.getRecentAgentConfigs(5);
+        if (!cancelled && data.configs?.length > 0) {
+          const lastUsed = data.configs[0];
+          // Auto-select provider and model from last used config
+          if (lastUsed.provider && !providerId) {
+            handleProviderChange(lastUsed.provider);
+            if (lastUsed.model && lastUsed.model !== "default") {
+              setModelId(lastUsed.model);
+            }
+          }
+        }
+      } catch {
+        // Non-fatal: suggestions are optional
+      }
+    }
     load();
     loadRecentFlags();
+    loadRecentConfigs();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedProvider = providers.find((p) => p.id === providerId);
   const [sessionModels, setSessionModels] = useState<ProviderModel[]>([]);

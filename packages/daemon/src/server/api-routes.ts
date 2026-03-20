@@ -707,7 +707,8 @@ export function createApiRouter(deps: {
       }
 
       // Resolve the CLI provider
-      const providerId = body.cliProvider ?? session.config.defaultProvider;
+      // Accept both "cliProvider" (SpawnAgentRequest type) and "provider" (dashboard sends this)
+      const providerId = body.cliProvider ?? (body as any).provider ?? session.config.defaultProvider;
       const provider = providerRegistry.get(providerId);
       if (!provider) {
         res.status(400).json({ error: `Provider "${providerId}" not found` });
@@ -762,10 +763,11 @@ export function createApiRouter(deps: {
         worktreeMode: session.config.worktreeMode,
       });
 
-      // Record CLI flags for autocomplete suggestions
+      // Record CLI flags and provider/model for autocomplete suggestions
       if (body.extraCliArgs && body.extraCliArgs.length > 0) {
         suggestionsDb.recordFlags(body.extraCliArgs.join(" "));
       }
+      suggestionsDb.recordAgentConfig(providerId, body.model || "default");
 
       // Broadcast agent-spawned event via WebSocket
       broadcastEvent({ event: "agent-spawned", sessionId: sid, agentId: agentState.id });
@@ -3096,6 +3098,76 @@ export function createApiRouter(deps: {
       res.json({ flags });
     } catch (err) {
       logger.error({ err: err }, "[api] GET /suggestions/flags error");
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  router.get("/suggestions/agent-configs", (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 10;
+      const configs = suggestionsDb.getRecentAgentConfigs(limit);
+      res.json({ configs });
+    } catch (err) {
+      logger.error({ err: err }, "[api] GET /suggestions/agent-configs error");
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // ── Custom Personas CRUD ──────────────────────────────────
+
+  router.get("/personas", (_req: Request, res: Response) => {
+    try {
+      const personas = suggestionsDb.getPersonas();
+      res.json({ personas });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  router.post("/personas", (req: Request, res: Response) => {
+    try {
+      const { name, description, fullText } = req.body;
+      if (!name?.trim() || !fullText?.trim()) {
+        res.status(400).json({ error: "name and fullText are required" });
+        return;
+      }
+      const id = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      suggestionsDb.createPersona({ id, name: name.trim(), description: (description || name).trim(), fullText: fullText.trim() });
+      res.status(201).json({ id, name: name.trim(), description: (description || name).trim(), fullText: fullText.trim() });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  router.put("/personas/:id", (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      const existing = suggestionsDb.getPersona(id);
+      if (!existing) {
+        res.status(404).json({ error: `Persona "${id}" not found` });
+        return;
+      }
+      const { name, description, fullText } = req.body;
+      if (name !== undefined && !name.trim()) {
+        res.status(400).json({ error: "name cannot be empty" });
+        return;
+      }
+      if (fullText !== undefined && !fullText.trim()) {
+        res.status(400).json({ error: "fullText cannot be empty" });
+        return;
+      }
+      suggestionsDb.updatePersona(id, { name, description, fullText });
+      res.json({ updated: true });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  router.delete("/personas/:id", (req: Request, res: Response) => {
+    try {
+      suggestionsDb.deletePersona(String(req.params.id));
+      res.json({ deleted: true });
+    } catch (err) {
       res.status(500).json({ error: String(err) });
     }
   });

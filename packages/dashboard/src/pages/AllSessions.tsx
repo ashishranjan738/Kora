@@ -4,6 +4,7 @@ import { useSessionStore } from "../stores/sessionStore";
 import { useApi } from "../hooks/useApi";
 import { StopSessionDialog } from "../components/StopSessionDialog";
 import { PlaybookGrid, PlaybookPreview, PlaybookUploadModal, VariableForm } from "../components/playbook";
+import { PersonaLibrary } from "../components/PersonaLibrary";
 import { showError } from "../utils/notifications";
 
 interface PlaybookAgent {
@@ -92,6 +93,7 @@ export function AllSessions() {
   const [agentModelOverrides, setAgentModelOverrides] = useState<Record<number, string>>({});
   const [agentProviderOverrides, setAgentProviderOverrides] = useState<Record<number, string>>({});
   const [defaultModelForAll, setDefaultModelForAll] = useState("");
+  const [defaultCliFlagsForAll, setDefaultCliFlagsForAll] = useState("");
   const [agentCliArgsOverrides, setAgentCliArgsOverrides] = useState<Record<number, string>>({});
   const [playbookMessagingMode, setPlaybookMessagingMode] = useState<"mcp" | "terminal" | "manual">("mcp");
   const [playbookWorktreeMode, setPlaybookWorktreeMode] = useState<"isolated" | "shared">("isolated");
@@ -101,6 +103,7 @@ export function AllSessions() {
   // Playbook variables state
   const [playbookVariables, setPlaybookVariables] = useState<Record<string, string>>({});
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showPersonaLibrary, setShowPersonaLibrary] = useState(false);
 
   // Daemon status
   const [daemonStatus, setDaemonStatus] = useState<{
@@ -220,7 +223,7 @@ export function AllSessions() {
     });
     setAgentModelOverrides(modelOverrides);
     setAgentProviderOverrides(providerOverrides);
-    setDefaultModelForAll("");
+    setDefaultModelForAll(""); setDefaultCliFlagsForAll("");
 
     // Initialize variables with defaults
     const initialVars: Record<string, string> = {};
@@ -289,7 +292,7 @@ export function AllSessions() {
       setAgentModelOverrides({});
       setAgentProviderOverrides({});
       setAgentCliArgsOverrides({});
-      setDefaultModelForAll("");
+      setDefaultModelForAll(""); setDefaultCliFlagsForAll("");
       setPlaybookMessagingMode("mcp");
       setPlaybookWorktreeMode("isolated");
       setTopologyExpanded(false);
@@ -511,9 +514,64 @@ export function AllSessions() {
             }}
           >
             <h2 style={{ fontSize: 18, fontWeight: 600 }}>Sessions</h2>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => setShowPersonaLibrary(true)}
+                style={{
+                  background: "var(--bg-tertiary)", border: "1px solid var(--border-color)",
+                  color: "var(--text-secondary)", padding: "6px 14px", borderRadius: 6,
+                  cursor: "pointer", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6,
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+                </svg>
+                Personas
+              </button>
+              <button
+                onClick={() => navigate("/playbooks")}
+                style={{
+                  background: "var(--bg-tertiary)", border: "1px solid var(--border-color)",
+                  color: "var(--text-secondary)", padding: "6px 14px", borderRadius: 6,
+                  cursor: "pointer", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6,
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 19.5A2.5 2.5 0 016.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
+                </svg>
+                Playbooks
+              </button>
+            </div>
           </div>
 
           <div className="grid">
+            {/* Create options — at the top */}
+            <div
+              className="card session-card create-option-card"
+              onClick={() => openCreateDialog()}
+            >
+              <div className="create-option-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </div>
+              <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: "var(--accent-blue)" }}>From Scratch</h3>
+              <p style={{ fontSize: 12, color: "var(--text-muted)" }}>Create a new empty session</p>
+            </div>
+            <div
+              className="card session-card create-option-card"
+              onClick={openPlaybookPicker}
+            >
+              <div className="create-option-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 19.5A2.5 2.5 0 016.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
+                  <line x1="9" y1="7" x2="16" y2="7" /><line x1="9" y1="11" x2="14" y2="11" />
+                </svg>
+              </div>
+              <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: "var(--accent-purple)" }}>From Playbook</h3>
+              <p style={{ fontSize: 12, color: "var(--text-muted)" }}>Launch a pre-configured team</p>
+            </div>
+
             {sessions.map((s) => (
               <div
                 key={s.id}
@@ -704,24 +762,35 @@ export function AllSessions() {
                 {/* Quick actions */}
                 <div className="session-card-actions">
                   {s.status === "active" && (
-                    <button
-                      className="session-action-btn"
-                      title="Stop session"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setStopConfirmSession(s);
-                      }}
-                    >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
+                    <>
+                      <button
+                        className="session-action-btn"
+                        title="Stop session"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setStopConfirmSession(s);
+                        }}
                       >
-                        <rect x="6" y="6" width="12" height="12" rx="2" />
-                      </svg>
-                      Stop
-                    </button>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                          <rect x="6" y="6" width="12" height="12" rx="2" />
+                        </svg>
+                        Stop
+                      </button>
+                      <button
+                        className="session-action-btn"
+                        title="Session settings"
+                        style={{ color: "var(--text-secondary)", borderColor: "var(--border-color)" }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/session/${s.id}#agents`);
+                        }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                        </svg>
+                        Settings
+                      </button>
+                    </>
                   )}
                   {s.status === "stopped" && (
                     <button
@@ -753,87 +822,6 @@ export function AllSessions() {
               </div>
             ))}
 
-            {/* Create From Scratch card */}
-            <div
-              className="card session-card create-option-card"
-              onClick={() => openCreateDialog()}
-            >
-              <div className="create-option-icon">
-                <svg
-                  width="32"
-                  height="32"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="var(--accent-blue)"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </div>
-              <h3
-                style={{
-                  fontSize: 15,
-                  fontWeight: 600,
-                  marginBottom: 4,
-                  color: "var(--accent-blue)",
-                }}
-              >
-                From Scratch
-              </h3>
-              <p
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-muted)",
-                }}
-              >
-                Create a new empty session
-              </p>
-            </div>
-
-            {/* Create From Playbook card */}
-            <div
-              className="card session-card create-option-card"
-              onClick={openPlaybookPicker}
-            >
-              <div className="create-option-icon">
-                <svg
-                  width="32"
-                  height="32"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="var(--accent-purple)"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
-                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
-                  <line x1="9" y1="7" x2="16" y2="7" />
-                  <line x1="9" y1="11" x2="14" y2="11" />
-                </svg>
-              </div>
-              <h3
-                style={{
-                  fontSize: 15,
-                  fontWeight: 600,
-                  marginBottom: 4,
-                  color: "var(--accent-purple)",
-                }}
-              >
-                From Playbook
-              </h3>
-              <p
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-muted)",
-                }}
-              >
-                Launch a pre-configured team
-              </p>
-            </div>
           </div>
         </>
       )}
@@ -995,7 +983,7 @@ export function AllSessions() {
             setAgentModelOverrides({});
             setAgentProviderOverrides({});
             setAgentCliArgsOverrides({});
-            setDefaultModelForAll("");
+            setDefaultModelForAll(""); setDefaultCliFlagsForAll("");
             setPlaybookMessagingMode("mcp");
             setPlaybookWorktreeMode("isolated");
             setTopologyExpanded(false);
@@ -1027,7 +1015,7 @@ export function AllSessions() {
                     Upload
                   </button>
                 </div>
-                <div style={{ maxHeight: "calc(80vh - 200px)", overflowY: "auto" }}>
+                <div style={{ maxHeight: "calc(80vh - 200px)", overflowY: "auto", paddingRight: 4 }}>
                   <PlaybookGrid
                     playbooks={playbooks}
                     selectedPlaybook={selectedPlaybook}
@@ -1182,6 +1170,34 @@ export function AllSessions() {
                         />
                       </div>
 
+                      {/* Default CLI flags for all */}
+                      <div className="playbook-default-model">
+                        <label className="playbook-default-model-label">Default CLI flags:</label>
+                        <input
+                          value={defaultCliFlagsForAll}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setDefaultCliFlagsForAll(val);
+                            if (selectedPlaybook) {
+                              const overrides: Record<number, string> = {};
+                              selectedPlaybook.agents.forEach((_agent, i) => {
+                                overrides[i] = val;
+                              });
+                              setAgentCliArgsOverrides(overrides);
+                              // Auto-expand CLI flags for all agents
+                              const expanded: Record<number, boolean> = {};
+                              selectedPlaybook.agents.forEach((_agent, i) => {
+                                expanded[i] = !!val.trim();
+                              });
+                              setExpandedCliFlags(expanded);
+                            }
+                          }}
+                          placeholder="e.g. --dangerously-skip-permissions"
+                          className="playbook-default-model-input"
+                          style={{ fontFamily: "var(--font-mono)" }}
+                        />
+                      </div>
+
                       {/* Agent list */}
                       <div className="playbook-agent-list">
                         {selectedPlaybook.agents.map((agent, i) => {
@@ -1318,8 +1334,16 @@ export function AllSessions() {
         onClose={() => setShowUploadModal(false)}
         onSuccess={() => {
           setShowUploadModal(false);
-          loadPlaybooks(); // Reload playbooks after successful upload
+          loadPlaybooks();
         }}
+      />
+
+      {/* Persona Library — global, browse-only from All Sessions */}
+      <PersonaLibrary
+        opened={showPersonaLibrary}
+        onClose={() => setShowPersonaLibrary(false)}
+        onSelect={() => setShowPersonaLibrary(false)}
+        browseOnly
       />
     </div>
   );

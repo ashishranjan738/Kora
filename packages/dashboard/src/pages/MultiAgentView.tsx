@@ -425,12 +425,18 @@ export function MultiAgentView() {
           const newIds = agentIds.filter(id => !savedIds.includes(id));
           if (validIds.length > 0 && newIds.length === 0) {
             mosaicInitialized.current = true;
+            // Fire resize so xterm.js terminals pick up their container dimensions
+            setTimeout(() => window.dispatchEvent(new Event("resize")), 300);
+            setTimeout(() => window.dispatchEvent(new Event("resize")), 800);
             return;
           }
         } catch { /* ignore */ }
       }
       setMosaicValue(buildInitialMosaic(agents.map(a => a.id)));
       mosaicInitialized.current = true;
+      // Fire resize after mosaic renders
+      setTimeout(() => window.dispatchEvent(new Event("resize")), 300);
+      setTimeout(() => window.dispatchEvent(new Event("resize")), 800);
     }
   }, [agents]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1290,7 +1296,7 @@ export function MultiAgentView() {
   }
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "var(--bg-primary)", position: "relative" }}>
+    <div style={{ height: "calc(100vh - 52px)", display: "flex", flexDirection: "column", background: "var(--bg-primary)", position: "relative", overflow: "hidden" }}>
       {/* Header */}
       <div
         style={{
@@ -1314,15 +1320,75 @@ export function MultiAgentView() {
             {session?.name || "Session"} -- Command Center
           </h1>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
             {agents.length} agent{agents.length !== 1 ? "s" : ""}
             {agents.length > 0 && (
               <span style={{ color: "var(--text-muted)", marginLeft: 4 }}>
-                ({runningCount} running{crashedCount > 0 ? `, ${crashedCount} crashed` : ""})
+                ({(() => {
+                  const working = agents.filter(a => a.status === "running" && a.activity !== "idle").length;
+                  const idle = agents.filter(a => a.status === "running" && a.activity === "idle").length;
+                  const stopped = agents.filter(a => a.status === "stopped" || a.status === "paused").length;
+                  const parts: string[] = [];
+                  if (working > 0) parts.push(`${working} working`);
+                  if (idle > 0) parts.push(`${idle} idle`);
+                  if (crashedCount > 0) parts.push(`${crashedCount} crashed`);
+                  if (stopped > 0) parts.push(`${stopped} stopped`);
+                  if (parts.length === 0) parts.push(`${runningCount} running`);
+                  return parts.join(", ");
+                })()})
               </span>
             )}
           </span>
+
+          {/* Keyboard shortcuts hints */}
+          <div style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: 8 }}>
+            {[
+              { key: "Ctrl+1-9", label: "focus" },
+              { key: "Esc", label: "exit" },
+              { key: "Ctrl+`", label: "broadcast" },
+            ].map(({ key, label }) => (
+              <span key={key} style={{
+                fontSize: 10, color: "var(--text-muted)", background: "var(--bg-tertiary)",
+                padding: "2px 6px", borderRadius: 4, border: "1px solid var(--border-color)",
+                whiteSpace: "nowrap",
+              }}>
+                <kbd style={{ fontFamily: "inherit", fontWeight: 600, color: "var(--text-secondary)" }}>{key}</kbd> {label}
+              </span>
+            ))}
+          </div>
+
+          {/* Pause All button */}
+          <button
+            onClick={async () => {
+              try {
+                if (session?.status === "paused") {
+                  await api.resumeSession(sessionId!);
+                  showToast("Session resumed");
+                } else {
+                  await api.pauseSession(sessionId!);
+                  showToast("Session paused");
+                }
+                loadData();
+              } catch (err: any) {
+                showToast(`Failed: ${err.message}`);
+              }
+            }}
+            style={{
+              background: session?.status === "paused" ? "var(--accent-green)" : "var(--accent-red)",
+              border: "none",
+              color: "#fff",
+              fontWeight: 600,
+              padding: "5px 12px",
+              borderRadius: 6,
+              cursor: "pointer",
+              fontSize: 12,
+            }}
+          >
+            {session?.status === "paused" ? "\u25B6 Resume" : "\u23F8 Pause All"}
+          </button>
+
+          {/* Restart All button */}
           <button
             onClick={() => {
               const running = agents.filter(a => a.status === "running");
@@ -1507,75 +1573,6 @@ export function MultiAgentView() {
         )}
       </div>
 
-      {/* Quick-action toolbar */}
-      {agents.length > 0 && (
-        <div className="cc-quick-toolbar">
-          {/* Agent status summary */}
-          <div className="cc-toolbar-summary">
-            {(() => {
-              const working = agents.filter(a => a.status === "running" && a.activity !== "idle").length;
-              const idle = agents.filter(a => a.status === "running" && a.activity === "idle").length;
-              const crashed = agents.filter(a => a.status === "crashed" || a.status === "error").length;
-              const stopped = agents.filter(a => a.status === "stopped" || a.status === "paused").length;
-              const parts: string[] = [];
-              if (working > 0) parts.push(`${working} working`);
-              if (idle > 0) parts.push(`${idle} idle`);
-              if (crashed > 0) parts.push(`${crashed} crashed`);
-              if (stopped > 0) parts.push(`${stopped} stopped`);
-              return parts.length > 0 ? parts.join(" \u00b7 ") : `${agents.length} agents`;
-            })()}
-          </div>
-
-          {/* Broadcast quick input */}
-          <div className="cc-toolbar-broadcast">
-            <input
-              placeholder="Broadcast to all..."
-              value={broadcastMsg}
-              onChange={(e) => setBroadcastMsg(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); handleBroadcast(); }
-              }}
-              disabled={broadcasting}
-            />
-            <button
-              onClick={handleBroadcast}
-              disabled={broadcasting || !broadcastMsg.trim()}
-            >
-              {broadcasting ? "..." : "Send"}
-            </button>
-          </div>
-
-          {/* Action buttons */}
-          <div className="cc-toolbar-actions">
-            <button
-              className="cc-toolbar-btn"
-              onClick={async () => {
-                try {
-                  if (session?.status === "paused") {
-                    await api.resumeSession(sessionId!);
-                    showToast("Session resumed");
-                  } else {
-                    await api.pauseSession(sessionId!);
-                    showToast("Session paused");
-                  }
-                  loadData();
-                } catch (err: any) {
-                  showToast(`Failed: ${err.message}`);
-                }
-              }}
-            >
-              {session?.status === "paused" ? "\u25B6 Resume" : "\u23F8 Pause All"}
-            </button>
-          </div>
-
-          {/* Keyboard shortcuts hint */}
-          <div className="cc-toolbar-hints">
-            <span>Ctrl+1-9 focus</span>
-            <span>Esc exit</span>
-            <span>Ctrl+` broadcast</span>
-          </div>
-        </div>
-      )}
 
       {/* Fullscreen overlay — rendered via Portal to document.body for true viewport coverage */}
       {renderFullscreenPortal()}

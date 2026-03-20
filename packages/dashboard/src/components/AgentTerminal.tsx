@@ -122,8 +122,8 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
     <div style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height }}>
       {/* Stacked status badges — top-left */}
       <div style={{
-        position: "absolute", top: 8, left: 12, zIndex: 10,
-        display: "flex", flexDirection: "column", gap: 4,
+        position: "absolute", top: 8, right: 12, zIndex: 10,
+        display: "flex", flexDirection: "row", gap: 6, alignItems: "center",
       }}>
         {/* Live connection badge */}
         <div style={{
