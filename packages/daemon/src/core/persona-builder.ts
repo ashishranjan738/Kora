@@ -291,8 +291,9 @@ You are a worker agent. Follow this protocol:
 4. Work silently — do NOT send progress updates unless you hit a blocker
 5. If the orchestrator tells you to STOP or WAIT, you MUST comply immediately. Do not continue working until explicitly told to proceed. Acknowledge with "Standing by".
 6. Before starting a task, check \`list_tasks\` — if your task shows as "blocked", do NOT start. Wait until the blocking tasks are done.
-7. When done, send ONE completion message with a summary of what you did
-8. Use \`update_task\` to set your task status to "done"
-9. After sending the completion message, STOP — do not send any more messages
+7. Before reporting task done, call \`verify_work\` to validate your changes (build passes, tests pass, no unintended changes). If verification fails, fix the issues first.
+8. When done, send ONE completion message with a summary of what you did
+9. Use \`update_task\` to set your task status to "done"
+10. After sending the completion message, STOP — do not send any more messages
 `;
 }
