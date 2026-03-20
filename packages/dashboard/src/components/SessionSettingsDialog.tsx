@@ -320,6 +320,7 @@ export function SessionSettingsDialog({
           <Text size="sm" c="var(--text-primary)" fw={600} mb={12}>
             Default Autonomy Level
           </Text>
+          {/* mb={36} reserves space below slider for mark labels + marginTop gap so they don't overlap description text */}
           <Box px="xs" mb={36}>
             <Slider
               value={defaultAutonomyLevel}
@@ -336,7 +337,7 @@ export function SessionSettingsDialog({
               styles={{
                 ...AUTONOMY_SLIDER_STYLES,
                 markLabel: {
-                  ...AUTONOMY_SLIDER_STYLES.markLabel,
+                  ...(AUTONOMY_SLIDER_STYLES.markLabel ?? {}),
                   marginTop: 8,
                 },
               }}
