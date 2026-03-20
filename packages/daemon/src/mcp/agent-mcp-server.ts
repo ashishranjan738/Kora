@@ -1015,6 +1015,19 @@ async function handleToolCall(
         }
       }
 
+      // In summary mode (default), return ultra-compact fields to save context tokens
+      if (summaryArg === "true") {
+        return {
+          tasks: tasks.map((t) => ({
+            id: t.id,
+            title: t.title,
+            status: t.status,
+            ...(t.assignedTo ? { assignedTo: t.assignedTo } : {}),
+            ...((t as any).blocked ? { blocked: true, blockedReason: (t as any).blockedReason } : {}),
+          })),
+        };
+      }
+
       return response;
     }
 
