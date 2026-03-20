@@ -17,7 +17,7 @@ import tmuxDefault from "./core/tmux-controller.js";
 import { HoldptyController } from "./core/holdpty-controller.js";
 import type { IPtyBackend } from "./core/pty-backend.js";
 import { cleanupOrphanedSessions } from "./core/holdpty-cleanup.js";
-import { DEFAULT_PORT, APP_VERSION, DEFAULT_PTY_BACKEND, getRuntimeTmuxPrefix, getRuntimeDaemonDir } from "@kora/shared";
+import { DEFAULT_PORT, APP_VERSION, DEFAULT_PTY_BACKEND, getRuntimeTmuxPrefix, getRuntimeDaemonDir, SESSIONS_SUBDIR } from "@kora/shared";
 import type { PtyBackendType } from "@kora/shared";
 import { logger } from "./core/logger.js";
 import { SuggestionsDatabase } from "./core/suggestions-db.js";
@@ -88,7 +88,7 @@ async function handleStart(): Promise<void> {
   for (const config of existingSessions) {
     if (config.status === "stopped") continue;
     try {
-      const runtimeDir = path.join(config.projectPath, getRuntimeDaemonDir(process.env.KORA_DEV === "1"));
+      const runtimeDir = path.join(config.projectPath, getRuntimeDaemonDir(process.env.KORA_DEV === "1"), SESSIONS_SUBDIR, config.id);
       const orch = new Orchestrator({
         sessionId: config.id,
         projectPath: config.projectPath,
@@ -183,6 +183,8 @@ async function handleStart(): Promise<void> {
     const runtimeDir = path.join(
       sessionManager.listSessions().find(s => s.id === sid)?.projectPath || "",
       getRuntimeDaemonDir(isDev),
+      SESSIONS_SUBDIR,
+      sid,
     );
     const cp = new AutoCheckpoint({
       runtimeDir,
@@ -424,7 +426,7 @@ async function handleRun(): Promise<void> {
     defaultProvider: playbook.agents[0]?.provider || "claude-code",
   });
 
-  const runtimeDir = path.join(session.projectPath, getRuntimeDaemonDir(isDev));
+  const runtimeDir = path.join(session.projectPath, getRuntimeDaemonDir(isDev), SESSIONS_SUBDIR, session.id);
   const orch = new Orchestrator({
     sessionId: session.id,
     projectPath: session.projectPath,

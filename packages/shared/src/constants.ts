@@ -18,6 +18,9 @@ export const TOKEN_FILE = "daemon.token";
 export const SESSIONS_FILE = "sessions.json";
 export const CONFIG_FILE = "config.json";
 
+// Session-scoped runtime: each session gets its own subdirectory under .kora/sessions/{id}/
+export const SESSIONS_SUBDIR = "sessions";
+
 // Per-project runtime directories
 export const MESSAGES_DIR = "messages";
 export const CONTROL_DIR = "control";
