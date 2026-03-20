@@ -116,6 +116,7 @@ export function SessionDetail() {
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const [showReport, setShowReport] = useState(false);
   const [confirmRemoveAgentId, setConfirmRemoveAgentId] = useState<string | null>(null);
+  const [confirmCloseTerminal, setConfirmCloseTerminal] = useState<{ id: string; name: string } | null>(null);
 
   // Use terminal session store for tabs
   const terminalSessionsMap = useTerminalSessionStore((state) => state.sessions);
@@ -835,6 +836,26 @@ export function SessionDetail() {
       {activeTab === "knowledge" && sessionId && (
         <KnowledgeViewer sessionId={sessionId} />
       )}
+
+      {/* Close Terminal Confirm Dialog */}
+      <ConfirmDialog
+        opened={!!confirmCloseTerminal}
+        onClose={() => setConfirmCloseTerminal(null)}
+        onConfirm={async () => {
+          if (!confirmCloseTerminal) return;
+          try {
+            await api.deleteTerminal(sessionId, confirmCloseTerminal.id);
+            removeSession(confirmCloseTerminal.id);
+          } catch (err: any) {
+            showError(err.message, "Failed to close terminal");
+          }
+          setConfirmCloseTerminal(null);
+        }}
+        title="Close Terminal"
+        message={`Close terminal "${confirmCloseTerminal?.name || "terminal"}"?`}
+        confirmLabel="Close"
+        confirmColor="red"
+      />
 
       {/* Remove Agent Confirm Dialog */}
       <ConfirmDialog
@@ -1941,15 +1962,9 @@ function AgentsTab({
                         variant="subtle"
                         size="sm"
                         color="red"
-                        onClick={async (e) => {
+                        onClick={(e) => {
                           e.stopPropagation();
-                          try {
-                            await api.deleteTerminal(sessionId, terminal.id);
-                            // Remove from store (this also closes the tab)
-                            removeSession(terminal.id);
-                          } catch (err: any) {
-                            showError(err.message, "Failed to close terminal");
-                          }
+                          setConfirmCloseTerminal({ id: terminal.id, name: terminal.name });
                         }}
                         style={{ color: "var(--text-secondary)" }}
                       >

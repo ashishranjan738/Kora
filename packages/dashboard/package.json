@@ -52,7 +52,6 @@
     "react-mosaic-component": "^7.0.0-beta0",
     "react-resizable-panels": "^4.7.3",
     "react-router-dom": "^7.13.1",
-    "react-virtuoso": "^4.18.3",
     "zustand": "^5.0.11"
   }
 }
