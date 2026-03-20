@@ -641,6 +641,20 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: "verify_work",
+    description:
+      "Verify your work before reporting a task as done. Runs build, tests, and checks for unintended file changes. Call this BEFORE setting task status to 'done' or sending a completion message. If verification fails, fix the issues first.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        skipTests: {
+          type: "boolean",
+          description: "Skip running tests (default: false). Only use for docs-only changes.",
+        },
+      },
+    },
+  },
+  {
     name: "report_idle",
     description:
       "Report that you are idle and available for new work. The orchestrator will update your activity status to 'idle'. Use this when you've completed your current task and are ready for more work.",
@@ -1241,6 +1255,86 @@ async function handleToolCall(
           output: stdout + "\n" + stderr,
         };
       }
+    }
+
+    case "verify_work": {
+      // Get the calling agent's working directory
+      const verifyAgentsResp = (await apiCall(
+        "GET",
+        `/api/v1/sessions/${SESSION_ID}/agents`,
+      )) as AgentsResponse;
+
+      const verifyAgent = (verifyAgentsResp.agents || []).find((a) => a.id === AGENT_ID);
+      if (!verifyAgent || !(verifyAgent.config as any)?.workingDirectory) {
+        return { passed: false, error: "Could not determine your working directory" };
+      }
+
+      const verifyWorkDir = (verifyAgent.config as any).workingDirectory;
+      const skipTests = toolArgs?.skipTests === "true";
+      const results: {
+        passed: boolean;
+        build: "pass" | "fail" | "skipped";
+        tests: "pass" | "fail" | "skipped";
+        buildOutput?: string;
+        testOutput?: string;
+        unintendedChanges: string[];
+      } = {
+        passed: true,
+        build: "skipped",
+        tests: "skipped",
+        unintendedChanges: [],
+      };
+
+      // Step 1: Run make build (type-check)
+      try {
+        const { stdout: buildOut, stderr: buildErr } = await execFileAsync(
+          "make", ["build"],
+          { cwd: verifyWorkDir, timeout: 120_000 },
+        );
+        results.build = "pass";
+        results.buildOutput = (buildOut + buildErr).slice(-500); // Last 500 chars
+      } catch (err: unknown) {
+        const error = err as { stdout?: string; stderr?: string; message?: string };
+        results.build = "fail";
+        results.passed = false;
+        results.buildOutput = ((error.stdout || "") + (error.stderr || "")).slice(-1000);
+      }
+
+      // Step 2: Run make test (unless skipped)
+      if (!skipTests) {
+        try {
+          const { stdout: testOut, stderr: testErr } = await execFileAsync(
+            "make", ["test"],
+            { cwd: verifyWorkDir, timeout: 300_000 },
+          );
+          results.tests = "pass";
+          results.testOutput = (testOut + testErr).slice(-500);
+        } catch (err: unknown) {
+          const error = err as { stdout?: string; stderr?: string; message?: string };
+          results.tests = "fail";
+          results.passed = false;
+          results.testOutput = ((error.stdout || "") + (error.stderr || "")).slice(-1000);
+        }
+      }
+
+      // Step 3: Check git diff --stat for unintended changes
+      try {
+        const { stdout: diffOut } = await execFileAsync(
+          "git", ["diff", "--stat"],
+          { cwd: verifyWorkDir },
+        );
+        if (diffOut.trim()) {
+          // There are unstaged changes — could be unintended
+          const changedFiles = diffOut.trim().split("\n")
+            .filter(line => line.includes("|"))
+            .map(line => line.split("|")[0].trim());
+          results.unintendedChanges = changedFiles;
+        }
+      } catch {
+        // Ignore git errors
+      }
+
+      return results;
     }
 
     case "create_pr": {
