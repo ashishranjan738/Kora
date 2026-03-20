@@ -2089,10 +2089,36 @@ export function createApiRouter(deps: {
       }
       // Validate status against session's workflow states (or defaults)
       const sessionForValidation = sessionManager.getSession(sid);
-      const validStatuses = sessionForValidation?.config.workflowStates?.map((s: any) => s.id) || ["pending", "in-progress", "review", "done"];
+      const workflowStates = sessionForValidation?.config.workflowStates;
+      const validStatuses = workflowStates?.map((s: any) => s.id) || ["pending", "in-progress", "review", "done"];
       if (body.status !== undefined && !validStatuses.includes(body.status)) {
         res.status(400).json({ error: `status must be one of: ${validStatuses.join(", ")}` });
         return;
+      }
+      // Enforce pipeline transitions if workflow states have transitions defined
+      if (body.status !== undefined && workflowStates) {
+        const orch = orchestrators.get(sid);
+        const currentTask = orch?.database.getTask(String(tid));
+        if (currentTask && currentTask.status !== body.status) {
+          const currentState = workflowStates.find((s: any) => s.id === currentTask.status);
+          if (currentState?.transitions?.length) {
+            // Build effective transitions including skippable state targets
+            const effective = new Set<string>(currentState.transitions);
+            for (const t of currentState.transitions) {
+              const ts = workflowStates.find((s: any) => s.id === t);
+              if (ts?.skippable && ts.transitions?.length) {
+                for (const st of ts.transitions) effective.add(st);
+              }
+            }
+            if (!effective.has(body.status)) {
+              const validNext = [...effective].join(", ");
+              res.status(400).json({
+                error: `Invalid transition: "${currentTask.status}" → "${body.status}". Valid next states: ${validNext}`,
+              });
+              return;
+            }
+          }
+        }
       }
 
       const validPriorities = ["P0", "P1", "P2", "P3"];
