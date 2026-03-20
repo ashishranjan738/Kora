@@ -13,6 +13,7 @@ import {
   Card,
   Box,
   Slider,
+  Divider,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { AutonomyLevel } from "@kora/shared";
@@ -221,33 +222,38 @@ export function SessionSettingsDialog({
         close: { color: "var(--text-secondary)" },
       }}
     >
-      <Stack gap="md">
+      <Stack gap={24}>
         {error && (
           <Alert color="red" variant="light">
             {error}
           </Alert>
         )}
 
-        {/* Default Provider */}
-        <Select
-          label="Default Provider"
-          placeholder={loadingProviders ? "Loading providers..." : "Select provider..."}
-          data={providerSelectData}
-          value={defaultProvider || null}
-          onChange={(v) => setDefaultProvider(v || "")}
-          disabled={loadingProviders}
-          styles={selectDropdownStyles}
-        />
+        {/* Default Provider & Model */}
+        <Stack gap="sm">
+          <Text fw={600} size="sm" c="var(--text-primary)">
+            Defaults
+          </Text>
+          <Select
+            label="Default Provider"
+            placeholder={loadingProviders ? "Loading providers..." : "Select provider..."}
+            data={providerSelectData}
+            value={defaultProvider || null}
+            onChange={(v) => setDefaultProvider(v || "")}
+            disabled={loadingProviders}
+            styles={selectDropdownStyles}
+          />
+          <TextInput
+            label="Default Model"
+            value={defaultModel}
+            onChange={(e) => setDefaultModel(e.currentTarget.value)}
+            placeholder="e.g. gpt-4o, claude-sonnet-4-20250514"
+            description="Default model used when spawning new agents."
+            styles={inputStyles}
+          />
+        </Stack>
 
-        {/* Default Model */}
-        <TextInput
-          label="Default Model"
-          value={defaultModel}
-          onChange={(e) => setDefaultModel(e.currentTarget.value)}
-          placeholder="e.g. gpt-4o, claude-sonnet-4-20250514"
-          description="Default model used when spawning new agents."
-          styles={inputStyles}
-        />
+        <Divider color="var(--border-color)" />
 
         {/* Worktree Mode */}
         <Box>
@@ -307,35 +313,47 @@ export function SessionSettingsDialog({
           </Text>
         </Box>
 
+        <Divider color="var(--border-color)" />
+
         {/* Default Autonomy Level */}
         <Box>
-          <Text size="sm" c="var(--text-secondary)" fw={500} mb={8}>
+          <Text size="sm" c="var(--text-primary)" fw={600} mb={12}>
             Default Autonomy Level
           </Text>
-          <Slider
-            value={defaultAutonomyLevel}
-            onChange={setDefaultAutonomyLevel}
-            min={0}
-            max={3}
-            step={1}
-            marks={[
-              { value: 0, label: "Suggest" },
-              { value: 1, label: "Auto-read" },
-              { value: 2, label: "Auto-apply" },
-              { value: 3, label: "Full auto" },
-            ]}
-            styles={AUTONOMY_SLIDER_STYLES}
-          />
-          <Text size="xs" c="var(--text-muted)" mt={8}>
+          <Box px="xs" mb={36}>
+            <Slider
+              value={defaultAutonomyLevel}
+              onChange={setDefaultAutonomyLevel}
+              min={0}
+              max={3}
+              step={1}
+              marks={[
+                { value: 0, label: "Suggest" },
+                { value: 1, label: "Auto-read" },
+                { value: 2, label: "Auto-apply" },
+                { value: 3, label: "Full auto" },
+              ]}
+              styles={{
+                ...AUTONOMY_SLIDER_STYLES,
+                markLabel: {
+                  ...AUTONOMY_SLIDER_STYLES.markLabel,
+                  marginTop: 8,
+                },
+              }}
+            />
+          </Box>
+          <Text size="xs" c="var(--text-secondary)" fw={500}>
             {AUTONOMY_DESCRIPTIONS[defaultAutonomyLevel]}
           </Text>
           <Text size="xs" c="var(--text-muted)" mt={4}>
-            Default autonomy level for newly spawned agents. Note: This is UI only - enforcement logic will be added in a future sprint.
+            Default for newly spawned agents. Enforcement logic coming in a future sprint.
           </Text>
         </Box>
 
+        <Divider color="var(--border-color)" />
+
         {/* Custom Models Section */}
-        <Box mt="sm">
+        <Box>
           <Text fw={600} size="sm" c="var(--text-primary)" mb="sm">
             Custom Models
           </Text>
@@ -434,8 +452,9 @@ export function SessionSettingsDialog({
           <Card
             withBorder
             padding="md"
+            radius="md"
             style={{
-              backgroundColor: "var(--bg-primary)",
+              backgroundColor: "var(--bg-tertiary)",
               borderColor: "var(--border-color)",
             }}
           >
