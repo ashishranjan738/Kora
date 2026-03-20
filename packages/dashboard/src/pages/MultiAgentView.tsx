@@ -5,6 +5,7 @@ import { useApi } from "../hooks/useApi";
 import { AgentTerminal } from "../components/AgentTerminal";
 import { SpawnAgentDialog } from "../components/SpawnAgentDialog";
 import { ReplaceAgentDialog } from "../components/ReplaceAgentDialog";
+import { RestartAllDialog } from "../components/RestartAllDialog";
 import { EditorTile } from "../components/EditorTile";
 import { Mosaic, MosaicWindow, MosaicNode, MosaicPath, MosaicWindowProps, getLeaves, createBalancedTreeFromLeaves } from "react-mosaic-component";
 import "react-mosaic-component/react-mosaic-component.css";
@@ -133,6 +134,9 @@ export function MultiAgentView() {
   const [confirmRestartAgentId, setConfirmRestartAgentId] = useState<string | null>(null);
   const [confirmRemoveAgentId, setConfirmRemoveAgentId] = useState<string | null>(null);
   const [confirmRestartAll, setConfirmRestartAll] = useState(false);
+  const [restartAllRestarting, setRestartAllRestarting] = useState(false);
+  const [restartAllResult, setRestartAllResult] = useState<{ restarted: number } | null>(null);
+  const [restartAllError, setRestartAllError] = useState<string | null>(null);
   const [showLayoutNameModal, setShowLayoutNameModal] = useState(false);
   const [layoutName, setLayoutName] = useState("");
 
@@ -586,7 +590,7 @@ export function MultiAgentView() {
 
   function handleOpenReplace(agent: any) {
     setMenuOpen(null);
-    setReplaceTarget({ id: agent.id, name: agent.config?.name || agent.name || "Agent" });
+    setReplaceTarget({ id: agent.id, name: agent.name || agent.config?.name || agent.id });
   }
 
   function handleOpenSendMessage(agentId: string) {
@@ -1600,24 +1604,33 @@ export function MultiAgentView() {
         confirmLabel="Remove"
         confirmColor="red"
       />
-      <ConfirmDialog
-        opened={confirmRestartAll}
-        onClose={() => setConfirmRestartAll(false)}
-        onConfirm={async () => {
-          try {
-            const result = await api.restartAllAgents(sessionId!);
-            showToast(`Restarted ${result.restarted} agent(s)`);
+      {confirmRestartAll && (
+        <RestartAllDialog
+          agentCount={agents.filter(a => a.status === "running").length}
+          onCancel={() => {
             setConfirmRestartAll(false);
-            loadData();
-          } catch (err: any) {
-            showError(err.message, "Failed to restart agents");
-          }
-        }}
-        title="Restart All Agents"
-        message={`This will restart all ${agents.filter(a => a.status === "running").length} running agents with fresh sessions. They'll pick up the latest configuration.`}
-        confirmLabel="Restart All"
-        confirmColor="yellow"
-      />
+            setRestartAllRestarting(false);
+            setRestartAllResult(null);
+            setRestartAllError(null);
+          }}
+          onConfirm={async () => {
+            setRestartAllRestarting(true);
+            setRestartAllError(null);
+            try {
+              const result = await api.restartAllAgents(sessionId!);
+              setRestartAllResult(result);
+              loadData();
+            } catch (err: any) {
+              setRestartAllError(err.message || "Failed to restart agents");
+            } finally {
+              setRestartAllRestarting(false);
+            }
+          }}
+          restarting={restartAllRestarting}
+          result={restartAllResult}
+          error={restartAllError}
+        />
+      )}
 
       {/* Save Layout Name Modal */}
       <Modal

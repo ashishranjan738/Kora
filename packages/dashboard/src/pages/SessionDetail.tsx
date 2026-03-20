@@ -907,7 +907,7 @@ export function SessionDetail() {
           sessionId={sessionId}
           agentId={replaceAgentId}
           agentName={
-            agents.find((a) => a.id === replaceAgentId)?.name || "Agent"
+            agents.find((a) => a.id === replaceAgentId)?.name || agents.find((a) => a.id === replaceAgentId)?.config?.name || replaceAgentId
           }
           onClose={() => setReplaceAgentId(null)}
           onReplaced={() => {
