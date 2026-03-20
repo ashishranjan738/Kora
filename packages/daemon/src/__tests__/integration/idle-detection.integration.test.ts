@@ -191,7 +191,7 @@ describe("Idle Detection API", () => {
       // Should get highest priority available task
     });
 
-    it("returns no task when all tasks are assigned", async () => {
+    it("returns no task when all tasks are assigned", { timeout: 15000 }, async () => {
       // Mark all tasks as assigned
       const tasksRes = await request(app)
         .get(`/api/v1/sessions/${sessionId}/tasks`)

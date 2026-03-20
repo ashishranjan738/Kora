@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { PatternDetector } from "../../../personas/orchestrator-blocking/detection/pattern-detector.js";
+import { PatternDetector } from "../../orchestrator-blocking/detection/pattern-detector.js";
 import {
   BLOCKING_PATTERNS,
   NON_BLOCKING_PATTERNS,
@@ -7,7 +7,7 @@ import {
   countPatterns,
   getCategories,
   getPatternsByCategory
-} from "../../../personas/orchestrator-blocking/detection/patterns.js";
+} from "../../orchestrator-blocking/detection/patterns.js";
 
 describe("Pattern Library", () => {
   describe("Pattern Count and Structure", () => {

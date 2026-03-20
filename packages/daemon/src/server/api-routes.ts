@@ -1703,6 +1703,45 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ── Orchestrator Blocking ──────────────────────────────────
+
+  // GET blocking state for an agent
+  router.get("/sessions/:sid/agents/:aid/blocking", (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const orch = orchestrators.get(String(sid));
+      if (!orch) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+      const state = orch.getBlockingState(String(aid));
+      res.json(state);
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // POST resume a blocked orchestrator agent
+  router.post("/sessions/:sid/agents/:aid/unblock", async (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const { input } = req.body as { input?: string };
+      const orch = orchestrators.get(String(sid));
+      if (!orch) {
+        res.status(404).json({ error: `Session "${sid}" not found` });
+        return;
+      }
+      const resumed = await orch.resumeBlocked(String(aid), input);
+      if (!resumed) {
+        res.status(400).json({ error: `Agent "${aid}" is not in BLOCKED state` });
+        return;
+      }
+      res.json({ success: true, resumed: true });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   /** Agent requests a task from the task board */
   router.post("/sessions/:sid/agents/:aid/request-task", (req: Request, res: Response) => {
     try {

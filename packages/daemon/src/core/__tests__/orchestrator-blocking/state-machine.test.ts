@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { OrchestratorStateMachine, STATE_TRANSITIONS } from "../../../personas/orchestrator-blocking/state-machine.js";
-import { OrchestratorState } from "../../../personas/orchestrator-blocking/types.js";
+import { OrchestratorStateMachine, STATE_TRANSITIONS } from "../../orchestrator-blocking/state-machine.js";
+import { OrchestratorState } from "../../orchestrator-blocking/types.js";
 
 describe("OrchestratorStateMachine", () => {
   let stateMachine: OrchestratorStateMachine;

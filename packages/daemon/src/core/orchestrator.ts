@@ -28,6 +28,10 @@ import { saveAgentStates, loadAgentStates } from "./state-persistence.js";
 import fs from "fs";
 import { HoldptyController } from "./holdpty-controller.js";
 import { logger } from "./logger.js";
+import { PatternDetector } from "./orchestrator-blocking/detection/pattern-detector.js";
+import { OrchestratorStateMachine } from "./orchestrator-blocking/state-machine.js";
+import { OrchestratorState } from "./orchestrator-blocking/types.js";
+import type { BlockingDecision } from "./orchestrator-blocking/types.js";
 
 export interface OrchestratorConfig {
   sessionId: string;
@@ -54,6 +58,12 @@ export class Orchestrator extends EventEmitter {
   private deliveryCleanupInterval?: NodeJS.Timeout;
   private lastIdleNotification = new Map<string, number>();
   private idleCheckInterval?: NodeJS.Timeout;
+
+  // Orchestrator blocking system
+  private blockingDetector = new PatternDetector();
+  private blockingStateMachines = new Map<string, OrchestratorStateMachine>();
+  private blockingBuffers = new Map<string, Array<{ from: string; to: string; message: string; messageType?: string; timestamp: string }>>();
+  private _replayingBuffer = false; // Skip blocking checks during buffer replay
 
   constructor(private config: OrchestratorConfig) {
     super();
@@ -450,8 +460,20 @@ export class Orchestrator extends EventEmitter {
       ? `\x1b[1;36m[Message from ${fromAgent.config.name}]\x1b[0m: ${message}`
       : `\x1b[1;32m[System message]\x1b[0m: ${message}`;
 
-    // Queue the message instead of sending immediately — delivers when agent is at a prompt
-    this.messageQueue.enqueue(toAgentId, toAgent.config.tmuxSession, relayMsg, fromAgentId);
+    // Check if the SENDER (master agent) is producing a blocking message
+    if (fromAgent?.config.role === "master") {
+      await this.checkForBlocking(fromAgentId, message);
+    }
+
+    // If the TARGET agent is blocked, buffer the message instead of delivering
+    if (this.isAgentBlocked(toAgentId)) {
+      this.bufferMessage(toAgentId, fromAgentId, toAgentId, message, messageType);
+      logger.debug({ from: fromAgentId, to: toAgentId }, "[orchestrator] Message buffered (target agent is blocked)");
+      // Still log the event for timeline
+    } else {
+      // Queue the message — delivers when agent is at a prompt
+      this.messageQueue.enqueue(toAgentId, toAgent.config.tmuxSession, relayMsg, fromAgentId);
+    }
 
     await this.eventLog.log({
       sessionId: this.config.sessionId,
@@ -475,6 +497,185 @@ export class Orchestrator extends EventEmitter {
     });
 
     return true;
+  }
+
+  // ── Orchestrator Blocking System ─────────────────────────
+
+  /**
+   * Get or create a blocking state machine for a master agent.
+   */
+  private getBlockingStateMachine(agentId: string): OrchestratorStateMachine {
+    let sm = this.blockingStateMachines.get(agentId);
+    if (!sm) {
+      sm = new OrchestratorStateMachine();
+      sm.on("state:blocked", (event) => {
+        logger.info({ agentId, reason: event.reason }, "[orchestrator] Agent entered BLOCKED state");
+        this.emit("agent-blocked", agentId, event);
+      });
+      sm.on("state:planning", (event) => {
+        if (event.from === OrchestratorState.BLOCKED) {
+          logger.info({ agentId }, "[orchestrator] Agent resumed from BLOCKED state");
+          this.emit("agent-unblocked", agentId, event);
+        }
+      });
+      this.blockingStateMachines.set(agentId, sm);
+    }
+    return sm;
+  }
+
+  /**
+   * Scan an outgoing message from a master agent for blocking patterns.
+   * If blocking is detected, transitions the agent to BLOCKED state and
+   * emits events for the dashboard.
+   */
+  async checkForBlocking(fromAgentId: string, message: string): Promise<BlockingDecision | null> {
+    if (this._replayingBuffer) return null; // Skip during buffer replay
+    const agent = this.agentManager.getAgent(fromAgentId);
+    if (!agent || agent.config.role !== "master") return null;
+
+    const result = this.blockingDetector.detect(message);
+    if (!result.matched) return null;
+
+    const sm = this.getBlockingStateMachine(fromAgentId);
+
+    // Only transition if not already blocked
+    if (!sm.isBlocked()) {
+      try {
+        // Transition to BLOCKED (via force if needed, since we may be in any state)
+        if (sm.canTransition(sm.getState(), OrchestratorState.BLOCKED)) {
+          sm.transition(OrchestratorState.BLOCKED, result.reasoning.join("; "), "system");
+        } else {
+          sm.forceBlock(result.reasoning.join("; "));
+        }
+      } catch (err) {
+        logger.warn({ err, agentId: fromAgentId }, "[orchestrator] Failed to transition to BLOCKED");
+        return null;
+      }
+
+      // Log blocking event
+      await this.eventLog.log({
+        sessionId: this.config.sessionId,
+        type: "orchestrator-blocked" as any,
+        data: {
+          agentId: fromAgentId,
+          agentName: agent.config.name,
+          category: result.category,
+          confidence: result.confidence,
+          reason: result.reasoning.join("; "),
+          method: result.method,
+        },
+      });
+
+      // Notify via WebSocket
+      this.emit("orchestrator-blocked", {
+        agentId: fromAgentId,
+        agentName: agent.config.name,
+        category: result.category,
+        confidence: result.confidence,
+        reason: result.reasoning.join("; "),
+      });
+    }
+
+    return {
+      blocked: true,
+      confidence: result.confidence,
+      category: result.category,
+      reason: result.reasoning.join("; "),
+      method: result.method,
+    };
+  }
+
+  /**
+   * Resume a blocked orchestrator agent. Processes any buffered messages.
+   */
+  async resumeBlocked(agentId: string, userInput?: string): Promise<boolean> {
+    const sm = this.blockingStateMachines.get(agentId);
+    if (!sm || !sm.isBlocked()) return false;
+
+    try {
+      sm.transition(OrchestratorState.PLANNING, userInput || "User resumed", "user");
+    } catch {
+      sm.reset();
+    }
+
+    // Process buffered messages (skip blocking checks during replay)
+    const buffer = this.blockingBuffers.get(agentId) || [];
+    if (buffer.length > 0) {
+      logger.info({ agentId, buffered: buffer.length }, "[orchestrator] Processing buffered messages after resume");
+      this._replayingBuffer = true;
+      try {
+        for (const msg of buffer) {
+          await this.relayMessage(msg.from, msg.to, msg.message, msg.messageType);
+        }
+      } finally {
+        this._replayingBuffer = false;
+      }
+      this.blockingBuffers.delete(agentId);
+    }
+
+    // If user provided input, send it to the agent
+    if (userInput) {
+      const agent = this.agentManager.getAgent(agentId);
+      if (agent) {
+        await this.agentManager.sendMessage(agentId, userInput);
+      }
+    }
+
+    await this.eventLog.log({
+      sessionId: this.config.sessionId,
+      type: "orchestrator-resumed" as any,
+      data: { agentId, userInput: userInput?.substring(0, 200) },
+    });
+
+    this.emit("orchestrator-unblocked", { agentId });
+    return true;
+  }
+
+  /**
+   * Get blocking state for an agent.
+   */
+  getBlockingState(agentId: string): {
+    blocked: boolean;
+    state: string;
+    reason?: string;
+    since?: string;
+    bufferedMessages: number;
+  } {
+    const sm = this.blockingStateMachines.get(agentId);
+    if (!sm) {
+      return { blocked: false, state: "idle", bufferedMessages: 0 };
+    }
+    const history = sm.getHistory(1);
+    const lastEvent = history[history.length - 1];
+    return {
+      blocked: sm.isBlocked(),
+      state: sm.getState(),
+      reason: sm.isBlocked() && lastEvent ? lastEvent.reason : undefined,
+      since: sm.isBlocked() && lastEvent ? lastEvent.timestamp : undefined,
+      bufferedMessages: (this.blockingBuffers.get(agentId) || []).length,
+    };
+  }
+
+  /**
+   * Check if a message to a blocked orchestrator should be buffered.
+   */
+  isAgentBlocked(agentId: string): boolean {
+    const sm = this.blockingStateMachines.get(agentId);
+    return sm?.isBlocked() ?? false;
+  }
+
+  /**
+   * Buffer a message for a blocked agent.
+   */
+  bufferMessage(agentId: string, from: string, to: string, message: string, messageType?: string): void {
+    if (!this.blockingBuffers.has(agentId)) {
+      this.blockingBuffers.set(agentId, []);
+    }
+    const buffer = this.blockingBuffers.get(agentId)!;
+    // Cap buffer at 100 messages
+    if (buffer.length < 100) {
+      buffer.push({ from, to, message, messageType, timestamp: new Date().toISOString() });
+    }
   }
 
   /** Persist current agent state to disk */
