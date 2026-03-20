@@ -519,22 +519,20 @@ export class Orchestrator extends EventEmitter {
   }
 
   /**
-   * Replace an agent — kills the old one and spawns a fresh one with the same
-   * config. Captures the last N lines of terminal output as context for the new agent.
-   * Useful when agents hallucinate or get stuck.
+   * Restart an agent — kills the old process but preserves agent ID, worktree,
+   * message inbox, and task assignments. Optionally carries terminal context.
    */
-  async replaceAgent(
+  async restartAgent(
     agentId: string,
-    options?: { contextLines?: number; extraContext?: string; freshStart?: boolean; shutdownTimeoutMs?: number },
+    options?: { contextLines?: number; extraContext?: string; carryContext?: boolean; shutdownTimeoutMs?: number },
   ): Promise<AgentState | null> {
     const oldAgent = this.agentManager.getAgent(agentId);
     if (!oldAgent) return null;
 
-    const freshStart = options?.freshStart ?? false;
+    const carryContext = options?.carryContext ?? true;
     let initialTask: string | undefined;
 
-    if (!freshStart) {
-      // Capture terminal context from the old agent for continuity
+    if (carryContext) {
       const contextLines = options?.contextLines ?? 50;
       let terminalContext = "";
       try {
@@ -548,30 +546,78 @@ export class Orchestrator extends EventEmitter {
       initialTask = [
         "## Recovery Context",
         "",
-        "You are replacing a previous agent that was working on this task.",
-        oldAgent.currentTask ? `The previous agent was working on: ${oldAgent.currentTask}` : "",
+        "You are being restarted. Your agent ID, worktree, and message inbox are preserved.",
+        oldAgent.currentTask ? `You were working on: ${oldAgent.currentTask}` : "",
         "",
-        terminalContext.trim() ? "### Last terminal output from the previous agent:" : "",
+        terminalContext.trim() ? "### Last terminal output before restart:" : "",
         terminalContext.trim() ? "```" : "",
         terminalContext.trim() || "",
         terminalContext.trim() ? "```" : "",
         "",
         options?.extraContext ? `### Additional context:\n${options.extraContext}\n` : "",
-        "Please continue from where the previous agent left off. If the previous agent was stuck or making mistakes, take a different approach.",
+        "Please continue from where you left off.",
       ].filter(Boolean).join("\n");
     }
 
-    // Save old agent config
+    // Save old agent config and working directory BEFORE stopping
     const oldConfig = { ...oldAgent.config };
+    const oldWorkingDirectory = oldAgent.config.workingDirectory;
 
-    // Kill old agent
-    await this.agentManager.stopAgent(agentId, freshStart ? "fresh restart by user" : "replaced by user", options?.shutdownTimeoutMs);
+    // Kill old agent process but preserve worktree (restart mode)
+    await this.agentManager.stopAgent(agentId, "restarted by user", options?.shutdownTimeoutMs, { skipWorktreeRemoval: true });
 
-    // Resolve provider
     const provider = this.config.providerRegistry.get(oldConfig.cliProvider);
     if (!provider) return null;
 
-    // Spawn fresh agent with same config
+    // Spawn with same agent ID and same worktree
+    const newAgent = await this.agentManager.spawnAgent({
+      sessionId: this.config.sessionId,
+      name: oldConfig.name,
+      role: oldConfig.role,
+      provider,
+      model: oldConfig.model,
+      persona: oldConfig.persona,
+      workingDirectory: oldWorkingDirectory,
+      runtimeDir: this.config.runtimeDir,
+      autonomyLevel: oldConfig.autonomyLevel,
+      spawnedBy: oldConfig.spawnedBy,
+      extraCliArgs: oldConfig.extraCliArgs,
+      envVars: oldConfig.envVars,
+      initialTask,
+      messagingMode: this.config.messagingMode,
+      worktreeMode: "shared", // Reuse existing worktree
+      forceAgentId: agentId,  // Preserve same agent ID
+    });
+
+    await this.eventLog.log({
+      sessionId: this.config.sessionId,
+      type: "agent-restarted" as any,
+      data: { agentId: newAgent.id, reason: "restarted", preservedId: true },
+    });
+
+    return newAgent;
+  }
+
+  /**
+   * Replace an agent — kills the old one and spawns a completely fresh one.
+   * New agent ID, new worktree, no context carried over.
+   */
+  async replaceAgent(
+    agentId: string,
+    options?: { shutdownTimeoutMs?: number },
+  ): Promise<AgentState | null> {
+    const oldAgent = this.agentManager.getAgent(agentId);
+    if (!oldAgent) return null;
+
+    const oldConfig = { ...oldAgent.config };
+
+    // Kill old agent and delete worktree
+    await this.agentManager.stopAgent(agentId, "replaced by user", options?.shutdownTimeoutMs);
+
+    const provider = this.config.providerRegistry.get(oldConfig.cliProvider);
+    if (!provider) return null;
+
+    // Spawn completely fresh agent (new ID, new worktree)
     const newAgent = await this.agentManager.spawnAgent({
       sessionId: this.config.sessionId,
       name: oldConfig.name,
@@ -585,7 +631,6 @@ export class Orchestrator extends EventEmitter {
       spawnedBy: oldConfig.spawnedBy,
       extraCliArgs: oldConfig.extraCliArgs,
       envVars: oldConfig.envVars,
-      initialTask,
       messagingMode: this.config.messagingMode,
       worktreeMode: this.config.worktreeMode,
     });
