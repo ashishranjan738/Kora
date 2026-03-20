@@ -941,6 +941,10 @@ export function createApiRouter(deps: {
 
       await am.sendMessage(String(aid), body.message);
 
+      // Clear MCP idle protection — user is interacting with the agent,
+      // so terminal polling should be free to detect new activity
+      am.clearIdleProtection(String(aid));
+
       // Log user-interaction event for timeline
       const orch = orchestrators.get(String(sid));
       if (orch) {

@@ -30,11 +30,38 @@ export function stripAnsi(text: string): string {
 
 /** Shell prompt patterns that indicate the agent is idle at a command prompt */
 export const IDLE_PROMPT_PATTERNS = [
+  // === Shell prompts (all providers) ===
   /[$%>#\u276F]\s*$/,              // Generic shell prompts (❯, $, %, >, #)
   /\s+[$%>\u276F]\s*$/,            // Shell prompts with leading whitespace
   /\w+@\w+\s+[$%>]\s*$/,           // user@host style (user@host $ )
   /^\s*\[.*?\]\s*[$%>]\s*$/,       // Bracketed prompts ([user@host] $ )
-  /\?\s+for shortcuts\s*$/,        // Claude Code "? for shortcuts" prompt
+
+  // === Claude Code idle indicators ===
+  /\?\s+for shortcuts\s*$/,        // "? for shortcuts" prompt
+  /bypass permissions on/i,        // Permission mode prompt
+  /esc to interrupt/i,             // Interrupt hint (shown when idle)
+  /shift\+tab to cycle/i,          // Tab cycle hint
+
+  // === Aider idle indicators ===
+  /aider>\s*$/i,                   // Aider prompt
+  /^\s*>\s*$/,                     // Bare ">" prompt (Aider, Codex)
+
+  // === Codex idle indicators ===
+  /codex>\s*$/i,                   // Codex prompt
+  /What would you like to do/i,    // Codex asking for input
+
+  // === Goose idle indicators ===
+  /goose>\s*$/i,                   // Goose prompt
+  /^\(\w+\)\s*$/,                  // Goose virtual env style prompt
+
+  // === Generic idle indicators (all providers) ===
+  /waiting for your input/i,       // "Waiting for input" state
+  /What would you like/i,          // Asking for input
+  /How can I help/i,               // Greeting prompt
+  /ready and waiting/i,            // Agent explicitly waiting
+  /Standing by/i,                  // Agent standby
+  /Enter your (?:message|prompt|query)/i, // Input prompt
+  /Type (?:your|a) (?:message|prompt|question)/i, // Input prompt variant
 ];
 
 /**
@@ -54,8 +81,8 @@ export const IDLE_MESSAGE_KEYWORDS = [
   "reporting idle",
 ];
 
-/** How long to wait without output before considering an agent idle (ms) */
-const IDLE_TIMEOUT_MS = 30_000; // 30 seconds
+/** How long to wait at a prompt before considering an agent idle (ms) */
+const IDLE_TIMEOUT_MS = 10_000; // 10 seconds (was 30s — reduced for responsiveness)
 
 /**
  * How long an MCP-reported idle status is protected from terminal override (ms).
@@ -63,7 +90,7 @@ const IDLE_TIMEOUT_MS = 30_000; // 30 seconds
  * This prevents terminal polling from flapping the status right after an agent
  * explicitly reports itself as idle.
  */
-const MCP_IDLE_PROTECTION_MS = 120_000; // 2 minutes
+const MCP_IDLE_PROTECTION_MS = 60_000; // 1 minute (was 2min — reduced; cleared on user message)
 
 export class AgentHealthMonitor extends EventEmitter {
   private intervals = new Map<string, NodeJS.Timeout>();
@@ -125,6 +152,17 @@ export class AgentHealthMonitor extends EventEmitter {
   }
 
   /**
+   * Clear MCP idle protection — called when user sends a message to the agent.
+   * This allows terminal polling to immediately detect the agent as "working"
+   * when the agent starts processing the user's input.
+   */
+  clearIdleProtection(agentId: string): void {
+    this.mcpIdleTimestamps.delete(agentId);
+    // Also reset the output cache so the next poll detects change
+    this.lastOutputCache.delete(agentId);
+  }
+
+  /**
    * Check if an agent's idle status is protected by a recent MCP report.
    */
   private isMcpIdleProtected(agentId: string): boolean {
@@ -174,13 +212,20 @@ export class AgentHealthMonitor extends EventEmitter {
     try {
       // Capture last 10 lines of terminal output.
       // capturePane(escapeSequences=false) strips ANSI in holdpty mode.
-      const output = await this.tmux.capturePane(tmuxSession, 10, false);
+      const rawOutput = await this.tmux.capturePane(tmuxSession, 10, false);
+      // Normalize output to prevent false "changed" detections from cursor movement,
+      // trailing whitespace variations, and shell status line updates
+      const output = rawOutput.split('\n').map(l => l.trimEnd()).filter(l => l).join('\n');
       const lastOutput = this.lastOutputCache.get(agentId) || "";
 
-      // Layer 2: Check if current output shows a shell prompt
+      // Layer 2: Check if current output shows a shell/CLI prompt.
+      // Check the last 3 non-empty lines — the idle prompt may not be
+      // the very last line (status bars, empty lines can follow it).
       const lines = output.trim().split('\n').filter(l => l.trim());
-      const lastLine = lines[lines.length - 1] || '';
-      const isAtPrompt = IDLE_PROMPT_PATTERNS.some(pattern => pattern.test(lastLine));
+      const lastLines = lines.slice(-3);
+      const isAtPrompt = lastLines.some(line =>
+        IDLE_PROMPT_PATTERNS.some(pattern => pattern.test(line))
+      );
 
       // If output has changed
       if (output !== lastOutput) {
