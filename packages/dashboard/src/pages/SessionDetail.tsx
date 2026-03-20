@@ -22,6 +22,7 @@ import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
 import { MobileLogViewer } from "../components/MobileLogViewer";
 import { useMessageBufferEvents, MessageBufferBadge } from "../components/MessageBufferIndicator";
 import { SessionCostSummary, extractCostData, formatCostSmart, hasCostData } from "../components/CostSummary";
+import { SessionReport } from "../components/SessionReport";
 import { useApprovalRequests, type ApprovalRequest } from "../hooks/useApprovalRequests";
 import { ApprovalPrompt } from "../components/ApprovalPrompt";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
@@ -103,6 +104,7 @@ export function SessionDetail() {
   const [broadcastMessage, setBroadcastMessage] = useState("");
   const [sendingBroadcast, setSendingBroadcast] = useState(false);
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
+  const [showReport, setShowReport] = useState(false);
 
   // Use terminal session store for tabs
   const terminalSessionsMap = useTerminalSessionStore((state) => state.sessions);
@@ -465,6 +467,9 @@ export function SessionDetail() {
           </button>
           <button onClick={() => setShowSettingsDialog(true)}>
             &#9881; Settings
+          </button>
+          <button onClick={() => setShowReport(true)}>
+            &#128202; Report
           </button>
           <button onClick={handlePauseSession}>&#9208; Pause Session</button>
           <button
@@ -842,6 +847,15 @@ export function SessionDetail() {
           success={stopSuccess}
         />
       )}
+
+      {/* Session Report Modal */}
+      <SessionReport
+        sessionId={sessionId!}
+        sessionName={session?.name || "Session"}
+        agents={agents}
+        opened={showReport}
+        onClose={() => setShowReport(false)}
+      />
 
       {/* Broadcast Message Dialog */}
       {showBroadcastModal && (
