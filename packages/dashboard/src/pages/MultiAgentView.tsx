@@ -1487,6 +1487,76 @@ export function MultiAgentView() {
         )}
       </div>
 
+      {/* Quick-action toolbar */}
+      {agents.length > 0 && (
+        <div className="cc-quick-toolbar">
+          {/* Agent status summary */}
+          <div className="cc-toolbar-summary">
+            {(() => {
+              const working = agents.filter(a => a.status === "running" && a.activity !== "idle").length;
+              const idle = agents.filter(a => a.status === "running" && a.activity === "idle").length;
+              const crashed = agents.filter(a => a.status === "crashed" || a.status === "error").length;
+              const stopped = agents.filter(a => a.status === "stopped" || a.status === "paused").length;
+              const parts: string[] = [];
+              if (working > 0) parts.push(`${working} working`);
+              if (idle > 0) parts.push(`${idle} idle`);
+              if (crashed > 0) parts.push(`${crashed} crashed`);
+              if (stopped > 0) parts.push(`${stopped} stopped`);
+              return parts.length > 0 ? parts.join(" \u00b7 ") : `${agents.length} agents`;
+            })()}
+          </div>
+
+          {/* Broadcast quick input */}
+          <div className="cc-toolbar-broadcast">
+            <input
+              placeholder="Broadcast to all..."
+              value={broadcastMsg}
+              onChange={(e) => setBroadcastMsg(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); handleBroadcast(); }
+              }}
+              disabled={broadcasting}
+            />
+            <button
+              onClick={handleBroadcast}
+              disabled={broadcasting || !broadcastMsg.trim()}
+            >
+              {broadcasting ? "..." : "Send"}
+            </button>
+          </div>
+
+          {/* Action buttons */}
+          <div className="cc-toolbar-actions">
+            <button
+              className="cc-toolbar-btn"
+              onClick={async () => {
+                try {
+                  if (session?.status === "paused") {
+                    await api.resumeSession(sessionId!);
+                    showToast("Session resumed");
+                  } else {
+                    await api.pauseSession(sessionId!);
+                    showToast("Session paused");
+                  }
+                  loadData();
+                } catch (err: any) {
+                  showToast(`Failed: ${err.message}`);
+                }
+              }}
+            >
+              {session?.status === "paused" ? "\u25B6 Resume" : "\u23F8 Pause All"}
+            </button>
+          </div>
+
+          {/* Keyboard shortcuts hint */}
+          <div className="cc-toolbar-hints">
+            <span>Ctrl+1-9 focus</span>
+            <span>Esc exit</span>
+            <span>Ctrl+` broadcast</span>
+          </div>
+        </div>
+      )}
+
       {/* Fullscreen overlay — rendered via Portal to document.body for true viewport coverage */}
       {renderFullscreenPortal()}
 
