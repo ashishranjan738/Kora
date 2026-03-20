@@ -371,37 +371,8 @@ export class HoldptyController implements IPtyBackend {
       return;
     }
 
-    // Fallback: direct socket attach (no dashboard terminal open)
-    const proto = await getProtocol();
-    const socketPath = await this.getSocketPath(session);
-
-    return new Promise<void>((resolve) => {
-      const socket = net.createConnection(socketPath, () => {
-        const hello = proto.encodeHello({ mode: "attach", protocolVersion: 1 });
-        socket.write(hello);
-      });
-
-      let gotAck = false;
-      socket.on("data", (chunk: Buffer) => {
-        if (!gotAck && chunk.length >= 5 && chunk[0] === proto.MSG.HELLO_ACK) {
-          gotAck = true;
-          const dataFrame = proto.encodeDataIn(Buffer.from(data, "utf-8"));
-          socket.write(dataFrame);
-          setTimeout(() => { socket.destroy(); resolve(); }, 50);
-        }
-      });
-
-      socket.on("error", (err) => {
-        const msg = err.message;
-        if (msg.includes("ENOENT") || msg.includes("ECONNREFUSED") || msg.includes("no such file")
-            || msg.includes("ECONNRESET") || msg.includes("already attached")) {
-          logger.error(`[HoldptyController] Ignoring sendKeys error for ${session}: ${msg}\n`);
-        }
-        resolve();
-      });
-
-      setTimeout(() => { socket.destroy(); resolve(); }, 5000);
-    });
+    // Fallback: direct socket connection (no dashboard terminal open)
+    await this.sendViaSocket(session, data);
   }
 
   /**
@@ -416,37 +387,76 @@ export class HoldptyController implements IPtyBackend {
       return;
     }
 
-    // Fallback: direct socket attach (no Enter appended)
+    // Fallback: direct socket connection (no dashboard terminal open)
+    await this.sendViaSocket(session, data);
+  }
+
+  /**
+   * Send data to a holdpty session via direct socket connection.
+   *
+   * Strategy:
+   * 1. Try "send" mode first (non-exclusive, holdpty 0.4+).
+   *    Multiple senders + an attached client can coexist.
+   * 2. Falls back to "attach" mode for holdpty 0.3.x (exclusive).
+   *    If attach is rejected (ERROR frame), logs a warning and resolves
+   *    immediately instead of silently waiting for timeout.
+   *
+   * Uses simple byte-level HELLO_ACK/ERROR detection (first byte of response)
+   * rather than full FrameDecoder, since the holder always sends a single
+   * complete frame as its first response.
+   */
+  private async sendViaSocket(session: string, data: string): Promise<void> {
     const proto = await getProtocol();
     const socketPath = await this.getSocketPath(session);
+    const dataBuffer = Buffer.from(data, "utf-8");
+    const MSG_ERROR = proto.MSG.ERROR ?? 0x05;
 
-    return new Promise<void>((resolve) => {
-      const socket = net.createConnection(socketPath, () => {
-        const hello = proto.encodeHello({ mode: "attach", protocolVersion: 1 });
-        socket.write(hello);
+    // Helper: attempt to send via a given mode, returns true on success
+    const trySend = (mode: string, timeoutMs: number): Promise<boolean> => {
+      return new Promise<boolean>((resolve) => {
+        const socket = net.createConnection(socketPath, () => {
+          socket.write(proto.encodeHello({ mode, protocolVersion: 1 }));
+        });
+
+        let handled = false;
+        socket.on("data", (chunk: Buffer) => {
+          if (handled) return;
+          if (chunk.length >= 5 && chunk[0] === proto.MSG.HELLO_ACK) {
+            handled = true;
+            socket.write(proto.encodeDataIn(dataBuffer));
+            setTimeout(() => { socket.destroy(); resolve(true); }, 50);
+          } else if (chunk.length >= 5 && chunk[0] === MSG_ERROR) {
+            // Rejected (unknown mode or exclusive attach conflict)
+            handled = true;
+            const payloadLen = chunk.readUInt32BE(1);
+            const errMsg = payloadLen > 0 && chunk.length >= 5 + payloadLen
+              ? chunk.subarray(5, 5 + payloadLen).toString("utf-8")
+              : "unknown error";
+            logger.warn(`[HoldptyController] sendViaSocket ${mode} rejected for ${session}: ${errMsg}`);
+            socket.destroy();
+            resolve(false);
+          }
+        });
+
+        socket.on("error", (err) => {
+          if (!handled) {
+            handled = true;
+            logger.warn(`[HoldptyController] sendViaSocket ${mode} error for ${session}: ${err.message}`);
+            resolve(false);
+          }
+        });
+
+        setTimeout(() => {
+          if (!handled) { handled = true; socket.destroy(); resolve(false); }
+        }, timeoutMs);
       });
+    };
 
-      let gotAck = false;
-      socket.on("data", (chunk: Buffer) => {
-        if (!gotAck && chunk.length >= 5 && chunk[0] === proto.MSG.HELLO_ACK) {
-          gotAck = true;
-          const dataFrame = proto.encodeDataIn(Buffer.from(data, "utf-8"));
-          socket.write(dataFrame);
-          setTimeout(() => { socket.destroy(); resolve(); }, 50);
-        }
-      });
+    // Try "send" mode first (non-exclusive, holdpty 0.4+)
+    if (await trySend("send", 2000)) return;
 
-      socket.on("error", (err) => {
-        const msg = err.message;
-        if (msg.includes("ENOENT") || msg.includes("ECONNREFUSED") || msg.includes("no such file")
-            || msg.includes("ECONNRESET") || msg.includes("already attached")) {
-          logger.error(`[HoldptyController] Ignoring sendRawInput error for ${session}: ${msg}\n`);
-        }
-        resolve();
-      });
-
-      setTimeout(() => { socket.destroy(); resolve(); }, 5000);
-    });
+    // Fallback: "attach" mode (exclusive, holdpty 0.3.x)
+    await trySend("attach", 5000);
   }
 
   /**
