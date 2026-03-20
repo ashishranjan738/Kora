@@ -1513,109 +1513,55 @@ function AgentsTab({
     return () => document.removeEventListener("click", close);
   }, [gearOpen]);
 
-  // Activity detection: text flow + pattern matching
-  // If terminal output is changing → working. No change for 3min → idle.
-  const outputSnapshotsRef = useRef<Record<string, { hash: number; lastChangeAt: number }>>({});
-  const IDLE_THRESHOLD_MS = 3 * 60 * 1000; // 3 minutes
-
-  useEffect(() => {
-    const runningAgents = agents.filter(a => a.status === "running");
-    if (runningAgents.length === 0) return;
-
-    // Simple string hash for change detection
-    function hashStr(s: string): number {
-      let h = 0;
-      for (let i = 0; i < s.length; i++) {
-        h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-      }
-      return h;
-    }
-
-    async function detectActivities() {
-      const now = Date.now();
-
-      for (const agent of runningAgents) {
-        try {
-          const data = await api.getOutput(sessionId, agent.id, 15);
-          const rawLines: string[] = data?.output || [];
-          const outputText = rawLines.join("\n");
-          const currentHash = hashStr(outputText);
-
-          // Get or init snapshot for this agent
-          const prev = outputSnapshotsRef.current[agent.id];
-          if (!prev) {
-            outputSnapshotsRef.current[agent.id] = { hash: currentHash, lastChangeAt: now };
-          }
-
-          const snapshot = outputSnapshotsRef.current[agent.id];
-          const textChanged = snapshot.hash !== currentHash;
-
-          if (textChanged) {
-            snapshot.hash = currentHash;
-            snapshot.lastChangeAt = now;
-          }
-
-          const idleDuration = now - snapshot.lastChangeAt;
-
-          // Primary: text flow detection
-          let activity: AgentActivity;
-
-          if (textChanged) {
-            // Text is actively flowing — determine what kind of work
-            const lines = rawLines.filter(l => l.trim());
-            const last5 = lines.slice(-5).join(" ");
-
-            if (last5.match(/Bash\(|Running|Bash command/) || last5.match(/\b(npm|cargo|pip|yarn|make)\b/)) {
-              activity = "running-command";
-            } else if (last5.includes("Read ") || last5.includes("Searched") || last5.match(/Glob|Grep/)) {
-              activity = "reading";
-            } else if (last5.includes("Wrote") || last5.includes("Edit(") || last5.includes("Writing")) {
-              activity = "writing";
-            } else {
-              activity = "working";
-            }
-          } else if (idleDuration > IDLE_THRESHOLD_MS) {
-            // No text change for 3+ minutes → idle
-            activity = "idle";
-          } else {
-            // Text hasn't changed recently but within threshold — still working (thinking/processing)
-            activity = "working";
-          }
-
-          setAgentActivities(prev => {
-            if (prev[agent.id] === activity) return prev;
-            // Track when activity changed
-            setActivitySince(s => ({ ...s, [agent.id]: new Date().toISOString() }));
-            return { ...prev, [agent.id]: activity };
-          });
-
-          // Record history for sparkline (keep last 20 samples)
-          setActivityHistory(prev => {
-            const hist = prev[agent.id] || [];
-            const updated = [...hist, activity].slice(-20);
-            return { ...prev, [agent.id]: updated };
-          });
-        } catch {
-          // ignore
-        }
-      }
-    }
-
-    detectActivities();
-    const interval = setInterval(detectActivities, 3000);
-    return () => clearInterval(interval);
-  }, [agents, sessionId]);
-
-  // Map crashed/stopped agents directly
+  // Activity detection: use backend's agent.activity field (set by AgentHealthMonitor
+  // with 24 idle prompt patterns, output normalization, and MCP signal integration).
+  // The backend polls every 10s and detects idle in ~2s — much more reliable than
+  // the frontend's old hash-based approach.
   useEffect(() => {
     const updates: Record<string, AgentActivity> = {};
     for (const a of agents) {
-      if (a.status === "crashed" || a.status === "error") updates[a.id] = "crashed";
-      else if (a.status === "stopped") updates[a.id] = "stopped";
+      // Map backend activity to frontend AgentActivity type
+      let activity: AgentActivity;
+      if (a.status === "crashed" || a.status === "error") {
+        activity = "crashed";
+      } else if (a.status === "stopped") {
+        activity = "stopped";
+      } else if (a.activity === "idle") {
+        activity = "idle";
+      } else {
+        // Backend says "working" — default. We can still refine with output hints
+        // from lastOutputAt for more granular UI (reading/writing/running-command)
+        activity = "working";
+      }
+      updates[a.id] = activity;
     }
-    if (Object.keys(updates).length > 0) {
-      setAgentActivities(prev => ({ ...prev, ...updates }));
-    }
+
+    // Always record history samples for sparkline + utilization (every poll cycle)
+    setActivityHistory(prev => {
+      const next = { ...prev };
+      for (const [id, act] of Object.entries(updates)) {
+        const hist = next[id] || [];
+        next[id] = [...hist, act].slice(-30);
+      }
+      return next;
+    });
+
+    setAgentActivities(prev => {
+      // Only update activities state if something changed
+      let changed = false;
+      for (const [id, act] of Object.entries(updates)) {
+        if (prev[id] !== act) { changed = true; break; }
+      }
+      if (!changed) return prev;
+
+      // Track when activity changed
+      for (const [id, act] of Object.entries(updates)) {
+        if (prev[id] !== act) {
+          setActivitySince(s => ({ ...s, [id]: new Date().toISOString() }));
+        }
+      }
+      return { ...prev, ...updates };
+    });
   }, [agents]);
 
   // Fetch tasks for task indicators on agent cards
