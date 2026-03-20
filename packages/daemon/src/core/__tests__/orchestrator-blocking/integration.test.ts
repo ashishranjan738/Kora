@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { PatternDetector } from "../../../personas/orchestrator-blocking/detection/pattern-detector.js";
-import { OrchestratorStateMachine } from "../../../personas/orchestrator-blocking/state-machine.js";
-import { OrchestratorState, BlockingCategory } from "../../../personas/orchestrator-blocking/index.js";
+import { PatternDetector } from "../../orchestrator-blocking/detection/pattern-detector.js";
+import { OrchestratorStateMachine } from "../../orchestrator-blocking/state-machine.js";
+import { OrchestratorState, BlockingCategory } from "../../orchestrator-blocking/index.js";
 
 /**
  * Integration Tests for Orchestrator Blocking System

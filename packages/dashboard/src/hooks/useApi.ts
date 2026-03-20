@@ -210,6 +210,14 @@ export function useApi() {
       }),
     deletePersona: (id: string) =>
       apiFetch<{ deleted: boolean }>(`/personas/${id}`, { method: "DELETE" }),
+    // Orchestrator blocking
+    getBlockingState: (sid: string, aid: string) =>
+      apiFetch<{ blocked: boolean; state: string; reason?: string; since?: string; bufferedMessages: number }>(`/sessions/${sid}/agents/${aid}/blocking`),
+    resumeBlocked: (sid: string, aid: string, input?: string) =>
+      apiFetch<{ success: boolean }>(`/sessions/${sid}/agents/${aid}/unblock`, {
+        method: "POST",
+        body: JSON.stringify({ input }),
+      }),
     uploadPlaybook: (name: string, yaml: string) =>
       apiFetch<{ id: string; name: string }>("/playbooks", {
         method: "POST",
