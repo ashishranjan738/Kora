@@ -135,7 +135,7 @@ You have MCP tools available for team communication:
 
 ### Task management
 You also have task management tools:
-- \`list_tasks()\` -- See all tasks in the session, including ones assigned to you
+- \`list_tasks()\` -- See YOUR active tasks (defaults to assignedTo=me, status=active)
 - \`update_task(taskId, status?, comment?)\` -- Update a task's status or post a progress comment
 - \`create_task(title, description, assignedTo?)\` -- Create a new task on the board
 
@@ -145,7 +145,7 @@ When you're assigned a task, use \`update_task\` to:
 - Set status to "review" when you're done and need review
 - Set status to "done" when it's complete
 
-Check \`list_tasks\` periodically to see if new tasks have been assigned to you.
+Check \`list_tasks\` after completing a task to see if new tasks have been assigned to you.
 
 ### Communication
 Use these tools to coordinate with your team:
