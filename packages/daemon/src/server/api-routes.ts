@@ -938,6 +938,23 @@ export function createApiRouter(deps: {
       }
 
       await am.sendMessage(String(aid), body.message);
+
+      // Log user-interaction event for timeline
+      const orch = orchestrators.get(String(sid));
+      if (orch) {
+        const agentIdStr = String(aid);
+        orch.eventLog.log({
+          sessionId: String(sid),
+          type: "user-interaction",
+          data: {
+            agentId: agentIdStr,
+            agentName: agent.config.name,
+            action: "send-message",
+            content: body.message.substring(0, 200),
+          },
+        }).catch(() => {}); // Non-fatal
+      }
+
       res.json({ sent: true, message: body.message });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

@@ -237,6 +237,37 @@ export class Orchestrator extends EventEmitter {
       await this.persistState();
     });
 
+    // When an agent's activity status changes (idle/working)
+    this.agentManager.on("agent-idle", async (agentId: string) => {
+      const agent = this.agentManager.getAgent(agentId);
+      if (!agent) return;
+      await this.eventLog.log({
+        sessionId: this.config.sessionId,
+        type: "agent-status-changed",
+        data: {
+          agentId,
+          agentName: agent.config.name,
+          status: "idle",
+          previousStatus: "working",
+        },
+      });
+    });
+
+    this.agentManager.on("agent-working", async (agentId: string) => {
+      const agent = this.agentManager.getAgent(agentId);
+      if (!agent) return;
+      await this.eventLog.log({
+        sessionId: this.config.sessionId,
+        type: "agent-status-changed",
+        data: {
+          agentId,
+          agentName: agent.config.name,
+          status: "working",
+          previousStatus: "idle",
+        },
+      });
+    });
+
     // When a message is detected in an agent's outbox, route it
     this.messageBus.on("message", async (message, _fromAgentId, _filename) => {
       await this.messageBus.routeMessage(message);
@@ -263,9 +294,21 @@ export class Orchestrator extends EventEmitter {
       }
     });
 
-    // Budget exceeded
-    this.costTracker.on("budget-exceeded", (agentId: string) => {
-      notifications.budgetExceeded(agentId, this.costTracker.getCost(agentId)?.totalCostUsd ?? 0);
+    // Budget exceeded → emit cost-threshold-reached event
+    this.costTracker.on("budget-exceeded", async (agentId: string) => {
+      const cost = this.costTracker.getCost(agentId)?.totalCostUsd ?? 0;
+      notifications.budgetExceeded(agentId, cost);
+
+      const agent = this.agentManager.getAgent(agentId);
+      await this.eventLog.log({
+        sessionId: this.config.sessionId,
+        type: "cost-threshold-reached",
+        data: {
+          agentId,
+          agentName: agent?.config.name || agentId,
+          totalCostUsd: cost,
+        },
+      });
     });
 
     // Task completed
@@ -414,6 +457,21 @@ export class Orchestrator extends EventEmitter {
       sessionId: this.config.sessionId,
       type: 'message-sent' as any,
       data: { from: fromAgentId, to: toAgentId, content: message.substring(0, 200), messageType: messageType || "text" },
+    });
+
+    // Log message-received for the target agent (for timeline filtering by agent)
+    await this.eventLog.log({
+      sessionId: this.config.sessionId,
+      type: 'message-received',
+      data: {
+        agentId: toAgentId,
+        from: fromAgentId,
+        fromName: fromAgent?.config.name || fromAgentId,
+        to: toAgentId,
+        toName: toAgent.config.name,
+        content: message.substring(0, 200),
+        messageType: messageType || "text",
+      },
     });
 
     return true;
