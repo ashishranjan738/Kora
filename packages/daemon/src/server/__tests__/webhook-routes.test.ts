@@ -1,0 +1,189 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import express from "express";
+import request from "supertest";
+import { createWebhookRouter } from "../webhook-routes.js";
+
+// Mock playbook loader
+vi.mock("../../core/playbook-loader.js", () => ({
+  loadPlaybook: vi.fn(async (_dir: string, name: string) => {
+    if (name === "master-workers") {
+      return {
+        name: "master-workers",
+        description: "Test playbook",
+        agents: [
+          { name: "Architect", role: "master", model: "default" },
+          { name: "Worker", role: "worker", model: "default" },
+        ],
+      };
+    }
+    return null;
+  }),
+}));
+
+// Mock PlaybookExecutor (dynamic import)
+vi.mock("../../core/playbook-executor.js", () => {
+  class MockExecutor {
+    execution = { id: "exec-123", agents: [] };
+    setup() { return this.execution; }
+    run() { return Promise.resolve(); }
+    on() { return this; }
+  }
+  return { PlaybookExecutor: MockExecutor };
+});
+
+// Create mock deps
+function createMockDeps() {
+  const mockSession = {
+    config: { id: "test-session", projectPath: "/tmp/test", name: "test" },
+    runtimeDir: "/tmp/test/.kora",
+  };
+
+  const mockOrch = {
+    eventLog: { log: vi.fn() },
+    agentManager: { listAgents: () => [] },
+    messageQueue: { setBroadcastCallback: vi.fn() },
+  };
+
+  return {
+    sessionManager: {
+      createSession: vi.fn().mockResolvedValue({ id: "test-session", projectPath: "/tmp/test", name: "test", defaultProvider: "claude-code" }),
+      getSession: vi.fn().mockReturnValue(mockSession),
+    } as any,
+    orchestrators: new Map() as any,
+    providerRegistry: {} as any,
+    tmux: {} as any,
+    globalConfigDir: "/tmp/.kora",
+    playbookDb: {} as any,
+    createOrchestrator: vi.fn().mockResolvedValue(mockOrch),
+  };
+}
+
+describe("webhook-routes", () => {
+  let app: express.Express;
+  let deps: ReturnType<typeof createMockDeps>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    deps = createMockDeps();
+    app = express();
+    app.use(express.json());
+    app.use("/api/v1", createWebhookRouter(deps));
+  });
+
+  describe("POST /webhooks/trigger", () => {
+    it("creates session from generic webhook", async () => {
+      const res = await request(app)
+        .post("/api/v1/webhooks/trigger")
+        .send({
+          playbook: "master-workers",
+          projectPath: "/tmp/test",
+          task: "Fix the login bug",
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.sessionId).toBe("test-session");
+      expect(res.body.playbook).toBe("master-workers");
+      expect(res.body.status).toBe("spawning");
+      expect(res.body.dashboardUrl).toContain("test-session");
+      expect(deps.sessionManager.createSession).toHaveBeenCalled();
+      expect(deps.createOrchestrator).toHaveBeenCalled();
+    });
+
+    it("rejects missing playbook", async () => {
+      const res = await request(app)
+        .post("/api/v1/webhooks/trigger")
+        .send({ projectPath: "/tmp/test" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("playbook");
+    });
+
+    it("rejects missing projectPath", async () => {
+      const res = await request(app)
+        .post("/api/v1/webhooks/trigger")
+        .send({ playbook: "master-workers" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("projectPath");
+    });
+
+    it("returns 404 for unknown playbook", async () => {
+      const res = await request(app)
+        .post("/api/v1/webhooks/trigger")
+        .send({ playbook: "nonexistent", projectPath: "/tmp/test" });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain("not found");
+    });
+
+    it("parses GitHub push webhook", async () => {
+      const res = await request(app)
+        .post("/api/v1/webhooks/trigger")
+        .set("X-GitHub-Event", "push")
+        .send({
+          playbook: "master-workers",
+          projectPath: "/tmp/test",
+          ref: "refs/heads/main",
+          commits: [{ id: "abc123" }],
+          sender: { login: "octocat" },
+          repository: { full_name: "owner/repo", html_url: "https://github.com/owner/repo" },
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.trigger.source).toBe("github");
+      expect(res.body.trigger.event).toBe("push");
+      expect(res.body.trigger.actor).toBe("octocat");
+    });
+
+    it("parses GitHub pull_request webhook", async () => {
+      const res = await request(app)
+        .post("/api/v1/webhooks/trigger")
+        .set("X-GitHub-Event", "pull_request")
+        .send({
+          playbook: "master-workers",
+          projectPath: "/tmp/test",
+          pull_request: {
+            number: 42,
+            title: "Fix auth bug",
+            html_url: "https://github.com/owner/repo/pull/42",
+            head: { ref: "fix-auth" },
+            user: { login: "developer" },
+          },
+          sender: { login: "developer" },
+          repository: { full_name: "owner/repo" },
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.trigger.source).toBe("github");
+      expect(res.body.trigger.event).toBe("pull_request");
+    });
+
+    it("parses Slack slash command", async () => {
+      const res = await request(app)
+        .post("/api/v1/webhooks/trigger")
+        .send({
+          command: "/kora",
+          text: "master-workers fix the login page",
+          team_id: "T12345",
+          channel_name: "engineering",
+          user_name: "alice",
+          projectPath: "/tmp/test",
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.trigger.source).toBe("slack");
+      expect(res.body.trigger.event).toBe("slash_command");
+    });
+  });
+
+  describe("GET /webhooks/status", () => {
+    it("returns webhook endpoint info", async () => {
+      const res = await request(app).get("/api/v1/webhooks/status");
+
+      expect(res.status).toBe(200);
+      expect(res.body.enabled).toBe(true);
+      expect(res.body.supportedSources).toContain("github");
+      expect(res.body.supportedSources).toContain("slack");
+    });
+  });
+});
