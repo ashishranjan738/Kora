@@ -64,22 +64,22 @@ describe("Playbook configuration", () => {
     ]);
   });
 
-  // Test 3: ALL built-in playbook agents have --dangerously-skip-permissions
-  it("ensures all built-in playbook agents have --dangerously-skip-permissions", async () => {
+  // Test 3: Built-in playbook agents do NOT hardcode --dangerously-skip-permissions
+  it("ensures built-in playbook agents do not hardcode --dangerously-skip-permissions", async () => {
     await ensureBuiltinPlaybooks(testConfigDir);
 
-    // Get all writeFile calls
     const writeCalls = vi.mocked(fs.writeFile).mock.calls;
 
-    // Check each built-in playbook
     for (const call of writeCalls) {
       const playbookData = JSON.parse(call[1] as string);
       const playbook = playbookData as Playbook;
 
-      // Every agent in every built-in playbook must have --dangerously-skip-permissions
       for (const agent of playbook.agents) {
-        expect(agent.extraCliArgs).toBeDefined();
-        expect(agent.extraCliArgs).toContain("--dangerously-skip-permissions");
+        // Agents should not have --dangerously-skip-permissions hardcoded;
+        // users add it explicitly via CLI flags in the playbook launch dialog
+        if (agent.extraCliArgs) {
+          expect(agent.extraCliArgs).not.toContain("--dangerously-skip-permissions");
+        }
       }
     }
   });

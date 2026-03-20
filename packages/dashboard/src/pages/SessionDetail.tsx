@@ -7,6 +7,8 @@ import { ReplaceAgentDialog } from "../components/ReplaceAgentDialog";
 import { SessionSettingsDialog } from "../components/SessionSettingsDialog";
 import { StopSessionDialog } from "../components/StopSessionDialog";
 import { RestartAllDialog } from "../components/RestartAllDialog";
+import { PlaybookGrid, PlaybookUploadModal } from "../components/playbook";
+import { PersonaLibrary } from "../components/PersonaLibrary";
 import type { AgentActivity } from "../components/AgentCardTerminal";
 import { AgentActivityBadge, AgentUtilization, ActivitySparkline } from "../components/AgentActivityBadge";
 import { TaskBoard } from "../components/TaskBoard";
@@ -44,7 +46,6 @@ import {
   TextInput,
   Textarea,
   Loader,
-  Collapse,
   Code,
   CopyButton,
 } from "@mantine/core";
@@ -103,6 +104,16 @@ export function SessionDetail() {
   const [launchingPlaybook, setLaunchingPlaybook] = useState(false);
   const [loadingPlaybooks, setLoadingPlaybooks] = useState(false);
   const [playbookError, setPlaybookError] = useState<string | null>(null);
+  const [showPlaybookUpload, setShowPlaybookUpload] = useState(false);
+  // Per-agent overrides for playbook launch
+  const [agentModelOverrides, setAgentModelOverrides] = useState<Record<number, string>>({});
+  const [agentProviderOverrides, setAgentProviderOverrides] = useState<Record<number, string>>({});
+  const [agentCliArgsOverrides, setAgentCliArgsOverrides] = useState<Record<number, string>>({});
+  const [agentPersonaOverrides, setAgentPersonaOverrides] = useState<Record<number, string>>({});
+  const [defaultModelForAll, setDefaultModelForAll] = useState("");
+  const [defaultCliFlagsForAll, setDefaultCliFlagsForAll] = useState("");
+  const [personaEditIndex, setPersonaEditIndex] = useState<number | null>(null);
+  const [personaLibraryForIndex, setPersonaLibraryForIndex] = useState<number | null>(null);
   const [replaceAgentId, setReplaceAgentId] = useState<string | null>(null);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [sendingTo, setSendingTo] = useState<string | null>(null);
@@ -383,21 +394,47 @@ export function SessionDetail() {
     if (!selectedPlaybookName) return;
     setLaunchingPlaybook(true);
     try {
-      try {
-        await api.launchPlaybook(sessionId!, selectedPlaybookName, playbookTask || undefined);
-      } catch {
-        const pb = playbookDetails[selectedPlaybookName];
+      const pb = playbookDetails[selectedPlaybookName];
+      const hasOverrides = Object.keys(agentProviderOverrides).length > 0 ||
+        Object.keys(agentModelOverrides).length > 0 ||
+        Object.keys(agentCliArgsOverrides).length > 0;
+
+      if (!hasOverrides) {
+        // No overrides — use server-side playbook launch (faster, single request)
+        try {
+          await api.launchPlaybook(sessionId!, selectedPlaybookName, playbookTask || undefined);
+        } catch {
+          // Fallback: spawn agents individually
+          if (pb?.agents) {
+            for (const agent of pb.agents) {
+              await api.spawnAgent(sessionId!, {
+                name: agent.name,
+                role: agent.role || "worker",
+                provider: agent.provider || "claude-code",
+                model: agent.model,
+                persona: agent.persona,
+                initialTask: playbookTask || agent.initialTask,
+                channels: agent.channels,
+                extraCliArgs: agent.extraCliArgs,
+              });
+            }
+          }
+        }
+      } else {
+        // Has overrides — spawn agents individually with per-agent config
         if (pb?.agents) {
-          for (const agent of pb.agents) {
+          for (let i = 0; i < pb.agents.length; i++) {
+            const agent = pb.agents[i];
+            const cliArgsStr = agentCliArgsOverrides[i]?.trim();
             await api.spawnAgent(sessionId!, {
               name: agent.name,
               role: agent.role || "worker",
-              provider: agent.provider || "claude-code",
-              model: agent.model,
-              persona: agent.persona,
+              provider: agentProviderOverrides[i] || agent.provider || "claude-code",
+              model: agentModelOverrides[i] || agent.model,
+              persona: agentPersonaOverrides[i] || agent.persona,
               initialTask: playbookTask || agent.initialTask,
               channels: agent.channels,
-              extraCliArgs: agent.extraCliArgs,
+              extraCliArgs: cliArgsStr ? cliArgsStr.split(/\s+/) : agent.extraCliArgs,
             });
           }
         }
@@ -406,6 +443,11 @@ export function SessionDetail() {
       setSelectedPlaybookName(null);
       setPlaybookTask("");
       setPlaybookError(null);
+      setAgentModelOverrides({});
+      setAgentProviderOverrides({});
+      setAgentCliArgsOverrides({}); setAgentPersonaOverrides({}); setPersonaEditIndex(null); setPersonaLibraryForIndex(null);
+      setDefaultModelForAll("");
+      setDefaultCliFlagsForAll("");
       loadData();
     } catch (err: any) {
       console.error("Failed to launch playbook:", err);
@@ -974,8 +1016,8 @@ export function SessionDetail() {
           setSelectedPlaybookName(null);
           setPlaybookTask("");
         }}
-        title="Launch Playbook"
-        size="md"
+        title={selectedPlaybookName ? `Launch: ${selectedPlaybookName}` : "Launch Playbook"}
+        size="lg"
         centered
         styles={{
           header: { backgroundColor: "var(--bg-secondary)", borderBottom: "1px solid var(--border-color)" },
@@ -991,76 +1033,35 @@ export function SessionDetail() {
               <Text size="sm" c="var(--accent-red)">{playbookError}</Text>
             </Paper>
           )}
-          {loadingPlaybooks ? (
-            <Stack align="center" py="xl">
-              <Loader size="sm" color="blue" />
-              <Text size="sm" c="dimmed">Loading playbooks...</Text>
-            </Stack>
-          ) : playbookNames.length === 0 ? (
-            <Stack align="center" py="xl">
-              <Text size="sm" c="dimmed">No playbooks found.</Text>
-              <Text size="xs" c="dimmed">Create playbooks in ~/.kora/playbooks/ or ~/.kora-dev/playbooks/</Text>
-            </Stack>
-          ) : (
+          {!selectedPlaybookName ? (
             <>
-              <Text size="sm" c="dimmed">Select a playbook to launch into this session:</Text>
-              <Stack gap="xs">
-                {playbookNames.map((name) => {
-                  const pb = playbookDetails[name];
-                  const isSelected = selectedPlaybookName === name;
-                  return (
-                    <Paper
-                      key={name}
-                      p="sm"
-                      withBorder
-                      style={{
-                        cursor: "pointer",
-                        borderColor: isSelected ? "var(--accent-blue)" : "var(--border-color)",
-                        backgroundColor: isSelected ? "rgba(88,166,255,0.08)" : "var(--bg-primary)",
-                        transition: "border-color 0.15s, background-color 0.15s",
-                      }}
-                      onClick={() => setSelectedPlaybookName(name)}
-                    >
-                      <Group justify="space-between" align="flex-start">
-                        <div>
-                          <Text fw={600} size="sm" c="var(--text-primary)">{name}</Text>
-                          {pb?.description && (
-                            <Text size="xs" c="dimmed" mt={2}>{pb.description}</Text>
-                          )}
-                        </div>
-                        {pb?.agents && (
-                          <Badge variant="light" color="blue" size="sm">
-                            {pb.agents.length} agent{pb.agents.length !== 1 ? "s" : ""}
-                          </Badge>
-                        )}
-                      </Group>
-                      {isSelected && pb?.agents && (
-                        <Group gap={4} mt="xs" wrap="wrap">
-                          {pb.agents.map((a: any, i: number) => (
-                            <Badge key={i} variant="outline" color="gray" size="xs">
-                              {a.name} ({a.role || "worker"})
-                            </Badge>
-                          ))}
-                        </Group>
-                      )}
-                    </Paper>
-                  );
-                })}
-              </Stack>
-
-              {selectedPlaybookName && (
-                <TextInput
-                  label="Initial task (optional)"
-                  placeholder="Describe the task for the agents..."
-                  value={playbookTask}
-                  onChange={(e) => setPlaybookTask(e.currentTarget.value)}
-                  styles={{
-                    input: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" },
-                    label: { color: "var(--text-secondary)", fontSize: 13 },
-                  }}
+              <Group justify="space-between" align="center">
+                <Text size="sm" c="dimmed">Select a playbook to launch into this session:</Text>
+                <Button
+                  size="compact-sm"
+                  onClick={() => setShowPlaybookUpload(true)}
+                  styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)" } }}
+                >
+                  Upload
+                </Button>
+              </Group>
+              <div style={{ maxHeight: "calc(80vh - 200px)", overflowY: "auto", paddingRight: 4 }}>
+                <PlaybookGrid
+                  playbooks={playbookNames.map((name) => {
+                    const pb = playbookDetails[name];
+                    return {
+                      name,
+                      description: pb?.description,
+                      agents: pb?.agents || [],
+                      source: pb?.source,
+                      tags: pb?.tags,
+                    };
+                  })}
+                  selectedPlaybook={null}
+                  onSelectPlaybook={(pb) => setSelectedPlaybookName(pb.name)}
+                  loading={loadingPlaybooks}
                 />
-              )}
-
+              </div>
               <Group justify="flex-end" mt="sm">
                 <Button
                   variant="default"
@@ -1073,9 +1074,218 @@ export function SessionDetail() {
                 >
                   Cancel
                 </Button>
+              </Group>
+            </>
+          ) : (
+            <>
+              {/* Selected playbook — full configuration */}
+              {(() => {
+                const pb = playbookDetails[selectedPlaybookName];
+                const pbAgents = pb?.agents || [];
+                return (
+                  <Stack gap="md">
+                    {pb?.description && (
+                      <Text size="sm" c="dimmed">{pb.description}</Text>
+                    )}
+
+                    {/* Defaults for all agents */}
+                    {pbAgents.length > 0 && (
+                      <Paper p="sm" withBorder style={{ backgroundColor: "var(--bg-primary)", borderColor: "var(--border-color)" }}>
+                        <Text size="xs" fw={600} c="var(--text-secondary)" mb={8}>Defaults for all agents</Text>
+                        <Group gap={8} grow>
+                          <div>
+                            <Text size="xs" c="var(--text-muted)" mb={2}>Model</Text>
+                            <input
+                              value={defaultModelForAll}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setDefaultModelForAll(val);
+                                // Apply to all agents
+                                const overrides: Record<number, string> = {};
+                                pbAgents.forEach((_: any, i: number) => { overrides[i] = val; });
+                                setAgentModelOverrides(overrides);
+                              }}
+                              placeholder="Set model for all agents..."
+                              style={{
+                                width: "100%", fontSize: 12, padding: "5px 8px", backgroundColor: "var(--bg-tertiary)",
+                                border: "1px solid var(--border-color)", borderRadius: 4, color: "var(--text-primary)",
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <Text size="xs" c="var(--text-muted)" mb={2}>CLI Flags</Text>
+                            <input
+                              value={defaultCliFlagsForAll}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setDefaultCliFlagsForAll(val);
+                                // Apply to all agents
+                                const overrides: Record<number, string> = {};
+                                pbAgents.forEach((_: any, i: number) => { overrides[i] = val; });
+                                setAgentCliArgsOverrides(overrides);
+                              }}
+                              placeholder="e.g. --dangerously-skip-permissions"
+                              style={{
+                                width: "100%", fontSize: 12, padding: "5px 8px", backgroundColor: "var(--bg-tertiary)",
+                                border: "1px solid var(--border-color)", borderRadius: 4, color: "var(--text-primary)",
+                                fontFamily: "var(--font-mono)",
+                              }}
+                            />
+                          </div>
+                        </Group>
+                      </Paper>
+                    )}
+
+                    {/* Per-agent configuration */}
+                    {pbAgents.length > 0 && (
+                      <div>
+                        <Text size="sm" fw={600} c="var(--text-primary)" mb={8}>
+                          Agents ({pbAgents.length})
+                        </Text>
+                        <Stack gap={6}>
+                          {pbAgents.map((a: any, i: number) => (
+                            <Paper key={i} p="xs" withBorder style={{
+                              backgroundColor: "var(--bg-primary)", borderColor: "var(--border-color)",
+                            }}>
+                              <Group gap={8} align="center" wrap="nowrap" mb={6}>
+                                <Badge variant="light" color={a.role === "master" ? "yellow" : "blue"} size="xs">
+                                  {a.role || "worker"}
+                                </Badge>
+                                <Text size="sm" fw={600} c="var(--text-primary)" style={{ flex: 1 }}>
+                                  {a.name}
+                                </Text>
+                              </Group>
+                              <Group gap={6} grow>
+                                <select
+                                  value={agentProviderOverrides[i] || a.provider || "claude-code"}
+                                  onChange={(e) => setAgentProviderOverrides(prev => ({ ...prev, [i]: e.target.value }))}
+                                  style={{
+                                    fontSize: 12, padding: "4px 8px", backgroundColor: "var(--bg-tertiary)",
+                                    border: "1px solid var(--border-color)", borderRadius: 4, color: "var(--text-primary)",
+                                  }}
+                                >
+                                  {["claude-code", "codex", "gemini-cli", "aider", "goose", "kiro"].map(p => (
+                                    <option key={p} value={p}>{p}</option>
+                                  ))}
+                                </select>
+                                <input
+                                  value={agentModelOverrides[i] ?? a.model ?? ""}
+                                  onChange={(e) => setAgentModelOverrides(prev => ({ ...prev, [i]: e.target.value }))}
+                                  placeholder="model (default)"
+                                  style={{
+                                    fontSize: 12, padding: "4px 8px", backgroundColor: "var(--bg-tertiary)",
+                                    border: "1px solid var(--border-color)", borderRadius: 4, color: "var(--text-primary)",
+                                  }}
+                                />
+                                <input
+                                  value={agentCliArgsOverrides[i] ?? ""}
+                                  onChange={(e) => setAgentCliArgsOverrides(prev => ({ ...prev, [i]: e.target.value }))}
+                                  placeholder="CLI flags"
+                                  style={{
+                                    fontSize: 12, padding: "4px 8px", backgroundColor: "var(--bg-tertiary)",
+                                    border: "1px solid var(--border-color)", borderRadius: 4, color: "var(--text-primary)",
+                                    fontFamily: "var(--font-mono)",
+                                  }}
+                                />
+                              </Group>
+                              {/* Persona row */}
+                              <div style={{ marginTop: 6 }}>
+                                {(() => {
+                                  const currentPersona = agentPersonaOverrides[i] ?? a.persona ?? "";
+                                  const isBuiltin = currentPersona.startsWith("builtin:");
+                                  const preview = isBuiltin
+                                    ? currentPersona.replace("builtin:", "Built-in: ")
+                                    : currentPersona.length > 80
+                                      ? currentPersona.slice(0, 80) + "..."
+                                      : currentPersona || "(no persona)";
+                                  return (
+                                    <Group gap={6} align="center">
+                                      <Text size="xs" c="var(--text-muted)" style={{
+                                        flex: 1, overflow: "hidden", textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap", fontStyle: currentPersona ? "normal" : "italic",
+                                      }}>
+                                        {preview}
+                                      </Text>
+                                      <Button
+                                        variant="subtle" size="compact-xs"
+                                        onClick={() => setPersonaEditIndex(i)}
+                                        styles={{ root: { color: "var(--accent-blue)", fontSize: 11, height: 22, padding: "0 8px" } }}
+                                      >
+                                        Edit
+                                      </Button>
+                                      <Button
+                                        variant="subtle" size="compact-xs"
+                                        onClick={() => setPersonaLibraryForIndex(i)}
+                                        styles={{ root: { color: "var(--accent-purple)", fontSize: 11, height: 22, padding: "0 8px" } }}
+                                      >
+                                        Library
+                                      </Button>
+                                    </Group>
+                                  );
+                                })()}
+                              </div>
+                              {/* Inline persona editor */}
+                              {personaEditIndex === i && (
+                                <div style={{ marginTop: 6 }}>
+                                  <textarea
+                                    value={agentPersonaOverrides[i] ?? a.persona ?? ""}
+                                    onChange={(e) => setAgentPersonaOverrides(prev => ({ ...prev, [i]: e.target.value }))}
+                                    placeholder="Describe the agent's persona and instructions..."
+                                    rows={4}
+                                    style={{
+                                      width: "100%", fontSize: 12, padding: "8px", backgroundColor: "var(--bg-tertiary)",
+                                      border: "1px solid var(--border-color)", borderRadius: 6, color: "var(--text-primary)",
+                                      resize: "vertical", fontFamily: "inherit", lineHeight: 1.5,
+                                    }}
+                                  />
+                                  <Group justify="flex-end" gap={4} mt={4}>
+                                    <Button size="compact-xs" variant="subtle"
+                                      onClick={() => setPersonaEditIndex(null)}
+                                      styles={{ root: { color: "var(--text-muted)", fontSize: 11 } }}
+                                    >
+                                      Close
+                                    </Button>
+                                  </Group>
+                                </div>
+                              )}
+                            </Paper>
+                          ))}
+                        </Stack>
+                      </div>
+                    )}
+
+                    <TextInput
+                      label="Initial task (optional)"
+                      placeholder="Describe the task for the agents..."
+                      value={playbookTask}
+                      onChange={(e) => setPlaybookTask(e.currentTarget.value)}
+                      styles={{
+                        input: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" },
+                        label: { color: "var(--text-secondary)", fontSize: 13 },
+                      }}
+                    />
+                  </Stack>
+                );
+              })()}
+
+              <Group justify="flex-end" mt="sm">
+                <Button
+                  variant="default"
+                  onClick={() => {
+                    setSelectedPlaybookName(null);
+                    setAgentModelOverrides({});
+                    setAgentProviderOverrides({});
+                    setAgentCliArgsOverrides({}); setAgentPersonaOverrides({}); setPersonaEditIndex(null); setPersonaLibraryForIndex(null);
+                    setDefaultModelForAll("");
+                    setDefaultCliFlagsForAll("");
+                  }}
+                  styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" } }}
+                >
+                  Back
+                </Button>
                 <Button
                   onClick={handleLaunchPlaybook}
-                  disabled={!selectedPlaybookName || launchingPlaybook}
+                  disabled={launchingPlaybook}
                   loading={launchingPlaybook}
                   styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)" } }}
                 >
@@ -1086,6 +1296,28 @@ export function SessionDetail() {
           )}
         </Stack>
       </Modal>
+
+      {/* Playbook Upload Modal */}
+      <PlaybookUploadModal
+        opened={showPlaybookUpload}
+        onClose={() => setShowPlaybookUpload(false)}
+        onSuccess={() => {
+          setShowPlaybookUpload(false);
+          openPlaybookDialog(); // Reload playbooks
+        }}
+      />
+
+      {/* Persona Library for playbook agent override */}
+      <PersonaLibrary
+        opened={personaLibraryForIndex !== null}
+        onClose={() => setPersonaLibraryForIndex(null)}
+        onSelect={(persona) => {
+          if (personaLibraryForIndex !== null) {
+            setAgentPersonaOverrides(prev => ({ ...prev, [personaLibraryForIndex]: persona.fullText }));
+            setPersonaLibraryForIndex(null);
+          }
+        }}
+      />
 
       {/* Broadcast Message Dialog */}
       {showBroadcastModal && (
@@ -1179,14 +1411,12 @@ export function SessionDetail() {
 /* Agents Tab                                                          */
 /* ------------------------------------------------------------------ */
 
-/** Reconstruct the CLI command used to spawn an agent */
+/** Reconstruct the full CLI command used to spawn an agent */
 function buildCliCommand(agent: any): string {
   const provider = agent.config?.cliProvider || "claude-code";
   const model = agent.config?.model;
   const extraArgs = agent.config?.extraCliArgs || [];
-  const workDir = agent.config?.workingDirectory;
 
-  // Base command
   let cmd = provider === "claude-code" ? "claude" :
             provider === "aider" ? "aider" :
             provider === "codex" ? "codex" :
@@ -1195,20 +1425,25 @@ function buildCliCommand(agent: any): string {
 
   const parts = [cmd];
 
-  // Add model flag if not default
   if (model && model !== "default" && model !== "") {
-    parts.push(`--model ${model}`);
+    parts.push("--model", model);
   }
 
-  // Add extra CLI args
+  if (agent.config?.persona) {
+    parts.push("--system-prompt-file", `<persona/${agent.config.id}-prompt.md>`);
+  }
+
   if (extraArgs.length > 0) {
     parts.push(...extraArgs);
   }
 
-  // Note: We don't show --system-prompt-file or --mcp-config as those are internal runtime paths
-  // Just show the user-visible flags
+  // Show MCP config for MCP-capable providers
+  if (["claude-code", "aider", "goose"].includes(provider)) {
+    parts.push("--mcp-config", `<mcp/${agent.config?.id}-mcp.json>`);
+    parts.push("--allowedTools", "Read", "Glob", "Grep", "LS", "mcp__kora__*");
+  }
 
-  return parts.join(" ");
+  return parts.join(" \\\n  ");
 }
 
 interface AgentsTabProps {
@@ -1267,7 +1502,7 @@ function AgentsTab({
   const [activityHistory, setActivityHistory] = useState<Record<string, AgentActivity[]>>({});
   const [activitySince, setActivitySince] = useState<Record<string, string>>({});
   const [gearOpen, setGearOpen] = useState<string | null>(null);
-  const [cliExpanded, setCliExpanded] = useState<Record<string, boolean>>({});
+  const [personaModalAgent, setPersonaModalAgent] = useState<any | null>(null);
   const [tasks, setTasks] = useState<any[]>([]);
 
   // Close gear dropdown when clicking outside
@@ -1624,93 +1859,47 @@ function AgentsTab({
               />
             </div>
 
-            {/* CLI Command — collapsible */}
-            <div style={{ marginTop: 8 }}>
-              <div
-                onClick={() => setCliExpanded(prev => ({ ...prev, [a.id]: !prev[a.id] }))}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  cursor: "pointer",
-                  padding: "4px 0",
-                  color: "var(--text-secondary)",
-                  fontSize: 12,
-                  fontWeight: 500,
-                  userSelect: "none",
-                }}
-              >
-                <svg
-                  width="10"
-                  height="10"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{
-                    transform: cliExpanded[a.id] ? "rotate(90deg)" : "rotate(0deg)",
-                    transition: "transform 0.15s ease",
-                  }}
-                >
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-                <span>CLI Command</span>
-              </div>
-              <Collapse in={cliExpanded[a.id]}>
-                <div style={{ marginTop: 6, position: "relative" }}>
-                  <Code
-                    block
-                    style={{
-                      fontSize: 11,
-                      padding: "8px 32px 8px 8px",
-                      backgroundColor: "var(--bg-tertiary)",
-                      color: "var(--text-primary)",
-                      borderRadius: 4,
-                      border: "1px solid var(--border-color)",
-                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-all",
-                    }}
-                  >
-                    {buildCliCommand(a)}
-                  </Code>
-                  <CopyButton value={buildCliCommand(a)} timeout={2000}>
-                    {({ copied, copy }) => (
-                      <Tooltip label={copied ? "Copied!" : "Copy command"} position="left">
-                        <ActionIcon
-                          onClick={copy}
-                          variant="subtle"
-                          size="sm"
-                          style={{
-                            position: "absolute",
-                            top: 8,
-                            right: 8,
-                            color: copied ? "var(--accent-green)" : "var(--text-secondary)",
-                          }}
-                        >
-                          {copied ? (
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="20 6 9 17 4 12" />
-                            </svg>
-                          ) : (
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                            </svg>
-                          )}
-                        </ActionIcon>
-                      </Tooltip>
-                    )}
-                  </CopyButton>
-                  {a.config?.workingDirectory && (
-                    <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)" }}>
-                      <span style={{ fontWeight: 500 }}>Working dir:</span> {a.config.workingDirectory}
-                    </div>
-                  )}
-                </div>
-              </Collapse>
+            {/* Agent Details — opens modal with CLI command + persona */}
+            <div
+              onClick={() => setPersonaModalAgent(a)}
+              style={{
+                display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+                margin: "10px 5px 8px", padding: "7px 12px", borderRadius: 6,
+                backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border-color)",
+                transition: "border-color 0.15s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--text-muted)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border-color)"; }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
+              </svg>
+              <span style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: 500 }}>
+                CLI Command
+              </span>
+              {a.config?.persona && (
+                <>
+                  <span style={{ color: "var(--border-color)" }}>|</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <span style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: 500 }}>
+                    Persona
+                  </span>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                    ({Math.round(a.config.persona.length / 1000)}k)
+                  </span>
+                </>
+              )}
+              {a.config?.workingDirectory && (
+                <>
+                  <span style={{ color: "var(--border-color)" }}>|</span>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {a.config.workingDirectory}
+                  </span>
+                </>
+              )}
             </div>
 
             {/* Approval Prompts — show pending requests for autonomyLevel = 0 (Suggest) */}
@@ -1997,6 +2186,79 @@ function AgentsTab({
         );
       })()}
     </div>
+
+    {/* Agent Details Modal — CLI Command + Persona */}
+    <Modal
+      opened={!!personaModalAgent}
+      onClose={() => setPersonaModalAgent(null)}
+      title={`${personaModalAgent?.config?.name || "Agent"} — Details`}
+      size="lg"
+      centered
+      styles={{
+        header: { backgroundColor: "var(--bg-secondary)", borderBottom: "1px solid var(--border-color)" },
+        body: { backgroundColor: "var(--bg-secondary)", maxHeight: "70vh", overflowY: "auto" },
+        content: { backgroundColor: "var(--bg-secondary)" },
+        title: { color: "var(--text-primary)", fontWeight: 600, fontSize: 16 },
+        close: { color: "var(--text-secondary)" },
+      }}
+    >
+      <Stack gap="md">
+        {/* CLI Command */}
+        <div>
+          <Group justify="space-between" mb={6}>
+            <Text size="sm" fw={600} c="var(--text-primary)">CLI Command</Text>
+            {personaModalAgent && (
+              <CopyButton value={buildCliCommand(personaModalAgent)} timeout={2000}>
+                {({ copied, copy }) => (
+                  <Tooltip label={copied ? "Copied!" : "Copy command"}>
+                    <ActionIcon variant="subtle" size="xs" onClick={copy}
+                      style={{ color: copied ? "var(--accent-green)" : "var(--text-muted)" }}>
+                      {copied ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12" /></svg>
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                      )}
+                    </ActionIcon>
+                  </Tooltip>
+                )}
+              </CopyButton>
+            )}
+          </Group>
+          <Code block style={{
+            fontSize: 12, padding: 12, backgroundColor: "var(--bg-tertiary)",
+            color: "var(--text-primary)", borderRadius: 6, border: "1px solid var(--border-color)",
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+            whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6,
+          }}>
+            {personaModalAgent ? buildCliCommand(personaModalAgent) : ""}
+          </Code>
+          {personaModalAgent?.config?.workingDirectory && (
+            <Text size="xs" c="var(--text-muted)" mt={6}>
+              Working directory: {personaModalAgent.config.workingDirectory}
+            </Text>
+          )}
+        </div>
+
+        {/* Persona & Instructions */}
+        {personaModalAgent?.config?.persona && (
+          <div>
+            <Text size="sm" fw={600} c="var(--text-primary)" mb={6}>
+              Persona & Instructions
+            </Text>
+            <div style={{
+              padding: 12, backgroundColor: "var(--bg-tertiary)",
+              borderRadius: 6, border: "1px solid var(--border-color)",
+              fontSize: 12, lineHeight: 1.6, color: "var(--text-secondary)",
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+              whiteSpace: "pre-wrap", wordBreak: "break-word",
+              maxHeight: 400, overflowY: "auto",
+            }}>
+              {personaModalAgent.config.persona}
+            </div>
+          </div>
+        )}
+      </Stack>
+    </Modal>
     </>
   );
 }

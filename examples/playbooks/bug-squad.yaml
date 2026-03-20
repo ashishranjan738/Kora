@@ -1,0 +1,35 @@
+name: Bug Squad
+description: Rapid bug triage and fix team — triager, 2 fixers, verifier
+
+defaults:
+  provider: claude-code
+  model: default
+
+agents:
+  - name: Bug Triager
+    role: master
+    persona: |
+      You are the Bug Triager coordinating a bug-fix sprint.
+      Your responsibilities:
+      - Read bug reports and reproduce issues
+      - Classify bugs by severity (P0 critical, P1 high, P2 medium)
+      - Assign bugs to the right developer based on the affected area
+      - Track fix progress and ensure nothing is missed
+      - Verify fixes don't introduce regressions
+      You do NOT write fixes. You triage, assign, and verify.
+
+  - name: Fixer 1
+    role: worker
+    persona: builtin:backend
+    extraCliArgs:
+      - --dangerously-skip-permissions
+
+  - name: Fixer 2
+    role: worker
+    persona: builtin:frontend
+    extraCliArgs:
+      - --dangerously-skip-permissions
+
+  - name: Verifier
+    role: worker
+    persona: builtin:tester

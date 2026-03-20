@@ -229,8 +229,6 @@ agents:
   - name: Agent
     role: master
     persona: You are a helpful coding assistant.
-    extraCliArgs:
-      - --dangerously-skip-permissions
 `,
       },
       {
@@ -245,18 +243,12 @@ agents:
   - name: Orchestrator
     role: master
     persona: builtin:architect
-    extraCliArgs:
-      - --dangerously-skip-permissions
   - name: Worker A
     role: worker
     persona: builtin:backend
-    extraCliArgs:
-      - --dangerously-skip-permissions
   - name: Worker B
     role: worker
     persona: builtin:frontend
-    extraCliArgs:
-      - --dangerously-skip-permissions
 `,
       },
       {
@@ -271,28 +263,18 @@ agents:
   - name: Architect
     role: master
     persona: builtin:architect
-    extraCliArgs:
-      - --dangerously-skip-permissions
   - name: Frontend
     role: worker
     persona: builtin:frontend
-    extraCliArgs:
-      - --dangerously-skip-permissions
   - name: Backend
     role: worker
     persona: builtin:backend
-    extraCliArgs:
-      - --dangerously-skip-permissions
   - name: Tests
     role: worker
     persona: builtin:tester
-    extraCliArgs:
-      - --dangerously-skip-permissions
   - name: Reviewer
     role: worker
     persona: builtin:reviewer
-    extraCliArgs:
-      - --dangerously-skip-permissions
 `,
       },
       {
@@ -307,23 +289,50 @@ agents:
   - name: Architect
     role: master
     persona: builtin:architect
-    extraCliArgs:
-      - --dangerously-skip-permissions
   - name: Researcher
     role: worker
     persona: builtin:researcher
-    extraCliArgs:
-      - --dangerously-skip-permissions
   - name: Backend
     role: worker
     persona: builtin:backend
-    extraCliArgs:
-      - --dangerously-skip-permissions
   - name: Frontend
     role: worker
     persona: builtin:frontend
-    extraCliArgs:
-      - --dangerously-skip-permissions
+`,
+      },
+      {
+        name: "Two-Pizza Team",
+        description: "Full product team: Engineering Manager, Product Manager, Researcher, 3 Devs, Tester, Reviewer",
+        yaml: `name: Two-Pizza Team
+description: "Full product team: EM, PM, Researcher, 3 Devs, Tester, Reviewer"
+defaults:
+  provider: claude-code
+  model: default
+agents:
+  - name: Engineering Manager
+    role: master
+    persona: "Engineering Manager — coordinates work, breaks down tasks, assigns to engineers, unblocks team. Does NOT write code."
+  - name: Product Manager
+    role: worker
+    persona: "Product Manager — defines requirements, writes user stories, clarifies acceptance criteria, reviews from product perspective. Does NOT write code."
+  - name: Researcher
+    role: worker
+    persona: builtin:researcher
+  - name: Dev 1
+    role: worker
+    persona: builtin:backend
+  - name: Dev 2
+    role: worker
+    persona: builtin:frontend
+  - name: Dev 3
+    role: worker
+    persona: "Full-stack developer — works on both frontend and backend tasks. Picks up overflow work as needed."
+  - name: Tester
+    role: worker
+    persona: builtin:tester
+  - name: Reviewer
+    role: worker
+    persona: builtin:reviewer
 `,
       },
     ];

@@ -47,6 +47,7 @@ const ALL_TOOLS = [
   "list_tasks", "get_task", "update_task", "create_task",
   "spawn_agent", "remove_agent", "peek_agent", "nudge_agent",
   "prepare_pr", "report_idle", "request_task",
+  "list_personas", "save_persona",
 ] as const;
 
 /** Tools allowed per role. Master gets everything, workers get subsets. */
@@ -56,6 +57,7 @@ const ROLE_TOOL_ACCESS: Record<string, Set<string>> = {
     "send_message", "check_messages", "list_agents", "broadcast",
     "list_tasks", "get_task", "update_task", "create_task",
     "prepare_pr", "report_idle", "request_task",
+    "list_personas", "save_persona", // All agents can browse + save to the persona library
   ]),
   // Deny: spawn_agent, remove_agent, peek_agent, nudge_agent (master-only)
 };
@@ -541,7 +543,8 @@ const TOOL_DEFINITIONS = [
   {
     name: "spawn_agent",
     description:
-      "Spawn a new worker agent in the session. Only available to master/orchestrator agents.",
+      "Spawn a new worker agent in the session. Only available to master/orchestrator agents. " +
+      "You can provide a custom persona text OR reference a persona from the library by ID (use list_personas to see available personas).",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -555,7 +558,11 @@ const TOOL_DEFINITIONS = [
         },
         persona: {
           type: "string",
-          description: "System prompt / persona for the agent",
+          description: "Custom system prompt / persona text for the agent. If personaId is also provided, this overrides it.",
+        },
+        personaId: {
+          type: "string",
+          description: "ID of a persona from the library (use list_personas to discover available personas). The persona's full text will be used as the agent's system prompt.",
         },
         model: {
           type: "string",
@@ -572,6 +579,48 @@ const TOOL_DEFINITIONS = [
         },
       },
       required: ["name", "model"],
+    },
+  },
+  {
+    name: "list_personas",
+    description:
+      "List all available personas from the library (both pre-built and custom). " +
+      "Use this to discover persona IDs that can be passed to spawn_agent's personaId parameter. " +
+      "Each persona has an id, name, description, and full instruction text.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        includeFullText: {
+          type: "boolean",
+          description: "If true, include the full persona text in the response (default: false, only shows id/name/description)",
+        },
+      },
+    },
+  },
+  {
+    name: "save_persona",
+    description:
+      "Save a new custom persona to the global library. Use this to capture learnings — " +
+      "when you discover an effective agent configuration or role definition, save it as a " +
+      "persona so it can be reused in future sessions. The persona will be available to all " +
+      "agents via list_personas and can be referenced by ID in spawn_agent.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        name: {
+          type: "string",
+          description: "Name for the persona (e.g. 'CSS Migration Expert', 'GraphQL Schema Designer')",
+        },
+        description: {
+          type: "string",
+          description: "Short one-line description of what this persona does",
+        },
+        fullText: {
+          type: "string",
+          description: "The full persona instructions — role definition, skills, rules, constraints. This becomes the agent's system prompt.",
+        },
+      },
+      required: ["name", "fullText"],
     },
   },
   {
@@ -1123,15 +1172,78 @@ async function handleToolCall(
     }
 
     case "spawn_agent": {
+      // Resolve persona: explicit text takes priority, then personaId from library
+      let persona = toolArgs.persona || "";
+      if (!persona && toolArgs.personaId) {
+        try {
+          const personasResp = (await apiCall("GET", "/api/v1/personas")) as { personas?: Array<{ id: string; fullText: string }> };
+          const match = personasResp.personas?.find(p => p.id === toolArgs.personaId);
+          if (match) {
+            persona = match.fullText;
+          } else {
+            // Try builtin persona reference (e.g. "builtin:backend")
+            persona = `builtin:${toolArgs.personaId}`;
+          }
+        } catch {
+          // Fallback: use personaId as builtin reference
+          persona = `builtin:${toolArgs.personaId}`;
+        }
+      }
+
       const result = await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents`, {
         name: toolArgs.name,
         role: toolArgs.role || "worker",
         model: toolArgs.model,
-        persona: toolArgs.persona || "",
+        persona,
         initialTask: toolArgs.task,
         extraCliArgs: toolArgs.extraCliArgs,
       });
       return result;
+    }
+
+    case "list_personas": {
+      const personasResp = (await apiCall("GET", "/api/v1/personas")) as {
+        personas?: Array<{ id: string; name: string; description: string; fullText: string }>;
+      };
+      const customPersonas = (personasResp.personas || []).map(p => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        type: "custom",
+        ...(toolArgs.includeFullText ? { fullText: p.fullText } : {}),
+      }));
+
+      // Add built-in persona references
+      const builtinPersonas = [
+        { id: "architect", name: "Architect", description: "Master coordinator and system architect", type: "builtin" },
+        { id: "backend", name: "Backend Developer", description: "Node.js, APIs, databases, server-side logic", type: "builtin" },
+        { id: "frontend", name: "Frontend Developer", description: "React, UI/UX, component development", type: "builtin" },
+        { id: "tester", name: "QA Tester", description: "Testing, test plans, bug finding", type: "builtin" },
+        { id: "reviewer", name: "Code Reviewer", description: "Code quality, architecture review", type: "builtin" },
+        { id: "researcher", name: "Researcher", description: "Investigation, analysis, documentation", type: "builtin" },
+      ];
+
+      return {
+        personas: [...customPersonas, ...builtinPersonas],
+        total: customPersonas.length + builtinPersonas.length,
+        hint: "Use the 'id' field as personaId when calling spawn_agent. Custom personas use their full text; builtin personas are resolved server-side.",
+      };
+    }
+
+    case "save_persona": {
+      if (!toolArgs.name?.trim() || !toolArgs.fullText?.trim()) {
+        return { error: "name and fullText are required" };
+      }
+      const saved = await apiCall("POST", "/api/v1/personas", {
+        name: toolArgs.name.trim(),
+        description: (toolArgs.description || toolArgs.name).trim(),
+        fullText: toolArgs.fullText.trim(),
+      });
+      return {
+        success: true,
+        ...(saved as any),
+        hint: "Persona saved to the global library. It can now be referenced by ID in spawn_agent's personaId parameter, and will appear in the dashboard's Persona Library.",
+      };
     }
 
     case "remove_agent": {

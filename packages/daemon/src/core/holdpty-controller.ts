@@ -395,15 +395,16 @@ export class HoldptyController implements IPtyBackend {
    * Send data to a holdpty session via direct socket connection.
    *
    * Strategy:
-   * 1. Try "send" mode first (non-exclusive, holdpty 0.4+).
-   *    Multiple senders + an attached client can coexist.
-   * 2. Falls back to "attach" mode for holdpty 0.3.x (exclusive).
-   *    If attach is rejected (ERROR frame), logs a warning and resolves
-   *    immediately instead of silently waiting for timeout.
+   * 1. Try "attach" mode first — works reliably on both holdpty 0.3.x and 0.4+.
+   *    During agent spawn, no dashboard terminal is attached, so exclusive attach succeeds.
+   *    When a dashboard IS open, sendKeys routes through PtyManager (fast path above),
+   *    so this socket fallback is only reached when no dashboard client is viewing.
+   * 2. Falls back to "send" mode (non-exclusive, holdpty 0.4+) if attach fails
+   *    (e.g. stale attachment or concurrent access edge case).
    *
-   * Uses simple byte-level HELLO_ACK/ERROR detection (first byte of response)
-   * rather than full FrameDecoder, since the holder always sends a single
-   * complete frame as its first response.
+   * IMPORTANT: "send" mode must NOT be tried first — holdpty 0.3.x falsely ACKs
+   * "send" mode (responds HELLO_ACK) but silently drops the data instead of
+   * delivering it to the PTY. This caused the "agent starts as normal terminal" bug.
    */
   private async sendViaSocket(session: string, data: string): Promise<void> {
     const proto = await getProtocol();
@@ -452,11 +453,15 @@ export class HoldptyController implements IPtyBackend {
       });
     };
 
-    // Try "send" mode first (non-exclusive, holdpty 0.4+)
-    if (await trySend("send", 2000)) return;
+    // Try "attach" mode first — works reliably on holdpty 0.3.x and 0.4+.
+    // Note: "send" mode (non-exclusive, holdpty 0.4+) was tried first in an earlier version,
+    // but holdpty 0.3.x falsely ACKs "send" mode without actually delivering data to the PTY.
+    const attachOk = await trySend("attach", 5000);
+    if (attachOk) return;
 
-    // Fallback: "attach" mode (exclusive, holdpty 0.3.x)
-    await trySend("attach", 5000);
+    // Fallback: "send" mode (non-exclusive, holdpty 0.4+) — only if attach fails
+    // (e.g. another client is already exclusively attached)
+    await trySend("send", 2000);
   }
 
   /**

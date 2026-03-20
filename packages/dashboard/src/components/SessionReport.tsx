@@ -398,7 +398,11 @@ export function SessionReport({
       backgroundColor: "var(--bg-secondary)",
       borderBottom: "1px solid var(--border-color)",
     },
-    body: { backgroundColor: "var(--bg-secondary)" },
+    body: {
+      backgroundColor: "var(--bg-secondary)",
+      maxHeight: "calc(90vh - 120px)",
+      overflowY: "auto" as const,
+    },
     content: { backgroundColor: "var(--bg-secondary)" },
     title: {
       color: "var(--text-primary)",

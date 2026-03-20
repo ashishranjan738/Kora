@@ -79,8 +79,10 @@ async function handleStart(): Promise<void> {
   // 2b. Initialize playbook database for YAML playbook storage
   const playbookDb = new PlaybookDatabase(globalConfigDir);
 
-  // 3. Ensure built-in playbooks exist in database
+  // 3. Ensure built-in playbooks exist in database + JSON files
   playbookDb.ensureBuiltinPlaybooks();
+  const { ensureBuiltinPlaybooks: ensureJsonPlaybooks } = await import("./core/playbook-loader.js");
+  await ensureJsonPlaybooks(globalConfigDir);
 
   // 4. Restore existing sessions — reconnect to live tmux agents
   const orchestrators = new Map<string, Orchestrator>();

@@ -150,75 +150,66 @@ export function TimelineEvent({
 
   return (
     <div className={bulletClass}>
+      {/* Row 1: Time + title (left) .... Badge (right) */}
       <div className="tl-event-header">
-        <Tooltip label={new Date(event.timestamp).toLocaleString()} position="top" withArrow>
-          <span className="tl-event-time">{formatTime(event.timestamp)}</span>
-        </Tooltip>
-
-        {agentColor && <span className="tl-agent-dot" style={{ background: agentColor }} />}
-
-        <span className="tl-event-title">{title}</span>
-
-        {/* Role badge for agent events */}
-        {data.role && (
-          <Badge
-            variant="light"
-            color={data.role === "master" ? "grape" : "blue"}
-            size="xs"
-            styles={{ root: { textTransform: "lowercase" } }}
-          >
-            {data.role}
-          </Badge>
-        )}
-
-        {/* Message type badge */}
-        {msgConfig && (
-          <Badge variant="light" color={msgConfig.color} size="xs">
-            {msgConfig.icon} {msgConfig.label}
-          </Badge>
-        )}
-
-        {/* Event type badge (non-message) */}
-        {!msgConfig && (
-          <Badge variant="light" color={config.color} size="xs">
-            {config.label}
-          </Badge>
-        )}
-
-        {/* Status badge for task events */}
-        {data.status && event.type.startsWith("task-") && (
-          <Badge variant="outline" color="gray" size="xs">
-            {data.status}
-          </Badge>
-        )}
-
-        {/* Action buttons */}
-        <div className="tl-event-actions">
-          {(event.type === "agent-spawned" || event.type === "agent-crashed") && agentId && onJumpToTerminal && (
-            <Tooltip label="Open terminal">
-              <ActionIcon variant="subtle" size="xs" onClick={() => onJumpToTerminal(agentId)}>
-                <span style={{ fontSize: 11 }}>{"\u2192"} Terminal</span>
+        <div className="tl-event-left">
+          <Tooltip label={new Date(event.timestamp).toLocaleString()} position="top" withArrow>
+            <span className="tl-event-time">{formatTime(event.timestamp)}</span>
+          </Tooltip>
+          {agentColor && <span className="tl-agent-dot" style={{ background: agentColor }} />}
+          <span className="tl-event-title">{title}</span>
+        </div>
+        <div className="tl-event-right">
+          {/* Role badge for agent events */}
+          {data.role && (
+            <Badge variant="light" color={data.role === "master" ? "grape" : "blue"} size="xs"
+              styles={{ root: { textTransform: "lowercase" } }}>
+              {data.role}
+            </Badge>
+          )}
+          {/* Message type badge */}
+          {msgConfig && (
+            <Badge variant="light" color={msgConfig.color} size="xs">
+              {msgConfig.icon} {msgConfig.label}
+            </Badge>
+          )}
+          {/* Event type badge */}
+          {!msgConfig && (
+            <Badge variant="light" color={config.color} size="xs">
+              {config.label}
+            </Badge>
+          )}
+          {/* Status badge for task events */}
+          {data.status && event.type.startsWith("task-") && (
+            <Badge variant="outline" color="gray" size="xs">
+              {data.status}
+            </Badge>
+          )}
+          {/* Terminal peek button — visible on any event with an agent */}
+          {agentId && onJumpToTerminal && (
+            <Tooltip label={`Peek ${(data.name as string) || (data.agentName as string) || "agent"} terminal`} withArrow>
+              <ActionIcon variant="subtle" size="xs" className="tl-peek-btn" onClick={() => onJumpToTerminal(agentId)}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
+                </svg>
               </ActionIcon>
             </Tooltip>
           )}
           {isCrash && agentId && onRestart && (
-            <Tooltip label="Restart agent">
+            <Tooltip label="Restart agent" withArrow>
               <ActionIcon variant="subtle" size="xs" color="yellow" onClick={() => onRestart(agentId)}>
-                <span style={{ fontSize: 11 }}>Restart</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
+                </svg>
               </ActionIcon>
             </Tooltip>
           )}
           {event.type.startsWith("task-") && onJumpToTaskBoard && (
-            <Tooltip label="Go to task board">
-              <ActionIcon
-                variant="subtle"
-                size="xs"
-                onClick={() => {
-                  const taskId = data.taskId || data.id;
-                  onJumpToTaskBoard(taskId);
-                }}
-              >
-                <span style={{ fontSize: 11 }}>{"\u2192"} Task Board</span>
+            <Tooltip label="Go to task board" withArrow>
+              <ActionIcon variant="subtle" size="xs" onClick={() => { onJumpToTaskBoard(data.taskId || data.id); }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
+                </svg>
               </ActionIcon>
             </Tooltip>
           )}

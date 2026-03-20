@@ -1010,45 +1010,65 @@ textarea:focus {
   padding: 1px 6px;
 }
 
-.playbook-agent-provider {
-  font-size: 11px;
+/* Shared style for all agent row form controls */
+.playbook-agent-provider,
+.playbook-agent-model,
+.playbook-agent-cli-input {
+  font-size: 12px;
   font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-  background-color: var(--bg-secondary);
+  background-color: var(--bg-tertiary);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  padding: 3px 4px;
+  border-radius: 6px;
+  padding: 6px 10px;
+  height: 32px;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.playbook-agent-provider:focus,
+.playbook-agent-model:focus,
+.playbook-agent-cli-input:focus {
+  border-color: var(--accent-blue);
+  outline: none;
+}
+
+.playbook-agent-provider {
   cursor: pointer;
   margin-left: auto;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%238b949e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 26px;
 }
 
 .playbook-agent-model-wrapper {
   position: relative;
-  flex: 0 0 140px;
+  flex: 0 0 160px;
 }
 
 .playbook-agent-model {
   width: 100%;
-  font-size: 11px;
-  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-  box-sizing: border-box;
-  padding: 3px 6px;
 }
 
 .playbook-agent-flags-toggle {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   background: none;
   border: 1px dashed var(--border-color);
-  border-radius: 4px;
-  padding: 2px 6px;
+  border-radius: 6px;
+  padding: 4px 10px;
+  height: 32px;
   cursor: pointer;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
 }
 
 .playbook-agent-flags-toggle:hover {
-  color: var(--accent-yellow);
-  border-color: var(--accent-yellow);
+  color: var(--accent-blue);
+  border-color: var(--accent-blue);
 }
 
 .playbook-agent-cli-row {
@@ -1057,10 +1077,6 @@ textarea:focus {
 
 .playbook-agent-cli-input {
   width: 100%;
-  font-size: 11px;
-  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-  box-sizing: border-box;
-  padding: 3px 6px;
   color: var(--accent-yellow);
 }
 
@@ -1602,21 +1618,27 @@ textarea:focus {
    Scrollbar
    =========================== */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-primary);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 4px;
+  background: rgba(139, 148, 158, 0.25);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: rgba(139, 148, 158, 0.5);
+}
+
+/* Firefox thin scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 148, 158, 0.25) transparent;
 }
 
 /* ===========================
@@ -3817,31 +3839,34 @@ textarea:focus {
 }
 
 /* Timeline container */
-.tl-timeline { position: relative; padding-left: 28px; }
-.tl-timeline::before {
-  content: ''; position: absolute; left: 11px; top: 0; bottom: 0;
-  width: 2px; background: var(--border-color); border-radius: 1px;
+.tl-timeline { padding-left: 30px; padding-right: 8px; }
+.tl-timeline::before { display: none; }
+.tl-events {
+  position: relative;
+  border-left: 2px solid var(--border-color);
+  margin-left: 10px;
+  padding-left: 18px;
 }
 
 /* Event item */
 .tl-event {
-  position: relative; margin-bottom: 12px;
-  padding: 12px 16px; border-radius: 8px;
+  position: relative; margin-bottom: 6px;
+  padding: 10px 16px; border-radius: 8px;
   background: var(--bg-secondary); border: 1px solid var(--border-color);
   transition: border-color 0.15s, box-shadow 0.15s;
+  min-height: 42px; display: flex; flex-direction: column; justify-content: center;
 }
 .tl-event:hover {
   border-color: var(--text-muted);
   box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
 
-/* Bullet */
+/* Bullet — centered on the border-left line */
 .tl-event::before {
   content: ''; position: absolute;
-  left: -22px; top: 16px;
-  width: 12px; height: 12px; border-radius: 50%;
+  left: -23px; top: 50%; transform: translateY(-50%);
+  width: 8px; height: 8px; border-radius: 50%;
   background: var(--tl-bullet-color, var(--text-muted));
-  border: 2px solid var(--bg-primary);
   z-index: 1;
 }
 .tl-event.green::before { --tl-bullet-color: var(--accent-green); }
@@ -3860,15 +3885,27 @@ textarea:focus {
 
 /* Event header */
 .tl-event-header {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.tl-event-left {
+  display: flex; align-items: center; gap: 6px;
+  min-width: 0; flex: 1;
+}
+.tl-event-right {
+  display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0;
 }
 .tl-event-time {
   font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums;
-  min-width: 60px;
+  flex-shrink: 0;
 }
-.tl-event-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.tl-event-title {
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0;
+}
 .tl-event-subtitle {
-  font-size: 12px; color: var(--text-secondary); margin-top: 4px;
+  font-size: 12px; color: var(--text-secondary); margin-top: 2px;
   font-family: var(--font-mono); display: flex; align-items: center; gap: 6px;
 }
 
@@ -3895,9 +3932,18 @@ textarea:focus {
 }
 .tl-expand-btn:hover { text-decoration: underline; }
 
-/* Action buttons */
-.tl-event-actions {
-  display: flex; gap: 6px; margin-left: auto; flex-shrink: 0;
+/* Action icons: hover-only by default, but peek button always visible */
+.tl-event-right .mantine-ActionIcon-root {
+  opacity: 0; transition: opacity 0.15s;
+}
+.tl-event:hover .tl-event-right .mantine-ActionIcon-root {
+  opacity: 1;
+}
+.tl-event-right .tl-peek-btn {
+  opacity: 0.5;
+}
+.tl-event:hover .tl-event-right .tl-peek-btn {
+  opacity: 1;
 }
 
 /* Alert box (crashes) */

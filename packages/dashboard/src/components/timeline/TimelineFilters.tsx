@@ -93,13 +93,15 @@ export function TimelineFilters({
           placeholder="Search events..."
           value={search}
           onChange={(e) => onSearchChange(e.currentTarget.value)}
-          leftSection={<span style={{ fontSize: 12, color: "var(--text-muted)" }}>&#128269;</span>}
+          leftSection={<span style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1 }}>&#128269;</span>}
+          leftSectionWidth={30}
           styles={{
             root: { flex: 1, minWidth: 150 },
             input: {
               backgroundColor: "var(--bg-primary)",
               borderColor: "var(--border-color)",
               color: "var(--text-primary)",
+              paddingLeft: 30,
             },
           }}
         />

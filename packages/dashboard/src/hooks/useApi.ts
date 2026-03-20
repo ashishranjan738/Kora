@@ -198,6 +198,23 @@ export function useApi() {
       apiFetch<{ paths: string[] }>(`/suggestions/paths?limit=${limit || 10}`),
     getRecentFlags: (limit?: number) =>
       apiFetch<{ flags: string[] }>(`/suggestions/flags?limit=${limit || 10}`),
+    getRecentAgentConfigs: (limit?: number) =>
+      apiFetch<{ configs: Array<{ provider: string; model: string; useCount: number }> }>(`/suggestions/agent-configs?limit=${limit || 10}`),
+    // Personas CRUD
+    getPersonas: () =>
+      apiFetch<{ personas: Array<{ id: string; name: string; description: string; fullText: string; createdAt: string }> }>("/personas"),
+    createPersona: (data: { name: string; description: string; fullText: string }) =>
+      apiFetch<{ id: string; name: string; description: string; fullText: string }>("/personas", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    deletePersona: (id: string) =>
+      apiFetch<{ deleted: boolean }>(`/personas/${id}`, { method: "DELETE" }),
+    uploadPlaybook: (name: string, yaml: string) =>
+      apiFetch<{ id: string; name: string }>("/playbooks", {
+        method: "POST",
+        body: JSON.stringify({ yaml }),
+      }),
     broadcastRebase: (sid: string, prNumber?: number, prTitle?: string) =>
       apiFetch<{ broadcast: boolean; sentTo: number }>(`/sessions/${sid}/broadcast-rebase`, {
         method: "POST",
