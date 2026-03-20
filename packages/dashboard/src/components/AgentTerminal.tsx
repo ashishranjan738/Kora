@@ -120,20 +120,67 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height }}>
-      {/* Connection status badge */}
+      {/* Stacked status badges — top-left */}
       <div style={{
-        position: "absolute", top: 8, right: 12, zIndex: 10,
-        display: "flex", alignItems: "center", gap: 6,
-        fontSize: 12, color: connected ? "var(--accent-green)" : "var(--accent-red)",
-        pointerEvents: "none",
+        position: "absolute", top: 8, left: 12, zIndex: 10,
+        display: "flex", flexDirection: "column", gap: 4,
       }}>
-        <span style={{
-          width: 8, height: 8, borderRadius: "50%",
-          backgroundColor: connected ? "var(--accent-green)" : "var(--accent-red)",
-          display: "inline-block",
-          animation: connected ? "pulse 2s ease-in-out infinite" : "none",
-        }} />
-        {connected ? "Live" : "Reconnecting..."}
+        {/* Live connection badge */}
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 5,
+          padding: "3px 10px", borderRadius: 12, fontSize: 11, fontWeight: 500,
+          background: connected ? "rgba(63, 185, 80, 0.15)" : "rgba(248, 81, 73, 0.15)",
+          color: connected ? "var(--accent-green)" : "var(--accent-red)",
+          border: `1px solid ${connected ? "rgba(63, 185, 80, 0.3)" : "rgba(248, 81, 73, 0.3)"}`,
+          pointerEvents: "none",
+          width: "fit-content",
+        }}>
+          <span style={{
+            width: 6, height: 6, borderRadius: "50%",
+            backgroundColor: connected ? "var(--accent-green)" : "var(--accent-red)",
+            display: "inline-block",
+            animation: connected ? "pulse 2s ease-in-out infinite" : "none",
+          }} />
+          {connected ? "Live" : "Reconnecting"}
+        </div>
+
+        {/* Tail badge */}
+        {hasData && (
+          <button
+            onClick={scrolledUp ? handleResumeLiveFeed : handleToggleManualPause}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 5,
+              padding: "3px 10px", borderRadius: 12, fontSize: 11, fontWeight: 500,
+              background: isFollowing
+                ? "rgba(88, 166, 255, 0.15)"
+                : manuallyPaused
+                  ? "rgba(210, 153, 34, 0.15)"
+                  : "rgba(139, 148, 158, 0.15)",
+              color: isFollowing
+                ? "var(--accent-blue)"
+                : manuallyPaused
+                  ? "var(--accent-yellow)"
+                  : "var(--text-secondary)",
+              border: `1px solid ${isFollowing
+                ? "rgba(88, 166, 255, 0.3)"
+                : manuallyPaused
+                  ? "rgba(210, 153, 34, 0.3)"
+                  : "rgba(139, 148, 158, 0.3)"}`,
+              cursor: "pointer",
+              width: "fit-content",
+              transition: "all 0.2s ease",
+            }}
+            title={scrolledUp ? "Jump to bottom and resume tailing" : manuallyPaused ? "Resume tailing" : "Pause tailing"}
+          >
+            {scrolledUp ? (
+              <>{"\u2193"} Tail</>
+            ) : manuallyPaused ? (
+              <>{"\u23F8"} Paused</>
+            ) : (
+              <><span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "var(--accent-blue)", display: "inline-block" }} /> Tailing</>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Loading overlay — shown until first data arrives */}
@@ -177,41 +224,7 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
         transition: "opacity 0.3s ease-in",
       }} />
 
-      {/* Tail indicator / button — bottom-right of terminal */}
-      {hasData && (
-        <button
-          onClick={scrolledUp ? handleResumeLiveFeed : handleToggleManualPause}
-          style={{
-            position: "absolute",
-            bottom: 8,
-            right: 8,
-            zIndex: 15,
-            display: "flex",
-            alignItems: "center",
-            gap: 5,
-            padding: "4px 10px",
-            fontSize: 11,
-            fontWeight: 500,
-            color: isFollowing ? "var(--accent-green)" : "var(--text-primary)",
-            background: "var(--bg-tertiary)",
-            border: `1px solid ${isFollowing ? "rgba(63, 185, 80, 0.3)" : "var(--border-color)"}`,
-            borderRadius: 12,
-            cursor: "pointer",
-            backdropFilter: "blur(4px)",
-            transition: "all 0.2s ease",
-            opacity: isFollowing ? 0.7 : 1,
-          }}
-          title={scrolledUp ? "Jump to bottom and resume tailing" : manuallyPaused ? "Resume tailing" : "Pause tailing"}
-        >
-          {scrolledUp ? (
-            <>{"\u2193"} Tail</>
-          ) : manuallyPaused ? (
-            <>{"\u23F8"} Paused</>
-          ) : (
-            <><span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "var(--accent-green)", display: "inline-block" }} /> Tailing</>
-          )}
-        </button>
-      )}
+      {/* Tail indicator moved to stacked badges above */}
     </div>
   );
 });
