@@ -35,6 +35,7 @@
     "@mantine/core": "^8.3.18",
     "@mantine/dates": "^8.3.18",
     "@mantine/hooks": "^8.3.18",
+    "@mantine/notifications": "^8.3.18",
     "@monaco-editor/react": "^4.7.0",
     "@types/dompurify": "^3.0.5",
     "@xterm/addon-attach": "^0.12.0",
