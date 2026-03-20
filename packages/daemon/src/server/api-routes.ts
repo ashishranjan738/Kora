@@ -292,6 +292,7 @@ export function createApiRouter(deps: {
         defaultProvider: body.defaultProvider,
         messagingMode: body.messagingMode,
         worktreeMode: body.worktreeMode,
+        workflowStates: body.workflowStates,
       });
 
       // Record the working directory for autocomplete suggestions
@@ -743,6 +744,7 @@ export function createApiRouter(deps: {
         runtimeDir: session.runtimeDir,
         peers,
         projectPath: session.config.projectPath,
+        workflowStates: session.config.workflowStates,
       });
 
       const agentState = await am.spawnAgent({
@@ -1703,6 +1705,18 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ── Workflow States ──────────────────────────────────────
+
+  router.get("/sessions/:sid/workflow-states", (req: Request, res: Response) => {
+    try {
+      const session = sessionManager.getSession(String(req.params.sid));
+      if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+      const { DEFAULT_WORKFLOW_STATES } = require("@kora/shared");
+      const states = session.config.workflowStates || DEFAULT_WORKFLOW_STATES;
+      res.json({ states, frozen: true });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
   // ── Stale Task Watchdog ──────────────────────────────────
 
   router.get("/sessions/:sid/tasks/:tid/nudges", (req: Request, res: Response) => {
@@ -2073,7 +2087,9 @@ export function createApiRouter(deps: {
         res.status(400).json({ error: "title must be a non-empty string" });
         return;
       }
-      const validStatuses = ["pending", "in-progress", "review", "done"];
+      // Validate status against session's workflow states (or defaults)
+      const sessionForValidation = sessionManager.getSession(sid);
+      const validStatuses = sessionForValidation?.config.workflowStates?.map((s: any) => s.id) || ["pending", "in-progress", "review", "done"];
       if (body.status !== undefined && !validStatuses.includes(body.status)) {
         res.status(400).json({ error: `status must be one of: ${validStatuses.join(", ")}` });
         return;
@@ -2764,6 +2780,7 @@ export function createApiRouter(deps: {
           runtimeDir: session.runtimeDir,
           peers,
           projectPath: session.config.projectPath,
+          workflowStates: session.config.workflowStates,
         });
 
         // Use the task param as initialTask for the master agent only

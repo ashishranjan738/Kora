@@ -47,7 +47,7 @@ const ALL_TOOLS = [
   "list_tasks", "get_task", "update_task", "create_task",
   "spawn_agent", "remove_agent", "peek_agent", "nudge_agent",
   "prepare_pr", "report_idle", "request_task",
-  "list_personas", "save_persona",
+  "list_personas", "save_persona", "get_workflow_states",
 ] as const;
 
 /** Tools allowed per role. Master gets everything, workers get subsets. */
@@ -57,7 +57,7 @@ const ROLE_TOOL_ACCESS: Record<string, Set<string>> = {
     "send_message", "check_messages", "list_agents", "broadcast",
     "list_tasks", "get_task", "update_task", "create_task",
     "prepare_pr", "report_idle", "request_task",
-    "list_personas", "save_persona", // All agents can browse + save to the persona library
+    "list_personas", "save_persona", "get_workflow_states", // All agents can browse personas + see workflow
   ]),
   // Deny: spawn_agent, remove_agent, peek_agent, nudge_agent (master-only)
 };
@@ -624,6 +624,17 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: "get_workflow_states",
+    description:
+      "Get the workflow states (task pipeline) configured for this session. " +
+      "Shows available statuses, their order, and valid transitions. " +
+      "Use this to know which status values you can set on tasks.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+    },
+  },
+  {
     name: "remove_agent",
     description: "Remove/stop an agent from the session.",
     inputSchema: {
@@ -1125,6 +1136,56 @@ async function handleToolCall(
         }
       }
 
+      // Workflow transition enforcement: validate status change against pipeline
+      if (status) {
+        try {
+          const sessionRes = (await apiCall("GET", `/api/v1/sessions/${SESSION_ID}`)) as any;
+          const workflowStates = sessionRes?.config?.workflowStates || sessionRes?.workflowStates;
+          if (workflowStates && Array.isArray(workflowStates)) {
+            // Get current task to check current status
+            const currentTask = (await apiCall("GET", `/api/v1/sessions/${SESSION_ID}/tasks/${taskId}`)) as any;
+            const currentStatus = currentTask?.status;
+            if (currentStatus && currentStatus !== status) {
+              const currentState = workflowStates.find((s: any) => s.id === currentStatus);
+              if (currentState?.transitions?.length) {
+                // Build effective transitions: include direct transitions + skip through skippable states
+                const effectiveTransitions = new Set<string>(currentState.transitions);
+                for (const t of currentState.transitions) {
+                  const targetState = workflowStates.find((s: any) => s.id === t);
+                  // If the target is skippable, also allow transitioning to its targets
+                  if (targetState?.skippable && targetState.transitions?.length) {
+                    for (const skipTarget of targetState.transitions) {
+                      effectiveTransitions.add(skipTarget);
+                    }
+                  }
+                }
+
+                if (!effectiveTransitions.has(status)) {
+                  const validStates = [...effectiveTransitions].map((t: string) => {
+                    const s = workflowStates.find((ws: any) => ws.id === t);
+                    return s ? `"${s.label}" (${t})` : `"${t}"`;
+                  }).join(", ");
+                  return {
+                    success: false,
+                    error: `Invalid transition: "${currentStatus}" cannot move directly to "${status}". Valid next states: ${validStates}. Follow the pipeline: ${workflowStates.map((s: any) => s.id).join(" → ")}`,
+                  };
+                }
+              }
+            }
+            // Also validate the status is a known workflow state
+            const validIds = workflowStates.map((s: any) => s.id);
+            if (!validIds.includes(status)) {
+              return {
+                success: false,
+                error: `Unknown status "${status}". Available states: ${validIds.join(", ")}`,
+              };
+            }
+          }
+        } catch {
+          // Non-fatal: if we can't fetch session config, skip validation
+        }
+      }
+
       // Build update payload with all editable fields
       const updatePayload: Record<string, unknown> = {};
       if (status) updatePayload.status = status;
@@ -1244,6 +1305,39 @@ async function handleToolCall(
         ...(saved as any),
         hint: "Persona saved to the global library. It can now be referenced by ID in spawn_agent's personaId parameter, and will appear in the dashboard's Persona Library.",
       };
+    }
+
+    case "get_workflow_states": {
+      try {
+        const sessionRes = (await apiCall("GET", `/api/v1/sessions/${SESSION_ID}`)) as any;
+        const states = sessionRes?.config?.workflowStates || sessionRes?.workflowStates;
+        if (states && Array.isArray(states) && states.length > 0) {
+          return {
+            states: states.map((s: any) => ({
+              id: s.id,
+              label: s.label,
+              category: s.category,
+              transitions: s.transitions || [],
+              skippable: s.skippable ?? false,
+            })),
+            pipeline: states.map((s: any) => s.id).join(" → "),
+            hint: "Use these state IDs when calling update_task. If transitions are defined, only valid next states are allowed.",
+          };
+        }
+        // Fallback: default states
+        return {
+          states: [
+            { id: "pending", label: "Pending", category: "not-started", transitions: [] },
+            { id: "in-progress", label: "In Progress", category: "active", transitions: [] },
+            { id: "review", label: "Review", category: "active", transitions: [] },
+            { id: "done", label: "Done", category: "closed", transitions: [] },
+          ],
+          pipeline: "pending → in-progress → review → done",
+          hint: "Default workflow. No transition enforcement.",
+        };
+      } catch {
+        return { error: "Could not fetch workflow states" };
+      }
     }
 
     case "remove_agent": {

@@ -28,6 +28,8 @@ export interface PersonaBuildOptions {
   projectPath?: string;
   /** Pre-loaded context file contents (if already discovered). Overrides projectPath discovery. */
   contextFiles?: Array<{ name: string; content: string }>;
+  /** Workflow states configured for the session (injected into persona so agents know the pipeline) */
+  workflowStates?: import("@kora/shared").WorkflowState[];
 }
 
 /**
@@ -107,7 +109,56 @@ export function buildPersona(options: PersonaBuildOptions): string {
     sections.push(buildWorkerInstructions());
   }
 
+  // Workflow pipeline (if custom states configured)
+  if (options.workflowStates && options.workflowStates.length > 0) {
+    sections.push(buildWorkflowPipelineInstructions(options.workflowStates));
+  }
+
   return sections.join("\n\n---\n\n");
+}
+
+function buildWorkflowPipelineInstructions(states: import("@kora/shared").WorkflowState[]): string {
+  const stateIds = states.map(s => s.id);
+  const pipeline = stateIds.join(" → ");
+
+  const lines = [
+    "## Task Pipeline",
+    "",
+    `Tasks in this project follow this workflow: **${pipeline}**`,
+    "",
+    "### Available States",
+    ...states.map(s => {
+      const transitionInfo = s.transitions?.length
+        ? ` → can move to: ${s.transitions.join(", ")}`
+        : "";
+      return `- **${s.label}** (\`${s.id}\`)${transitionInfo}`;
+    }),
+    "",
+    "### Rules",
+  ];
+
+  // Build transition rules
+  const hasTransitions = states.some(s => s.transitions?.length);
+  if (hasTransitions) {
+    lines.push("This pipeline has **enforced transitions**. You MUST follow the allowed transitions:");
+    for (const s of states) {
+      if (s.transitions?.length) {
+        lines.push(`- From \`${s.id}\`: can only move to ${s.transitions.map(t => `\`${t}\``).join(" or ")}`);
+      }
+    }
+    lines.push("- The `update_task` tool will REJECT invalid transitions with a helpful error.");
+  } else {
+    lines.push("- Tasks can move freely between any states.");
+  }
+
+  lines.push(
+    "- When you finish implementation, set status to the next state in the pipeline (NOT directly to the final state).",
+    "- Each state must be completed before moving forward.",
+    `- Use \`update_task(taskId, { status: \"<state_id>\" })\` to change status.`,
+    `- Use \`get_workflow_states()\` to see available states and transitions at any time.`,
+  );
+
+  return lines.join("\n");
 }
 
 function buildTeamSection(

@@ -27,6 +27,8 @@ export interface SessionConfig {
   worktreeMode?: WorktreeMode;
   /** Webhook configurations for event notifications */
   webhooks?: WebhookConfig[];
+  /** Configurable workflow states for the task pipeline. Frozen at session creation. */
+  workflowStates?: WorkflowState[];
 }
 
 export interface WebhookConfig {
@@ -294,7 +296,28 @@ export type TaskStatus =
   | "in-progress"
   | "review"
   | "done"
-  | "failed";
+  | "failed"
+  | string; // Allow custom workflow states
+
+/** Configurable workflow state definition */
+export interface WorkflowState {
+  id: string;        // e.g. "e2e-testing"
+  label: string;     // e.g. "E2E Testing"
+  color: string;     // Hex color for UI
+  category: "not-started" | "active" | "closed";
+  /** Valid next states from this state. If empty/undefined, free movement. */
+  transitions?: string[];
+  /** If true, this state can be skipped in the pipeline (e.g. not every task needs e2e testing) */
+  skippable?: boolean;
+}
+
+/** Default workflow states for new sessions */
+export const DEFAULT_WORKFLOW_STATES: WorkflowState[] = [
+  { id: "pending",     label: "Pending",     color: "#6b7280", category: "not-started" },
+  { id: "in-progress", label: "In Progress", color: "#3b82f6", category: "active" },
+  { id: "review",      label: "Review",      color: "#f59e0b", category: "active" },
+  { id: "done",        label: "Done",        color: "#22c55e", category: "closed" },
+];
 
 // --- Events ---
 
