@@ -1703,6 +1703,71 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ── Stale Task Watchdog ──────────────────────────────────
+
+  router.get("/sessions/:sid/tasks/:tid/nudges", (req: Request, res: Response) => {
+    try {
+      const { sid, tid } = req.params;
+      const orch = orchestrators.get(String(sid));
+      if (!orch) { res.status(404).json({ error: `Session "${sid}" not found` }); return; }
+      const nudges = orch.database.getNudgeHistory(String(tid));
+      res.json({ nudges });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.get("/sessions/:sid/nudges", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const limit = parseInt(req.query.limit as string) || 50;
+      const orch = orchestrators.get(sid);
+      if (!orch) { res.status(404).json({ error: `Session "${sid}" not found` }); return; }
+      const nudges = orch.database.getSessionNudgeHistory(sid, limit);
+      res.json({ nudges });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.get("/sessions/:sid/nudge-policies", (req: Request, res: Response) => {
+    try {
+      const orch = orchestrators.get(String(req.params.sid));
+      if (!orch) { res.status(404).json({ error: "Session not found" }); return; }
+      res.json({ policies: orch.staleTaskWatchdog.getPolicies() });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.put("/sessions/:sid/nudge-policies", (req: Request, res: Response) => {
+    try {
+      const orch = orchestrators.get(String(req.params.sid));
+      if (!orch) { res.status(404).json({ error: "Session not found" }); return; }
+      orch.staleTaskWatchdog.updatePolicies(req.body.policies || {});
+      res.json({ updated: true, policies: orch.staleTaskWatchdog.getPolicies() });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.post("/sessions/:sid/tasks/:tid/nudge", async (req: Request, res: Response) => {
+    try {
+      const { sid, tid } = req.params;
+      const orch = orchestrators.get(String(sid));
+      if (!orch) { res.status(404).json({ error: "Session not found" }); return; }
+      const task = orch.database.getTask(String(tid));
+      if (!task) { res.status(404).json({ error: "Task not found" }); return; }
+      if (task.assigned_to) {
+        const agent = orch.agentManager.getAgent(task.assigned_to);
+        if (agent && agent.status === "running") {
+          await orch.agentManager.sendMessage(task.assigned_to,
+            `\x1b[1;33m[Manual Nudge] Task "${task.title}" (${task.status}) needs your attention.\x1b[0m`);
+        }
+      }
+      const { randomUUID } = await import("crypto");
+      orch.database.insertNudge({
+        id: randomUUID(), taskId: String(tid), sessionId: String(sid),
+        statusAtNudge: task.status, targetAgentId: task.assigned_to,
+        targetType: "manual", nudgeCount: orch.database.getNudgeCount(String(tid), task.status) + 1,
+        isEscalation: false, message: "Manual nudge from dashboard",
+      });
+      res.json({ success: true, nudgedAgent: task.assigned_to });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
   // ── Orchestrator Blocking ──────────────────────────────────
 
   // GET blocking state for an agent

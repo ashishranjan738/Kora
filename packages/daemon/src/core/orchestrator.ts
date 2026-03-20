@@ -28,6 +28,7 @@ import { saveAgentStates, loadAgentStates } from "./state-persistence.js";
 import fs from "fs";
 import { HoldptyController } from "./holdpty-controller.js";
 import { logger } from "./logger.js";
+import { StaleTaskWatchdog } from "./stale-task-watchdog.js";
 import { PatternDetector } from "./orchestrator-blocking/detection/pattern-detector.js";
 import { OrchestratorStateMachine } from "./orchestrator-blocking/state-machine.js";
 import { OrchestratorState } from "./orchestrator-blocking/types.js";
@@ -64,6 +65,9 @@ export class Orchestrator extends EventEmitter {
   private blockingStateMachines = new Map<string, OrchestratorStateMachine>();
   private blockingBuffers = new Map<string, Array<{ from: string; to: string; message: string; messageType?: string; timestamp: string }>>();
   private _replayingBuffer = false; // Skip blocking checks during buffer replay
+
+  // Stale task watchdog
+  public staleTaskWatchdog: StaleTaskWatchdog;
 
   constructor(private config: OrchestratorConfig) {
     super();
@@ -121,6 +125,16 @@ export class Orchestrator extends EventEmitter {
 
     // Wire delivery tracking (Tier 3 event routing)
     this.messageQueue.setDeliveryTracking(this.database, config.sessionId);
+
+    this.staleTaskWatchdog = new StaleTaskWatchdog(
+      config.sessionId,
+      this.database,
+      this.agentManager,
+      this.eventLog,
+    );
+    // Forward watchdog events to orchestrator for WebSocket broadcast
+    this.staleTaskWatchdog.on("nudge", (data) => this.emit("task-nudge", data));
+    this.staleTaskWatchdog.on("batch-nudge", (data) => this.emit("task-batch-nudge", data));
 
     this.wireEvents();
     this.startIdleMonitoring();
@@ -914,6 +928,7 @@ export class Orchestrator extends EventEmitter {
     this.messageBus.startWatching();
     this.controlPlane.startWatching();
     this.messageQueue.start();
+    this.staleTaskWatchdog.start();
 
     // Start periodic log rotation (every 20 seconds — agents can produce
     // massive output during npm install / builds that exceeds 5MB between checks)
@@ -933,6 +948,7 @@ export class Orchestrator extends EventEmitter {
   /** Stop the orchestrator — persists state before stopping */
   async stop(): Promise<void> {
     this.usageMonitor.stopAll();
+    this.staleTaskWatchdog.stop();
     this.autoRelay.stopAll();
     this.messageQueue.stop();
 
