@@ -166,7 +166,7 @@ async function readSqliteMessages(): Promise<Array<{ id: string; from: string; c
 
       return response.messages.map((m: any) => ({
         id: m.id,
-        from: m.fromAgentId || 'unknown',
+        from: m.fromName || m.fromAgentId || 'system',
         content: m.content,
         timestamp: new Date(m.createdAt).toISOString(),
       }));
@@ -856,8 +856,11 @@ async function handleToolCall(
             const filePath = nodePath.join(inboxDir, file);
             const content = fs.readFileSync(filePath, "utf-8");
             const timestamp = file.split("-")[0];
-            const senderMatch = content.match(/\[(?:Message|Task|DONE|Question|Broadcast|System)[^\]]*from (.+?)\]/);
-            const from = senderMatch?.[1] || "unknown";
+            // Strip ANSI codes before matching sender
+            const cleanContent = content.replace(/\x1b\[[0-9;]*m/g, "");
+            const senderMatch = cleanContent.match(/\[(?:Message|Task|DONE|Question|Broadcast|System)[^\]]*from (.+?)\]/)
+              || cleanContent.match(/\[From (.+?)\]/);
+            const from = senderMatch?.[1] || "system";
             inboxMessages.push({ from, content, timestamp });
 
             // Move to processed

@@ -52,6 +52,31 @@ export function classifyPriority(message: string): MessagePriority {
   return "normal";
 }
 
+/** Extract sender name from a message string, handling various formats.
+ *  Strips ANSI escape codes before matching.
+ */
+function extractSenderName(message: string, fromAgentId?: string): string {
+  // Strip ANSI escape codes for cleaner matching
+  const clean = message.replace(/\x1b\[[0-9;]*m/g, "");
+
+  // Format: [Message from AgentName]: content
+  const match1 = clean.match(/\[(?:Message|Task|DONE|Question|Broadcast|System)[^\]]*from (.+?)\]/);
+  if (match1) return match1[1];
+
+  // Format: [From agent-id]: content (broadcast via MCP)
+  const match2 = clean.match(/\[From (.+?)\]/);
+  if (match2) return match2[1];
+
+  // Use fromAgentId if available (strip UUID suffix for readability)
+  if (fromAgentId && fromAgentId !== 'system') {
+    // Convert "architect-abc123" to "Architect" (capitalize, strip suffix)
+    const name = fromAgentId.replace(/-[a-f0-9]{6,}$/, "");
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+
+  return "teammate";
+}
+
 export class MessageQueue {
   private queues = new Map<string, QueuedMessage[]>();
   private deliveryInterval: ReturnType<typeof setTimeout> | null = null;
@@ -578,9 +603,7 @@ export class MessageQueue {
   /** MCP mode: write full message to inbox file, send short tmux notification */
   private async deliverViaMcp(msg: QueuedMessage): Promise<void> {
     const messageId = crypto.randomUUID();
-    const senderName = msg.message.match(/\[(?:Message|Task|DONE|Question|Broadcast|System) from (.+?)\]/)?.[1]
-      || msg.message.match(/\[Message from (.+?)\]/)?.[1]
-      || "teammate";
+    const senderName = extractSenderName(msg.message, msg.fromAgentId);
 
     // OPTIMIZATION: Skip persistent storage for broadcasts (transient notifications)
     const isBroadcast = msg.message.includes("[Broadcast]");
@@ -614,15 +637,22 @@ export class MessageQueue {
       await fs.writeFile(path.join(inboxDir, filename), msg.message, "utf-8");
     }
 
-    // Send short notification to tmux (always, even for broadcasts)
-    const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
-    await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
+    // Send tmux notification
+    if (isBroadcast) {
+      // Broadcasts are transient — NOT stored for check_messages.
+      // Send content directly to avoid phantom notifications.
+      const cleanMsg = msg.message.replace(/\x1b\[[0-9;]*m/g, "").slice(0, 500);
+      await this.tmux.sendKeys(msg.tmuxSession, cleanMsg, { literal: true });
+    } else {
+      const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
+      await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
+    }
   }
 
   /** MCP pending mode: write to mcp-pending store + send tmux notification */
   private async deliverViaMcpPending(msg: QueuedMessage): Promise<void> {
     const messageId = crypto.randomUUID();
-    const senderName = msg.message.match(/\[(?:Message|Task|DONE|Question|Broadcast|System)[^\]]*from (.+?)\]/)?.[1] || "unknown";
+    const senderName = extractSenderName(msg.message, msg.fromAgentId);
 
     // OPTIMIZATION: Skip persistent storage for broadcasts (transient notifications)
     const isBroadcast = msg.message.includes("[Broadcast]");
@@ -661,9 +691,17 @@ export class MessageQueue {
       await fs.writeFile(path.join(pendingDir, filename), JSON.stringify(payload), "utf-8");
     }
 
-    // 2. Send tmux notification (always, even for broadcasts)
-    const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
-    await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
+    // 2. Send tmux notification
+    if (isBroadcast) {
+      // Broadcasts are transient — NOT stored for check_messages.
+      // Send the broadcast content directly instead of "use check_messages"
+      // to avoid phantom notifications (agent checks inbox but finds nothing).
+      const cleanMsg = msg.message.replace(/\x1b\[[0-9;]*m/g, "").slice(0, 500);
+      await this.tmux.sendKeys(msg.tmuxSession, cleanMsg, { literal: true });
+    } else {
+      const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
+      await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
+    }
   }
 
   /** Terminal mode: send directly via tmux with 500 char limit */

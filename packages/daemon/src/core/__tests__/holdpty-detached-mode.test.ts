@@ -52,6 +52,7 @@ const mockProtocol = {
     HELLO_ACK: 1,
     DATA_OUT: 2,
     REPLAY_END: 3,
+    ERROR: 5,
   },
   encodeHello: vi.fn().mockReturnValue(Buffer.from([1, 0, 0, 0, 0])),
   encodeDataIn: vi.fn((buf: Buffer) => Buffer.concat([Buffer.from([4, 0, 0, 0, buf.length]), buf])),
