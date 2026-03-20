@@ -5,9 +5,9 @@ import {
   Stack,
   Group,
   Text,
-  List,
   Loader,
   Alert,
+  ThemeIcon,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 
@@ -52,24 +52,48 @@ export function RestartAllDialog({
     },
     body: { backgroundColor: "var(--bg-secondary)" },
     content: { backgroundColor: "var(--bg-secondary)" },
-    title: { color: "var(--text-primary)", fontWeight: 600 as const, fontSize: 18 },
+    title: {
+      color: "var(--text-primary)",
+      fontWeight: 600 as const,
+      fontSize: 18,
+    },
     close: { color: "var(--text-secondary)" },
   };
 
   // Success state
   if (result && !error) {
     return (
-      <Modal opened onClose={onCancel} title="Restart All Agents" size="sm" fullScreen={isMobile} centered styles={modalStyles} closeOnClickOutside={false}>
+      <Modal
+        opened
+        onClose={onCancel}
+        title="Restart All Agents"
+        size="sm"
+        fullScreen={isMobile}
+        centered
+        styles={modalStyles}
+        closeOnClickOutside={false}
+      >
         <Stack align="center" py="xl" gap="md">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="48"
+            height="48"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--accent-green)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
             <polyline points="22 4 12 14.01 9 11.01" />
           </svg>
           <Text fw={600} size="md" c="var(--text-primary)">
-            Restarted {result.restarted} agent{result.restarted !== 1 ? "s" : ""} successfully
+            Restarted {result.restarted} agent
+            {result.restarted !== 1 ? "s" : ""} successfully
           </Text>
           <Text size="xs" c="var(--text-muted)">
-            Agents are initializing with fresh sessions...
+            Agents are restarting with the same identities and fresh
+            sessions...
           </Text>
         </Stack>
       </Modal>
@@ -79,9 +103,26 @@ export function RestartAllDialog({
   // Error state
   if (error) {
     return (
-      <Modal opened onClose={onCancel} title="Restart All Agents" size="sm" fullScreen={isMobile} centered styles={modalStyles}>
+      <Modal
+        opened
+        onClose={onCancel}
+        title="Restart All Agents"
+        size="sm"
+        fullScreen={isMobile}
+        centered
+        styles={modalStyles}
+      >
         <Stack align="center" py="xl" gap="md">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent-red)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="48"
+            height="48"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--accent-red)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <circle cx="12" cy="12" r="10" />
             <line x1="15" y1="9" x2="9" y2="15" />
             <line x1="9" y1="9" x2="15" y2="15" />
@@ -93,8 +134,17 @@ export function RestartAllDialog({
             {error}
           </Text>
           <Group justify="flex-end" w="100%" mt="md">
-            <Button variant="default" onClick={onCancel}
-              styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)", minHeight: 44 } }}
+            <Button
+              variant="default"
+              onClick={onCancel}
+              styles={{
+                root: {
+                  backgroundColor: "var(--bg-tertiary)",
+                  borderColor: "var(--border-color)",
+                  color: "var(--text-primary)",
+                  minHeight: 44,
+                },
+              }}
             >
               Close
             </Button>
@@ -107,14 +157,25 @@ export function RestartAllDialog({
   // Restarting state
   if (restarting) {
     return (
-      <Modal opened onClose={() => {}} title="Restart All Agents" size="sm" fullScreen={isMobile} centered styles={modalStyles} closeOnClickOutside={false} withCloseButton={false}>
+      <Modal
+        opened
+        onClose={() => {}}
+        title="Restart All Agents"
+        size="sm"
+        fullScreen={isMobile}
+        centered
+        styles={modalStyles}
+        closeOnClickOutside={false}
+        withCloseButton={false}
+      >
         <Stack align="center" py="xl" gap="md">
-          <Loader size="lg" color="var(--accent-yellow)" />
+          <Loader size="lg" color="var(--accent-blue)" />
           <Text fw={600} size="md" c="var(--text-primary)">
             Restarting {agentCount} agent{agentCount !== 1 ? "s" : ""}...
           </Text>
           <Text size="xs" c="var(--text-muted)" ta="center" maw={360}>
-            Killing old sessions and spawning fresh agents with the latest MCP and persona configuration.
+            Restarting agents with the same identities and latest MCP/persona
+            configuration.
           </Text>
         </Stack>
       </Modal>
@@ -123,41 +184,87 @@ export function RestartAllDialog({
 
   // Confirmation state
   return (
-    <Modal opened onClose={onCancel} title="Restart All Agents" size="md" fullScreen={isMobile} centered styles={modalStyles}>
+    <Modal
+      opened
+      onClose={onCancel}
+      title="Restart All Agents"
+      size="md"
+      fullScreen={isMobile}
+      centered
+      styles={modalStyles}
+    >
       <Stack gap="md">
-        <Text size="xs" c="var(--text-muted)">
-          {agentCount} agent{agentCount !== 1 ? "s" : ""} currently running
+        <Text size="sm" c="var(--text-secondary)" lh={1.5}>
+          Restart all {agentCount} agent{agentCount !== 1 ? "s" : ""} with
+          fresh terminal sessions. Same identity, same code.
         </Text>
 
         <Alert
-          color="yellow"
           variant="light"
+          color="blue"
           icon={
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <ThemeIcon variant="light" color="blue" size="sm" radius="xl">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+            </ThemeIcon>
+          }
+        >
+          <Text size="xs" fw={500}>
+            Preserves: agent IDs, git worktrees, task assignments, message
+            inboxes
+          </Text>
+        </Alert>
+
+        <Alert
+          variant="light"
+          color="yellow"
+          icon={
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
               <line x1="12" y1="9" x2="12" y2="13" />
               <line x1="12" y1="17" x2="12.01" y2="17" />
             </svg>
           }
         >
-          This action will:
+          <Text size="xs">
+            Agents will lose their current conversation context (fresh start).
+          </Text>
         </Alert>
 
-        <List size="sm" c="var(--text-secondary)" spacing="xs">
-          <List.Item>
-            Kill all {agentCount} running agent{agentCount !== 1 ? "s" : ""} and their tmux sessions
-          </List.Item>
-          <List.Item>Spawn fresh sessions with the latest MCP and persona config</List.Item>
-          <List.Item>Agents will lose their current conversation context</List.Item>
-        </List>
-
-        <Text size="xs" c="var(--accent-green)" fs="italic">
-          Git worktrees and file changes made by agents will be preserved.
-        </Text>
-
         <Group justify="flex-end" mt="md">
-          <Button ref={cancelRef} variant="default" onClick={onCancel}
-            styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)", minHeight: 44 } }}
+          <Button
+            ref={cancelRef}
+            variant="default"
+            onClick={onCancel}
+            styles={{
+              root: {
+                backgroundColor: "var(--bg-tertiary)",
+                borderColor: "var(--border-color)",
+                color: "var(--text-primary)",
+                minHeight: 44,
+              },
+            }}
           >
             Cancel
           </Button>
@@ -165,9 +272,8 @@ export function RestartAllDialog({
             onClick={onConfirm}
             styles={{
               root: {
-                backgroundColor: "var(--accent-yellow)",
-                color: "#0d1117",
-                borderColor: "var(--accent-yellow)",
+                backgroundColor: "var(--accent-blue)",
+                borderColor: "var(--accent-blue)",
                 fontWeight: 600,
                 minHeight: 44,
               },
