@@ -92,7 +92,15 @@ export function SessionDetail() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabId>(getInitialTab);
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
-  const [showPlaybookLauncher, setShowPlaybookLauncher] = useState(false);
+  // Playbook launcher state — at page level so dialog works from any tab
+  const [showPlaybookDialog, setShowPlaybookDialog] = useState(false);
+  const [playbookNames, setPlaybookNames] = useState<string[]>([]);
+  const [playbookDetails, setPlaybookDetails] = useState<Record<string, any>>({});
+  const [selectedPlaybookName, setSelectedPlaybookName] = useState<string | null>(null);
+  const [playbookTask, setPlaybookTask] = useState("");
+  const [launchingPlaybook, setLaunchingPlaybook] = useState(false);
+  const [loadingPlaybooks, setLoadingPlaybooks] = useState(false);
+  const [playbookError, setPlaybookError] = useState<string | null>(null);
   const [replaceAgentId, setReplaceAgentId] = useState<string | null>(null);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [sendingTo, setSendingTo] = useState<string | null>(null);
@@ -337,6 +345,67 @@ export function SessionDetail() {
     }
   }
 
+  const openPlaybookDialog = useCallback(async () => {
+    setShowPlaybookDialog(true);
+    setLoadingPlaybooks(true);
+    setPlaybookError(null);
+    try {
+      const data = await api.getPlaybooks();
+      const names = data.playbooks || [];
+      setPlaybookNames(names);
+      const details: Record<string, any> = {};
+      for (const name of names) {
+        try {
+          details[name] = await api.getPlaybook(name);
+        } catch {
+          // Individual playbook detail fetch failed — skip silently, list still shows
+        }
+      }
+      setPlaybookDetails(details);
+    } catch (err: any) {
+      console.error("Failed to load playbooks:", err);
+      setPlaybookError(err?.message || "Failed to load playbooks. Check daemon connection.");
+    } finally {
+      setLoadingPlaybooks(false);
+    }
+  }, [api]);
+
+  async function handleLaunchPlaybook() {
+    if (!selectedPlaybookName) return;
+    setLaunchingPlaybook(true);
+    try {
+      try {
+        await api.launchPlaybook(sessionId!, selectedPlaybookName, playbookTask || undefined);
+      } catch {
+        const pb = playbookDetails[selectedPlaybookName];
+        if (pb?.agents) {
+          for (const agent of pb.agents) {
+            await api.spawnAgent(sessionId!, {
+              name: agent.name,
+              role: agent.role || "worker",
+              provider: agent.provider || "claude-code",
+              model: agent.model,
+              persona: agent.persona,
+              initialTask: playbookTask || agent.initialTask,
+              channels: agent.channels,
+              extraCliArgs: agent.extraCliArgs,
+            });
+          }
+        }
+      }
+      setShowPlaybookDialog(false);
+      setSelectedPlaybookName(null);
+      setPlaybookTask("");
+      setPlaybookError(null);
+      loadData();
+    } catch (err: any) {
+      console.error("Failed to launch playbook:", err);
+      setPlaybookError(err?.message || "Failed to launch playbook. Please try again.");
+    } finally {
+      setLaunchingPlaybook(false);
+    }
+  }
+
   function getStatusBadge(status: string): string {
     const map: Record<string, string> = {
       running: "badge-green",
@@ -439,7 +508,7 @@ export function SessionDetail() {
             &#10133; Add Agent
           </button>
           <button
-            onClick={() => setShowPlaybookLauncher(true)}
+            onClick={openPlaybookDialog}
           >
             &#128640; Launch Playbook
           </button>
@@ -701,8 +770,7 @@ export function SessionDetail() {
           getStatusDotClass={getStatusDotClass}
           getRoleBadgeClass={getRoleBadgeClass}
           getRoleCardClass={getRoleCardClass}
-          showPlaybookLauncher={showPlaybookLauncher}
-          onClosePlaybookLauncher={() => setShowPlaybookLauncher(false)}
+          openPlaybookDialog={openPlaybookDialog}
           getPendingForAgent={getPendingForAgent}
           approve={approve}
           reject={reject}
@@ -857,6 +925,127 @@ export function SessionDetail() {
         onClose={() => setShowReport(false)}
       />
 
+      {/* Playbook Dialog — at page level so it works from any tab */}
+      <Modal
+        opened={showPlaybookDialog}
+        onClose={() => {
+          setShowPlaybookDialog(false);
+          setSelectedPlaybookName(null);
+          setPlaybookTask("");
+        }}
+        title="Launch Playbook"
+        size="md"
+        centered
+        styles={{
+          header: { backgroundColor: "var(--bg-secondary)", borderBottom: "1px solid var(--border-color)" },
+          body: { backgroundColor: "var(--bg-secondary)" },
+          content: { backgroundColor: "var(--bg-secondary)" },
+          title: { color: "var(--text-primary)", fontWeight: 600, fontSize: 18 },
+          close: { color: "var(--text-secondary)" },
+        }}
+      >
+        <Stack gap="md">
+          {playbookError && (
+            <Paper p="sm" style={{ backgroundColor: "rgba(248,81,73,0.1)", border: "1px solid var(--accent-red)", borderRadius: 6 }}>
+              <Text size="sm" c="var(--accent-red)">{playbookError}</Text>
+            </Paper>
+          )}
+          {loadingPlaybooks ? (
+            <Stack align="center" py="xl">
+              <Loader size="sm" color="blue" />
+              <Text size="sm" c="dimmed">Loading playbooks...</Text>
+            </Stack>
+          ) : playbookNames.length === 0 ? (
+            <Stack align="center" py="xl">
+              <Text size="sm" c="dimmed">No playbooks found.</Text>
+              <Text size="xs" c="dimmed">Create playbooks in ~/.kora/playbooks/ or ~/.kora-dev/playbooks/</Text>
+            </Stack>
+          ) : (
+            <>
+              <Text size="sm" c="dimmed">Select a playbook to launch into this session:</Text>
+              <Stack gap="xs">
+                {playbookNames.map((name) => {
+                  const pb = playbookDetails[name];
+                  const isSelected = selectedPlaybookName === name;
+                  return (
+                    <Paper
+                      key={name}
+                      p="sm"
+                      withBorder
+                      style={{
+                        cursor: "pointer",
+                        borderColor: isSelected ? "var(--accent-blue)" : "var(--border-color)",
+                        backgroundColor: isSelected ? "rgba(88,166,255,0.08)" : "var(--bg-primary)",
+                        transition: "border-color 0.15s, background-color 0.15s",
+                      }}
+                      onClick={() => setSelectedPlaybookName(name)}
+                    >
+                      <Group justify="space-between" align="flex-start">
+                        <div>
+                          <Text fw={600} size="sm" c="var(--text-primary)">{name}</Text>
+                          {pb?.description && (
+                            <Text size="xs" c="dimmed" mt={2}>{pb.description}</Text>
+                          )}
+                        </div>
+                        {pb?.agents && (
+                          <Badge variant="light" color="blue" size="sm">
+                            {pb.agents.length} agent{pb.agents.length !== 1 ? "s" : ""}
+                          </Badge>
+                        )}
+                      </Group>
+                      {isSelected && pb?.agents && (
+                        <Group gap={4} mt="xs" wrap="wrap">
+                          {pb.agents.map((a: any, i: number) => (
+                            <Badge key={i} variant="outline" color="gray" size="xs">
+                              {a.name} ({a.role || "worker"})
+                            </Badge>
+                          ))}
+                        </Group>
+                      )}
+                    </Paper>
+                  );
+                })}
+              </Stack>
+
+              {selectedPlaybookName && (
+                <TextInput
+                  label="Initial task (optional)"
+                  placeholder="Describe the task for the agents..."
+                  value={playbookTask}
+                  onChange={(e) => setPlaybookTask(e.currentTarget.value)}
+                  styles={{
+                    input: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" },
+                    label: { color: "var(--text-secondary)", fontSize: 13 },
+                  }}
+                />
+              )}
+
+              <Group justify="flex-end" mt="sm">
+                <Button
+                  variant="default"
+                  onClick={() => {
+                    setShowPlaybookDialog(false);
+                    setSelectedPlaybookName(null);
+                    setPlaybookTask("");
+                  }}
+                  styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" } }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleLaunchPlaybook}
+                  disabled={!selectedPlaybookName || launchingPlaybook}
+                  loading={launchingPlaybook}
+                  styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)" } }}
+                >
+                  {launchingPlaybook ? "Launching..." : "Launch"}
+                </Button>
+              </Group>
+            </>
+          )}
+        </Stack>
+      </Modal>
+
       {/* Broadcast Message Dialog */}
       {showBroadcastModal && (
         <Modal
@@ -999,8 +1188,7 @@ interface AgentsTabProps {
   getStatusDotClass: (status: string) => string;
   getRoleBadgeClass: (role: string) => string;
   getRoleCardClass: (role: string) => string;
-  showPlaybookLauncher?: boolean;
-  onClosePlaybookLauncher?: () => void;
+  openPlaybookDialog: () => void;
   getPendingForAgent: (agentId: string) => any[];
   approve: (agentId: string, requestId: string) => Promise<void>;
   reject: (agentId: string, requestId: string) => Promise<void>;
@@ -1025,8 +1213,7 @@ function AgentsTab({
   getStatusDotClass,
   getRoleBadgeClass,
   getRoleCardClass,
-  showPlaybookLauncher,
-  onClosePlaybookLauncher,
+  openPlaybookDialog,
   getPendingForAgent,
   approve,
   reject,
@@ -1168,196 +1355,6 @@ function AgentsTab({
     return () => clearInterval(interval);
   }, [sessionId, api]);
 
-  // Playbook launcher state
-  const [showPlaybookDialog, setShowPlaybookDialogInner] = useState(false);
-  const [playbookNames, setPlaybookNames] = useState<string[]>([]);
-  const [playbookDetails, setPlaybookDetails] = useState<Record<string, any>>({});
-  const [selectedPlaybookName, setSelectedPlaybookName] = useState<string | null>(null);
-  const [playbookTask, setPlaybookTask] = useState("");
-  const [launchingPlaybook, setLaunchingPlaybook] = useState(false);
-  const [loadingPlaybooks, setLoadingPlaybooks] = useState(false);
-
-  const setShowPlaybookDialog = (v: boolean) => {
-    setShowPlaybookDialogInner(v);
-    if (!v && onClosePlaybookLauncher) onClosePlaybookLauncher();
-  };
-
-  const openPlaybookDialog = async () => {
-    setShowPlaybookDialog(true);
-    setLoadingPlaybooks(true);
-    try {
-      const data = await api.getPlaybooks();
-      const names = data.playbooks || [];
-      setPlaybookNames(names);
-      const details: Record<string, any> = {};
-      for (const name of names) {
-        try {
-          details[name] = await api.getPlaybook(name);
-        } catch {}
-      }
-      setPlaybookDetails(details);
-    } catch {} finally {
-      setLoadingPlaybooks(false);
-    }
-  };
-
-  // Respond to external trigger from header button
-  useEffect(() => {
-    if (showPlaybookLauncher) {
-      openPlaybookDialog();
-    }
-  }, [showPlaybookLauncher]);
-
-  const handleLaunchPlaybook = async () => {
-    if (!selectedPlaybookName) return;
-    setLaunchingPlaybook(true);
-    try {
-      // Try the dedicated endpoint first
-      try {
-        await api.launchPlaybook(sessionId, selectedPlaybookName, playbookTask || undefined);
-      } catch {
-        // Fallback: spawn agents individually from playbook details
-        const pb = playbookDetails[selectedPlaybookName];
-        if (pb?.agents) {
-          for (const agent of pb.agents) {
-            await api.spawnAgent(sessionId, {
-              name: agent.name,
-              role: agent.role || "worker",
-              provider: agent.provider || "claude-code",
-              model: agent.model,
-              persona: agent.persona,
-              initialTask: playbookTask || agent.initialTask,
-              channels: agent.channels,
-              extraCliArgs: agent.extraCliArgs,
-            });
-          }
-        }
-      }
-      setShowPlaybookDialog(false);
-      setSelectedPlaybookName(null);
-      setPlaybookTask("");
-    } catch {} finally {
-      setLaunchingPlaybook(false);
-    }
-  };
-
-  const playbookDialog = (
-    <Modal
-      opened={showPlaybookDialog}
-      onClose={() => {
-        setShowPlaybookDialog(false);
-        setSelectedPlaybookName(null);
-        setPlaybookTask("");
-      }}
-      title="Launch Playbook"
-      size="md"
-      centered
-      styles={{
-        header: { backgroundColor: "var(--bg-secondary)", borderBottom: "1px solid var(--border-color)" },
-        body: { backgroundColor: "var(--bg-secondary)" },
-        content: { backgroundColor: "var(--bg-secondary)" },
-        title: { color: "var(--text-primary)", fontWeight: 600, fontSize: 18 },
-        close: { color: "var(--text-secondary)" },
-      }}
-    >
-      <Stack gap="md">
-        {loadingPlaybooks ? (
-          <Stack align="center" py="xl">
-            <Loader size="sm" color="blue" />
-            <Text size="sm" c="dimmed">Loading playbooks...</Text>
-          </Stack>
-        ) : playbookNames.length === 0 ? (
-          <Stack align="center" py="xl">
-            <Text size="sm" c="dimmed">No playbooks found.</Text>
-            <Text size="xs" c="dimmed">Create playbooks in ~/.kora/playbooks/ or ~/.kora-dev/playbooks/</Text>
-          </Stack>
-        ) : (
-          <>
-            <Text size="sm" c="dimmed">Select a playbook to launch into this session:</Text>
-            <Stack gap="xs">
-              {playbookNames.map((name) => {
-                const pb = playbookDetails[name];
-                const isSelected = selectedPlaybookName === name;
-                return (
-                  <Paper
-                    key={name}
-                    p="sm"
-                    withBorder
-                    style={{
-                      cursor: "pointer",
-                      borderColor: isSelected ? "var(--accent-blue)" : "var(--border-color)",
-                      backgroundColor: isSelected ? "rgba(88,166,255,0.08)" : "var(--bg-primary)",
-                      transition: "border-color 0.15s, background-color 0.15s",
-                    }}
-                    onClick={() => setSelectedPlaybookName(name)}
-                  >
-                    <Group justify="space-between" align="flex-start">
-                      <div>
-                        <Text fw={600} size="sm" c="var(--text-primary)">{name}</Text>
-                        {pb?.description && (
-                          <Text size="xs" c="dimmed" mt={2}>{pb.description}</Text>
-                        )}
-                      </div>
-                      {pb?.agents && (
-                        <Badge variant="light" color="blue" size="sm">
-                          {pb.agents.length} agent{pb.agents.length !== 1 ? "s" : ""}
-                        </Badge>
-                      )}
-                    </Group>
-                    {isSelected && pb?.agents && (
-                      <Group gap={4} mt="xs" wrap="wrap">
-                        {pb.agents.map((a: any, i: number) => (
-                          <Badge key={i} variant="outline" color="gray" size="xs">
-                            {a.name} ({a.role || "worker"})
-                          </Badge>
-                        ))}
-                      </Group>
-                    )}
-                  </Paper>
-                );
-              })}
-            </Stack>
-
-            {selectedPlaybookName && (
-              <TextInput
-                label="Initial task (optional)"
-                placeholder="Describe the task for the agents..."
-                value={playbookTask}
-                onChange={(e) => setPlaybookTask(e.currentTarget.value)}
-                styles={{
-                  input: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" },
-                  label: { color: "var(--text-secondary)", fontSize: 13 },
-                }}
-              />
-            )}
-
-            <Group justify="flex-end" mt="sm">
-              <Button
-                variant="default"
-                onClick={() => {
-                  setShowPlaybookDialog(false);
-                  setSelectedPlaybookName(null);
-                  setPlaybookTask("");
-                }}
-                styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" } }}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleLaunchPlaybook}
-                disabled={!selectedPlaybookName || launchingPlaybook}
-                loading={launchingPlaybook}
-                styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)" } }}
-              >
-                {launchingPlaybook ? "Launching..." : "Launch"}
-              </Button>
-            </Group>
-          </>
-        )}
-      </Stack>
-    </Modal>
-  );
-
   // Terminal session store — hooks must be above any early returns (React rules of hooks)
   const terminalSessionsMap = useTerminalSessionStore((state) => state.sessions);
   const terminalSessions = useMemo(() => Array.from(terminalSessionsMap.values()), [terminalSessionsMap]);
@@ -1398,8 +1395,6 @@ function AgentsTab({
 
   return (
     <>
-    {playbookDialog}
-
     {agents.length === 0 && (
       <div className="empty-callout">
         <h3>No agents running</h3>
