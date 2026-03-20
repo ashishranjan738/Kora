@@ -5,6 +5,7 @@ import path from "path";
 import fs from "fs";
 import { createAuthMiddleware, validateWsToken } from "./auth.js";
 import { createApiRouter } from "./api-routes.js";
+import { createWebhookRouter } from "./webhook-routes.js";
 import type { SessionManager } from "../core/session-manager.js";
 import type { Orchestrator } from "../core/orchestrator.js";
 import type { CLIProviderRegistry } from "../cli-providers/provider-registry.js";
@@ -172,6 +173,30 @@ export function createServer(options: ServerOptions) {
   }));
   app.use(createAuthMiddleware(token));
   app.use("/api/v1", createApiRouter(deps, wss));
+
+  // Mount webhook routes (event-triggered sessions)
+  app.use("/api/v1", createWebhookRouter({
+    sessionManager: deps.sessionManager,
+    orchestrators: deps.orchestrators,
+    providerRegistry: deps.providerRegistry,
+    tmux: deps.tmux,
+    globalConfigDir: deps.globalConfigDir,
+    playbookDb: deps.playbookDb,
+    createOrchestrator: async (sessionId, projectPath, runtimeDir) => {
+      const { Orchestrator } = await import("../core/orchestrator.js");
+      const orch = new Orchestrator({
+        sessionId,
+        projectPath,
+        runtimeDir,
+        defaultProvider: "claude-code",
+        tmux: deps.tmux,
+        providerRegistry: deps.providerRegistry,
+        messagingMode: "mcp",
+      });
+      await orch.start();
+      return orch;
+    },
+  }));
 
   // SPA fallback: serve the token-injected index.html for all non-API GET routes
   app.use((req, res, next) => {
