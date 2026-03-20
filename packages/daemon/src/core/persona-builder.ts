@@ -131,7 +131,8 @@ function buildWorkflowPipelineInstructions(states: import("@kora/shared").Workfl
       const transitionInfo = s.transitions?.length
         ? ` → can move to: ${s.transitions.join(", ")}`
         : "";
-      return `- **${s.label}** (\`${s.id}\`)${transitionInfo}`;
+      const instrInfo = s.instructions ? `\n  _${s.instructions}_` : "";
+      return `- **${s.label}** (\`${s.id}\`)${transitionInfo}${instrInfo}`;
     }),
     "",
     "### Rules",

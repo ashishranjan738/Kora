@@ -309,6 +309,8 @@ export interface WorkflowState {
   transitions?: string[];
   /** If true, this state can be skipped in the pipeline (e.g. not every task needs e2e testing) */
   skippable?: boolean;
+  /** Instructions for agents — what this state means and what to do when a task enters it */
+  instructions?: string;
 }
 
 /** Default workflow states for new sessions */

@@ -1319,6 +1319,7 @@ async function handleToolCall(
               category: s.category,
               transitions: s.transitions || [],
               skippable: s.skippable ?? false,
+              instructions: s.instructions || undefined,
             })),
             pipeline: states.map((s: any) => s.id).join(" → "),
             hint: "Use these state IDs when calling update_task. If transitions are defined, only valid next states are allowed.",

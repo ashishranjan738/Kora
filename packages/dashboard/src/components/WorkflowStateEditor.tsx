@@ -74,6 +74,13 @@ function SortableStateRow({
         background: "var(--bg-primary)", border: "1px solid var(--border-color)", borderRadius: 4,
         color: "var(--text-primary)", minWidth: 0,
       }} />
+      {/* Instructions preview (subtle, only when not expanded) */}
+      {!isExpanded && state.instructions && !compact && (
+        <span style={{ fontSize: 10, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 150, flexShrink: 1 }}
+          title={state.instructions}>
+          {state.instructions.slice(0, 30)}{state.instructions.length > 30 ? "..." : ""}
+        </span>
+      )}
 
       {/* Category */}
       {!compact && (
@@ -165,6 +172,28 @@ function TransitionConfigurator({ state, stateIndex, allStates, onUpdate }: {
         {currentTransitions.length === 0
           ? "No transitions = free movement to any state."
           : `${state.label} → ${currentTransitions.map(id => allStates.find(s => s.id === id)?.label ?? id).join(", ")}`}
+      </div>
+
+      {/* Instructions — tell agents what this state means */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
+          Instructions for agents
+        </span>
+        <textarea
+          value={state.instructions || ""}
+          onChange={(e) => onUpdate({ instructions: e.target.value })}
+          placeholder={`What should agents do when a task enters "${state.label}"? e.g., "Run all unit tests and verify no regressions"`}
+          rows={2}
+          style={{
+            fontSize: 12, padding: "6px 8px", lineHeight: 1.5,
+            background: "var(--bg-primary)", border: "1px solid var(--border-color)",
+            borderRadius: 4, color: "var(--text-primary)", resize: "vertical",
+            fontFamily: "inherit",
+          }}
+        />
+        <span style={{ fontSize: 10, color: "var(--text-muted)", fontStyle: "italic" }}>
+          This text is included in every agent's system prompt so they know exactly what each state means.
+        </span>
       </div>
     </div>
   );
