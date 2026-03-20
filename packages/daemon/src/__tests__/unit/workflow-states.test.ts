@@ -2,7 +2,7 @@
  * Unit + integration tests for configurable workflow states.
  */
 import { describe, it, expect } from "vitest";
-import { DEFAULT_WORKFLOW_STATES, type WorkflowState } from "@kora/shared";
+import { DEFAULT_WORKFLOW_STATES, autoGenerateTransitions, validatePipeline, PIPELINE_TEMPLATES, getPipelineTemplate, type WorkflowState } from "@kora/shared";
 
 describe("Default workflow states", () => {
   it("has 4 default states", () => {
@@ -148,5 +148,136 @@ describe("Pipeline string generation", () => {
     ];
     const pipeline = states.map(s => s.skippable ? `${s.id}?` : s.id).join(" → ");
     expect(pipeline).toBe("a → b? → c");
+  });
+});
+
+describe("autoGenerateTransitions", () => {
+  it("generates correct transitions for standard 4-state pipeline", () => {
+    const states: WorkflowState[] = [
+      { id: "pending", label: "Pending", color: "#6b7280", category: "not-started" },
+      { id: "in-progress", label: "In Progress", color: "#3b82f6", category: "active" },
+      { id: "review", label: "Review", color: "#f59e0b", category: "active" },
+      { id: "done", label: "Done", color: "#22c55e", category: "closed" },
+    ];
+    const result = autoGenerateTransitions(states);
+    expect(result[0].transitions).toEqual(["in-progress"]); // first: forward only
+    expect(result[1].transitions).toEqual(["review"]); // no backward to not-started
+    expect(result[2].transitions).toEqual(["done", "in-progress"]); // forward + back to active
+    expect(result[3].transitions).toEqual([]); // terminal
+  });
+
+  it("handles skippable states", () => {
+    const states: WorkflowState[] = [
+      { id: "a", label: "A", color: "#000", category: "not-started" },
+      { id: "b", label: "B", color: "#000", category: "active", skippable: true },
+      { id: "c", label: "C", color: "#000", category: "closed" },
+    ];
+    const result = autoGenerateTransitions(states);
+    expect(result[0].transitions).toEqual(["b", "c"]); // b is skippable
+    expect(result[1].transitions).toEqual(["c"]); // no backward to not-started
+    expect(result[2].transitions).toEqual([]);
+  });
+
+  it("preserves user-set transitions", () => {
+    const states: WorkflowState[] = [
+      { id: "a", label: "A", color: "#000", category: "not-started", transitions: ["c"] },
+      { id: "b", label: "B", color: "#000", category: "active" },
+      { id: "c", label: "C", color: "#000", category: "closed" },
+    ];
+    const result = autoGenerateTransitions(states);
+    expect(result[0].transitions).toEqual(["c"]); // preserved
+    expect(result[1].transitions).toEqual(["c"]); // auto-generated
+  });
+
+  it("handles empty and single state", () => {
+    expect(autoGenerateTransitions([])).toEqual([]);
+    const single = autoGenerateTransitions([{ id: "done", label: "Done", color: "#000", category: "closed" }]);
+    expect(single[0].transitions).toEqual([]);
+  });
+});
+
+describe("validatePipeline", () => {
+  it("valid standard pipeline passes", () => {
+    const result = validatePipeline(autoGenerateTransitions(DEFAULT_WORKFLOW_STATES));
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("rejects empty pipeline", () => {
+    expect(validatePipeline([]).valid).toBe(false);
+  });
+
+  it("rejects single state", () => {
+    expect(validatePipeline([{ id: "a", label: "A", color: "#000", category: "closed" }]).valid).toBe(false);
+  });
+
+  it("rejects missing terminal state", () => {
+    const states: WorkflowState[] = [
+      { id: "a", label: "A", color: "#000", category: "not-started", transitions: ["b"] },
+      { id: "b", label: "B", color: "#000", category: "active", transitions: [] },
+    ];
+    const result = validatePipeline(states);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes("terminal"))).toBe(true);
+  });
+
+  it("rejects duplicate IDs", () => {
+    const states: WorkflowState[] = [
+      { id: "a", label: "A", color: "#000", category: "not-started" },
+      { id: "a", label: "A2", color: "#000", category: "closed" },
+    ];
+    expect(validatePipeline(states).valid).toBe(false);
+  });
+
+  it("detects unreachable states", () => {
+    const states: WorkflowState[] = [
+      { id: "a", label: "A", color: "#000", category: "not-started", transitions: ["c"] },
+      { id: "b", label: "B", color: "#000", category: "active", transitions: ["c"] },
+      { id: "c", label: "C", color: "#000", category: "closed", transitions: [] },
+    ];
+    const result = validatePipeline(states);
+    expect(result.errors.some(e => e.includes("Unreachable"))).toBe(true);
+  });
+
+  it("warns about first state category", () => {
+    const states: WorkflowState[] = [
+      { id: "a", label: "A", color: "#000", category: "active", transitions: ["b"] },
+      { id: "b", label: "B", color: "#000", category: "closed", transitions: [] },
+    ];
+    const result = validatePipeline(states);
+    expect(result.valid).toBe(true);
+    expect(result.warnings.some(w => w.includes("not-started"))).toBe(true);
+  });
+});
+
+describe("Pipeline templates", () => {
+  it("has 4 templates", () => {
+    expect(PIPELINE_TEMPLATES).toHaveLength(4);
+  });
+
+  it("standard template has 4 states with transitions", () => {
+    const std = getPipelineTemplate("standard");
+    expect(std.states).toHaveLength(4);
+    expect(std.states[0].transitions).toBeDefined();
+    expect(std.states[0].transitions!.length).toBeGreaterThan(0);
+  });
+
+  it("full template has 6 states with skippable", () => {
+    const full = getPipelineTemplate("full");
+    expect(full.states).toHaveLength(6);
+    expect(full.states.some(s => s.skippable)).toBe(true);
+  });
+
+  it("custom template has empty states", () => {
+    const custom = getPipelineTemplate("custom");
+    expect(custom.states).toHaveLength(0);
+  });
+
+  it("all non-custom templates have valid transitions", () => {
+    for (const t of PIPELINE_TEMPLATES) {
+      if (t.id === "custom") continue;
+      const result = validatePipeline(t.states);
+      expect(result.valid).toBe(true);
+    }
   });
 });

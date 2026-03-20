@@ -4,6 +4,8 @@ import { useSessionStore } from "../stores/sessionStore";
 import { useApi } from "../hooks/useApi";
 import { StopSessionDialog } from "../components/StopSessionDialog";
 import { PlaybookGrid, PlaybookPreview, PlaybookUploadModal, VariableForm } from "../components/playbook";
+import { WorkflowStateEditor } from "../components/WorkflowStateEditor";
+import { autoGenerateTransitions, getPipelineTemplate } from "@kora/shared";
 import { PersonaLibrary } from "../components/PersonaLibrary";
 import { showError } from "../utils/notifications";
 
@@ -77,12 +79,7 @@ export function AllSessions() {
   const [creating, setCreating] = useState(false);
   const [newMessagingMode, setNewMessagingMode] = useState<"mcp" | "terminal" | "manual">("mcp");
   const [newWorktreeMode, setNewWorktreeMode] = useState<"isolated" | "shared">("isolated");
-  const [newWorkflowStates, setNewWorkflowStates] = useState([
-    { id: "pending", label: "Pending", color: "#6b7280", category: "not-started" as const, transitions: ["in-progress"] as string[], skippable: false },
-    { id: "in-progress", label: "In Progress", color: "#3b82f6", category: "active" as const, transitions: ["review"] as string[], skippable: false },
-    { id: "review", label: "Review", color: "#f59e0b", category: "active" as const, transitions: ["done"] as string[], skippable: false },
-    { id: "done", label: "Done", color: "#22c55e", category: "closed" as const, transitions: [] as string[], skippable: false },
-  ]);
+  const [newWorkflowStates, setNewWorkflowStates] = useState(getPipelineTemplate("standard").states);
   const [recentPaths, setRecentPaths] = useState<string[]>([]);
 
   // Playbook state
@@ -103,12 +100,7 @@ export function AllSessions() {
   const [agentCliArgsOverrides, setAgentCliArgsOverrides] = useState<Record<number, string>>({});
   const [playbookMessagingMode, setPlaybookMessagingMode] = useState<"mcp" | "terminal" | "manual">("mcp");
   const [playbookWorktreeMode, setPlaybookWorktreeMode] = useState<"isolated" | "shared">("isolated");
-  const [playbookWorkflowStates, setPlaybookWorkflowStates] = useState([
-    { id: "pending", label: "Pending", color: "#6b7280", category: "not-started" as const, transitions: ["in-progress"] as string[], skippable: false },
-    { id: "in-progress", label: "In Progress", color: "#3b82f6", category: "active" as const, transitions: ["review"] as string[], skippable: false },
-    { id: "review", label: "Review", color: "#f59e0b", category: "active" as const, transitions: ["done"] as string[], skippable: false },
-    { id: "done", label: "Done", color: "#22c55e", category: "closed" as const, transitions: [] as string[], skippable: false },
-  ]);
+  const [playbookWorkflowStates, setPlaybookWorkflowStates] = useState(getPipelineTemplate("standard").states);
   const [topologyExpanded, setTopologyExpanded] = useState(false);
   const [expandedCliFlags, setExpandedCliFlags] = useState<Record<number, boolean>>({});
 
@@ -180,15 +172,7 @@ export function AllSessions() {
         messagingMode: newMessagingMode,
         worktreeMode: newWorktreeMode,
         workflowStates: newWorkflowStates.length > 0
-          ? newWorkflowStates.map((s, i, arr) => ({
-              ...s,
-              // Auto-generate transitions: each state → next state (+ back to previous active)
-              transitions: s.transitions?.length ? s.transitions : (
-                i < arr.length - 1
-                  ? [arr[i + 1].id, ...(i > 0 ? [arr[i - 1].id] : [])]
-                  : [] // terminal state
-              ),
-            }))
+          ? autoGenerateTransitions(newWorkflowStates)
           : undefined,
       });
       useSessionStore.getState().addSession(result);
@@ -286,12 +270,7 @@ export function AllSessions() {
         messagingMode: playbookMessagingMode,
         worktreeMode: playbookWorktreeMode,
         workflowStates: playbookWorkflowStates.length > 0
-          ? playbookWorkflowStates.map((s, i, arr) => ({
-              ...s,
-              transitions: s.transitions?.length ? s.transitions : (
-                i < arr.length - 1 ? [arr[i + 1].id, ...(i > 0 ? [arr[i - 1].id] : [])] : []
-              ),
-            }))
+          ? autoGenerateTransitions(playbookWorkflowStates)
           : undefined,
       });
       useSessionStore.getState().addSession(sessionResult);
@@ -989,120 +968,7 @@ export function AllSessions() {
               </div>
             </div>
             <div className="form-group">
-              <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>Task Pipeline</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const id = `custom-${Date.now()}`;
-                    setNewWorkflowStates(prev => {
-                      const insertIdx = prev.length > 0 ? prev.length - 1 : 0; // Before "done"
-                      const newState = { id, label: "New State", color: "#8b5cf6", category: "active" as const, transitions: [] as string[], skippable: false };
-                      const updated = [...prev];
-                      updated.splice(insertIdx, 0, newState);
-                      return updated;
-                    });
-                  }}
-                  style={{
-                    fontSize: 11, padding: "3px 10px", background: "var(--accent-blue)",
-                    border: "none", borderRadius: 4, color: "white", cursor: "pointer",
-                  }}
-                >
-                  + Add State
-                </button>
-              </label>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
-                Define the task workflow pipeline. States are frozen after session creation. Agents will be instructed to follow this pipeline.
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {newWorkflowStates.map((state, i) => (
-                  <div key={state.id} style={{
-                    display: "flex", alignItems: "center", gap: 6,
-                    padding: "6px 10px", borderRadius: 6,
-                    background: "var(--bg-tertiary)", border: "1px solid var(--border-color)",
-                  }}>
-                    <input
-                      type="color"
-                      value={state.color}
-                      onChange={(e) => {
-                        const updated = [...newWorkflowStates];
-                        updated[i] = { ...updated[i], color: e.target.value };
-                        setNewWorkflowStates(updated);
-                      }}
-                      style={{ width: 24, height: 24, border: "none", background: "none", cursor: "pointer", padding: 0 }}
-                    />
-                    <input
-                      value={state.label}
-                      onChange={(e) => {
-                        const updated = [...newWorkflowStates];
-                        const newId = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-                        updated[i] = { ...updated[i], label: e.target.value, id: newId || state.id };
-                        setNewWorkflowStates(updated);
-                      }}
-                      style={{
-                        flex: 1, fontSize: 12, padding: "4px 8px", fontWeight: 600,
-                        background: "var(--bg-secondary)", border: "1px solid var(--border-color)",
-                        borderRadius: 4, color: "var(--text-primary)",
-                      }}
-                    />
-                    <select
-                      value={state.category}
-                      onChange={(e) => {
-                        const updated = [...newWorkflowStates];
-                        updated[i] = { ...updated[i], category: e.target.value as any };
-                        setNewWorkflowStates(updated);
-                      }}
-                      style={{
-                        fontSize: 11, padding: "4px 6px", background: "var(--bg-secondary)",
-                        border: "1px solid var(--border-color)", borderRadius: 4,
-                        color: "var(--text-secondary)", cursor: "pointer",
-                      }}
-                    >
-                      <option value="not-started">Not Started</option>
-                      <option value="active">Active</option>
-                      <option value="closed">Closed</option>
-                    </select>
-                    {/* Only show skippable for middle states (not first or last) */}
-                    {i > 0 && i < newWorkflowStates.length - 1 ? (
-                      <label style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 3, whiteSpace: "nowrap" }}>
-                        <input
-                          type="checkbox"
-                          checked={state.skippable}
-                          onChange={(e) => {
-                            const updated = [...newWorkflowStates];
-                            updated[i] = { ...updated[i], skippable: e.target.checked };
-                            setNewWorkflowStates(updated);
-                          }}
-                        />
-                        Skippable
-                      </label>
-                    ) : (
-                      <span style={{ width: 70 }} />
-                    )}
-                    {/* Don't allow deleting first or last state */}
-                    {i > 0 && i < newWorkflowStates.length - 1 && newWorkflowStates.length > 2 ? (
-                      <button
-                        type="button"
-                        onClick={() => setNewWorkflowStates(prev => prev.filter((_, j) => j !== i))}
-                        style={{
-                          background: "none", border: "none", color: "var(--accent-red)",
-                          cursor: "pointer", fontSize: 14, padding: "0 4px",
-                        }}
-                      >
-                        ×
-                      </button>
-                    ) : (
-                      <span style={{ width: 18 }} />
-                    )}
-                  </div>
-                ))}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
-                Pipeline: {newWorkflowStates.map(s => s.skippable ? `${s.label}?` : s.label).join(" → ")}
-              </div>
-              <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, fontStyle: "italic" }}>
-                Skippable: When checked, tasks can skip this state and move directly to the next one. Useful for optional steps like E2E testing that not every task needs.
-              </div>
+              <WorkflowStateEditor states={newWorkflowStates} onChange={setNewWorkflowStates} />
             </div>
             <div className="form-actions">
               <button onClick={() => setShowCreateDialog(false)}>Cancel</button>
@@ -1268,59 +1134,7 @@ export function AllSessions() {
 
                   {/* Section: Task Pipeline */}
                   <div className="playbook-section">
-                    <div className="playbook-section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span>Task Pipeline</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const id = `custom-${Date.now()}`;
-                          setPlaybookWorkflowStates(prev => {
-                            const idx = prev.length > 0 ? prev.length - 1 : 0;
-                            const updated = [...prev];
-                            updated.splice(idx, 0, { id, label: "New State", color: "#8b5cf6", category: "active" as const, transitions: [] as string[], skippable: false });
-                            return updated;
-                          });
-                        }}
-                        style={{ fontSize: 11, padding: "3px 10px", background: "var(--accent-blue)", border: "none", borderRadius: 4, color: "white", cursor: "pointer" }}
-                      >
-                        + Add
-                      </button>
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>
-                      {playbookWorkflowStates.map((state, i) => (
-                        <div key={state.id} style={{
-                          display: "flex", alignItems: "center", gap: 6, padding: "4px 8px",
-                          borderRadius: 4, background: "var(--bg-tertiary)", border: "1px solid var(--border-color)",
-                        }}>
-                          <input type="color" value={state.color} onChange={(e) => {
-                            const u = [...playbookWorkflowStates]; u[i] = { ...u[i], color: e.target.value }; setPlaybookWorkflowStates(u);
-                          }} style={{ width: 20, height: 20, border: "none", background: "none", cursor: "pointer", padding: 0 }} />
-                          <input value={state.label} onChange={(e) => {
-                            const u = [...playbookWorkflowStates];
-                            const newId = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-                            u[i] = { ...u[i], label: e.target.value, id: newId || state.id };
-                            setPlaybookWorkflowStates(u);
-                          }} placeholder="State name" style={{ flex: 1, fontSize: 12, padding: "3px 6px", background: "var(--bg-primary)", border: "1px solid var(--border-color)", borderRadius: 4, color: "var(--text-primary)" }} />
-                          {i > 0 && i < playbookWorkflowStates.length - 1 ? (
-                            <label style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 2, whiteSpace: "nowrap" }}>
-                              <input type="checkbox" checked={state.skippable} onChange={(e) => {
-                                const u = [...playbookWorkflowStates]; u[i] = { ...u[i], skippable: e.target.checked }; setPlaybookWorkflowStates(u);
-                              }} /> Skippable
-                            </label>
-                          ) : <span style={{ width: 60 }} />}
-                          {i > 0 && i < playbookWorkflowStates.length - 1 && playbookWorkflowStates.length > 2 ? (
-                            <button type="button" onClick={() => setPlaybookWorkflowStates(prev => prev.filter((_, j) => j !== i))}
-                              style={{ background: "none", border: "none", color: "var(--accent-red)", cursor: "pointer", fontSize: 12, padding: "0 3px" }}>×</button>
-                          ) : <span style={{ width: 14 }} />}
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-                      {playbookWorkflowStates.map(s => s.skippable ? `${s.label}?` : s.label).join(" → ")}
-                    </div>
-                    <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 2, fontStyle: "italic" }}>
-                      Skippable: Tasks can skip this state and move to the next. Useful for optional steps.
-                    </div>
+                    <WorkflowStateEditor states={playbookWorkflowStates} onChange={setPlaybookWorkflowStates} compact />
                   </div>
 
                   {/* Section: Variables */}
