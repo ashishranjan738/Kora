@@ -3319,11 +3319,17 @@ textarea:focus {
 }
 .cc-header-btn {
   border: none;
-  padding: 4px 8px;
-  border-radius: 4px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 .cc-btn-pause {
   background: var(--accent-red);
