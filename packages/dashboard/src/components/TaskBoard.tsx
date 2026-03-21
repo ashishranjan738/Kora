@@ -67,6 +67,7 @@ interface Task {
 interface TaskBoardProps {
   sessionId: string;
   initialTaskId?: string;
+  workflowStates?: Array<{ id: string; label: string; color: string; category?: string; skippable?: boolean }>;
 }
 
 const COLUMNS = ["pending", "in-progress", "review", "done"] as const;
@@ -508,10 +509,29 @@ function TaskColumn({
 /* ------------------------------------------------------------------ */
 /* Main TaskBoard                                                      */
 /* ------------------------------------------------------------------ */
-export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
+function hexToMantineColor(hex: string): string {
+  const m: Record<string, string> = { "#6b7280": "gray", "#3b82f6": "blue", "#f59e0b": "yellow", "#22c55e": "green", "#8b5cf6": "grape", "#06b6d4": "cyan", "#ef4444": "red" };
+  return m[hex?.toLowerCase()] || "blue";
+}
+
+export function TaskBoard({ sessionId, initialTaskId, workflowStates }: TaskBoardProps) {
   const api = useApi();
   const isMobile = useMediaQuery("(max-width: 48em)");
   const isTablet = useMediaQuery("(max-width: 62em)");
+
+  // Dynamic columns from workflowStates (overrides hardcoded COLUMNS when available)
+  const effectiveColumns: readonly string[] = workflowStates && workflowStates.length > 0
+    ? workflowStates.map(s => s.id)
+    : COLUMNS;
+  const effectiveLabels: Record<string, string> = workflowStates && workflowStates.length > 0
+    ? { ...COLUMN_LABELS, ...Object.fromEntries(workflowStates.map(s => [s.id, s.label])) }
+    : COLUMN_LABELS;
+  const effectiveColors: Record<string, string> = workflowStates && workflowStates.length > 0
+    ? { ...COLUMN_COLORS, ...Object.fromEntries(workflowStates.map(s => [s.id, hexToMantineColor(s.color)])) }
+    : COLUMN_COLORS;
+  const effectiveCssColors: Record<string, string> = workflowStates && workflowStates.length > 0
+    ? { ...COLUMN_CSS_COLORS, ...Object.fromEntries(workflowStates.map(s => [s.id, s.color])) }
+    : COLUMN_CSS_COLORS;
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
@@ -528,7 +548,7 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
   const [commentText, setCommentText] = useState("");
   const [newDependencies, setNewDependencies] = useState<string[]>([]);
   const [confirmDeleteTaskId, setConfirmDeleteTaskId] = useState<string | null>(null);
-  const [activeCol, setActiveCol] = useState<ColumnId>("pending");
+  const [activeCol, setActiveCol] = useState<string>("pending");
   const [mobileView, setMobileView] = useState<"kanban" | "list">("list");
 
   // Filters
@@ -997,11 +1017,11 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
               {/* Column tabs */}
               <ScrollArea type="never">
                 <Group gap="xs" wrap="nowrap">
-                  {COLUMNS.map((col) => (
+                  {effectiveColumns.map((col) => (
                     <Badge
                       key={col}
                       variant={activeCol === col ? "filled" : "outline"}
-                      color={COLUMN_COLORS[col]}
+                      color={effectiveColors[col]}
                       size="lg"
                       onClick={() => setActiveCol(col)}
                       style={{
@@ -1010,7 +1030,7 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
                         flexShrink: 0,
                       }}
                     >
-                      {COLUMN_LABELS[col]} ({tasksByColumn(col).length})
+                      {effectiveLabels[col]} ({tasksByColumn(col).length})
                     </Badge>
                   ))}
                 </Group>
@@ -1037,7 +1057,7 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
                     py="xl"
                     fs="italic"
                   >
-                    No {COLUMN_LABELS[activeCol].toLowerCase()} tasks
+                    No {effectiveLabels[activeCol].toLowerCase()} tasks
                   </Text>
                 )}
               </Stack>
@@ -1045,7 +1065,7 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
           ) : (
             /* List view: all tasks grouped by status */
             <Stack gap="md">
-              {COLUMNS.map((col) => {
+              {effectiveColumns.map((col) => {
                 const colTasks = tasksByColumn(col);
                 return (
                   <Box key={col}>
@@ -1055,21 +1075,21 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
                       align="center"
                       mb="xs"
                       pb={6}
-                      style={{ borderBottom: `2px solid ${COLUMN_CSS_COLORS[col]}` }}
+                      style={{ borderBottom: `2px solid ${effectiveCssColors[col]}` }}
                     >
                       <Box
                         style={{
                           width: 8,
                           height: 8,
                           borderRadius: "50%",
-                          background: COLUMN_CSS_COLORS[col],
+                          background: effectiveCssColors[col],
                           flexShrink: 0,
                         }}
                       />
                       <Text fw={600} size="sm" c="var(--text-primary)">
-                        {COLUMN_LABELS[col]}
+                        {effectiveLabels[col]}
                       </Text>
-                      <Badge size="xs" variant="light" color={COLUMN_COLORS[col]}>
+                      <Badge size="xs" variant="light" color={effectiveColors[col]}>
                         {colTasks.length}
                       </Badge>
                     </Group>
@@ -1155,7 +1175,7 @@ export function TaskBoard({ sessionId, initialTaskId }: TaskBoardProps) {
       ) : (
         /* Desktop / Tablet: grid columns */
         <SimpleGrid cols={isTablet ? 2 : 4} spacing="md">
-          {COLUMNS.map((col) => (
+          {effectiveColumns.map((col) => (
             <TaskColumn
               key={col}
               column={col}
