@@ -1549,6 +1549,7 @@ textarea:focus {
   align-items: center;
   justify-content: center;
   padding: 60px 20px;
+  margin-bottom: 20px;
   text-align: center;
   border: 2px dashed var(--border-color);
   border-radius: var(--card-radius);
