@@ -1305,16 +1305,7 @@ export function MultiAgentView() {
           <Link to={`/session/${sessionId}`} className="cc-back-link">&larr;</Link>
           <span className="cc-title">{session?.name || "Session"}</span>
           <span className="cc-agent-count">
-            {agents.length} ({(() => {
-              const w = agents.filter(a => a.status === "running" && a.activity !== "idle").length;
-              const i = agents.filter(a => a.status === "running" && a.activity === "idle").length;
-              const parts: string[] = [];
-              if (w > 0) parts.push(`${w}W`);
-              if (i > 0) parts.push(`${i}I`);
-              if (crashedCount > 0) parts.push(`${crashedCount}C`);
-              if (parts.length === 0) parts.push(`${runningCount}R`);
-              return parts.join("/");
-            })()})
+            {agents.length} agent{agents.length !== 1 ? "s" : ""}
           </span>
           <div style={{ flex: 1 }} />
           <button className="cc-header-btn cc-btn-pause" onClick={async () => {
