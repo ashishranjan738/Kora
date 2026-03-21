@@ -3283,6 +3283,57 @@ textarea:focus {
   .hide-on-mobile { display: none !important; }
 }
 
+/* Command Center header — mobile-first */
+.cc-header {
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+  padding: 8px 12px;
+}
+.cc-header-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+.cc-back-link {
+  color: var(--accent-blue);
+  text-decoration: none;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.cc-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.cc-agent-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.cc-header-btn {
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.cc-btn-pause {
+  background: var(--accent-red);
+  color: #fff;
+}
+.cc-btn-restart {
+  background: var(--accent-yellow);
+  color: #1f2328;
+}
+
 @media (max-width: 768px) {
   /* Page layout */
   .page {

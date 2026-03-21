@@ -1297,121 +1297,45 @@ export function MultiAgentView() {
 
   return (
     <div style={{ height: "calc(100vh - 52px)", display: "flex", flexDirection: "column", background: "var(--bg-primary)", position: "relative", overflow: "hidden" }}>
-      {/* Header */}
-      <div
-        style={{
-          padding: "12px 16px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          borderBottom: "1px solid var(--border-color)",
-          background: "var(--bg-secondary)",
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }}>
-          <Link
-            to={`/session/${sessionId}`}
-            style={{ color: "var(--accent-blue)", fontSize: 13, textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}
-          >
-            &larr; Back
-          </Link>
-          <h1 style={{ fontSize: 16, fontWeight: 600, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {session?.name || "Session"}
-          </h1>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-          <span style={{ fontSize: 12, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
-            {agents.length}
-            {agents.length > 0 && (
-              <span style={{ color: "var(--text-muted)", marginLeft: 3 }}>
-                ({(() => {
-                  const working = agents.filter(a => a.status === "running" && a.activity !== "idle").length;
-                  const idle = agents.filter(a => a.status === "running" && a.activity === "idle").length;
-                  const parts: string[] = [];
-                  if (working > 0) parts.push(`${working}W`);
-                  if (idle > 0) parts.push(`${idle}I`);
-                  if (crashedCount > 0) parts.push(`${crashedCount}C`);
-                  if (parts.length === 0) parts.push(`${runningCount}R`);
-                  return parts.join("/");
-                })()})
-              </span>
-            )}
+      {/* Header — mobile-first stacked layout */}
+      <div className="cc-header">
+        <div className="cc-header-top">
+          <Link to={`/session/${sessionId}`} className="cc-back-link">&larr;</Link>
+          <span className="cc-title">{session?.name || "Session"}</span>
+          <span className="cc-agent-count">
+            {agents.length} ({(() => {
+              const w = agents.filter(a => a.status === "running" && a.activity !== "idle").length;
+              const i = agents.filter(a => a.status === "running" && a.activity === "idle").length;
+              const parts: string[] = [];
+              if (w > 0) parts.push(`${w}W`);
+              if (i > 0) parts.push(`${i}I`);
+              if (crashedCount > 0) parts.push(`${crashedCount}C`);
+              if (parts.length === 0) parts.push(`${runningCount}R`);
+              return parts.join("/");
+            })()})
           </span>
-
-          {/* Keyboard shortcuts hints — hidden on mobile */}
-          <div className="hide-on-mobile" style={{ display: "flex", gap: 4, alignItems: "center" }}>
-            {[
-              { key: "Ctrl+1-9", label: "focus" },
-              { key: "Esc", label: "exit" },
-              { key: "Ctrl+`", label: "broadcast" },
-            ].map(({ key, label }) => (
-              <span key={key} style={{
-                fontSize: 9, color: "var(--text-muted)", background: "var(--bg-tertiary)",
-                padding: "1px 5px", borderRadius: 3, border: "1px solid var(--border-color)",
-                whiteSpace: "nowrap",
-              }}>
-                <kbd style={{ fontFamily: "inherit", fontWeight: 600, color: "var(--text-secondary)" }}>{key}</kbd> {label}
-              </span>
-            ))}
-          </div>
-
-          {/* Pause All button */}
-          <button
-            onClick={async () => {
-              try {
-                if (session?.status === "paused") {
-                  await api.resumeSession(sessionId!);
-                  showToast("Session resumed");
-                } else {
-                  await api.pauseSession(sessionId!);
-                  showToast("Session paused");
-                }
-                loadData();
-              } catch (err: any) {
-                showToast(`Failed: ${err.message}`);
-              }
-            }}
-            style={{
-              background: session?.status === "paused" ? "var(--accent-green)" : "var(--accent-red)",
-              border: "none",
-              color: "#fff",
-              fontWeight: 600,
-              padding: "5px 12px",
-              borderRadius: 6,
-              cursor: "pointer",
-              fontSize: 12,
-            }}
-          >
-            {session?.status === "paused" ? "\u25B6 Resume" : "\u23F8 Pause All"}
+          <div style={{ flex: 1 }} />
+          <button className="cc-header-btn cc-btn-pause" onClick={async () => {
+            try {
+              if (session?.status === "paused") { await api.resumeSession(sessionId!); showToast("Resumed"); }
+              else { await api.pauseSession(sessionId!); showToast("Paused"); }
+              loadData();
+            } catch (err: any) { showToast(`Failed: ${err.message}`); }
+          }}>
+            {session?.status === "paused" ? "\u25B6" : "\u23F8"}
           </button>
-
-          {/* Restart All button */}
-          <button
-            onClick={() => {
-              const running = agents.filter(a => a.status === "running");
-              if (running.length === 0) { showToast("No running agents to restart."); return; }
-              setConfirmRestartAll(true);
-            }}
-            style={{
-              background: "var(--accent-yellow)",
-              border: "none",
-              color: "#1f2328",
-              fontWeight: 600,
-              padding: "5px 12px",
-              borderRadius: 6,
-              cursor: "pointer",
-              fontSize: 12,
-            }}
-          >
-            Restart All
+          <button className="cc-header-btn cc-btn-restart" onClick={() => {
+            if (agents.filter(a => a.status === "running").length === 0) { showToast("No running agents"); return; }
+            setConfirmRestartAll(true);
+          }}>
+            {"\uD83D\uDD04"}
           </button>
         </div>
       </div>
 
       {/* Broadcast Bar + Add Agent */}
       <div className="broadcast-bar">
-        <span style={{ fontSize: 14, flexShrink: 0 }}>Broadcast to all agents:</span>
+        <span className="hide-on-mobile" style={{ fontSize: 13, flexShrink: 0 }}>Broadcast:</span>
         <input
           ref={broadcastInputRef}
           placeholder="Type message..."
