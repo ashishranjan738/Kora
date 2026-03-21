@@ -11,6 +11,7 @@ import { Mosaic, MosaicWindow, MosaicNode, MosaicPath, MosaicWindowProps, getLea
 import "react-mosaic-component/react-mosaic-component.css";
 import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
 import { Badge, Indicator, Tooltip, Modal, Button, Group, Text, Stack, TextInput } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
 import { setMessageNotificationCallback } from "../stores/terminalRegistry";
 import { formatCost, formatTokens, formatLastSeen } from "../utils/formatters";
@@ -158,6 +159,7 @@ export function MultiAgentView() {
 
   const broadcastInputRef = useRef<HTMLInputElement>(null);
 
+  const isMobileView = useMediaQuery("(max-width: 768px)");
   const MOSAIC_KEY = `kora-mosaic-${sessionId}`;
   const LAYOUTS_KEY = `kora-saved-layouts-${sessionId}`;
 
@@ -1454,7 +1456,58 @@ export function MultiAgentView() {
         </div>
       </div>
 
-      {/* Mosaic Tiling Area */}
+      {/* Mobile: scrollable agent card list (mosaic doesn't work on narrow screens) */}
+      {isMobileView ? (
+        <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+          {agents.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 32, color: "var(--text-muted)" }}>
+              No agents yet. Tap "+ Add Agent" to get started.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {agents.map((agent) => {
+                const isCrashed = agent.status === "crashed" || agent.status === "error";
+                return (
+                  <div key={agent.id} style={{
+                    padding: 12, borderRadius: 8,
+                    background: "var(--bg-secondary)", border: "1px solid var(--border-color)",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <span className={`agent-status-dot ${getStatusDotClass(agent.status)}`} />
+                      <span style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)", flex: 1 }}>
+                        {agent.config?.name || agent.name || "Agent"}
+                      </span>
+                      <Badge size="xs" color={agent.role === "master" ? "grape" : "blue"} variant="light">
+                        {agent.role}
+                      </Badge>
+                      <span style={{ fontSize: 11, color: isCrashed ? "var(--accent-red)" : "var(--text-muted)" }}>
+                        {agent.status}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <button
+                        style={{ fontSize: 12, padding: "4px 10px", borderRadius: 4, border: "1px solid var(--border-color)", background: "var(--accent-blue)", color: "#fff", cursor: "pointer" }}
+                        onClick={() => navigate(`/session/${sessionId}/agent/${agent.id}`)}
+                      >Chat</button>
+                      <button
+                        style={{ fontSize: 12, padding: "4px 10px", borderRadius: 4, border: "1px solid var(--border-color)", background: "var(--bg-tertiary)", color: "var(--text-primary)", cursor: "pointer" }}
+                        onClick={() => handleOpenSendMessage(agent.id)}
+                      >Message</button>
+                      {isCrashed && (
+                        <button
+                          style={{ fontSize: 12, padding: "4px 10px", borderRadius: 4, border: "none", background: "var(--accent-yellow)", color: "#1f2328", cursor: "pointer" }}
+                          onClick={() => handleRestart(agent.id)}
+                        >Restart</button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+      /* Desktop: Mosaic Tiling Area */
       <div className="mosaic-container" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
         {mosaicValue ? (
           <Mosaic<string>
@@ -1494,7 +1547,7 @@ export function MultiAgentView() {
           </div>
         )}
       </div>
-
+      )}
 
       {/* Fullscreen overlay — rendered via Portal to document.body for true viewport coverage */}
       {renderFullscreenPortal()}
