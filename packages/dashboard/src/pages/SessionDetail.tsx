@@ -38,6 +38,7 @@ import {
   Tooltip,
   Modal,
   Button,
+  Menu,
   Stack,
   Group,
   Text,
@@ -49,6 +50,7 @@ import {
   Code,
   CopyButton,
 } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 
 type TabId = "editor" | "agents" | "tasks" | "execution" | "timeline" | "changes" | "knowledge";
 
@@ -82,6 +84,8 @@ export function SessionDetail() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const api = useApi();
+  const isMobile = useMediaQuery("(max-width: 640px)");
+  const isTablet = useMediaQuery("(max-width: 1024px)");
 
   // Listen for message buffer/expiry WebSocket events
   useMessageBufferEvents();
@@ -541,79 +545,76 @@ export function SessionDetail() {
           </div>
         </div>
         <div className="session-header-actions">
-          <button
-            style={{
-              backgroundColor: "var(--accent-red)",
-              borderColor: "var(--accent-red)",
-              color: "#fff",
-              fontWeight: 600,
-            }}
+          {/* Primary actions — always visible */}
+          <Button
+            size={isMobile ? "xs" : "sm"}
+            color="red" fw={600}
+            leftSection={!isMobile ? "\uD83C\uDFAE" : undefined}
             onClick={() => navigate(`/session/${sessionId}/overview`)}
           >
-            &#127918; Command Center
-          </button>
-          <button
-            className="primary"
+            {isMobile ? "\uD83C\uDFAE" : "Command Center"}
+          </Button>
+          <Button
+            size={isMobile ? "xs" : "sm"}
+            color="blue"
+            leftSection={!isMobile ? "\u2795" : undefined}
             onClick={() => setShowSpawnDialog(true)}
           >
-            &#10133; Add Agent
-          </button>
-          <button
-            onClick={openPlaybookDialog}
-          >
-            &#128640; Launch Playbook
-          </button>
-          <button
-            style={{
-              backgroundColor: "var(--accent-blue, #58a6ff)",
-              borderColor: "var(--accent-blue, #58a6ff)",
-              color: "#fff",
-              fontWeight: 600,
-            }}
-            onClick={async () => {
-              try {
-                await api.openVscodeSession(sessionId!);
-              } catch (err: any) {
-                showError(err.message, "Failed to open VS Code");
-              }
-            }}
-          >
-            &#128187; Open in VS Code
-          </button>
-          <button
-            onClick={createTerminalOptimistic}
-          >
-            &#128421; Terminal
-          </button>
-          <button onClick={() => setShowSettingsDialog(true)}>
-            &#9881; Settings
-          </button>
-          <button onClick={() => setShowReport(true)}>
-            &#128202; Report
-          </button>
-          <button onClick={handlePauseSession}>&#9208; Pause Session</button>
-          <button
-            onClick={() => {
-              setShowRestartAll(true);
-              setRestartAllResult(null);
-              setRestartAllError(null);
-            }}
-            disabled={agents.filter(a => a.status === "running").length === 0}
-            style={{
-              background: "var(--accent-yellow)",
-              border: "none",
-              color: "#0d1117",
-              fontWeight: 600,
-              padding: "6px 14px",
-              borderRadius: 6,
-              cursor: "pointer",
-            }}
-          >
-            &#128260; Restart All
-          </button>
-          <button className="danger" onClick={() => setShowStopConfirm(true)}>
-            &#9724; Stop Session
-          </button>
+            {isMobile ? "\u2795" : isTablet ? "Agent" : "Add Agent"}
+          </Button>
+          {!isMobile && (
+            <Button
+              size="sm" variant="default"
+              leftSection={"\uD83D\uDE80"}
+              onClick={openPlaybookDialog}
+              styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" } }}
+            >
+              {isTablet ? "Playbook" : "Launch Playbook"}
+            </Button>
+          )}
+
+          {/* More menu — secondary + danger actions */}
+          <Menu position="bottom-end" width={220} shadow="lg" styles={{
+            dropdown: { backgroundColor: "var(--bg-secondary)", borderColor: "var(--border-color)" },
+            item: { color: "var(--text-primary)", fontSize: 13 },
+            label: { color: "var(--text-muted)", fontSize: 11 },
+          }}>
+            <Menu.Target>
+              <Button size={isMobile ? "xs" : "sm"} variant="default"
+                styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-secondary)" } }}>
+                {isMobile ? "\u22EF" : "\u22EF More"}
+              </Button>
+            </Menu.Target>
+            <Menu.Dropdown>
+              {isMobile && (
+                <>
+                  <Menu.Item leftSection={"\uD83D\uDE80"} onClick={openPlaybookDialog}>Launch Playbook</Menu.Item>
+                  <Menu.Divider />
+                </>
+              )}
+              <Menu.Label>Tools</Menu.Label>
+              <Menu.Item leftSection={"\uD83D\uDCBB"} onClick={async () => { try { await api.openVscodeSession(sessionId!); } catch (err: any) { showError(err.message, "Failed to open VS Code"); } }}>
+                Open in VS Code
+              </Menu.Item>
+              <Menu.Item leftSection={"\uD83D\uDDA5"} onClick={createTerminalOptimistic}>Terminal</Menu.Item>
+              <Menu.Item leftSection={"\u2699"} onClick={() => setShowSettingsDialog(true)}>Settings</Menu.Item>
+              <Menu.Item leftSection={"\uD83D\uDCCA"} onClick={() => setShowReport(true)}>Report</Menu.Item>
+
+              <Menu.Divider />
+              <Menu.Label>Session Control</Menu.Label>
+              <Menu.Item leftSection={"\u23F8"} onClick={handlePauseSession}>Pause Session</Menu.Item>
+              <Menu.Item leftSection={"\uD83D\uDD04"} color="yellow"
+                disabled={agents.filter(a => a.status === "running").length === 0}
+                onClick={() => { setShowRestartAll(true); setRestartAllResult(null); setRestartAllError(null); }}>
+                Restart All
+              </Menu.Item>
+
+              <Menu.Divider />
+              <Menu.Item leftSection={"\u23F9"} color="red" onClick={() => setShowStopConfirm(true)}>
+                Stop Session
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
         </div>
       </div>
 
