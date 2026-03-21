@@ -56,11 +56,11 @@ export function PlaybookCard({
       }}
     >
       <Stack gap="xs">
-        <Group justify="space-between" align="flex-start">
-          <Text fw={600} size="md" c="var(--text-primary)">
+        <Group gap={8} align="center" wrap="nowrap">
+          <Text fw={600} size="md" c="var(--text-primary)" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {name}
           </Text>
-          <Badge color={sourceBadgeColor} variant="light" size="sm">
+          <Badge color={sourceBadgeColor} variant="light" size="sm" style={{ flexShrink: 0 }}>
             {sourceIcon} {source}
           </Badge>
         </Group>
