@@ -1309,48 +1309,46 @@ export function MultiAgentView() {
           flexShrink: 0,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }}>
           <Link
             to={`/session/${sessionId}`}
-            style={{ color: "var(--accent-blue)", fontSize: 13, textDecoration: "none" }}
+            style={{ color: "var(--accent-blue)", fontSize: 13, textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}
           >
-            &larr; Back to Session
+            &larr; Back
           </Link>
-          <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>
-            {session?.name || "Session"} -- Command Center
+          <h1 style={{ fontSize: 16, fontWeight: 600, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {session?.name || "Session"}
           </h1>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-            {agents.length} agent{agents.length !== 1 ? "s" : ""}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+          <span style={{ fontSize: 12, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+            {agents.length}
             {agents.length > 0 && (
-              <span style={{ color: "var(--text-muted)", marginLeft: 4 }}>
+              <span style={{ color: "var(--text-muted)", marginLeft: 3 }}>
                 ({(() => {
                   const working = agents.filter(a => a.status === "running" && a.activity !== "idle").length;
                   const idle = agents.filter(a => a.status === "running" && a.activity === "idle").length;
-                  const stopped = agents.filter(a => a.status === "stopped" || a.status === "paused").length;
                   const parts: string[] = [];
-                  if (working > 0) parts.push(`${working} working`);
-                  if (idle > 0) parts.push(`${idle} idle`);
-                  if (crashedCount > 0) parts.push(`${crashedCount} crashed`);
-                  if (stopped > 0) parts.push(`${stopped} stopped`);
-                  if (parts.length === 0) parts.push(`${runningCount} running`);
-                  return parts.join(", ");
+                  if (working > 0) parts.push(`${working}W`);
+                  if (idle > 0) parts.push(`${idle}I`);
+                  if (crashedCount > 0) parts.push(`${crashedCount}C`);
+                  if (parts.length === 0) parts.push(`${runningCount}R`);
+                  return parts.join("/");
                 })()})
               </span>
             )}
           </span>
 
-          {/* Keyboard shortcuts hints */}
-          <div style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: 8 }}>
+          {/* Keyboard shortcuts hints — hidden on mobile */}
+          <div className="hide-on-mobile" style={{ display: "flex", gap: 4, alignItems: "center" }}>
             {[
               { key: "Ctrl+1-9", label: "focus" },
               { key: "Esc", label: "exit" },
               { key: "Ctrl+`", label: "broadcast" },
             ].map(({ key, label }) => (
               <span key={key} style={{
-                fontSize: 10, color: "var(--text-muted)", background: "var(--bg-tertiary)",
-                padding: "2px 6px", borderRadius: 4, border: "1px solid var(--border-color)",
+                fontSize: 9, color: "var(--text-muted)", background: "var(--bg-tertiary)",
+                padding: "1px 5px", borderRadius: 3, border: "1px solid var(--border-color)",
                 whiteSpace: "nowrap",
               }}>
                 <kbd style={{ fontFamily: "inherit", fontWeight: 600, color: "var(--text-secondary)" }}>{key}</kbd> {label}

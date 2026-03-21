@@ -2775,6 +2775,15 @@ export function createApiRouter(deps: {
       });
 
       const spawned: Array<{ id: string; name: string; role: string; status: string }> = [];
+      const executionId = `exec-${Date.now()}`;
+      const agentStatuses = sorted.map(pa => ({ name: pa.name, role: pa.role, status: "pending" as string, agentId: undefined as string | undefined, error: undefined as string | undefined }));
+
+      // Emit execution start event
+      await orch.eventLog.log({ sessionId: sid, type: "playbook-progress" as any, data: {
+        executionId, sessionId: sid, playbookName, phase: "execute",
+        agents: agentStatuses, status: "running",
+      }});
+      broadcastEvent({ event: "playbook-progress", sessionId: sid, executionId, playbookName, phase: "execute", agents: agentStatuses });
 
       for (const pa of sorted) {
         const providerId = pa.provider ?? session.config.defaultProvider;
@@ -2829,9 +2838,30 @@ export function createApiRouter(deps: {
 
         broadcastEvent({ event: "agent-spawned", sessionId: sid, agentId: agentState.id });
         spawned.push({ id: agentState.id, name: pa.name, role: pa.role, status: agentState.status });
+
+        // Update execution progress
+        const agentIdx = agentStatuses.findIndex(a => a.name === pa.name);
+        if (agentIdx >= 0) {
+          agentStatuses[agentIdx].status = "spawned";
+          agentStatuses[agentIdx].agentId = agentState.id;
+        }
+        await orch.eventLog.log({ sessionId: sid, type: "playbook-progress" as any, data: {
+          executionId, sessionId: sid, playbookName, phase: "execute",
+          agents: agentStatuses, status: "running",
+        }});
+        broadcastEvent({ event: "playbook-progress", sessionId: sid, executionId, playbookName, agents: agentStatuses });
       }
 
-      res.status(201).json({ spawned, total: spawned.length });
+      // Emit execution complete
+      const allSpawned = agentStatuses.every(a => a.status === "spawned");
+      const finalStatus = allSpawned ? "complete" : agentStatuses.some(a => a.status === "spawned") ? "partial" : "failed";
+      await orch.eventLog.log({ sessionId: sid, type: "playbook-complete" as any, data: {
+        executionId, sessionId: sid, playbookName, phase: "finalize",
+        agents: agentStatuses, status: finalStatus,
+      }});
+      broadcastEvent({ event: "playbook-complete", sessionId: sid, executionId, playbookName, agents: agentStatuses, status: finalStatus });
+
+      res.status(201).json({ spawned, total: spawned.length, executionId });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
