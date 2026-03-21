@@ -9,6 +9,8 @@ import { StopSessionDialog } from "../components/StopSessionDialog";
 import { RestartAllDialog } from "../components/RestartAllDialog";
 import { PlaybookGrid, PlaybookUploadModal } from "../components/playbook";
 import { PersonaLibrary } from "../components/PersonaLibrary";
+import { AgentTopology } from "../components/AgentTopology";
+import { PipelinePreview } from "../components/PipelinePreview";
 import type { AgentActivity } from "../components/AgentCardTerminal";
 import { AgentActivityBadge, AgentUtilization, ActivitySparkline } from "../components/AgentActivityBadge";
 import { TaskBoard } from "../components/TaskBoard";
@@ -832,10 +834,19 @@ export function SessionDetail() {
       )}
 
       {activeTab === "tasks" && sessionId && (
-        <TaskBoard
-          sessionId={sessionId}
-          initialTaskId={pendingTaskId || undefined}
-        />
+        <>
+          {/* Task Pipeline visualization */}
+          {session?.workflowStates && session.workflowStates.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <Text size="sm" fw={600} c="var(--text-primary)" mb={4}>Task Pipeline</Text>
+              <PipelinePreview states={session.workflowStates} />
+            </div>
+          )}
+          <TaskBoard
+            sessionId={sessionId}
+            initialTaskId={pendingTaskId || undefined}
+          />
+        </>
       )}
 
       {activeTab === "execution" && sessionId && (
@@ -1648,7 +1659,14 @@ function AgentsTab({
       </div>
     )}
 
-    {/* Session Cost Summary */}
+    {/* Agent Topology — visual graph of master → worker hierarchy */}
+    {agents.length > 0 && (
+      <AgentTopology
+        agents={agents}
+        onAgentClick={(agentId) => onOpenTerminal(agentId, agents.find(a => a.id === agentId)?.config?.name || agentId)}
+      />
+    )}
+
     {/* Session Summary Dashboard */}
     <SessionSummary
       sessionId={sessionId}
