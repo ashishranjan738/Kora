@@ -37,7 +37,8 @@ const DOT_EVENTS = new Set([
 const LANE_HEIGHT = 40;
 const HEADER_HEIGHT = 30;
 const Y_PADDING = 16;
-const LEFT_LABEL_WIDTH = 180;
+const MIN_LEFT_LABEL_WIDTH = 100;
+const MAX_LEFT_LABEL_WIDTH = 250;
 const RIGHT_PADDING = 20;
 const MIN_CHART_WIDTH = 600;
 const DOT_RADIUS = 5;
@@ -90,9 +91,9 @@ export function TimelineGraph({
   const [hover, setHover] = useState<HoverInfo | null>(null);
 
   // Compute time range
-  const { timeMin, timeMax, agentLanes, chartWidth } = useMemo(() => {
+  const { timeMin, timeMax, agentLanes } = useMemo(() => {
     if (events.length === 0) {
-      return { timeMin: 0, timeMax: 1, agentLanes: [] as string[], chartWidth: MIN_CHART_WIDTH };
+      return { timeMin: 0, timeMax: 1, agentLanes: [] as string[] };
     }
 
     const timestamps = events.map((e) => new Date(e.timestamp).getTime());
@@ -131,11 +132,22 @@ export function TimelineGraph({
       lanes.push("__system__");
     }
 
-    const cw = Math.max(MIN_CHART_WIDTH, (containerRef.current?.clientWidth || 800) - LEFT_LABEL_WIDTH - RIGHT_PADDING);
-
-    return { timeMin: tMin, timeMax: tMax, agentLanes: lanes, chartWidth: cw };
+    return { timeMin: tMin, timeMax: tMax, agentLanes: lanes };
   }, [events, agents]);
 
+  // Compute label width dynamically based on longest agent name
+  const LEFT_LABEL_WIDTH = useMemo(() => {
+    if (agentLanes.length === 0) return MIN_LEFT_LABEL_WIDTH;
+    const longestName = Math.max(...agentLanes.map(id => {
+      if (id === "__system__") return 6; // "System"
+      const agent = agents.find(a => a.id === id);
+      return (agent?.name || id.split("-")[0] || id).length;
+    }));
+    const computed = Math.ceil(longestName * 7.5) + 16;
+    return Math.min(MAX_LEFT_LABEL_WIDTH, Math.max(MIN_LEFT_LABEL_WIDTH, computed));
+  }, [agentLanes, agents]);
+
+  const chartWidth = Math.max(MIN_CHART_WIDTH, (containerRef.current?.clientWidth || 800) - LEFT_LABEL_WIDTH - RIGHT_PADDING);
   const svgHeight = HEADER_HEIGHT + agentLanes.length * LANE_HEIGHT + Y_PADDING;
   const totalWidth = LEFT_LABEL_WIDTH + chartWidth + RIGHT_PADDING;
 
