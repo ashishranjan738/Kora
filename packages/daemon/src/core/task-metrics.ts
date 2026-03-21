@@ -93,14 +93,6 @@ export function computeTaskMetrics(
 
   // Per-agent metrics
   const agentMetrics: AgentTaskMetrics[] = [];
-  const agentIdSet = new Set(agents.map(a => a.id));
-
-  // Also track "unassigned" assignments that map to agent names (not IDs)
-  const agentNameToId = new Map<string, string>();
-  for (const a of agents) {
-    agentNameToId.set(a.name, a.id);
-    agentNameToId.set(a.name.toLowerCase(), a.id);
-  }
 
   for (const agent of agents) {
     // Tasks assigned to this agent (by ID or name)
@@ -178,9 +170,6 @@ export function computeTaskMetrics(
       taskBlockingOthers: blockingCount,
     });
   }
-
-  // Normalize bottleneck scores across agents (relative scoring)
-  normalizeBottleneckScores(agentMetrics);
 
   // Find top bottleneck
   const topBottleneck = findTopBottleneck(agentMetrics, teamAvgCycleTimeMs);
@@ -304,25 +293,6 @@ export function computeBottleneckScore(params: {
 
   const total = blockingScore + reviewScore + cycleTimeScore + ageScore + overloadScore + idleScore;
   return Math.min(total, 100);
-}
-
-/**
- * Normalize bottleneck scores so the top scorer is scaled to its natural value
- * and others are relative to it. This prevents all agents from having low scores
- * when the system is healthy.
- */
-function normalizeBottleneckScores(metrics: AgentTaskMetrics[]): void {
-  if (metrics.length === 0) return;
-
-  const maxScore = Math.max(...metrics.map(m => m.bottleneckScore));
-  if (maxScore <= 0) return; // No bottlenecks, all scores stay 0
-
-  // Don't inflate scores - only keep them as-is. The raw score is already
-  // meaningful (0-100 scale based on absolute thresholds).
-  // We just ensure no score exceeds 100.
-  for (const m of metrics) {
-    m.bottleneckScore = Math.min(Math.round(m.bottleneckScore), 100);
-  }
 }
 
 /**

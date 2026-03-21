@@ -9,6 +9,7 @@ import {
   getRuntimeTmuxPrefix,
   getRuntimeDaemonDir,
   SESSIONS_SUBDIR,
+  DEFAULT_WORKFLOW_STATES,
 } from "@kora/shared";
 import type {
   DaemonStatusResponse,
@@ -43,6 +44,7 @@ import type { StandaloneTerminal } from "../core/terminal-persistence.js";
 import { WebhookNotifier } from "../core/webhook-notifier.js";
 import type { WebhookConfig } from "@kora/shared";
 import { analyzeTerminalOutput } from "../core/terminal-analyzer.js";
+import { computeTaskMetrics, TaskMetricsDebouncer } from "../core/task-metrics.js";
 
 // Cache strip-ansi import (ESM module loaded once at startup)
 let stripAnsiFunc: ((text: string) => string) | null = null;
@@ -1731,7 +1733,6 @@ export function createApiRouter(deps: {
     try {
       const session = sessionManager.getSession(String(req.params.sid));
       if (!session) { res.status(404).json({ error: "Session not found" }); return; }
-      const { DEFAULT_WORKFLOW_STATES } = require("@kora/shared");
       const states = session.config.workflowStates || DEFAULT_WORKFLOW_STATES;
       res.json({ states, frozen: true });
     } catch (err) { res.status(500).json({ error: String(err) }); }
@@ -2270,7 +2271,6 @@ export function createApiRouter(deps: {
 
   // ─── Task Metrics ──────────────────────────────────────────────────
 
-  const { computeTaskMetrics, TaskMetricsDebouncer } = require("../core/task-metrics.js") as typeof import("../core/task-metrics.js");
   const taskMetricsDebouncer = new TaskMetricsDebouncer();
 
   router.get("/sessions/:sid/task-metrics", (req: Request, res: Response) => {
@@ -2293,7 +2293,6 @@ export function createApiRouter(deps: {
         activity: a.activity,
       }));
 
-      const { DEFAULT_WORKFLOW_STATES } = require("@kora/shared");
       const workflowStates = session.config.workflowStates || DEFAULT_WORKFLOW_STATES;
 
       const metrics = computeTaskMetrics(db, sid, agents, workflowStates);
