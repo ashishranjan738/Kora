@@ -116,6 +116,48 @@ export interface UpdateTaskRequest {
   result?: string;
 }
 
+// --- Task Metrics API ---
+
+export interface AgentTaskMetrics {
+  agentId: string;
+  agentName: string;
+  tasksByStatus: Record<string, number>;
+  totalActiveTasks: number;
+  doneTasks: number;
+  avgCycleTimeMs: number;
+  bottleneckScore: number;
+  loadPercentage: number;
+  capacity: number;
+  isOverloaded: boolean;
+  isIdle: boolean;
+  taskBlockingOthers: number;
+}
+
+export interface SessionTaskMetrics {
+  totalTasks: number;
+  activeTasks: number;
+  doneTasks: number;
+  avgCycleTimeMs: number;
+  throughput: number;
+  topBottleneck: {
+    agentId: string;
+    agentName: string;
+    score: number;
+    reason: string;
+  } | null;
+  loadDistribution: {
+    overloaded: number;
+    balanced: number;
+    underutilized: number;
+    idle: number;
+  };
+}
+
+export interface TaskMetricsResponse {
+  session: SessionTaskMetrics;
+  agents: AgentTaskMetrics[];
+}
+
 // --- Events API ---
 
 export interface EventsQueryParams {
@@ -156,4 +198,5 @@ export type WSEvent =
   | { event: "cost-update"; sessionId: string; agentId: string; costUsd: number }
   | { event: "notification"; sessionId: string; notification: { id: string; type: string; title: string; body: string; agentId?: string; timestamp: number } }
   | { event: "approval-request"; sessionId: string; request: ApprovalRequest }
+  | { event: "task-metrics-updated"; sessionId: string }
   | { event: "error"; message: string };
