@@ -65,11 +65,14 @@ function SortableStateRow({
       <input type="color" value={state.color} onChange={(e) => onUpdate({ color: e.target.value })}
         style={{ width: compact ? 20 : 24, height: compact ? 20 : 24, border: "none", background: "none", cursor: "pointer", padding: 0, flexShrink: 0 }} />
 
-      {/* Name */}
-      <input value={state.label} onChange={(e) => {
-        const newId = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-        onUpdate({ label: e.target.value, id: newId || state.id });
-      }} placeholder="State name" style={{
+      {/* Name — ID only updates on blur to prevent transition reference breakage while typing */}
+      <input value={state.label}
+        onChange={(e) => onUpdate({ label: e.target.value })}
+        onBlur={(e) => {
+          const newId = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+          if (newId && newId !== state.id) onUpdate({ id: newId });
+        }}
+        placeholder="State name" style={{
         flex: 1, fontSize: compact ? 11 : 12, padding: compact ? "3px 6px" : "4px 8px", fontWeight: 600,
         background: "var(--bg-primary)", border: "1px solid var(--border-color)", borderRadius: 4,
         color: "var(--text-primary)", minWidth: 0,
