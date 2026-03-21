@@ -152,6 +152,12 @@ export function AllSessions() {
 
   // Open create session dialog and load recent paths
   async function openCreateDialog() {
+    // Reset form to defaults
+    setNewName("");
+    setNewPath("");
+    setNewMessagingMode("mcp");
+    setNewWorktreeMode("isolated");
+    setNewWorkflowStates(getPipelineTemplate("standard").states);
     setShowCreateDialog(true);
     try {
       const data = await api.getRecentPaths(10);
@@ -215,6 +221,20 @@ export function AllSessions() {
   }
 
   function openPlaybookPicker() {
+    // Reset all playbook form state to defaults
+    setSelectedPlaybook(null);
+    setPlaybookPath("");
+    setPlaybookSessionName("");
+    setAgentModelOverrides({});
+    setAgentProviderOverrides({});
+    setAgentCliArgsOverrides({});
+    setDefaultModelForAll(""); setDefaultCliFlagsForAll("");
+    setPlaybookMessagingMode("mcp");
+    setPlaybookWorktreeMode("isolated");
+    setPlaybookWorkflowStates(getPipelineTemplate("standard").states);
+    setTopologyExpanded(false);
+    setExpandedCliFlags({});
+    setPlaybookVariables({});
     setShowPlaybookPicker(true);
     loadPlaybooks();
   }
