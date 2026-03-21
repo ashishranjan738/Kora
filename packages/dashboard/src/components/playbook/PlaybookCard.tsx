@@ -56,14 +56,14 @@ export function PlaybookCard({
       }}
     >
       <Stack gap="xs">
-        <Group gap={8} align="center" wrap="nowrap">
-          <Text fw={600} size="md" c="var(--text-primary)" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div>
+          <Text fw={600} size="md" c="var(--text-primary)" mb={4}>
             {name}
           </Text>
-          <Badge color={sourceBadgeColor} variant="light" size="sm" style={{ flexShrink: 0 }}>
+          <Badge color={sourceBadgeColor} variant="light" size="sm">
             {sourceIcon} {source}
           </Badge>
-        </Group>
+        </div>
 
         {description && (
           <Text size="sm" c="var(--text-secondary)" lineClamp={2}>
