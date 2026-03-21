@@ -1036,7 +1036,7 @@ export function SessionDetail() {
           )}
           {!selectedPlaybookName ? (
             <>
-              <Group justify="space-between" align="center">
+              <Group justify="space-between" align="center" mt="sm">
                 <Text size="sm" c="dimmed">Select a playbook to launch into this session:</Text>
                 <Button
                   size="compact-sm"
