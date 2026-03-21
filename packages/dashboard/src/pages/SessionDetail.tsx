@@ -845,6 +845,7 @@ export function SessionDetail() {
           <TaskBoard
             sessionId={sessionId}
             initialTaskId={pendingTaskId || undefined}
+            workflowStates={session?.workflowStates}
           />
         </>
       )}
