@@ -202,6 +202,7 @@ export function createServer(options: ServerOptions) {
   app.use((req, res, next) => {
     if (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/terminal/")) {
       res.setHeader("Content-Type", "text/html");
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       res.send(indexHtml);
     } else {
       next();

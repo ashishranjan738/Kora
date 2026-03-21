@@ -838,6 +838,19 @@ export function createApiRouter(deps: {
   });
 
   // Restart all agents — preserves agent IDs and worktrees (restart semantics)
+  // Force-refresh usage metrics for all agents in a session (non-invasive terminal poll)
+  router.post("/sessions/:sid/poll-usage", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const orch = orchestrators.get(sid);
+      if (!orch) { res.status(404).json({ error: "Session not found" }); return; }
+      await orch.pollUsageNow();
+      res.json({ polled: true });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   router.post("/sessions/:sid/restart-all", async (req: Request, res: Response) => {
     try {
       const sid = String(req.params.sid);
@@ -868,7 +881,7 @@ export function createApiRouter(deps: {
     try {
       const sid = String(req.params.sid);
       const aid = String(req.params.aid);
-      const body = req.body as { contextLines?: number; extraContext?: string; carryContext?: boolean } | undefined;
+      const body = req.body as { contextLines?: number; extraContext?: string; carryContext?: boolean; summaryMode?: boolean } | undefined;
 
       const orch = orchestrators.get(sid);
       if (!orch) {
@@ -880,6 +893,7 @@ export function createApiRouter(deps: {
         contextLines: body?.contextLines ?? 50,
         extraContext: body?.extraContext,
         carryContext: body?.carryContext ?? true,
+        summaryMode: body?.summaryMode ?? false,
       });
       if (!newAgent) {
         res.status(404).json({ error: `Agent "${aid}" not found or provider unavailable` });
@@ -905,7 +919,13 @@ export function createApiRouter(deps: {
         return;
       }
 
-      const newAgent = await orch.replaceAgent(aid);
+      const body = req.body || {};
+      const newAgent = await orch.replaceAgent(aid, {
+        name: body.name,
+        model: body.model,
+        cliProvider: body.cliProvider || body.provider,
+        persona: body.persona,
+      });
 
       if (!newAgent) {
         res.status(404).json({ error: `Agent "${aid}" not found or provider unavailable` });

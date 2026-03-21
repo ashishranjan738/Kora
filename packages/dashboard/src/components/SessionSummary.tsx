@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
-import { Badge, Group, Paper, Text, Tooltip, Progress, Button, Stack } from "@mantine/core";
+import { ActionIcon, Badge, Group, Paper, Text, Tooltip, Progress, Button, Stack } from "@mantine/core";
 import { useApi } from "../hooks/useApi";
+import { AgentTopology } from "./AgentTopology";
+import { extractCostData, hasCostData } from "./CostSummary";
 
 interface SessionSummaryProps {
   sessionId: string;
@@ -10,9 +12,11 @@ interface SessionSummaryProps {
     status: string;
     config?: { name?: string };
     startedAt?: string;
+    cost?: { totalCostUsd?: number; totalTokensIn?: number; totalTokensOut?: number; contextWindowPercent?: number };
   }>;
   onNudgeAgent?: (agentId: string) => void;
   onBroadcast?: () => void;
+  onAgentClick?: (agentId: string) => void;
 }
 
 interface TaskData {
@@ -24,6 +28,12 @@ interface TaskData {
   updatedAt?: string;
 }
 
+function fmtTokens(n: number): string {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1) + "k";
+  return String(n);
+}
+
 function formatDuration(ms: number): string {
   if (ms < 0) return "--";
   const totalMin = Math.floor(ms / 60000);
@@ -33,7 +43,7 @@ function formatDuration(ms: number): string {
   return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 }
 
-export function SessionSummary({ sessionId, agents, onNudgeAgent, onBroadcast }: SessionSummaryProps) {
+export function SessionSummary({ sessionId, agents, onNudgeAgent, onBroadcast, onAgentClick }: SessionSummaryProps) {
   const api = useApi();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,6 +109,11 @@ export function SessionSummary({ sessionId, agents, onNudgeAgent, onBroadcast }:
     ? completionTimes.reduce((sum, t) => sum + t, 0) / completionTimes.length
     : 0;
 
+  // Cost metrics
+  const totalCost = agents.reduce((sum, a) => sum + (a.cost?.totalCostUsd || 0), 0);
+  const totalTokensIn = agents.reduce((sum, a) => sum + (a.cost?.totalTokensIn || 0), 0);
+  const totalTokensOut = agents.reduce((sum, a) => sum + (a.cost?.totalTokensOut || 0), 0);
+
   if (loading) return null;
 
   return (
@@ -111,9 +126,26 @@ export function SessionSummary({ sessionId, agents, onNudgeAgent, onBroadcast }:
         marginBottom: 16,
       }}
     >
-      <Text fw={600} size="sm" c="var(--text-primary)" mb={12}>
-        Session Overview
-      </Text>
+      <Group justify="space-between" mb={12}>
+        <Text fw={600} size="sm" c="var(--text-primary)">
+          Session Overview
+        </Text>
+        <Tooltip label="Refresh metrics (polls terminal output)" withArrow>
+          <ActionIcon
+            variant="subtle"
+            size="sm"
+            onClick={async () => {
+              try { await api.pollUsage(sessionId); fetchTasks(); } catch {}
+            }}
+            style={{ color: "var(--text-muted)" }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          </ActionIcon>
+        </Tooltip>
+      </Group>
 
       {/* Top metrics row */}
       <Group gap="lg" mb={12} wrap="wrap">
@@ -149,6 +181,40 @@ export function SessionSummary({ sessionId, agents, onNudgeAgent, onBroadcast }:
             )}
           </Group>
         </div>
+
+        {/* Cost */}
+        {totalCost > 0 && (
+          <div>
+            <Text size="xs" c="dimmed" mb={2}>Cost</Text>
+            <Group gap={8}>
+              <Text size="sm" fw={600} c="var(--text-primary)">${totalCost.toFixed(2)}</Text>
+              <Tooltip label={`${totalTokensIn.toLocaleString()} in / ${totalTokensOut.toLocaleString()} out`} withArrow>
+                <Text size="xs" c="dimmed">
+                  {((totalTokensIn + totalTokensOut) / 1000).toFixed(1)}k tokens
+                </Text>
+              </Tooltip>
+            </Group>
+          </div>
+        )}
+
+        {/* Context Window — shown when agents report it (e.g. Kiro) */}
+        {(() => {
+          const agentsWithContext = agents.filter(a => a.cost?.contextWindowPercent != null && a.cost.contextWindowPercent > 0);
+          if (agentsWithContext.length === 0) return null;
+          const avgContext = Math.round(agentsWithContext.reduce((sum, a) => sum + (a.cost?.contextWindowPercent || 0), 0) / agentsWithContext.length);
+          const maxContext = Math.max(...agentsWithContext.map(a => a.cost?.contextWindowPercent || 0));
+          return (
+            <div>
+              <Text size="xs" c="dimmed" mb={2}>Context Window</Text>
+              <Group gap={8}>
+                <Text size="sm" fw={600} c={maxContext > 80 ? "var(--accent-red)" : maxContext > 50 ? "var(--accent-yellow)" : "var(--text-primary)"}>{avgContext}% avg</Text>
+                <Tooltip label={`Highest: ${maxContext}% — ${agentsWithContext.length} agent${agentsWithContext.length !== 1 ? "s" : ""} reporting`} withArrow>
+                  <Text size="xs" c="dimmed">max {maxContext}%</Text>
+                </Tooltip>
+              </Group>
+            </div>
+          );
+        })()}
       </Group>
 
       {/* Progress bar */}
@@ -208,6 +274,58 @@ export function SessionSummary({ sessionId, agents, onNudgeAgent, onBroadcast }:
           </Button>
         )}
       </Group>
+
+      {/* Per-agent cost breakdown (bar chart) */}
+      {hasCostData(agents) && agents.length > 0 && (() => {
+        const agentCosts = agents.map((a) => {
+          const { tokensIn, tokensOut, costUsd } = extractCostData(a);
+          return { id: a.id, name: a.config?.name || a.name || "Agent", tokensIn, tokensOut, costUsd };
+        }).sort((a, b) => b.costUsd - a.costUsd);
+
+        return (
+          <div style={{ marginTop: 16 }}>
+            <Text size="xs" c="dimmed" fw={500} mb={6}>Cost by Agent</Text>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {agentCosts.map((agent) => {
+                const pct = totalCost > 0 ? Math.round((agent.costUsd / totalCost) * 100) : 0;
+                return (
+                  <Tooltip
+                    key={agent.id}
+                    label={`${agent.name}: $${agent.costUsd.toFixed(2)} | ${fmtTokens(agent.tokensIn)} in, ${fmtTokens(agent.tokensOut)} out`}
+                    withArrow
+                    multiline
+                    w={280}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Text size="xs" c="dimmed" style={{ minWidth: 90, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {agent.name}
+                      </Text>
+                      <Progress
+                        value={pct}
+                        color="blue"
+                        size="sm"
+                        radius="xl"
+                        style={{ flex: 1 }}
+                        styles={{ root: { backgroundColor: "var(--bg-tertiary)" } }}
+                      />
+                      <Text size="xs" c="dimmed" style={{ minWidth: 50, textAlign: "right" }}>
+                        {agent.costUsd > 0 ? `$${agent.costUsd.toFixed(2)}` : "--"}
+                      </Text>
+                    </div>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Agent Topology */}
+      {agents.length > 1 && (
+        <div style={{ marginTop: 16 }}>
+          <AgentTopology agents={agents} onAgentClick={onAgentClick} />
+        </div>
+      )}
     </Paper>
   );
 }

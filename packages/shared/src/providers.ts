@@ -52,6 +52,7 @@ export interface ParsedOutput {
   toolCalls?: string[];
   tokenUsage?: { input: number; output: number };
   costUsd?: number;
+  contextWindowPercent?: number;  // 0-100, from CLIs that report context usage
   isWaitingForInput?: boolean;
   isComplete?: boolean;
 }

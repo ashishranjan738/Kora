@@ -73,7 +73,6 @@ export function AgentTopology({ agents, onAgentClick }: AgentTopologyProps) {
               <div style={{ fontWeight: 700, fontSize: 13 }}>{name}</div>
               <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>
                 {isIdle ? "idle" : status}
-                {agent.cost?.totalCostUsd ? ` · $${agent.cost.totalCostUsd.toFixed(2)}` : ""}
               </div>
             </div>
           ),
@@ -111,7 +110,6 @@ export function AgentTopology({ agents, onAgentClick }: AgentTopologyProps) {
               <div style={{ fontWeight: 600, fontSize: 12 }}>{name}</div>
               <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>
                 {isIdle ? "idle" : status}
-                {agent.cost?.totalCostUsd ? ` · $${agent.cost.totalCostUsd.toFixed(2)}` : ""}
               </div>
             </div>
           ),
