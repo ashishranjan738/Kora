@@ -1324,13 +1324,13 @@ export function MultiAgentView() {
               loadData();
             } catch (err: any) { showToast(`Failed: ${err.message}`); }
           }}>
-            {session?.status === "paused" ? "\u25B6" : "\u23F8"}
+            {session?.status === "paused" ? "\u25B6" : "\u23F8"}<span className="btn-label"> {session?.status === "paused" ? "Resume" : "Pause All"}</span>
           </button>
           <button className="cc-header-btn cc-btn-restart" onClick={() => {
             if (agents.filter(a => a.status === "running").length === 0) { showToast("No running agents"); return; }
             setConfirmRestartAll(true);
           }}>
-            {"\uD83D\uDD04"}
+            {"\uD83D\uDD04"}<span className="btn-label"> Restart All</span>
           </button>
         </div>
       </div>

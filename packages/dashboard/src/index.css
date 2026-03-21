@@ -3319,17 +3319,12 @@ textarea:focus {
 }
 .cc-header-btn {
   border: none;
-  width: 28px;
-  height: 28px;
-  padding: 0;
+  padding: 5px 12px;
   border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
+  font-weight: 600;
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
 }
 .cc-btn-pause {
   background: var(--accent-red);
@@ -3338,6 +3333,17 @@ textarea:focus {
 .cc-btn-restart {
   background: var(--accent-yellow);
   color: #1f2328;
+}
+@media (max-width: 768px) {
+  .cc-header-btn {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .cc-header-btn .btn-label { display: none; }
 }
 
 @media (max-width: 768px) {
