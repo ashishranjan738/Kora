@@ -1,4 +1,5 @@
 import { Tooltip, Group, Text } from "@mantine/core";
+import { getLoadColor } from "../utils/workload";
 
 // ---------- Types ----------
 
@@ -8,14 +9,6 @@ interface AgentLoadBadgeProps {
   blockedTasks: number;
   loadPercentage: number;
   compact?: boolean; // On narrow cards, collapse to just the load bar
-}
-
-// ---------- Helpers ----------
-
-function getLoadColor(pct: number): string {
-  if (pct > 100) return "var(--accent-red, #f85149)";
-  if (pct >= 70) return "var(--accent-yellow, #d29922)";
-  return "var(--accent-green, #3fb950)";
 }
 
 // ---------- Component ----------

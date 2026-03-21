@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Text, Paper, Stack, Group, Loader, Badge, Tooltip } from "@mantine/core";
+import { getLoadColor } from "../utils/workload";
 
 // ---------- Types ----------
 
@@ -73,12 +74,6 @@ const ROW_GAP = 12;
 const LABEL_WIDTH = 120;
 const BAR_PADDING_RIGHT = 180; // space for badges on the right
 
-function getLoadColor(pct: number): string {
-  if (pct > 100) return "var(--accent-red, #f85149)";
-  if (pct >= 70) return "var(--accent-yellow, #d29922)";
-  return "var(--accent-green, #3fb950)";
-}
-
 function activityLabel(activity?: string): string {
   if (!activity) return "";
   const map: Record<string, string> = {
@@ -92,21 +87,6 @@ function activityLabel(activity?: string): string {
     blocked: "blocked",
   };
   return map[activity] || activity;
-}
-
-function activityColor(activity?: string): string {
-  if (!activity) return "gray";
-  const map: Record<string, string> = {
-    working: "blue",
-    idle: "gray",
-    reading: "cyan",
-    writing: "teal",
-    "running-command": "indigo",
-    crashed: "red",
-    stopped: "gray",
-    blocked: "orange",
-  };
-  return map[activity] || "gray";
 }
 
 // ---------- Component ----------

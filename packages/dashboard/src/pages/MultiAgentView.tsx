@@ -864,8 +864,15 @@ export function MultiAgentView() {
               );
               const activeTasks = agentTasks.filter(t => t.status !== "done").length;
               const doneTasks = agentTasks.filter(t => t.status === "done").length;
-              const blockedTasks = agentTasks.filter(t => t.status === "blocked").length;
-              const capacity = 5; // default capacity
+              // Count tasks with unmet dependencies as blocked
+              const blockedTasks = agentTasks.filter(t =>
+                t.dependencies?.length > 0 &&
+                t.dependencies.some((depId: string) => {
+                  const dep = tasks.find(dt => dt.id === depId);
+                  return dep && dep.status !== "done";
+                })
+              ).length;
+              const capacity = agent.capacity ?? 5;
               const loadPct = capacity > 0 ? Math.round((activeTasks / capacity) * 100) : 0;
               return activeTasks > 0 || doneTasks > 0 ? (
                 <span onClick={(e) => { e.stopPropagation(); navigate(`/session/${sessionId}#workload`); }} style={{ cursor: "pointer" }}>
