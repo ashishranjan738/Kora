@@ -261,5 +261,8 @@ export function useApi() {
         method: "POST",
         body: JSON.stringify({ requestId }),
       }),
+    // Task metrics / workload
+    getTaskMetrics: (sid: string) =>
+      apiFetch<any>(`/sessions/${sid}/task-metrics`),
   };
 }

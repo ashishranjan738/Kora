@@ -17,6 +17,7 @@ import { setMessageNotificationCallback } from "../stores/terminalRegistry";
 import { formatCost, formatTokens, formatLastSeen } from "../utils/formatters";
 import { showError } from "../utils/notifications";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { AgentLoadBadge } from "../components/AgentLoadBadge";
 
 const PANEL_BORDER_COLORS = [
   "#58a6ff",
@@ -858,25 +859,24 @@ export function MultiAgentView() {
             <FlagIndicator flags={(agent.config?.extraCliArgs as string[]) || []} />
             <ChannelIndicator channels={(agent.config?.channels as string[]) || []} />
             {(() => {
-              const activeTaskCount = tasks.filter(t =>
-                (t.assignedTo === agent.id || t.assignedTo === (agent.config?.name || agent.name)) &&
-                (t.status === "pending" || t.status === "in-progress")
-              ).length;
-              return activeTaskCount > 0 ? (
-                <Tooltip label={`${activeTaskCount} active task${activeTaskCount !== 1 ? "s" : ""} — click to view`}>
-                  <Badge
-                    size="xs"
-                    color="grape"
-                    variant="filled"
-                    style={{ cursor: "pointer", fontSize: 10, padding: "0 6px" }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate(`/session/${sessionId}#tasks`);
-                    }}
-                  >
-                    {activeTaskCount} task{activeTaskCount !== 1 ? "s" : ""}
-                  </Badge>
-                </Tooltip>
+              const agentTasks = tasks.filter(t =>
+                t.assignedTo === agent.id || t.assignedTo === (agent.config?.name || agent.name)
+              );
+              const activeTasks = agentTasks.filter(t => t.status !== "done").length;
+              const doneTasks = agentTasks.filter(t => t.status === "done").length;
+              const blockedTasks = agentTasks.filter(t => t.status === "blocked").length;
+              const capacity = 5; // default capacity
+              const loadPct = capacity > 0 ? Math.round((activeTasks / capacity) * 100) : 0;
+              return activeTasks > 0 || doneTasks > 0 ? (
+                <span onClick={(e) => { e.stopPropagation(); navigate(`/session/${sessionId}#workload`); }} style={{ cursor: "pointer" }}>
+                  <AgentLoadBadge
+                    activeTasks={activeTasks}
+                    doneTasks={doneTasks}
+                    blockedTasks={blockedTasks}
+                    loadPercentage={loadPct}
+                    compact={false}
+                  />
+                </span>
               ) : null;
             })()}
             <span className="mosaic-token-usage">
