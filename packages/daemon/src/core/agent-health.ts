@@ -29,40 +29,52 @@ export function stripAnsi(text: string): string {
 }
 
 /** Shell prompt patterns that indicate the agent is idle at a command prompt */
-export const IDLE_PROMPT_PATTERNS = [
-  // === Shell prompts (all providers) ===
-  /[$%>#\u276F]\s*$/,              // Generic shell prompts (❯, $, %, >, #)
-  /\s+[$%>\u276F]\s*$/,            // Shell prompts with leading whitespace
-  /\w+@\w+\s+[$%>]\s*$/,           // user@host style (user@host $ )
-  /^\s*\[.*?\]\s*[$%>]\s*$/,       // Bracketed prompts ([user@host] $ )
-
-  // === Claude Code idle indicators ===
+/**
+ * Strong idle signals — mark idle IMMEDIATELY when detected.
+ * These are explicit "I'm waiting for input" indicators.
+ */
+export const STRONG_IDLE_PATTERNS = [
+  // Claude Code
   /\?\s+for shortcuts\s*$/,        // "? for shortcuts" prompt
   /bypass permissions on/i,        // Permission mode prompt
-  /esc to interrupt/i,             // Interrupt hint (shown when idle)
+  /esc to interrupt/i,             // Interrupt hint
   /shift\+tab to cycle/i,          // Tab cycle hint
+  /What would you like/i,          // Asking for input
 
-  // === Aider idle indicators ===
+  // Aider
   /aider>\s*$/i,                   // Aider prompt
-  /^\s*>\s*$/,                     // Bare ">" prompt (Aider, Codex)
 
-  // === Codex idle indicators ===
+  // Codex
   /codex>\s*$/i,                   // Codex prompt
   /What would you like to do/i,    // Codex asking for input
 
-  // === Goose idle indicators ===
+  // Goose
   /goose>\s*$/i,                   // Goose prompt
-  /^\(\w+\)\s*$/,                  // Goose virtual env style prompt
 
-  // === Generic idle indicators (all providers) ===
-  /waiting for your input/i,       // "Waiting for input" state
-  /What would you like/i,          // Asking for input
-  /How can I help/i,               // Greeting prompt
-  /ready and waiting/i,            // Agent explicitly waiting
-  /Standing by/i,                  // Agent standby
-  /Enter your (?:message|prompt|query)/i, // Input prompt
-  /Type (?:your|a) (?:message|prompt|question)/i, // Input prompt variant
+  // Generic explicit idle
+  /waiting for your input/i,
+  /How can I help/i,
+  /ready and waiting/i,
+  /Standing by/i,
+  /Enter your (?:message|prompt|query)/i,
+  /Type (?:your|a) (?:message|prompt|question)/i,
 ];
+
+/**
+ * Weak idle signals — wait for IDLE_TIMEOUT before marking idle.
+ * These are shell prompts that could just be between commands.
+ */
+export const WEAK_IDLE_PATTERNS = [
+  /[$%>#\u276F]\s*$/,              // Generic shell prompts (❯, $, %, >, #)
+  /\s+[$%>\u276F]\s*$/,            // Shell prompts with leading whitespace
+  /\w+@\w+\s+[$%>]\s*$/,           // user@host style
+  /^\s*\[.*?\]\s*[$%>]\s*$/,       // Bracketed prompts
+  /^\s*>\s*$/,                     // Bare ">" prompt
+  /^\(\w+\)\s*$/,                  // Virtual env style prompt
+];
+
+/** Combined for backward compatibility */
+export const IDLE_PROMPT_PATTERNS = [...STRONG_IDLE_PATTERNS, ...WEAK_IDLE_PATTERNS];
 
 /**
  * Keywords in agent messages that indicate the agent is idle/done.
@@ -218,31 +230,42 @@ export class AgentHealthMonitor extends EventEmitter {
       const output = rawOutput.split('\n').map(l => l.trimEnd()).filter(l => l).join('\n');
       const lastOutput = this.lastOutputCache.get(agentId) || "";
 
-      // Layer 2: Check if current output shows a shell/CLI prompt.
-      // Check the last 3 non-empty lines — the idle prompt may not be
-      // the very last line (status bars, empty lines can follow it).
+      // Layer 2: Check if current output shows idle indicators.
+      // Check last 5 non-empty lines for both strong and weak patterns.
       const lines = output.trim().split('\n').filter(l => l.trim());
-      const lastLines = lines.slice(-3);
-      const isAtPrompt = lastLines.some(line =>
-        IDLE_PROMPT_PATTERNS.some(pattern => pattern.test(line))
+      const lastLines = lines.slice(-5);
+
+      const isStrongIdle = lastLines.some(line =>
+        STRONG_IDLE_PATTERNS.some(pattern => pattern.test(line))
       );
+      const isWeakIdle = !isStrongIdle && lastLines.some(line =>
+        WEAK_IDLE_PATTERNS.some(pattern => pattern.test(line))
+      );
+      const isAtPrompt = isStrongIdle || isWeakIdle;
 
       // If output has changed
       if (output !== lastOutput) {
         this.lastOutputCache.set(agentId, output);
 
-        // If new output is a shell prompt, don't mark as working
-        // Instead, check if we should transition to idle
+        // If at a prompt/idle indicator, don't mark as working
         if (isAtPrompt) {
-          const lastOutputTime = this.lastOutputTimestamps.get(agentId) || Date.now();
-          const timeSinceOutput = Date.now() - lastOutputTime;
-
-          // If been at prompt for idle timeout, mark as idle
-          if (timeSinceOutput > IDLE_TIMEOUT_MS && agent.activity !== "idle") {
+          // Strong idle signals → mark idle IMMEDIATELY (no timeout wait)
+          if (isStrongIdle && agent.activity !== "idle") {
             agent.activity = "idle";
             agent.lastActivityAt = new Date().toISOString();
-            agent.idleSince = new Date(lastOutputTime).toISOString();
+            agent.idleSince = new Date().toISOString();
             this.emit("agent-idle", agentId);
+          }
+          // Weak idle signals → wait for timeout before marking idle
+          else if (isWeakIdle) {
+            const lastOutputTime = this.lastOutputTimestamps.get(agentId) || Date.now();
+            const timeSinceOutput = Date.now() - lastOutputTime;
+            if (timeSinceOutput > IDLE_TIMEOUT_MS && agent.activity !== "idle") {
+              agent.activity = "idle";
+              agent.lastActivityAt = new Date().toISOString();
+              agent.idleSince = new Date(lastOutputTime).toISOString();
+              this.emit("agent-idle", agentId);
+            }
           }
           // Don't update timestamp - we're at a prompt, not producing real output
           return;
@@ -274,15 +297,25 @@ export class AgentHealthMonitor extends EventEmitter {
         return;
       }
 
-      // Layer 3: No output change — check if idle timeout exceeded
-      const lastOutputTime = this.lastOutputTimestamps.get(agentId) || Date.now();
-      const timeSinceOutput = Date.now() - lastOutputTime;
-
-      if (timeSinceOutput > IDLE_TIMEOUT_MS && isAtPrompt && agent.activity !== "idle") {
-        agent.activity = "idle";
-        agent.lastActivityAt = new Date().toISOString();
-        agent.idleSince = new Date(lastOutputTime).toISOString();
-        this.emit("agent-idle", agentId);
+      // Layer 3: No output change — mark idle based on pattern strength
+      if (agent.activity !== "idle") {
+        if (isStrongIdle) {
+          // Strong pattern + no output change → definitely idle
+          agent.activity = "idle";
+          agent.lastActivityAt = new Date().toISOString();
+          agent.idleSince = new Date().toISOString();
+          this.emit("agent-idle", agentId);
+        } else if (isWeakIdle) {
+          // Weak pattern → wait for timeout
+          const lastOutputTime = this.lastOutputTimestamps.get(agentId) || Date.now();
+          const timeSinceOutput = Date.now() - lastOutputTime;
+          if (timeSinceOutput > IDLE_TIMEOUT_MS) {
+            agent.activity = "idle";
+            agent.lastActivityAt = new Date().toISOString();
+            agent.idleSince = new Date(lastOutputTime).toISOString();
+            this.emit("agent-idle", agentId);
+          }
+        }
       }
     } catch (err) {
       // Ignore errors during idle detection (tmux might be unavailable temporarily)
