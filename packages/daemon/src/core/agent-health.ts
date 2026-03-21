@@ -2,6 +2,7 @@ import type { AgentState, AgentHealthCheck } from "@kora/shared";
 import { HEALTH_CHECK_INTERVAL_MS, MAX_CONSECUTIVE_FAILURES } from "@kora/shared";
 import type { IPtyBackend } from "./pty-backend.js";
 import { EventEmitter } from "events";
+import { logger } from "./logger.js";
 
 /**
  * Comprehensive ANSI escape sequence regex (matches ansi-regex npm package).
@@ -34,12 +35,12 @@ export function stripAnsi(text: string): string {
  * These are explicit "I'm waiting for input" indicators.
  */
 export const STRONG_IDLE_PATTERNS = [
-  // Claude Code
-  /\?\s+for shortcuts\s*$/,        // "? for shortcuts" prompt
-  /bypass permissions on/i,        // Permission mode prompt
-  /esc to interrupt/i,             // Interrupt hint
-  /shift\+tab to cycle/i,          // Tab cycle hint
-  /What would you like/i,          // Asking for input
+  // Claude Code (handle both spaced and stripped output)
+  /\?\s*for\s*shortcuts/i,         // "? for shortcuts" prompt (with or without spaces)
+  /bypass\s*permissions\s*on/i,    // Permission mode prompt
+  /esc\s*to\s*interrupt/i,         // Interrupt hint
+  /shift\+tab\s*to\s*cycle/i,      // Tab cycle hint
+  /What\s*would\s*you\s*like/i,    // Asking for input
 
   // Aider
   /aider>\s*$/i,                   // Aider prompt
@@ -51,13 +52,14 @@ export const STRONG_IDLE_PATTERNS = [
   // Goose
   /goose>\s*$/i,                   // Goose prompt
 
-  // Generic explicit idle
-  /waiting for your input/i,
-  /How can I help/i,
-  /ready and waiting/i,
-  /Standing by/i,
-  /Enter your (?:message|prompt|query)/i,
-  /Type (?:your|a) (?:message|prompt|question)/i,
+  // Generic explicit idle (handle stripped whitespace)
+  /waiting\s*for\s*your\s*input/i,
+  /How\s*can\s*I\s*help/i,
+  /ready\s*and\s*waiting/i,
+  /Standing\s*by/i,
+  /Standingby/i,                   // Fully stripped version
+  /Enter\s*your\s*(?:message|prompt|query)/i,
+  /Type\s*(?:your|a)\s*(?:message|prompt|question)/i,
 ];
 
 /**
