@@ -89,6 +89,7 @@ export class Orchestrator extends EventEmitter {
     this.usageMonitor = new UsageMonitor(
       config.tmux,
       this.costTracker,
+      config.providerRegistry,
     );
     this.autoRelay = new AutoRelay(config.tmux, this.agentManager, this.eventLog, config.sessionId, config.messagingMode);
     this.messageQueue = new MessageQueue(config.tmux, config.runtimeDir, config.messagingMode || "mcp");
@@ -701,6 +702,11 @@ export class Orchestrator extends EventEmitter {
     }
   }
 
+  /** Force an immediate poll of all agents' usage metrics */
+  async pollUsageNow(): Promise<void> {
+    await this.usageMonitor.pollNow();
+  }
+
   /**
    * Get all known agents (for cleanup/diagnostics).
    * Returns ALL agents including stopped, crashed, and running agents.
@@ -798,15 +804,68 @@ export class Orchestrator extends EventEmitter {
    */
   async restartAgent(
     agentId: string,
-    options?: { contextLines?: number; extraContext?: string; carryContext?: boolean; shutdownTimeoutMs?: number },
+    options?: {
+      contextLines?: number;
+      extraContext?: string;
+      carryContext?: boolean;
+      summaryMode?: boolean;
+      shutdownTimeoutMs?: number;
+    },
   ): Promise<AgentState | null> {
     const oldAgent = this.agentManager.getAgent(agentId);
     if (!oldAgent) return null;
 
     const carryContext = options?.carryContext ?? true;
+    const summaryMode = options?.summaryMode ?? false;
     let initialTask: string | undefined;
 
-    if (carryContext) {
+    if (summaryMode) {
+      // Summary mode: capture extensive terminal output and build a structured summary
+      let fullOutput = "";
+      try {
+        fullOutput = await this.config.tmux.capturePane(
+          oldAgent.config.tmuxSession, 500, false,
+        );
+      } catch { /* agent may be dead */ }
+
+      // Get tasks assigned to this agent
+      let agentTasks: any[] = [];
+      try {
+        const allTasks = this.database.getTasks(this.config.sessionId);
+        agentTasks = allTasks.filter((t: any) => t.assignedTo === agentId);
+      } catch { /* ignore */ }
+      const doneTasks = agentTasks.filter((t: any) => t.status === "done");
+      const activeTasks = agentTasks.filter((t: any) => t.status !== "done");
+
+      // Build structured summary
+      const terminalLines = fullOutput.trim().split("\n").slice(-200).join("\n");
+      initialTask = [
+        "## Session Summary (auto-generated before restart)",
+        "",
+        `**Agent:** ${oldAgent.config.name} (${oldAgent.config.role})`,
+        `**Provider:** ${oldAgent.config.cliProvider}`,
+        oldAgent.currentTask ? `**Last task:** ${oldAgent.currentTask}` : "",
+        "",
+        "### Completed Tasks",
+        doneTasks.length > 0
+          ? doneTasks.map((t: any) => `- [DONE] ${t.title}${t.description ? `: ${t.description.slice(0, 100)}` : ""}`).join("\n")
+          : "- None",
+        "",
+        "### Active Tasks",
+        activeTasks.length > 0
+          ? activeTasks.map((t: any) => `- [${t.status.toUpperCase()}] ${t.title}${t.description ? `: ${t.description.slice(0, 100)}` : ""}`).join("\n")
+          : "- None",
+        "",
+        terminalLines ? "### Terminal Activity (last 200 lines)" : "",
+        terminalLines ? "```" : "",
+        terminalLines || "",
+        terminalLines ? "```" : "",
+        "",
+        options?.extraContext ? `### Additional context:\n${options.extraContext}\n` : "",
+        "You have been restarted with a fresh session. Your worktree, tasks, and messages are preserved.",
+        "Review the summary above and continue from where you left off. Check your messages for any updates.",
+      ].filter(Boolean).join("\n");
+    } else if (carryContext) {
       const contextLines = options?.contextLines ?? 50;
       let terminalContext = "";
       try {
@@ -869,6 +928,7 @@ export class Orchestrator extends EventEmitter {
       data: { agentId: newAgent.id, reason: "restarted", preservedId: true },
     });
 
+    await this.persistState();
     return newAgent;
   }
 
@@ -878,7 +938,13 @@ export class Orchestrator extends EventEmitter {
    */
   async replaceAgent(
     agentId: string,
-    options?: { shutdownTimeoutMs?: number },
+    options?: {
+      shutdownTimeoutMs?: number;
+      name?: string;
+      model?: string;
+      cliProvider?: string;
+      persona?: string;
+    },
   ): Promise<AgentState | null> {
     const oldAgent = this.agentManager.getAgent(agentId);
     if (!oldAgent) return null;
@@ -888,17 +954,18 @@ export class Orchestrator extends EventEmitter {
     // Kill old agent and delete worktree
     await this.agentManager.stopAgent(agentId, "replaced by user", options?.shutdownTimeoutMs);
 
-    const provider = this.config.providerRegistry.get(oldConfig.cliProvider);
+    const providerName = options?.cliProvider || oldConfig.cliProvider;
+    const provider = this.config.providerRegistry.get(providerName);
     if (!provider) return null;
 
     // Spawn completely fresh agent (new ID, new worktree)
     const newAgent = await this.agentManager.spawnAgent({
       sessionId: this.config.sessionId,
-      name: oldConfig.name,
+      name: options?.name || oldConfig.name,
       role: oldConfig.role,
       provider,
-      model: oldConfig.model,
-      persona: oldConfig.persona,
+      model: options?.model || oldConfig.model,
+      persona: options?.persona ?? oldConfig.persona,
       workingDirectory: oldConfig.workingDirectory,
       runtimeDir: this.config.runtimeDir,
       autonomyLevel: oldConfig.autonomyLevel,
@@ -915,6 +982,7 @@ export class Orchestrator extends EventEmitter {
       data: { oldAgentId: agentId, newAgentId: newAgent.id, reason: "replaced" },
     });
 
+    await this.persistState();
     return newAgent;
   }
 

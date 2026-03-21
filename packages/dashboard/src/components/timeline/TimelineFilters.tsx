@@ -65,6 +65,8 @@ export function TimelineFilters({
           ]}
           styles={{
             root: { backgroundColor: "transparent", border: "1px solid var(--border-color)" },
+            control: { minWidth: 72 },
+            label: { textAlign: "center" as const, justifyContent: "center" },
           }}
         />
 

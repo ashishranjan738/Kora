@@ -1,18 +1,52 @@
 /**
  * PipelinePreview — visual flow diagram using React Flow.
  * Shows workflow states as nodes and transitions as edges.
+ * Skip edges arc above, rework edges arc below, forward edges go straight.
  */
-import { useMemo } from "react";
+import { useMemo, useCallback, type CSSProperties } from "react";
 import {
   ReactFlow,
   Background,
+  Handle,
   type Node,
   type Edge,
+  type NodeProps,
   Position,
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { WorkflowState } from "@kora/shared";
+
+/* ------------------------------------------------------------------ */
+/*  Custom node with 4 handles (top, bottom, left, right)             */
+/* ------------------------------------------------------------------ */
+
+const HANDLE_STYLE: CSSProperties = {
+  width: 6,
+  height: 6,
+  background: "transparent",
+  border: "none",
+};
+
+function PipelineNode({ data }: NodeProps) {
+  return (
+    <>
+      <Handle type="target" position={Position.Left} id="left" style={HANDLE_STYLE} />
+      <Handle type="target" position={Position.Top} id="top" style={HANDLE_STYLE} />
+      <Handle type="target" position={Position.Bottom} id="bottom" style={HANDLE_STYLE} />
+      <Handle type="source" position={Position.Right} id="right" style={HANDLE_STYLE} />
+      <Handle type="source" position={Position.Top} id="top-src" style={HANDLE_STYLE} />
+      <Handle type="source" position={Position.Bottom} id="bottom-src" style={HANDLE_STYLE} />
+      {data.label}
+    </>
+  );
+}
+
+const nodeTypes = { pipeline: PipelineNode };
+
+/* ------------------------------------------------------------------ */
+/*  Component                                                          */
+/* ------------------------------------------------------------------ */
 
 interface PipelinePreviewProps {
   states: WorkflowState[];
@@ -23,10 +57,11 @@ export function PipelinePreview({ states }: PipelinePreviewProps) {
     if (states.length === 0) return { nodes: [], edges: [] };
 
     const X_GAP = 200;
-    const Y_BASE = 50;
+    const Y_BASE = 80;
 
     const nodes: Node[] = states.map((state, i) => ({
       id: state.id,
+      type: "pipeline",
       position: { x: i * X_GAP, y: Y_BASE },
       data: {
         label: (
@@ -47,8 +82,6 @@ export function PipelinePreview({ states }: PipelinePreviewProps) {
         color: "var(--text-primary, #e6edf3)",
         minWidth: 80,
       },
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
       draggable: false,
       connectable: false,
     }));
@@ -69,33 +102,68 @@ export function PipelinePreview({ states }: PipelinePreviewProps) {
         const isSkip = targetIdx > i + 1;
         const isBackward = targetIdx < i;
 
-        edges.push({
-          id: key,
-          source: state.id,
-          target: targetId,
-          type: isForward ? "straight" : "smoothstep",
-          animated: isSkip,
-          style: {
-            stroke: isBackward ? "#d29922" : isSkip ? "#bc8cff" : "#8b949e",
-            strokeWidth: isForward ? 2 : 1.5,
-            strokeDasharray: isBackward ? "5,3" : undefined,
-          },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: isBackward ? "#d29922" : isSkip ? "#bc8cff" : "#8b949e",
-            width: 16,
-            height: 16,
-          },
-          label: isSkip ? "skip" : isBackward ? "rework" : undefined,
-          labelStyle: {
-            fontSize: 9,
-            fill: isBackward ? "#d29922" : "#bc8cff",
-          },
-          labelBgStyle: {
-            fill: "var(--bg-primary, #0d1117)",
-            fillOpacity: 0.9,
-          },
-        });
+        if (isForward) {
+          edges.push({
+            id: key,
+            source: state.id,
+            sourceHandle: "right",
+            target: targetId,
+            targetHandle: "left",
+            type: "straight",
+            style: { stroke: "#8b949e", strokeWidth: 2 },
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              color: "#8b949e",
+              width: 16,
+              height: 16,
+            },
+          });
+        } else if (isSkip) {
+          // Skip edges: source top → target top, routed above
+          edges.push({
+            id: key,
+            source: state.id,
+            sourceHandle: "top-src",
+            target: targetId,
+            targetHandle: "top",
+            type: "smoothstep",
+            animated: true,
+            style: { stroke: "#bc8cff", strokeWidth: 1.5 },
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              color: "#bc8cff",
+              width: 14,
+              height: 14,
+            },
+            label: "skip",
+            labelStyle: { fontSize: 9, fill: "#bc8cff" },
+            labelBgStyle: { fill: "var(--bg-primary, #0d1117)", fillOpacity: 0.9 },
+          });
+        } else if (isBackward) {
+          // Backward edges: source bottom → target bottom, routed below
+          edges.push({
+            id: key,
+            source: state.id,
+            sourceHandle: "bottom-src",
+            target: targetId,
+            targetHandle: "bottom",
+            type: "smoothstep",
+            style: {
+              stroke: "#d29922",
+              strokeWidth: 1.5,
+              strokeDasharray: "5,3",
+            },
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              color: "#d29922",
+              width: 14,
+              height: 14,
+            },
+            label: "rework",
+            labelStyle: { fontSize: 9, fill: "#d29922" },
+            labelBgStyle: { fill: "var(--bg-primary, #0d1117)", fillOpacity: 0.9 },
+          });
+        }
       });
     });
 
@@ -104,8 +172,8 @@ export function PipelinePreview({ states }: PipelinePreviewProps) {
 
   if (states.length === 0) return null;
 
-  const width = states.length * 200 + 50;
-  const height = 160;
+  // Taller to accommodate skip arcs above and rework arcs below
+  const height = 240;
 
   return (
     <div style={{
@@ -119,8 +187,9 @@ export function PipelinePreview({ states }: PipelinePreviewProps) {
       <ReactFlow
         nodes={nodes}
         edges={edges}
+        nodeTypes={nodeTypes}
         fitView
-        fitViewOptions={{ padding: 0.3 }}
+        fitViewOptions={{ padding: 0.35 }}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}

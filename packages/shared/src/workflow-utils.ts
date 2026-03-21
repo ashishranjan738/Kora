@@ -40,9 +40,9 @@ export function autoGenerateTransitions(states: WorkflowState[]): WorkflowState[
       transitions.push(states[i + 2].id);
     }
 
-    // Backward: allow going back to previous state, but only between active states
-    // (don't add backward to "not-started" category — that's the backlog)
-    if (!isFirst && states[i - 1].category !== "not-started") {
+    // Backward: allow going back to previous state
+    // Active states can always go back one step (including back to backlog)
+    if (!isFirst) {
       transitions.push(states[i - 1].id);
     }
 

@@ -400,10 +400,19 @@ export function SessionReport({
     },
     body: {
       backgroundColor: "var(--bg-secondary)",
-      maxHeight: "calc(90vh - 120px)",
       overflowY: "auto" as const,
+      maxHeight: "calc(85vh - 80px)",
+      padding: "16px 24px 24px",
     },
-    content: { backgroundColor: "var(--bg-secondary)" },
+    content: {
+      backgroundColor: "var(--bg-secondary)",
+      maxHeight: "85vh",
+      display: "flex" as const,
+      flexDirection: "column" as const,
+    },
+    inner: {
+      padding: "20px 0",
+    },
     title: {
       color: "var(--text-primary)",
       fontWeight: 600 as const,

@@ -31,6 +31,7 @@ export function SideTerminalPanel({
   const dragging = useRef(false);
   const startY = useRef(0);
   const startHeight = useRef(0);
+  const terminalContentRef = useRef<HTMLDivElement>(null);
   const api = useApi();
 
   // Use store for terminal sessions and open tabs
@@ -131,6 +132,24 @@ export function SideTerminalPanel({
       clearUnread(activeTabId);
     }
   }, [activeTabId, clearUnread]);
+
+  // Prevent wheel events in the terminal area from scrolling the page behind.
+  // xterm.js handles its own scrolling internally; we just need to stop the
+  // event from bubbling up to the page's scroll container.
+  useEffect(() => {
+    const el = terminalContentRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      // Stop the event from propagating to page scroll containers
+      e.stopPropagation();
+      // Also prevent default so the browser doesn't scroll the page
+      // (xterm handles its own scrolling via its viewport)
+      e.preventDefault();
+    };
+    // Must NOT be passive to allow preventDefault
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, []);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -346,8 +365,11 @@ export function SideTerminalPanel({
         </button>
       </div>
 
-      {/* Terminal content */}
-      <div style={{ flex: 1, minHeight: 0, height: height - 40 }}>
+      {/* Terminal content — prevent scroll from leaking to page */}
+      <div
+        style={{ flex: 1, minHeight: 0, height: height - 40 }}
+        ref={terminalContentRef}
+      >
         {tabs
           .filter((t) => t.id === activeTabId)
           .map((t) => (

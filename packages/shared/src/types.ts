@@ -137,6 +137,7 @@ export interface AgentCost {
   totalTokensIn: number;
   totalTokensOut: number;
   totalCostUsd: number;
+  contextWindowPercent?: number;  // Context window usage (0-100), from CLIs that report it (e.g. Kiro)
   lastUpdatedAt: string;
 }
 
