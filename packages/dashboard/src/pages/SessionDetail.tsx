@@ -16,8 +16,8 @@ import { AgentActivityBadge, AgentUtilization, ActivitySparkline } from "../comp
 import { TaskBoard } from "../components/TaskBoard";
 import { SessionSummary } from "../components/SessionSummary";
 import { KnowledgeViewer } from "../components/KnowledgeViewer";
-import { WorkloadChart, type TaskMetricsResponse } from "../components/WorkloadChart";
-import { DEFAULT_WORKFLOW_STATES } from "@kora/shared";
+import { WorkloadChart } from "../components/WorkloadChart";
+import { DEFAULT_WORKFLOW_STATES, type TaskMetricsResponse } from "@kora/shared";
 import { TimelineView } from "../components/timeline/TimelineView";
 import { ExecutionTracing } from "../components/ExecutionTracing";
 import { SideTerminalPanel } from "../components/SideTerminalPanel";
@@ -89,7 +89,7 @@ function WorkloadTabContent({ sessionId, session, api }: { sessionId: string; se
   const [metrics, setMetrics] = useState<TaskMetricsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval>>();
+  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   const loadMetrics = useCallback(async () => {
     try {

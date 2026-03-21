@@ -1,3 +1,5 @@
+import type { TaskMetricsResponse } from "@kora/shared";
+
 const API_BASE = "/api/v1";
 
 function getToken(): string {
@@ -263,34 +265,6 @@ export function useApi() {
       }),
     // Task metrics / workload
     getTaskMetrics: (sid: string) =>
-      apiFetch<{
-        session: {
-          totalTasks: number;
-          activeTasks: number;
-          doneTasks: number;
-          blockedTasks: number;
-          avgCycleTimeMs: number;
-          throughput: number;
-          topBottleneck: { agentId: string; agentName: string; score: number; reason: string } | null;
-          loadDistribution: { overloaded: number; balanced: number; underutilized: number; idle: number };
-        };
-        agents: Array<{
-          agentId: string;
-          agentName: string;
-          tasksByStatus: Record<string, number>;
-          totalActiveTasks: number;
-          doneTasks: number;
-          blockedTasks: number;
-          loadPercentage: number;
-          capacity: number;
-          isOverloaded: boolean;
-          isIdle: boolean;
-          bottleneckScore: number;
-          avgCycleTimeMs: number;
-          taskBlockingOthers: number;
-          blockedAgents: string[];
-          activity?: string;
-        }>;
-      }>(`/sessions/${sid}/task-metrics`),
+      apiFetch<TaskMetricsResponse>(`/sessions/${sid}/task-metrics`),
   };
 }

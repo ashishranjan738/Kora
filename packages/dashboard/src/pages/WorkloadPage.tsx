@@ -3,8 +3,8 @@ import { useParams, Link } from "react-router-dom";
 import { Stack, Text, Group, Paper } from "@mantine/core";
 import { useApi } from "../hooks/useApi";
 import { useWebSocket } from "../hooks/useWebSocket";
-import { WorkloadChart, type TaskMetricsResponse } from "../components/WorkloadChart";
-import { DEFAULT_WORKFLOW_STATES } from "@kora/shared";
+import { WorkloadChart } from "../components/WorkloadChart";
+import { DEFAULT_WORKFLOW_STATES, type TaskMetricsResponse } from "@kora/shared";
 
 export function WorkloadPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -14,7 +14,7 @@ export function WorkloadPage() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval>>();
+  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   // Fetch session for workflow states
   const loadSession = useCallback(async () => {

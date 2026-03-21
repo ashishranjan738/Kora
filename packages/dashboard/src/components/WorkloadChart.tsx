@@ -1,67 +1,17 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Text, Paper, Stack, Group, Loader, Badge, Tooltip } from "@mantine/core";
+import type { TaskMetricsResponse } from "@kora/shared";
+import type { WorkflowState } from "@kora/shared";
 import { getLoadColor } from "../utils/workload";
 
-// ---------- Types ----------
-
-export interface AgentTaskMetrics {
-  agentId: string;
-  agentName: string;
-  /** Task counts keyed by workflow state id (e.g. "pending", "in-progress") */
-  tasksByStatus: Record<string, number>;
-  totalActiveTasks: number;
-  doneTasks: number;
-  blockedTasks: number;
-  loadPercentage: number;
-  capacity: number;
-  isOverloaded: boolean;
-  isIdle: boolean;
-  bottleneckScore: number;
-  avgCycleTimeMs: number;
-  taskBlockingOthers: number;
-  blockedAgents: string[];
-  activity?: string; // working / idle / blocked etc.
-}
-
-export interface SessionTaskMetrics {
-  totalTasks: number;
-  activeTasks: number;
-  doneTasks: number;
-  blockedTasks: number;
-  avgCycleTimeMs: number;
-  throughput: number;
-  topBottleneck: {
-    agentId: string;
-    agentName: string;
-    score: number;
-    reason: string;
-  } | null;
-  loadDistribution: {
-    overloaded: number;
-    balanced: number;
-    underutilized: number;
-    idle: number;
-  };
-}
-
-export interface TaskMetricsResponse {
-  session: SessionTaskMetrics;
-  agents: AgentTaskMetrics[];
-}
-
-interface WorkflowStateInfo {
-  id: string;
-  label: string;
-  color: string;
-  category: "not-started" | "active" | "closed";
-}
+export type { TaskMetricsResponse } from "@kora/shared";
 
 // ---------- Props ----------
 
 interface WorkloadChartProps {
   metrics: TaskMetricsResponse | null;
-  workflowStates: WorkflowStateInfo[];
+  workflowStates: WorkflowState[];
   sessionId: string;
   loading?: boolean;
   error?: string | null;
@@ -73,21 +23,6 @@ const BAR_HEIGHT = 28;
 const ROW_GAP = 12;
 const LABEL_WIDTH = 120;
 const BAR_PADDING_RIGHT = 180; // space for badges on the right
-
-function activityLabel(activity?: string): string {
-  if (!activity) return "";
-  const map: Record<string, string> = {
-    working: "working",
-    idle: "idle",
-    reading: "reading",
-    writing: "writing",
-    "running-command": "running",
-    crashed: "crashed",
-    stopped: "stopped",
-    blocked: "blocked",
-  };
-  return map[activity] || activity;
-}
 
 // ---------- Component ----------
 
@@ -177,12 +112,6 @@ export function WorkloadChart({ metrics, workflowStates, sessionId, loading, err
           <Text size="xs" c="dimmed">Done</Text>
           <Text size="lg" fw={600} c="green">{metrics.session.doneTasks}</Text>
         </Paper>
-        {metrics.session.blockedTasks > 0 && (
-          <Paper p="sm" withBorder style={{ minWidth: 120 }}>
-            <Text size="xs" c="dimmed">Blocked</Text>
-            <Text size="lg" fw={600} c="red">{metrics.session.blockedTasks}</Text>
-          </Paper>
-        )}
         {metrics.session.topBottleneck && (
           <Paper p="sm" withBorder style={{ minWidth: 200, borderColor: "var(--accent-yellow)" }}>
             <Text size="xs" c="dimmed">Top Bottleneck</Text>
@@ -331,17 +260,7 @@ export function WorkloadChart({ metrics, workflowStates, sessionId, loading, err
                       {"\uD83D\uDCA4"}
                     </text>
                   )}
-                  {!agent.isOverloaded && !agent.isIdle && agent.activity && (
-                    <text
-                      x={800 - 70}
-                      y={y + BAR_HEIGHT / 2 + 1}
-                      dominantBaseline="middle"
-                      fill="var(--text-muted, #484f58)"
-                      fontSize={11}
-                    >
-                      [{activityLabel(agent.activity)}]
-                    </text>
-                  )}
+                  {/* Activity label could be added when backend provides it */}
                 </g>
               );
             })}
