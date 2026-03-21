@@ -4,6 +4,7 @@
  */
 import { useState } from "react";
 import { MultiSelect } from "@mantine/core";
+import { PipelinePreview } from "./PipelinePreview";
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor,
   useSensor, useSensors, type DragEndEvent,
@@ -297,8 +298,10 @@ export function WorkflowStateEditor({ states, onChange, compact }: WorkflowState
 
       {/* Pipeline preview */}
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
-        Pipeline: {states.map(s => s.skippable ? `${s.label}?` : s.label).join(" → ")}
       </div>
+
+      {/* Visual pipeline flow */}
+      <PipelinePreview states={states} />
 
       {/* Validation */}
       {!validation.valid && (
