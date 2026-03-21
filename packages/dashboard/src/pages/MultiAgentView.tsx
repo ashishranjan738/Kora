@@ -1456,48 +1456,85 @@ export function MultiAgentView() {
         </div>
       </div>
 
-      {/* Mobile: scrollable agent card list (mosaic doesn't work on narrow screens) */}
+      {/* Mobile: scrollable agent card list */}
       {isMobileView ? (
-        <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px" }}>
           {agents.length === 0 ? (
-            <div style={{ textAlign: "center", padding: 32, color: "var(--text-muted)" }}>
+            <div style={{ textAlign: "center", padding: 48, color: "var(--text-muted)" }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>+</div>
               No agents yet. Tap "+ Add Agent" to get started.
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {agents.map((agent) => {
                 const isCrashed = agent.status === "crashed" || agent.status === "error";
+                const isStopped = agent.status === "stopped";
+                const isIdle = agent.activity === "idle";
+                const tokenIn = agent.cost?.totalTokensIn ?? 0;
+                const tokenOut = agent.cost?.totalTokensOut ?? 0;
+                const cost = agent.cost?.totalCostUsd ?? 0;
+
                 return (
                   <div key={agent.id} style={{
-                    padding: 12, borderRadius: 8,
+                    padding: 14, borderRadius: 10,
                     background: "var(--bg-secondary)", border: "1px solid var(--border-color)",
+                    borderLeft: `3px solid ${isCrashed ? "var(--accent-red)" : isIdle ? "var(--accent-yellow)" : "var(--accent-green)"}`,
                   }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    {/* Row 1: Name + role + status */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                       <span className={`agent-status-dot ${getStatusDotClass(agent.status)}`} />
-                      <span style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)", flex: 1 }}>
+                      <span style={{ fontWeight: 700, fontSize: 15, color: "var(--text-primary)", flex: 1 }}>
                         {agent.config?.name || agent.name || "Agent"}
                       </span>
                       <Badge size="xs" color={agent.role === "master" ? "grape" : "blue"} variant="light">
                         {agent.role}
                       </Badge>
-                      <span style={{ fontSize: 11, color: isCrashed ? "var(--accent-red)" : "var(--text-muted)" }}>
-                        {agent.status}
-                      </span>
                     </div>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+
+                    {/* Row 2: Activity + stats */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, fontSize: 12, color: "var(--text-muted)" }}>
+                      <span style={{
+                        padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 600,
+                        background: isCrashed ? "rgba(248,81,73,0.15)" : isIdle ? "rgba(210,153,34,0.15)" : "rgba(63,185,80,0.15)",
+                        color: isCrashed ? "var(--accent-red)" : isIdle ? "var(--accent-yellow)" : "var(--accent-green)",
+                      }}>
+                        {isCrashed ? "Crashed" : isStopped ? "Stopped" : isIdle ? "Idle" : "Working"}
+                      </span>
+                      {cost > 0 && <span>${cost.toFixed(2)}</span>}
+                      {(tokenIn > 0 || tokenOut > 0) && (
+                        <span>{"\u2193"}{tokenIn > 1000 ? `${(tokenIn/1000).toFixed(1)}k` : tokenIn} {"\u2191"}{tokenOut > 1000 ? `${(tokenOut/1000).toFixed(1)}k` : tokenOut}</span>
+                      )}
+                      <span style={{ marginLeft: "auto" }}>{formatLastSeen(agent.lastOutputAt)}</span>
+                    </div>
+
+                    {/* Row 3: Full-width action buttons */}
+                    <div style={{ display: "flex", gap: 8 }}>
                       <button
-                        style={{ fontSize: 12, padding: "4px 10px", borderRadius: 4, border: "1px solid var(--border-color)", background: "var(--accent-blue)", color: "#fff", cursor: "pointer" }}
+                        style={{ flex: 1, padding: "10px 0", borderRadius: 6, border: "none", background: "var(--accent-blue)", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
                         onClick={() => navigate(`/session/${sessionId}/agent/${agent.id}`)}
-                      >Chat</button>
+                      >
+                        Chat
+                      </button>
                       <button
-                        style={{ fontSize: 12, padding: "4px 10px", borderRadius: 4, border: "1px solid var(--border-color)", background: "var(--bg-tertiary)", color: "var(--text-primary)", cursor: "pointer" }}
+                        style={{ flex: 1, padding: "10px 0", borderRadius: 6, border: "1px solid var(--border-color)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 13, fontWeight: 500, cursor: "pointer" }}
                         onClick={() => handleOpenSendMessage(agent.id)}
-                      >Message</button>
-                      {isCrashed && (
+                      >
+                        Message
+                      </button>
+                      {isCrashed ? (
                         <button
-                          style={{ fontSize: 12, padding: "4px 10px", borderRadius: 4, border: "none", background: "var(--accent-yellow)", color: "#1f2328", cursor: "pointer" }}
+                          style={{ flex: 1, padding: "10px 0", borderRadius: 6, border: "none", background: "var(--accent-yellow)", color: "#1f2328", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
                           onClick={() => handleRestart(agent.id)}
-                        >Restart</button>
+                        >
+                          Restart
+                        </button>
+                      ) : (
+                        <button
+                          style={{ flex: 1, padding: "10px 0", borderRadius: 6, border: "1px solid var(--border-color)", background: "var(--bg-tertiary)", color: "var(--text-secondary)", fontSize: 13, cursor: "pointer" }}
+                          onClick={async () => { try { await api.nudgeAgent(sessionId!, agent.id); showToast("Nudged"); } catch {} }}
+                        >
+                          Nudge
+                        </button>
                       )}
                     </div>
                   </div>
