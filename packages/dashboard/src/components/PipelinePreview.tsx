@@ -1,7 +1,17 @@
 /**
- * PipelinePreview — visual flow diagram showing states and transitions.
- * CSS-based with SVG arrows. No external dependencies.
+ * PipelinePreview — visual flow diagram using React Flow.
+ * Shows workflow states as nodes and transitions as edges.
  */
+import { useMemo } from "react";
+import {
+  ReactFlow,
+  Background,
+  type Node,
+  type Edge,
+  Position,
+  MarkerType,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import type { WorkflowState } from "@kora/shared";
 
 interface PipelinePreviewProps {
@@ -9,72 +19,120 @@ interface PipelinePreviewProps {
 }
 
 export function PipelinePreview({ states }: PipelinePreviewProps) {
-  if (states.length === 0) return null;
+  const { nodes, edges } = useMemo(() => {
+    if (states.length === 0) return { nodes: [], edges: [] };
 
-  // Build adjacency: which states can each state go to?
-  const forwardEdges: Array<{ from: number; to: number; type: "forward" | "skip" | "backward" }> = [];
+    const X_GAP = 200;
+    const Y_BASE = 50;
 
-  states.forEach((state, i) => {
-    if (!state.transitions?.length) return;
-    state.transitions.forEach(targetId => {
-      const targetIdx = states.findIndex(s => s.id === targetId);
-      if (targetIdx < 0) return;
-      if (targetIdx === i + 1) {
-        forwardEdges.push({ from: i, to: targetIdx, type: "forward" });
-      } else if (targetIdx > i + 1) {
-        forwardEdges.push({ from: i, to: targetIdx, type: "skip" });
-      } else if (targetIdx < i) {
-        forwardEdges.push({ from: i, to: targetIdx, type: "backward" });
-      }
-    });
-  });
-
-  return (
-    <div style={{ marginTop: 8, padding: "8px 0" }}>
-      {/* Main flow — horizontal boxes with arrows */}
-      <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", paddingBottom: 8 }}>
-        {states.map((state, i) => (
-          <div key={state.id} style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-            {/* State box */}
-            <div style={{
-              padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
-              border: `2px solid ${state.color}`,
-              background: `${state.color}22`,
-              color: "var(--text-primary)",
-              whiteSpace: "nowrap",
-              position: "relative",
-            }}>
-              {state.label}
-              {state.skippable && (
-                <span style={{ fontSize: 9, color: "var(--text-muted)", marginLeft: 2 }}>?</span>
-              )}
-            </div>
-            {/* Arrow to next state */}
-            {i < states.length - 1 && (
-              <svg width="24" height="12" viewBox="0 0 24 12" style={{ flexShrink: 0 }}>
-                <line x1="0" y1="6" x2="18" y2="6" stroke="var(--text-muted)" strokeWidth="1.5" />
-                <polygon points="18,2 24,6 18,10" fill="var(--text-muted)" />
-              </svg>
+    const nodes: Node[] = states.map((state, i) => ({
+      id: state.id,
+      position: { x: i * X_GAP, y: Y_BASE },
+      data: {
+        label: (
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>{state.label}</div>
+            {state.skippable && (
+              <div style={{ fontSize: 9, opacity: 0.6, marginTop: 1 }}>skippable</div>
             )}
           </div>
-        ))}
-      </div>
+        ),
+      },
+      style: {
+        background: `${state.color}22`,
+        border: `2px solid ${state.color}`,
+        borderRadius: 8,
+        padding: "6px 12px",
+        fontSize: 12,
+        color: "var(--text-primary, #e6edf3)",
+        minWidth: 80,
+      },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      draggable: false,
+      connectable: false,
+    }));
 
-      {/* Transition summary — show non-linear transitions */}
-      {(forwardEdges.filter(e => e.type !== "forward").length > 0) && (
-        <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
-          {forwardEdges.filter(e => e.type === "skip").map((edge, i) => (
-            <span key={`skip-${i}`} style={{ color: "var(--accent-purple)" }}>
-              ↷ {states[edge.from].label} can skip to {states[edge.to].label}
-            </span>
-          ))}
-          {forwardEdges.filter(e => e.type === "backward").map((edge, i) => (
-            <span key={`back-${i}`} style={{ color: "var(--accent-yellow)" }}>
-              ↶ {states[edge.from].label} can return to {states[edge.to].label}
-            </span>
-          ))}
-        </div>
-      )}
+    const edges: Edge[] = [];
+    const edgeSet = new Set<string>();
+
+    states.forEach((state, i) => {
+      if (!state.transitions?.length) return;
+      state.transitions.forEach(targetId => {
+        const targetIdx = states.findIndex(s => s.id === targetId);
+        if (targetIdx < 0) return;
+        const key = `${state.id}-${targetId}`;
+        if (edgeSet.has(key)) return;
+        edgeSet.add(key);
+
+        const isForward = targetIdx === i + 1;
+        const isSkip = targetIdx > i + 1;
+        const isBackward = targetIdx < i;
+
+        edges.push({
+          id: key,
+          source: state.id,
+          target: targetId,
+          type: isForward ? "straight" : "smoothstep",
+          animated: isSkip,
+          style: {
+            stroke: isBackward ? "#d29922" : isSkip ? "#bc8cff" : "#8b949e",
+            strokeWidth: isForward ? 2 : 1.5,
+            strokeDasharray: isBackward ? "5,3" : undefined,
+          },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: isBackward ? "#d29922" : isSkip ? "#bc8cff" : "#8b949e",
+            width: 16,
+            height: 16,
+          },
+          label: isSkip ? "skip" : isBackward ? "rework" : undefined,
+          labelStyle: {
+            fontSize: 9,
+            fill: isBackward ? "#d29922" : "#bc8cff",
+          },
+          labelBgStyle: {
+            fill: "var(--bg-primary, #0d1117)",
+            fillOpacity: 0.9,
+          },
+        });
+      });
+    });
+
+    return { nodes, edges };
+  }, [states]);
+
+  if (states.length === 0) return null;
+
+  const width = states.length * 200 + 50;
+  const height = 160;
+
+  return (
+    <div style={{
+      marginTop: 8,
+      height,
+      border: "1px solid var(--border-color)",
+      borderRadius: 8,
+      overflow: "hidden",
+      background: "var(--bg-primary)",
+    }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        fitView
+        fitViewOptions={{ padding: 0.3 }}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        elementsSelectable={false}
+        panOnDrag={true}
+        zoomOnScroll={false}
+        zoomOnPinch={true}
+        preventScrolling={false}
+        proOptions={{ hideAttribution: true }}
+        style={{ background: "transparent" }}
+      >
+        <Background color="var(--border-color)" gap={20} size={1} style={{ opacity: 0.3 }} />
+      </ReactFlow>
     </div>
   );
 }
