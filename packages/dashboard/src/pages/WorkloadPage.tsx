@@ -3,8 +3,8 @@ import { useParams, Link } from "react-router-dom";
 import { Stack, Text, Group, Paper } from "@mantine/core";
 import { useApi } from "../hooks/useApi";
 import { useWebSocket } from "../hooks/useWebSocket";
-import { WorkloadChart } from "../components/WorkloadChart";
-import { DEFAULT_WORKFLOW_STATES, type TaskMetricsResponse } from "@kora/shared";
+import { WorkloadChart, type TaskMetricsResponse } from "../components/WorkloadChart";
+import { DEFAULT_WORKFLOW_STATES } from "@kora/shared";
 
 export function WorkloadPage() {
   const { sessionId } = useParams<{ sessionId: string }>();

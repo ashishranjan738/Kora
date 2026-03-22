@@ -1,4 +1,4 @@
-import type { TaskMetricsResponse } from "@kora/shared";
+import type { TaskMetricsResponse } from "../components/WorkloadChart";
 
 const API_BASE = "/api/v1";
 

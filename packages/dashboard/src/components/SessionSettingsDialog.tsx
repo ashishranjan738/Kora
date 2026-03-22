@@ -17,6 +17,7 @@ import {
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { AutonomyLevel } from "@kora/shared";
+import { NudgePolicyEditor } from "./NudgePolicyEditor";
 
 const AUTONOMY_DESCRIPTIONS: Record<AutonomyLevel, string> = {
   [AutonomyLevel.SuggestOnly]: "Agent proposes actions and waits for approval",
@@ -517,6 +518,10 @@ export function SessionSettingsDialog({
             </Group>
           </Card>
         </Box>
+
+        {/* Stale Task Nudge Policies */}
+        <Divider my="md" />
+        <NudgePolicyEditor sessionId={sessionId} />
 
         <Group justify="flex-end" mt="md">
           <Button

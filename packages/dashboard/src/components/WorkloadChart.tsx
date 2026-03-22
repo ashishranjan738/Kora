@@ -1,17 +1,63 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Text, Paper, Stack, Group, Loader, Badge, Tooltip } from "@mantine/core";
-import type { TaskMetricsResponse } from "@kora/shared";
-import type { WorkflowState } from "@kora/shared";
 import { getLoadColor } from "../utils/workload";
 
-export type { TaskMetricsResponse } from "@kora/shared";
+// ---------- Types ----------
+// Defined locally until @kora/shared build includes task-metrics types
+
+export interface AgentTaskMetrics {
+  agentId: string;
+  agentName: string;
+  tasksByStatus: Record<string, number>;
+  totalActiveTasks: number;
+  doneTasks: number;
+  avgCycleTimeMs: number;
+  bottleneckScore: number;
+  loadPercentage: number;
+  capacity: number;
+  isOverloaded: boolean;
+  isIdle: boolean;
+  taskBlockingOthers: number;
+}
+
+export interface SessionTaskMetrics {
+  totalTasks: number;
+  activeTasks: number;
+  doneTasks: number;
+  avgCycleTimeMs: number;
+  throughput: number;
+  topBottleneck: {
+    agentId: string;
+    agentName: string;
+    score: number;
+    reason: string;
+  } | null;
+  loadDistribution: {
+    overloaded: number;
+    balanced: number;
+    underutilized: number;
+    idle: number;
+  };
+}
+
+export interface TaskMetricsResponse {
+  session: SessionTaskMetrics;
+  agents: AgentTaskMetrics[];
+}
+
+interface WorkflowStateInfo {
+  id: string;
+  label: string;
+  color: string;
+  category: "not-started" | "active" | "closed";
+}
 
 // ---------- Props ----------
 
 interface WorkloadChartProps {
   metrics: TaskMetricsResponse | null;
-  workflowStates: WorkflowState[];
+  workflowStates: WorkflowStateInfo[];
   sessionId: string;
   loading?: boolean;
   error?: string | null;
