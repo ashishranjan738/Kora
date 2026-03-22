@@ -204,6 +204,25 @@ export class AppDatabase extends EventEmitter {
         PRAGMA user_version = 8;
       `);
     }
+
+    if (version < 9) {
+      this.db.exec(`
+        -- Task state transition history for cycle time analytics
+        CREATE TABLE IF NOT EXISTS task_state_transitions (
+          id TEXT PRIMARY KEY,
+          task_id TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          from_status TEXT,
+          to_status TEXT NOT NULL,
+          changed_by TEXT,
+          changed_at TEXT NOT NULL,
+          FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_transitions_task ON task_state_transitions(task_id, changed_at);
+        CREATE INDEX IF NOT EXISTS idx_transitions_session ON task_state_transitions(session_id);
+        PRAGMA user_version = 9;
+      `);
+    }
   }
 
   // ─── Events ──────────────────────────────────────────────
@@ -500,6 +519,22 @@ export class AppDatabase extends EventEmitter {
       `UPDATE tasks SET title = ?, description = ?, status = ?, assigned_to = ?, priority = ?, labels = ?, due_date = ?, updated_at = ?, status_changed_at = ? WHERE id = ?`
     ).run(newTitle, newDesc, newStatus, newAssigned, newPriority, newLabels, newDueDate, now, statusChangedAt, taskId);
 
+    // Record state transition for cycle time analytics
+    if (statusChanged) {
+      try {
+        const { randomUUID } = require("crypto");
+        this.insertTransition({
+          id: randomUUID().slice(0, 12),
+          taskId,
+          sessionId: task.session_id,
+          fromStatus: task.status,
+          toStatus: newStatus,
+          changedBy: newAssigned || undefined,
+          changedAt: now,
+        });
+      } catch { /* non-fatal */ }
+    }
+
     // Emit task-completed event if status changed to "done"
     const wasCompleted = task.status !== "done" && newStatus === "done";
     if (wasCompleted) {
@@ -713,6 +748,68 @@ export class AppDatabase extends EventEmitter {
     return this.db.prepare(
       `SELECT * FROM tasks WHERE session_id = ? AND status IN (${placeholders}) AND status != 'done' AND status != 'pending' AND COALESCE(status_changed_at, created_at) < ? ORDER BY COALESCE(status_changed_at, created_at) ASC`
     ).all(sessionId, ...statuses, cutoff) as any[];
+  }
+
+  // ─── Task State Transitions ─────────────────────────────────
+
+  /** Record a task state transition */
+  insertTransition(transition: {
+    id: string;
+    taskId: string;
+    sessionId: string;
+    fromStatus: string | null;
+    toStatus: string;
+    changedBy?: string;
+    changedAt: string;
+  }): void {
+    this.db.prepare(
+      `INSERT INTO task_state_transitions (id, task_id, session_id, from_status, to_status, changed_by, changed_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      transition.id, transition.taskId, transition.sessionId,
+      transition.fromStatus, transition.toStatus,
+      transition.changedBy || null, transition.changedAt,
+    );
+  }
+
+  /** Get state transition history for a task */
+  getTransitions(taskId: string, limit = 50): Array<{
+    id: string;
+    taskId: string;
+    fromStatus: string | null;
+    toStatus: string;
+    changedBy: string | null;
+    changedAt: string;
+  }> {
+    const rows = this.db.prepare(
+      `SELECT * FROM task_state_transitions WHERE task_id = ? ORDER BY changed_at ASC LIMIT ?`
+    ).all(taskId, limit) as any[];
+
+    return rows.map(r => ({
+      id: r.id,
+      taskId: r.task_id,
+      fromStatus: r.from_status,
+      toStatus: r.to_status,
+      changedBy: r.changed_by,
+      changedAt: r.changed_at,
+    }));
+  }
+
+  /** Get time spent in each status for a task (cycle time breakdown) */
+  getStatusDurations(taskId: string): Record<string, number> {
+    const transitions = this.getTransitions(taskId, 1000);
+    const durations: Record<string, number> = {};
+
+    for (let i = 0; i < transitions.length; i++) {
+      const t = transitions[i];
+      const nextTime = i + 1 < transitions.length
+        ? new Date(transitions[i + 1].changedAt).getTime()
+        : Date.now();
+      const duration = nextTime - new Date(t.changedAt).getTime();
+      const status = t.toStatus;
+      durations[status] = (durations[status] || 0) + duration;
+    }
+
+    return durations;
   }
 
   /** Clean up old delivery records (keep last 7 days) */
