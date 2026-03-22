@@ -2328,8 +2328,21 @@ export function createApiRouter(deps: {
         res.status(400).json({ error: `status must be one of: ${validStatuses.join(", ")}` });
         return;
       }
-      // Force mode: master agents can bypass pipeline validation (e.g. force-close a task with merged PR)
+      // Force mode: master agents or dashboard users can bypass pipeline validation
+      // Security: MCP callers identify via X-Agent-Id header — verify role if present
       const forceMode = (body as any).force === true;
+      if (forceMode) {
+        const callerAgentId = req.headers["x-agent-id"] as string | undefined;
+        if (callerAgentId) {
+          const orch = orchestrators.get(sid);
+          const callerAgent = orch?.agentManager.getAgent(callerAgentId);
+          if (callerAgent && callerAgent.config.role !== "master") {
+            res.status(403).json({ error: "force mode requires master role" });
+            return;
+          }
+        }
+        // No X-Agent-Id header = dashboard/user request → always allowed
+      }
       if (forceMode && body.status) {
         // Add auto-comment documenting the force transition
         const commentText = `Force-transitioned to "${body.status}" (pipeline bypass)`;
@@ -3239,8 +3252,13 @@ export function createApiRouter(deps: {
         const buffer = Buffer.from(base64Data, "base64");
         fs.writeFileSync(destPath, buffer);
       } else if (sourcePath) {
-        // File path input — copy file
-        const resolvedSource = path.resolve(sourcePath);
+        // File path input — copy file (SECURITY: restrict to project directory)
+        const projectRoot = path.resolve(session.config.projectPath);
+        const resolvedSource = path.resolve(projectRoot, sourcePath);
+        if (!resolvedSource.startsWith(projectRoot + path.sep) && resolvedSource !== projectRoot) {
+          res.status(403).json({ error: "sourcePath must be within the project directory" });
+          return;
+        }
         if (!fs.existsSync(resolvedSource)) {
           res.status(404).json({ error: `Source file not found: ${sourcePath}` });
           return;
@@ -4557,12 +4575,13 @@ export function createApiRouter(deps: {
       if (!wh) { res.status(404).json({ error: "Webhook not found" }); return; }
       if (!wh.enabled) { res.status(403).json({ error: "Webhook is disabled" }); return; }
 
-      // Verify HMAC-SHA256 signature
-      const { createHmac, createHash, randomUUID } = require("crypto");
+      // Verify HMAC-SHA256 signature (timing-safe comparison)
+      const { createHmac, createHash, randomUUID, timingSafeEqual } = require("crypto");
       const signature = req.headers["x-webhook-signature"] || req.headers["x-hub-signature-256"] || "";
       const body = JSON.stringify(req.body);
       const expected = "sha256=" + createHmac("sha256", wh.secret).update(body).digest("hex");
-      if (!signature || signature !== expected) {
+      if (!signature || typeof signature !== "string" || signature.length !== expected.length ||
+          !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
         res.status(401).json({ error: "Invalid or missing signature" });
         return;
       }
