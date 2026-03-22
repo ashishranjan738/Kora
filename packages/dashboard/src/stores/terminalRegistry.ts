@@ -71,16 +71,12 @@ function connectWs(entry: TerminalEntry): void {
         entry.onMessageNotification(match[1]);
       }
 
-      // Check if user is at bottom BEFORE writing new data using viewport position
-      // viewportY tracks where the user has scrolled; baseY tracks the total scroll offset
-      const isAtBottom = entry.term.buffer.active.viewportY >= entry.term.buffer.active.baseY;
-
       entry.term.write(text, () => {
-        // Only auto-scroll if user was at bottom AND not manually paused
-        if (isAtBottom && !entry.manuallyPaused) {
+        // Use real-time userScrolledUp state (not stale pre-write cache)
+        // to prevent scroll jumps when user is reading history
+        if (!entry.userScrolledUp && !entry.manuallyPaused) {
           entry.term.scrollToBottom();
         }
-        // Otherwise: preserve user's scroll position — they're reading history
       });
 
       if (!firstChunkReceived) {
@@ -98,7 +94,9 @@ function connectWs(entry: TerminalEntry): void {
       // Debounced refresh after rapid output bursts
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => {
-        entry.term.refresh(0, entry.term.rows - 1);
+        if (!entry.userScrolledUp) {
+          entry.term.refresh(0, entry.term.rows - 1);
+        }
       }, 150);
     };
 
@@ -160,7 +158,7 @@ export function getOrCreateTerminal(
     smoothScrollDuration: 80,
     scrollSensitivity: 1,
     fastScrollSensitivity: 5,
-    scrollOnUserInput: true,
+    scrollOnUserInput: false, // Prevent accidental scroll-to-bottom on key press while reading history
     rightClickSelectsWord: true,
     allowProposedApi: true,
   });
