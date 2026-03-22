@@ -2168,7 +2168,7 @@ textarea:focus {
 .agent-panel-fullscreen {
   position: fixed !important;
   inset: 0 !important;
-  z-index: 50 !important;
+  z-index: 10000 !important; /* Must be higher than Mantine Indicator/Badge z-indices to prevent bleed-through */
   border-radius: 0;
   background: var(--bg-primary);
   display: flex;

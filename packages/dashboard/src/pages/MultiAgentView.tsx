@@ -1180,7 +1180,7 @@ export function MultiAgentView() {
     return createPortal(
       <div
         className="agent-panel-fullscreen"
-        style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column' }}
+        style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column' }}
       >
         {/* Header */}
         <div style={{
