@@ -852,6 +852,27 @@ export function createApiRouter(deps: {
     }
   });
 
+  /** Get tool usage summary for an agent (from Claude Code JSONL session data) */
+  router.get("/sessions/:sid/agents/:aid/tool-usage", (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const orch = orchestrators.get(String(sid));
+      if (!orch) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const agent = orch.agentManager.getAgent(String(aid));
+      if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+
+      const toolUsage = orch.usageMonitor.getToolUsageSummary(String(aid));
+      res.json({
+        agentId: aid,
+        toolUsage: toolUsage || {},
+        totalCalls: toolUsage ? Object.values(toolUsage).reduce((sum, c) => sum + c, 0) : 0,
+      });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   router.delete("/sessions/:sid/agents/:aid", async (req: Request, res: Response) => {
     try {
       const { sid, aid } = req.params;

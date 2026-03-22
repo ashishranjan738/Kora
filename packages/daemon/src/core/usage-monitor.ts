@@ -253,6 +253,38 @@ export class UsageMonitor {
     this.jsonlInitAttempted.delete(agentId);
   }
 
+  /**
+   * Get tool usage summary for an agent from JSONL session data.
+   * Returns { toolName: count } sorted by count descending.
+   */
+  getToolUsageSummary(agentId: string): Record<string, number> | null {
+    if (!this.jsonlReader.hasAgent(agentId)) return null;
+    const toolCalls = this.jsonlReader.getToolCalls(agentId);
+    if (toolCalls.length === 0) return null;
+
+    const counts: Record<string, number> = {};
+    for (const call of toolCalls) {
+      counts[call.name] = (counts[call.name] || 0) + 1;
+    }
+
+    // Sort by count descending
+    return Object.fromEntries(
+      Object.entries(counts).sort(([, a], [, b]) => b - a)
+    );
+  }
+
+  /**
+   * Get tool usage for all monitored agents.
+   */
+  getAllToolUsage(): Record<string, Record<string, number>> {
+    const result: Record<string, Record<string, number>> = {};
+    for (const agentId of this.intervals.keys()) {
+      const usage = this.getToolUsageSummary(agentId);
+      if (usage) result[agentId] = usage;
+    }
+    return result;
+  }
+
   /** Stop all monitoring */
   stopAll(): void {
     for (const [id] of this.intervals) this.stopMonitoring(id);
