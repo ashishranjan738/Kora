@@ -864,6 +864,16 @@ export function MultiAgentView() {
               </span>
               <FlagIndicator flags={(agent.config?.extraCliArgs as string[]) || []} />
               <ChannelIndicator channels={(agent.config?.channels as string[]) || []} />
+              {(agent.config?.skills as string[] || []).length > 0 && (
+                <span style={{ display: "inline-flex", gap: 3, flexWrap: "wrap" }}>
+                  {(agent.config?.skills as string[]).slice(0, 3).map((skill: string) => (
+                    <Badge key={skill} size="xs" variant="dot" color={
+                      skill === "frontend" ? "cyan" : skill === "backend" ? "orange" : skill === "testing" ? "green" :
+                      skill === "review" ? "grape" : skill === "research" ? "violet" : "gray"
+                    }>{skill}</Badge>
+                  ))}
+                </span>
+              )}
               {(() => {
                 const agentTasks = tasks.filter(t =>
                   t.assignedTo === agent.id || t.assignedTo === (agent.config?.name || agent.name)
