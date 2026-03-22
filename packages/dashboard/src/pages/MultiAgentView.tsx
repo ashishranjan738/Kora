@@ -19,6 +19,7 @@ import { showError } from "../utils/notifications";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { AgentLoadBadge } from "../components/AgentLoadBadge";
 import { UnreadMessageBanner } from "../components/UnreadMessageBanner";
+import { useWebSocket } from "../hooks/useWebSocket";
 
 const PANEL_BORDER_COLORS = [
   "#58a6ff",
@@ -249,11 +250,30 @@ export function MultiAgentView() {
 
   useEffect(() => {
     if (!sessionId) return;
-    pollRef.current = setInterval(loadData, 5000);
+    // Reduced from 5s to 10s — WebSocket handles instant updates
+    pollRef.current = setInterval(loadData, 10000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [sessionId, loadData]);
+
+  // WebSocket: instant refresh on agent/task events
+  const handleWsEvent = useCallback((event: any) => {
+    const refreshTypes = [
+      "agent-spawned", "agent-removed", "agent-activity-changed",
+      "agent-status-changed", "task-created", "task-updated", "task-deleted",
+    ];
+    if (refreshTypes.includes(event.type)) {
+      loadData();
+    }
+  }, [loadData]);
+
+  const { subscribe, unsubscribe } = useWebSocket(handleWsEvent);
+
+  useEffect(() => {
+    if (sessionId) subscribe(sessionId);
+    return () => { if (sessionId) unsubscribe(sessionId); };
+  }, [sessionId, subscribe, unsubscribe]);
 
   // Fetch tasks for agent task count indicators
   useEffect(() => {
