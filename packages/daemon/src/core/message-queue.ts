@@ -882,13 +882,16 @@ export class MessageQueue {
     const unread = await this.getUnreadCountFn(agentId);
     if (unread === 0) return 0;
 
-    const notification = `\n>>> 📬 YOU HAVE ${unread} UNREAD MESSAGE(S) — run check_messages NOW <<<\n`;
+    const notification = `>>> 📬 YOU HAVE ${unread} UNREAD MESSAGE(S) — run check_messages NOW <<<`;
 
-    // Tier 3: Use direct delivery to bypass queue (nudges are time-sensitive)
-    // Fire-and-forget to avoid blocking caller
-    this.deliverDirect(agentId, tmuxSession, notification, undefined, agentId).catch(err =>
-      logger.warn({ err, agentId }, "Failed to deliver nudge notification")
-    );
+    // Deliver nudge directly via tmux — send text then Enter separately
+    // (literal mode doesn't interpret \n as Enter)
+    try {
+      await this.tmux.sendKeys(tmuxSession, notification, { literal: true });
+      await this.tmux.sendKeys(tmuxSession, '', { literal: false }); // Press Enter
+    } catch (err) {
+      logger.warn({ err, agentId }, "Failed to deliver nudge notification");
+    }
 
     return unread;
   }

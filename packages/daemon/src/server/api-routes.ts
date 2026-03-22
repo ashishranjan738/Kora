@@ -1558,7 +1558,8 @@ export function createApiRouter(deps: {
       if (customMessage) {
         // Direct custom message via tmux — bypass queue entirely
         try {
-          await tmux.sendKeys(agent.config.tmuxSession, `\n[Nudge]: ${customMessage}\n`, { literal: true });
+          await tmux.sendKeys(agent.config.tmuxSession, `[Nudge]: ${customMessage}`, { literal: true });
+          await tmux.sendKeys(agent.config.tmuxSession, '', { literal: false }); // Press Enter
           logger.info({ agentId: aid, customMessage, sessionId: sid }, "[API] Custom nudge sent successfully");
 
           // Track nudge-sent event
