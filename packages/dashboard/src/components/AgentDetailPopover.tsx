@@ -1,5 +1,6 @@
-import { Stack, Group, Text, Badge, Divider, Button, Progress } from "@mantine/core";
+import { Stack, Group, Text, Badge, Divider, Button, Progress, Code, CopyButton, Tooltip } from "@mantine/core";
 import { formatCost, formatTokens, formatLastSeen, formatUptime } from "../utils/formatters";
+import { FlagIndicator, ChannelIndicator } from "./FlagIndicator";
 
 // ---------- Types ----------
 
@@ -30,6 +31,10 @@ export function AgentDetailPopover({ agent, tasks = [], onNudge, onExpand }: Age
   const utilization = capacity > 0 ? Math.min(100, Math.round((activeTasks / capacity) * 100)) : 0;
   const skills: string[] = agent.config?.skills || [];
   const uptime = agent.startedAt ? formatUptime(agent.startedAt) : null;
+  const flags: string[] = (agent.config?.extraCliArgs as string[]) || [];
+  const channels: string[] = (agent.config?.channels as string[]) || [];
+  const worktreePath = agent.config?.workingDirectory || "";
+  const agentId = agent.id || "";
 
   const isCrashed = agent.status === "crashed" || agent.status === "error";
   const isIdle = agent.activity === "idle";
@@ -159,6 +164,45 @@ export function AgentDetailPopover({ agent, tasks = [], onNudge, onExpand }: Age
           </Group>
         </div>
       )}
+
+      {/* Flags & Channels */}
+      {(flags.length > 0 || channels.length > 0) && (
+        <div>
+          <Group gap={8}>
+            {flags.length > 0 && <FlagIndicator flags={flags} />}
+            {channels.length > 0 && <ChannelIndicator channels={channels} />}
+          </Group>
+        </div>
+      )}
+
+      {/* Worktree Path */}
+      {worktreePath && (
+        <Group justify="space-between" wrap="nowrap">
+          <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>Worktree</Text>
+          <Tooltip label={worktreePath}>
+            <Text size="xs" ff="var(--font-mono)" lineClamp={1} style={{ maxWidth: 180, direction: "rtl", textAlign: "left" }}>
+              {worktreePath.split("/").slice(-3).join("/")}
+            </Text>
+          </Tooltip>
+        </Group>
+      )}
+
+      {/* Agent ID (copyable) */}
+      <Group justify="space-between" wrap="nowrap">
+        <Text size="xs" c="dimmed">ID</Text>
+        <CopyButton value={agentId}>
+          {({ copied, copy }) => (
+            <Tooltip label={copied ? "Copied!" : "Click to copy"}>
+              <Code
+                style={{ cursor: "pointer", fontSize: 10, maxWidth: 160 }}
+                onClick={copy}
+              >
+                {agentId.slice(0, 20)}{agentId.length > 20 ? "…" : ""}
+              </Code>
+            </Tooltip>
+          )}
+        </CopyButton>
+      </Group>
 
       <Divider />
 
