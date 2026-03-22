@@ -85,6 +85,98 @@ export class WorktreeManager {
       return [];
     }
   }
+
+  /**
+   * Prune ALL stale worktrees and branches for a project.
+   * Uses filesystem scan as source of truth (not in-memory maps).
+   * Safe: skips worktrees with uncommitted changes.
+   *
+   * @param projectPath - Root git project path
+   * @param runtimeDir - Session runtime directory containing worktrees/
+   * @param activeAgentIds - Set of agent IDs that are currently running (won't be pruned)
+   */
+  async pruneAll(projectPath: string, runtimeDir: string, activeAgentIds: Set<string>): Promise<{
+    removedWorktrees: string[];
+    removedBranches: string[];
+    skippedDirty: string[];
+    prunedGit: boolean;
+  }> {
+    const result = {
+      removedWorktrees: [] as string[],
+      removedBranches: [] as string[],
+      skippedDirty: [] as string[],
+      prunedGit: false,
+    };
+
+    // 1. Scan worktrees directory for orphaned directories
+    const worktreesDir = path.join(runtimeDir, "worktrees");
+    try {
+      const entries = await fs.readdir(worktreesDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const agentId = entry.name;
+
+        // Skip active agents
+        if (activeAgentIds.has(agentId)) continue;
+
+        // Safety: check for uncommitted changes before removing
+        const worktreePath = path.join(worktreesDir, agentId);
+        try {
+          const { stdout: diffOutput } = await execFileAsync(
+            "git", ["diff", "--stat"],
+            { cwd: worktreePath },
+          );
+          if (diffOutput.trim().length > 0) {
+            result.skippedDirty.push(agentId);
+            continue; // Don't remove worktrees with uncommitted changes
+          }
+        } catch {
+          // If git diff fails (e.g. corrupt worktree), proceed with removal
+        }
+
+        // Remove worktree + branch
+        try {
+          await this.removeWorktree(projectPath, runtimeDir, agentId);
+          result.removedWorktrees.push(agentId);
+        } catch {
+          // Best effort — try to remove the directory directly as fallback
+          try {
+            await fs.rm(worktreePath, { recursive: true, force: true });
+            result.removedWorktrees.push(agentId);
+          } catch { /* ignore */ }
+        }
+      }
+    } catch (err) {
+      // worktrees dir may not exist — that's fine
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
+
+    // 2. Run git worktree prune (cleans git's internal tracking)
+    try {
+      await execFileAsync("git", ["worktree", "prune"], { cwd: projectPath });
+      result.prunedGit = true;
+    } catch { /* non-fatal */ }
+
+    // 3. Clean stale agent/* branches that don't match active agents
+    try {
+      const { stdout } = await execFileAsync(
+        "git", ["branch", "--list", "agent/*"],
+        { cwd: projectPath },
+      );
+      const branches = stdout.split("\n").map(b => b.trim().replace(/^\*\s*/, "")).filter(Boolean);
+      for (const branch of branches) {
+        const agentId = branch.replace("agent/", "");
+        if (!activeAgentIds.has(agentId)) {
+          try {
+            await execFileAsync("git", ["branch", "-D", branch], { cwd: projectPath });
+            result.removedBranches.push(branch);
+          } catch { /* branch may be checked out — skip */ }
+        }
+      }
+    } catch { /* non-fatal */ }
+
+    return result;
+  }
 }
 
 export const worktreeManager = new WorktreeManager();

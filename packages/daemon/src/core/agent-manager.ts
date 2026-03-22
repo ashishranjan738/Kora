@@ -525,6 +525,31 @@ export class AgentManager extends EventEmitter {
           logger.error({ err: err }, `[agent-manager] Failed to remove worktree for ${agentId}:`);
         }
         this.worktreeInfo.delete(agentId);
+      } else {
+        // Fallback: worktreeInfo may be empty after daemon restart.
+        // Try to remove worktree using the agent's working directory as a hint.
+        const agent = this.agents.get(agentId);
+        if (agent?.config.workingDirectory) {
+          const workDir = agent.config.workingDirectory;
+          // Check if workingDirectory is under a worktrees/ directory
+          if (workDir.includes("/worktrees/")) {
+            const runtimeDir = workDir.substring(0, workDir.indexOf("/worktrees/"));
+            // Find the project root by going up from runtimeDir
+            // runtimeDir is typically {project}/.kora/sessions/{sessionId}
+            // projectPath is typically 3-4 levels up, but we can use git rev-parse
+            try {
+              const { execFile: execFileCb } = await import("child_process");
+              const { promisify } = await import("util");
+              const exec = promisify(execFileCb);
+              const { stdout } = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: workDir });
+              const projectPath = stdout.trim();
+              await this.worktreeManager.removeWorktree(projectPath, runtimeDir, agentId);
+              logger.info(`[agent-manager] Removed worktree for ${agentId} via fallback path detection`);
+            } catch (err) {
+              logger.debug({ err }, `[agent-manager] Fallback worktree removal failed for ${agentId}`);
+            }
+          }
+        }
       }
     } else {
       logger.info(`[agent-manager] Preserving worktree for ${agentId} (restart mode)`);

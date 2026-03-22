@@ -452,6 +452,30 @@ export function createApiRouter(deps: {
         }
       } catch {}
 
+      // Clean up git worktrees and stale branches for this session
+      const sessionForCleanup = sessionManager.getSession(sid);
+      if (sessionForCleanup) {
+        try {
+          const { worktreeManager } = await import("../core/worktree.js");
+          const emptySet = new Set<string>(); // No active agents after session deletion
+          const pruneResult = await worktreeManager.pruneAll(
+            sessionForCleanup.config.projectPath,
+            sessionForCleanup.runtimeDir,
+            emptySet,
+          );
+          if (pruneResult.removedWorktrees.length > 0 || pruneResult.removedBranches.length > 0) {
+            logger.info({
+              sessionId: sid,
+              removedWorktrees: pruneResult.removedWorktrees.length,
+              removedBranches: pruneResult.removedBranches.length,
+              skippedDirty: pruneResult.skippedDirty.length,
+            }, "[api] Pruned stale worktrees on session delete");
+          }
+        } catch (err) {
+          logger.warn({ err, sessionId: sid }, "[api] Failed to prune worktrees on session delete");
+        }
+      }
+
       // Clean up standalone terminal tracking
       standaloneTerminals.delete(sid);
 
