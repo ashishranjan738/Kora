@@ -256,6 +256,103 @@ export class StaleTaskWatchdog extends EventEmitter {
   }
 
   /**
+   * Auto-advance stale tasks when the assigned agent is idle.
+   * Forward-only transitions. Never advances past "review" without explicit approval.
+   * Called after the regular check() in the watchdog interval.
+   *
+   * @param workflowStates - Session workflow states for transition lookup
+   * @param idleThresholdMinutes - Minutes of agent idle before auto-advance (default: 10)
+   */
+  async autoAdvanceStaleTasks(
+    workflowStates: Array<{ id: string; category: string; transitions?: string[]; requiresApproval?: boolean }>,
+    idleThresholdMinutes = 10,
+  ): Promise<number> {
+    if (!workflowStates || workflowStates.length === 0) return 0;
+    let advanced = 0;
+
+    try {
+      const allTasks = this.database.getTasks(this.sessionId);
+      const activeStatuses = workflowStates
+        .filter(s => s.category === "active")
+        .map(s => s.id);
+
+      for (const task of allTasks) {
+        if (!activeStatuses.includes(task.status)) continue;
+        if (!task.assignedTo) continue;
+
+        // Check if assigned agent is idle
+        const agents = this.agentManager.listAgents();
+        const agent = agents.find(a =>
+          a.config.sessionId === this.sessionId &&
+          (a.config.name === task.assignedTo || a.id === task.assignedTo)
+        );
+        if (!agent || agent.activity !== "idle") continue;
+
+        // Check idle duration
+        const idleSince = agent.idleSince ? new Date(agent.idleSince).getTime() : 0;
+        if (!idleSince || (Date.now() - idleSince) < idleThresholdMinutes * 60_000) continue;
+
+        // Find the next forward state
+        const currentState = workflowStates.find(s => s.id === task.status);
+        if (!currentState?.transitions?.length) continue;
+
+        // Pick the first forward transition that isn't requiresApproval
+        const currentIdx = workflowStates.findIndex(s => s.id === task.status);
+        const nextState = currentState.transitions
+          .map(tid => workflowStates.find(s => s.id === tid))
+          .filter(s => s && !s.requiresApproval)
+          .find(s => {
+            const idx = workflowStates.findIndex(ws => ws.id === s!.id);
+            return idx > currentIdx; // forward only
+          });
+
+        if (!nextState) continue;
+
+        // Auto-advance
+        try {
+          this.database.updateTask(task.id, { status: nextState.id });
+          const { randomUUID } = require("crypto");
+          this.database.addTaskComment({
+            id: randomUUID().slice(0, 8),
+            taskId: task.id,
+            text: `Auto-advanced by watchdog: agent idle for ${idleThresholdMinutes}+ minutes. ${task.status} → ${nextState.id}`,
+            author: "system",
+            authorName: "system",
+            createdAt: new Date().toISOString(),
+          });
+
+          this.emit("auto-advance", {
+            taskId: task.id, taskTitle: task.title,
+            fromStatus: task.status, toStatus: nextState.id,
+            agentId: agent.id, reason: "agent-idle",
+          });
+
+          await this.eventLog.log({
+            sessionId: this.sessionId,
+            type: "task-auto-advanced" as any,
+            data: {
+              taskId: task.id, taskTitle: task.title,
+              fromStatus: task.status, toStatus: nextState.id,
+              agentId: agent.id, idleMinutes: Math.round((Date.now() - idleSince) / 60_000),
+            },
+          });
+
+          advanced++;
+          logger.info({
+            taskId: task.id, fromStatus: task.status, toStatus: nextState.id, agentId: agent.id,
+          }, `[StaleTaskWatchdog] Auto-advanced stale task`);
+        } catch (err) {
+          logger.warn({ err, taskId: task.id }, "[StaleTaskWatchdog] Failed to auto-advance task");
+        }
+      }
+    } catch (err) {
+      logger.warn({ err }, "[StaleTaskWatchdog] autoAdvanceStaleTasks failed");
+    }
+
+    return advanced;
+  }
+
+  /**
    * Fix #7: Cleanup old nudge records for closed tasks (>7 days).
    * @param closedStatuses - Closed/done status IDs from workflow states.
    *   Defaults to ["done"] for standard workflows but accepts custom closed states.
