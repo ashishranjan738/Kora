@@ -1,3 +1,5 @@
+import type { TaskMetricsResponse } from "../components/WorkloadChart";
+
 const API_BASE = "/api/v1";
 
 function getToken(): string {
@@ -261,5 +263,8 @@ export function useApi() {
         method: "POST",
         body: JSON.stringify({ requestId }),
       }),
+    // Task metrics / workload
+    getTaskMetrics: (sid: string) =>
+      apiFetch<TaskMetricsResponse>(`/sessions/${sid}/task-metrics`),
   };
 }

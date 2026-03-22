@@ -16,6 +16,8 @@ import { AgentActivityBadge, AgentUtilization, ActivitySparkline } from "../comp
 import { TaskBoard } from "../components/TaskBoard";
 import { SessionSummary } from "../components/SessionSummary";
 import { KnowledgeViewer } from "../components/KnowledgeViewer";
+import { WorkloadChart, type TaskMetricsResponse } from "../components/WorkloadChart";
+import { DEFAULT_WORKFLOW_STATES } from "@kora/shared";
 import { TimelineView } from "../components/timeline/TimelineView";
 import { ExecutionTracing } from "../components/ExecutionTracing";
 import { SideTerminalPanel } from "../components/SideTerminalPanel";
@@ -54,11 +56,11 @@ import {
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 
-type TabId = "editor" | "agents" | "tasks" | "execution" | "timeline" | "changes" | "knowledge";
+type TabId = "editor" | "agents" | "tasks" | "execution" | "timeline" | "changes" | "knowledge" | "workload";
 
 function getInitialTab(): TabId {
   const hash = window.location.hash.replace("#", "");
-  if (["agents", "tasks", "execution", "timeline", "changes", "knowledge"].includes(hash)) return hash as TabId;
+  if (["agents", "tasks", "execution", "timeline", "changes", "knowledge", "workload"].includes(hash)) return hash as TabId;
   return "editor";
 }
 
@@ -81,6 +83,50 @@ const activityDotClass: Record<AgentActivity, string> = {
   crashed: "activity-crashed",
   stopped: "activity-stopped",
 };
+
+/** Inline sub-component for the Workload tab to keep state isolated */
+function WorkloadTabContent({ sessionId, session, api }: { sessionId: string; session: any; api: ReturnType<typeof useApi> }) {
+  const [metrics, setMetrics] = useState<TaskMetricsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+
+  const loadMetrics = useCallback(async () => {
+    try {
+      const data = await api.getTaskMetrics(sessionId);
+      setMetrics(data as TaskMetricsResponse);
+      setError(null);
+    } catch (err: any) {
+      if (err.message?.includes("404")) {
+        setError("Task metrics API not available yet. Backend endpoint needed.");
+      } else {
+        setError(err.message || "Failed to load metrics");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    loadMetrics();
+    pollRef.current = setInterval(loadMetrics, 10000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [loadMetrics]);
+
+  const workflowStates = session?.workflowStates ?? session?.config?.workflowStates ?? DEFAULT_WORKFLOW_STATES;
+
+  return (
+    <div style={{ padding: "16px 0" }}>
+      <WorkloadChart
+        metrics={metrics}
+        workflowStates={workflowStates}
+        sessionId={sessionId}
+        loading={loading}
+        error={error}
+      />
+    </div>
+  );
+}
 
 export function SessionDetail() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -662,6 +708,12 @@ export function SessionDetail() {
         >
           Knowledge
         </button>
+        <button
+          className={activeTab === "workload" ? "tab-active" : ""}
+          onClick={() => setActiveTab("workload")}
+        >
+          Workload
+        </button>
       </div>
 
       {/* Tab content */}
@@ -888,6 +940,14 @@ export function SessionDetail() {
 
       {activeTab === "knowledge" && sessionId && (
         <KnowledgeViewer sessionId={sessionId} />
+      )}
+
+      {activeTab === "workload" && sessionId && (
+        <WorkloadTabContent
+          sessionId={sessionId}
+          session={session}
+          api={api}
+        />
       )}
 
       {/* Close Terminal Confirm Dialog */}
