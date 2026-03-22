@@ -653,11 +653,54 @@ if (command === "start") {
     logger.error({ err: err }, "Failed to run playbook:");
     process.exit(1);
   });
+} else if (command === "tunnel") {
+  const tunnelCmd = args[1];
+  (async () => {
+    const { startTunnel, stopTunnel, getTunnelStatus } = await import("./core/tunnel.js");
+    const tunnelDevMode = args.includes("--dev") || process.env.KORA_DEV === "1";
+    const port = tunnelDevMode ? 7891 : 7890;
+
+    if (tunnelCmd === "start") {
+      try {
+        // Read token from config dir
+        const fs = await import("fs");
+        const tunnelIsDev = args.includes("--dev") || process.env.KORA_DEV === "1";
+        if (tunnelIsDev) process.env.KORA_DEV = "1";
+        const tokenPath = path.join(getGlobalConfigDir(), "token");
+        const token = fs.existsSync(tokenPath) ? fs.readFileSync(tokenPath, "utf-8").trim() : undefined;
+
+        const info = await startTunnel(port, token);
+        logger.info(`Tunnel started: ${info.url}`);
+        logger.info(`Expires: ${info.expiresAt}`);
+        // Keep process alive
+        process.on("SIGINT", () => { stopTunnel(); process.exit(0); });
+        process.on("SIGTERM", () => { stopTunnel(); process.exit(0); });
+      } catch (err: any) {
+        logger.error(err.message);
+        process.exit(1);
+      }
+    } else if (tunnelCmd === "stop") {
+      const stopped = stopTunnel();
+      logger.info(stopped ? "Tunnel stopped" : "No tunnel running");
+    } else if (tunnelCmd === "status") {
+      const status = getTunnelStatus();
+      if (status) {
+        logger.info(`Tunnel active: ${status.url}`);
+        logger.info(`Started: ${status.startedAt}`);
+        logger.info(`Expires: ${status.expiresAt}`);
+      } else {
+        logger.info("No tunnel running");
+      }
+    } else {
+      logger.info("Usage: kora tunnel start|stop|status [--dev]");
+    }
+  })().catch(err => { logger.error(err); process.exit(1); });
 } else {
   logger.info(`Kora v${APP_VERSION}\n`);
   logger.info("Usage:");
   logger.info("  kora start [--port PORT] [--project PATH] [--dev]");
   logger.info("  kora stop");
   logger.info("  kora status");
+  logger.info("  kora tunnel start|stop|status [--dev]");
   logger.info("  kora run <playbook> [task] [--project PATH] [--headless] [--timeout MS]");
 }
