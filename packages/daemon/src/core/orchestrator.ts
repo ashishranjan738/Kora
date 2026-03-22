@@ -480,13 +480,32 @@ export class Orchestrator extends EventEmitter {
       await this.checkForBlocking(fromAgentId, message);
     }
 
-    // If the TARGET agent is blocked, buffer the message instead of delivering
+    // Persist message to SQLite BEFORE buffer/queue decision.
+    // This ensures check_messages() always finds the message, even if
+    // terminal delivery is delayed by blocking or prompt detection.
+    try {
+      this.database.insertMessage({
+        id: crypto.randomUUID(),
+        sessionId: this.config.sessionId,
+        fromAgentId,
+        toAgentId,
+        messageType: messageType || "text",
+        content: message,
+        priority: "normal",
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 day TTL
+      });
+    } catch (err) {
+      logger.warn({ err, from: fromAgentId, to: toAgentId }, "[orchestrator] Failed to persist message to SQLite");
+    }
+
+    // If the TARGET agent is blocked, buffer the message for later terminal delivery
     if (this.isAgentBlocked(toAgentId)) {
       this.bufferMessage(toAgentId, fromAgentId, toAgentId, message, messageType);
       logger.debug({ from: fromAgentId, to: toAgentId }, "[orchestrator] Message buffered (target agent is blocked)");
       // Still log the event for timeline
     } else {
-      // Queue the message — delivers when agent is at a prompt
+      // Queue the message — delivers to terminal when agent is at a prompt
       this.messageQueue.enqueue(toAgentId, toAgent.config.tmuxSession, relayMsg, fromAgentId);
     }
 
