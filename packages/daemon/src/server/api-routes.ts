@@ -1064,7 +1064,16 @@ export function createApiRouter(deps: {
       const broadcastMsg = `\x1b[1;33m[Broadcast]\x1b[0m: ${body.message}`;
       for (const agent of agents) {
         // Skip the sender — they already know what they broadcast
-        if (senderId && (agent.id === senderId || agent.config.name === senderId)) {
+        // Check agent ID, agent name, and message content for sender identification
+        if (senderId && (
+          agent.id === senderId ||
+          agent.config.name === senderId ||
+          agent.config.name.toLowerCase() === senderId.toLowerCase()
+        )) {
+          continue;
+        }
+        // Also skip if the message itself contains "[From <agentId>]" matching this agent
+        if (senderId && body.message?.includes(`[From ${agent.id}]`)) {
           continue;
         }
         try {
@@ -2483,8 +2492,38 @@ export function createApiRouter(deps: {
       const db = getDb(sid);
       if (!db) { res.status(404).json({ error: "Session not found" }); return; }
 
+      // Get task before deleting to notify assigned agent
+      const taskBeforeDelete = db.getTask(tid);
+
       const deleted = db.deleteTask(tid);
       if (!deleted) { res.status(404).json({ error: "Task not found" }); return; }
+
+      // Notify assigned agent that their task was deleted
+      if (taskBeforeDelete?.assignedTo) {
+        const orch_notify = orchestrators.get(sid);
+        if (orch_notify) {
+          try {
+            const agent = orch_notify.agentManager.getAgent(taskBeforeDelete.assignedTo);
+            const notifyMsg = `[Task deleted] "${taskBeforeDelete.title}" (${tid}) has been removed. Stop working on it if in progress.`;
+            if (agent && agent.status === "running") {
+              orch_notify.messageQueue.enqueue(taskBeforeDelete.assignedTo, agent.config.tmuxSession,
+                `\x1b[1;31m${notifyMsg}\x1b[0m`);
+            }
+            // Persist to SQLite for check_messages
+            orch_notify.database.insertMessage({
+              id: randomUUID(),
+              sessionId: sid,
+              fromAgentId: "system",
+              toAgentId: taskBeforeDelete.assignedTo,
+              messageType: "task-deleted",
+              content: notifyMsg,
+              priority: "high",
+              createdAt: Date.now(),
+              expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+            });
+          } catch { /* non-fatal */ }
+        }
+      }
 
       // Broadcast task-deleted event via WebSocket
       broadcastEvent({ event: "task-deleted", sessionId: sid, taskId: tid });
@@ -2493,7 +2532,7 @@ export function createApiRouter(deps: {
       // Log to SQLite for timeline
       const orch_td = orchestrators.get(sid);
       if (orch_td) {
-        orch_td.eventLog.log({ sessionId: sid, type: "task-deleted" as any, data: { taskId: tid } });
+        orch_td.eventLog.log({ sessionId: sid, type: "task-deleted" as any, data: { taskId: tid, title: taskBeforeDelete?.title } });
       }
 
       res.json({ deleted: true, id: tid });
