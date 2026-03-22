@@ -13,6 +13,7 @@ import {
   Card,
   Box,
   Slider,
+  Switch,
   Divider,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
@@ -65,6 +66,7 @@ export function SessionSettingsDialog({
   const [defaultProvider, setDefaultProvider] = useState("");
   const [defaultModel, setDefaultModel] = useState("");
   const [worktreeMode, setWorktreeMode] = useState<string>("");
+  const [autoAssign, setAutoAssign] = useState(true);
   // TODO Sprint 5: Wire to session settings API, apply to new agent spawns
   const [defaultAutonomyLevel, setDefaultAutonomyLevel] = useState<AutonomyLevel>(
     AutonomyLevel.AutoRead
@@ -88,6 +90,9 @@ export function SessionSettingsDialog({
           setProviders(providerData.providers || []);
           if (sessionData?.worktreeMode) {
             setWorktreeMode(sessionData.worktreeMode);
+          }
+          if (sessionData?.autoAssign !== undefined) {
+            setAutoAssign(sessionData.autoAssign);
           }
         }
       } catch {
@@ -518,6 +523,34 @@ export function SessionSettingsDialog({
             </Group>
           </Card>
         </Box>
+
+        {/* Auto-assign tasks to idle agents */}
+        <Divider my="md" />
+        <Group justify="space-between" align="center">
+          <div>
+            <Text size="sm" fw={600}>Auto-assign tasks to idle agents</Text>
+            <Text size="xs" c="dimmed">When enabled, unassigned tasks are automatically assigned to idle agents</Text>
+          </div>
+          <Switch
+            checked={autoAssign}
+            onChange={async (e) => {
+              const newVal = e.currentTarget.checked;
+              setAutoAssign(newVal);
+              try {
+                await (api as any).updateSession?.(sessionId, { autoAssign: newVal })
+                  || await fetch(`/api/v1/sessions/${sessionId}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${(window as any).__KORA_TOKEN__ || ""}` },
+                    body: JSON.stringify({ autoAssign: newVal }),
+                  });
+              } catch {
+                // Revert on failure
+                setAutoAssign(!newVal);
+              }
+            }}
+            size="md"
+          />
+        </Group>
 
         {/* Stale Task Nudge Policies */}
         <Divider my="md" />
