@@ -17,6 +17,7 @@ import {
 } from "@mantine/core";
 import { useApi } from "../hooks/useApi";
 import { showSuccess, showError } from "../utils/notifications";
+import { formatLastSeen } from "../utils/formatters";
 
 // ---------- Types ----------
 
@@ -30,8 +31,25 @@ interface NudgePolicy {
   maxNudges: number;
 }
 
+/** Nudge record from the backend */
+interface NudgeRecord {
+  id: string;
+  task_id: string;
+  task_title?: string;
+  session_id: string;
+  status_at_nudge: string;
+  target_agent_id: string | null;
+  target_type: string;
+  nudge_count: number;
+  is_escalation: boolean | number;
+  message: string | null;
+  created_at: string;
+}
+
 interface NudgePolicyEditorProps {
   sessionId: string;
+  /** Status color map from workflow states — keys are status IDs, values are hex colors */
+  statusColors?: Record<string, string>;
 }
 
 // ---------- Helpers ----------
@@ -49,22 +67,26 @@ const ESCALATE_OPTIONS = [
   { value: "all", label: "All agents" },
 ];
 
-function statusColor(status: string): string {
-  const map: Record<string, string> = {
-    "pending": "gray",
-    "in-progress": "blue",
-    "review": "yellow",
-    "e2e-testing": "cyan",
-    "staging": "teal",
-    "blocked": "red",
-    "done": "green",
-  };
-  return map[status] || "gray";
+/** Default fallback colors for common statuses */
+const DEFAULT_STATUS_COLORS: Record<string, string> = {
+  "pending": "gray",
+  "in-progress": "blue",
+  "review": "yellow",
+  "e2e-testing": "cyan",
+  "staging": "teal",
+  "blocked": "red",
+  "done": "green",
+};
+
+function getStatusBadgeColor(status: string, statusColors?: Record<string, string>): string {
+  // Prefer dynamic colors from workflow state config
+  if (statusColors?.[status]) return statusColors[status];
+  return DEFAULT_STATUS_COLORS[status] || "gray";
 }
 
 // ---------- Component ----------
 
-export function NudgePolicyEditor({ sessionId }: NudgePolicyEditorProps) {
+export function NudgePolicyEditor({ sessionId, statusColors }: NudgePolicyEditorProps) {
   const api = useApi();
   const [policies, setPolicies] = useState<Record<string, NudgePolicy>>({});
   const [loading, setLoading] = useState(true);
@@ -88,7 +110,7 @@ export function NudgePolicyEditor({ sessionId }: NudgePolicyEditorProps) {
     loadPolicies();
   }, [loadPolicies]);
 
-  const updatePolicy = (status: string, field: keyof NudgePolicy, value: any) => {
+  const updatePolicy = (status: string, field: keyof NudgePolicy, value: string | number | boolean) => {
     setPolicies((prev) => ({
       ...prev,
       [status]: { ...prev[status], [field]: value },
@@ -165,7 +187,7 @@ export function NudgePolicyEditor({ sessionId }: NudgePolicyEditorProps) {
           <Paper key={status} p="sm" withBorder>
             <Group justify="space-between" mb="xs">
               <Group gap="xs">
-                <Badge color={statusColor(status)} variant="light" size="sm">
+                <Badge color={getStatusBadgeColor(status, statusColors)} variant="light" size="sm">
                   {status}
                 </Badge>
                 <Switch
@@ -260,11 +282,12 @@ export function NudgePolicyEditor({ sessionId }: NudgePolicyEditorProps) {
 interface NudgeHistoryProps {
   sessionId: string;
   taskId?: string; // If provided, show for a specific task; otherwise session-wide
+  statusColors?: Record<string, string>;
 }
 
-export function NudgeHistory({ sessionId, taskId }: NudgeHistoryProps) {
+export function NudgeHistory({ sessionId, taskId, statusColors }: NudgeHistoryProps) {
   const api = useApi();
-  const [nudges, setNudges] = useState<any[]>([]);
+  const [nudges, setNudges] = useState<NudgeRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -273,7 +296,7 @@ export function NudgeHistory({ sessionId, taskId }: NudgeHistoryProps) {
         const data = taskId
           ? await api.getNudgeHistory(sessionId, taskId)
           : await api.getSessionNudges(sessionId, 50);
-        setNudges((data as any).nudges || []);
+        setNudges(((data as any).nudges || []) as NudgeRecord[]);
       } catch {
         // Silently fail — not critical
       } finally {
@@ -320,7 +343,7 @@ export function NudgeHistory({ sessionId, taskId }: NudgeHistoryProps) {
               </Table.Td>
             )}
             <Table.Td>
-              <Badge size="xs" color={statusColor(nudge.status_at_nudge)} variant="light">
+              <Badge size="xs" color={getStatusBadgeColor(nudge.status_at_nudge, statusColors)} variant="light">
                 {nudge.status_at_nudge}
               </Badge>
             </Table.Td>
@@ -338,7 +361,7 @@ export function NudgeHistory({ sessionId, taskId }: NudgeHistoryProps) {
             <Table.Td>
               <Tooltip label={new Date(nudge.created_at).toLocaleString()}>
                 <Text size="xs" c="dimmed">
-                  {formatTimeAgo(nudge.created_at)}
+                  {formatLastSeen(nudge.created_at)}
                 </Text>
               </Tooltip>
             </Table.Td>
@@ -361,7 +384,7 @@ export function StaleTaskBadge({ nudgeCount, lastNudgeAt, isEscalated }: StaleTa
   if (nudgeCount === 0) return null;
 
   const label = lastNudgeAt
-    ? `${nudgeCount} nudge${nudgeCount !== 1 ? "s" : ""} sent, last ${formatTimeAgo(lastNudgeAt)}`
+    ? `${nudgeCount} nudge${nudgeCount !== 1 ? "s" : ""} sent, last ${formatLastSeen(lastNudgeAt)}`
     : `${nudgeCount} nudge${nudgeCount !== 1 ? "s" : ""} sent`;
 
   return (
@@ -378,16 +401,3 @@ export function StaleTaskBadge({ nudgeCount, lastNudgeAt, isEscalated }: StaleTa
   );
 }
 
-// ---------- Util ----------
-
-function formatTimeAgo(isoDate: string): string {
-  const now = Date.now();
-  const then = new Date(isoDate).getTime();
-  const diffMs = now - then;
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  return `${Math.floor(diffHr / 24)}d ago`;
-}

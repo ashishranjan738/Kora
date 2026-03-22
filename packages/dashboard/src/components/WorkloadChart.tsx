@@ -4,7 +4,8 @@ import { Text, Paper, Stack, Group, Loader, Badge, Tooltip } from "@mantine/core
 import { getLoadColor } from "../utils/workload";
 
 // ---------- Types ----------
-// Defined locally until @kora/shared build includes task-metrics types
+// TODO: Import from @kora/shared once shared package is rebuilt with task-metrics types
+// These mirror the interfaces in packages/shared/src/api.ts
 
 export interface AgentTaskMetrics {
   agentId: string;
