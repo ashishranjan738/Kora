@@ -73,14 +73,14 @@ export class AutoAssigner {
     const task = this.findBestUnassignedTask(agent);
     if (!task) return null;
 
-    // Assign task
-    const firstWorkflowState = this.getFirstWorkflowState();
+    // Assign task + auto-transition from first to second workflow state
     this.config.database.updateTask(task.id, {
       assignedTo: agent.config.name,
+      status: "in-progress", // Auto-move to in-progress on assignment
     });
 
     // Notify agent via terminal + SQLite
-    const notifyMsg = `[Auto-assigned] Task "${task.title}" (${task.priority}). Use get_task("${task.id}") for details.`;
+    const notifyMsg = `[Auto-assigned — START NOW] "${task.title}" (${task.priority}). You have been auto-assigned this task. Begin implementation immediately. Use get_task("${task.id}") for details.`;
     try {
       this.config.messageQueue.enqueue(
         agentId,
