@@ -89,8 +89,8 @@ describe('TimelineFilters', () => {
     const onFilterChange = vi.fn();
     render(<TimelineFilters {...defaultProps} onFilterChange={onFilterChange} />);
 
-    const agentsButton = screen.getByText('Agents');
-    fireEvent.click(agentsButton);
+    const agentsButtons = screen.getAllByText('Agents');
+    fireEvent.click(agentsButtons[0]);
 
     expect(onFilterChange).toHaveBeenCalledWith('agents');
   });
@@ -99,8 +99,8 @@ describe('TimelineFilters', () => {
     const onDensityChange = vi.fn();
     render(<TimelineFilters {...defaultProps} onDensityChange={onDensityChange} />);
 
-    const compactButton = screen.getByText('Compact');
-    fireEvent.click(compactButton);
+    const compactButtons = screen.getAllByText('Compact');
+    fireEvent.click(compactButtons[0]);
 
     expect(onDensityChange).toHaveBeenCalledWith('compact');
   });
@@ -109,8 +109,8 @@ describe('TimelineFilters', () => {
     const onSearchChange = vi.fn();
     render(<TimelineFilters {...defaultProps} onSearchChange={onSearchChange} />);
 
-    const searchInput = screen.getByTestId('text-input');
-    fireEvent.change(searchInput, { target: { value: 'test query' } });
+    const searchInputs = screen.getAllByTestId('text-input');
+    fireEvent.change(searchInputs[0], { target: { value: 'test query' } });
 
     expect(onSearchChange).toHaveBeenCalled();
   });

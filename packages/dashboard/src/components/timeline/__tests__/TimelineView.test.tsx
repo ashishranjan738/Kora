@@ -25,6 +25,21 @@ vi.mock('@mantine/core', () => ({
       ))}
     </div>
   ),
+  TextInput: ({ value, onChange, placeholder }: any) => (
+    <input data-testid="text-input" placeholder={placeholder} value={value || ''} onChange={onChange} />
+  ),
+  MultiSelect: ({ value, onChange, data, placeholder }: any) => (
+    <select data-testid="multi-select" multiple value={value || []}
+      onChange={(e: any) => { const selected = Array.from(e.target.selectedOptions).map((opt: any) => opt.value); onChange?.(selected); }}>
+      {data?.map?.((item: any) => (<option key={item.value} value={item.value}>{item.label}</option>))}
+    </select>
+  ),
+  Switch: ({ checked, onChange, label }: any) => (
+    <label><input data-testid="switch" type="checkbox" checked={checked} onChange={onChange} />{label}</label>
+  ),
+  Group: ({ children }: any) => <div data-testid="group">{children}</div>,
+  ActionIcon: ({ children, onClick }: any) => <button data-testid="action-icon" onClick={onClick}>{children}</button>,
+  Tooltip: ({ children }: any) => <div>{children}</div>,
 }));
 
 describe('TimelineView - Pagination', () => {
