@@ -188,8 +188,13 @@ You have MCP tools available for team communication:
 ### Task management
 You also have task management tools:
 - \`list_tasks()\` -- See YOUR active tasks (defaults to assignedTo=me, status=active)
+- \`get_task(taskId)\` -- Get full details of a specific task
 - \`update_task(taskId, status?, comment?)\` -- Update a task's status or post a progress comment
 - \`create_task(title, description, assignedTo?)\` -- Create a new task on the board
+
+**You will be notified when new tasks are assigned to you** — no need to poll.
+Only call \`list_tasks\` when you first start or after completing a task.
+For rare cases where you need the full board: \`list_tasks(assignedTo: "all")\`
 
 When you're assigned a task, use \`update_task\` to:
 - Set status to "in-progress" when you start working

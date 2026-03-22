@@ -2099,16 +2099,29 @@ export function createApiRouter(deps: {
       };
       db.insertTask(task);
 
-      // Notify assigned agent
+      // Notify assigned agent via terminal + SQLite (so check_messages finds it)
       if (task.assignedTo) {
         const orch = orchestrators.get(sid);
         if (orch) {
           try {
             const agent = orch.agentManager.getAgent(task.assignedTo);
+            const notifyMsg = `[Task assigned] "${task.title}" (${task.priority}). Use get_task("${task.id}") for details.`;
             if (agent) {
               orch.messageQueue.enqueue(task.assignedTo, agent.config.tmuxSession,
-                `\x1b[1;36m[Task assigned]\x1b[0m "${task.title}" — ${task.description}. Use list_tasks and update_task tools to manage it.`);
+                `\x1b[1;36m${notifyMsg}\x1b[0m`);
             }
+            // Also persist to SQLite so check_messages picks it up
+            orch.database.insertMessage({
+              id: randomUUID(),
+              sessionId: sid,
+              fromAgentId: "system",
+              toAgentId: task.assignedTo,
+              messageType: "task-assignment",
+              content: notifyMsg,
+              priority: "normal",
+              createdAt: Date.now(),
+              expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+            });
           } catch {}
         }
       }
@@ -2208,16 +2221,29 @@ export function createApiRouter(deps: {
         dueDate: body.dueDate,
       });
 
-      // Notify if assignedTo changed
+      // Notify if assignedTo changed — terminal + SQLite (so check_messages finds it)
       if (body.assignedTo && task.assignedTo !== oldTask.assignedTo) {
         const orch = orchestrators.get(sid);
         if (orch) {
           try {
             const agent = orch.agentManager.getAgent(task.assignedTo);
+            const notifyMsg = `[Task assigned] "${task.title}" (${task.priority || "P2"}). Use get_task("${tid}") for details.`;
             if (agent) {
               orch.messageQueue.enqueue(task.assignedTo, agent.config.tmuxSession,
-                `\x1b[1;36m[Task assigned]\x1b[0m "${task.title}" — ${task.description}. Use list_tasks and update_task tools to manage it.`);
+                `\x1b[1;36m${notifyMsg}\x1b[0m`);
             }
+            // Persist to SQLite for check_messages
+            orch.database.insertMessage({
+              id: randomUUID(),
+              sessionId: sid,
+              fromAgentId: "system",
+              toAgentId: task.assignedTo,
+              messageType: "task-assignment",
+              content: notifyMsg,
+              priority: "normal",
+              createdAt: Date.now(),
+              expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+            });
           } catch {}
         }
       }
