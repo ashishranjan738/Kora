@@ -48,6 +48,7 @@ export interface OrchestratorConfig {
 
 export class Orchestrator extends EventEmitter {
   public agentManager: AgentManager;
+  public healthMonitor: AgentHealthMonitor;
   public messageBus: MessageBus;
   public controlPlane: AgentControlPlane;
   public eventLog: EventLog;
@@ -79,11 +80,11 @@ export class Orchestrator extends EventEmitter {
     // Initialize SQLite database
     this.database = new AppDatabase(config.runtimeDir);
 
-    const healthMonitor = new AgentHealthMonitor(config.tmux);
-    this.agentManager = new AgentManager(config.tmux, healthMonitor);
+    this.healthMonitor = new AgentHealthMonitor(config.tmux);
+    this.agentManager = new AgentManager(config.tmux, this.healthMonitor);
 
     // Pass agents map to health monitor for idle detection
-    healthMonitor.setAgentsMap(this.agentManager.getAgentsMap());
+    this.healthMonitor.setAgentsMap(this.agentManager.getAgentsMap());
     this.messageBus = new MessageBus(config.runtimeDir);
     this.messageBus.setDatabase(this.database, config.sessionId);
     this.controlPlane = new AgentControlPlane(config.runtimeDir);

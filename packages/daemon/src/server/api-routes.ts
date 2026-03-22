@@ -105,6 +105,20 @@ export function createApiRouter(deps: {
   const { sessionManager, orchestrators, providerRegistry, tmux, startTime, globalConfigDir, suggestionsDb, playbookDb } = deps;
   const router = Router();
 
+  // Middleware: record MCP activity for agent-specific API calls
+  // This tracks when agents make API calls (via MCP tools) to prevent false idle detection
+  router.use("/sessions/:sid/agents/:aid", (req: any, _res: any, next: any) => {
+    try {
+      const sid = String(req.params.sid);
+      const aid = String(req.params.aid);
+      const orch = orchestrators.get(sid);
+      if (orch?.healthMonitor && aid) {
+        orch.healthMonitor.recordMcpActivity(aid);
+      }
+    } catch { /* non-fatal */ }
+    next();
+  });
+
   // Track standalone terminal sessions per session (id → terminal info)
   const standaloneTerminals = new Map<string, Map<string, StandaloneTerminal>>();
 
