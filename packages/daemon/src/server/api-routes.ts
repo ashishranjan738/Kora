@@ -2589,6 +2589,127 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ─── Trend + CFD APIs ────────────────────────────────────────────
+
+  /** Rolling average cycle time for trend chart */
+  router.get("/sessions/:sid/task-metrics/trend", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const window = parseInt(req.query.window as string) || 5;
+
+      // Get all done tasks ordered by completion time
+      const allTasks = db.getTasks(sid, true) as any[];
+      const doneTasks = allTasks
+        .filter((t: any) => t.status === "done")
+        .sort((a: any, b: any) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
+
+      const trend = doneTasks.map((t: any, i: number) => {
+        const cycleTimeMs = new Date(t.updatedAt).getTime() - new Date(t.createdAt).getTime();
+        // Rolling average over last `window` tasks
+        const windowStart = Math.max(0, i - window + 1);
+        const windowTasks = doneTasks.slice(windowStart, i + 1);
+        const rollingAvgMs = windowTasks.reduce((sum: number, wt: any) => {
+          return sum + (new Date(wt.updatedAt).getTime() - new Date(wt.createdAt).getTime());
+        }, 0) / windowTasks.length;
+
+        return {
+          taskSequence: i + 1,
+          taskId: t.id,
+          taskTitle: t.title,
+          cycleTimeMs: Math.max(0, cycleTimeMs),
+          rollingAvgMs: Math.round(Math.max(0, rollingAvgMs)),
+          completedAt: t.updatedAt,
+        };
+      });
+
+      res.json({ trend, window, totalCompleted: doneTasks.length });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  /** Cumulative flow diagram data — task counts per state over time */
+  router.get("/sessions/:sid/task-metrics/cfd", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const session = sessionManager.getSession(sid);
+      const states = (session?.config.workflowStates || DEFAULT_WORKFLOW_STATES).map((s: any) => s.id);
+
+      // Get all transitions for all tasks in this session
+      const allTransitions = db.db.prepare(
+        `SELECT task_id, to_status, changed_at FROM task_state_transitions WHERE session_id = ? ORDER BY changed_at ASC`
+      ).all(sid) as Array<{ task_id: string; to_status: string; changed_at: string }>;
+
+      // Also get task creation times (for initial state)
+      const allTasks = db.getTasks(sid, true) as any[];
+
+      if (allTasks.length === 0) {
+        res.json({ cfd: [], states });
+        return;
+      }
+
+      // Determine time range and bucket size
+      const createdTimes = allTasks.map((t: any) => new Date(t.createdAt).getTime());
+      const minTime = Math.min(...createdTimes);
+      const maxTime = Date.now();
+      const durationMs = maxTime - minTime;
+
+      // Auto-scale buckets: 5min for <2h, 15min for <8h, 30min for <24h, 1h otherwise
+      let bucketMs: number;
+      if (durationMs < 2 * 60 * 60 * 1000) bucketMs = 5 * 60 * 1000;
+      else if (durationMs < 8 * 60 * 60 * 1000) bucketMs = 15 * 60 * 1000;
+      else if (durationMs < 24 * 60 * 60 * 1000) bucketMs = 30 * 60 * 1000;
+      else bucketMs = 60 * 60 * 1000;
+
+      // Build state for each task over time
+      const taskStates = new Map<string, string>();
+      const events: Array<{ time: number; taskId: string; state: string }> = [];
+
+      // Task creation = enters first state
+      for (const t of allTasks) {
+        const time = new Date(t.createdAt).getTime();
+        const firstState = states[0] || "pending";
+        events.push({ time, taskId: t.id, state: firstState });
+      }
+
+      // Transitions
+      for (const tr of allTransitions) {
+        events.push({ time: new Date(tr.changed_at).getTime(), taskId: tr.task_id, state: tr.to_status });
+      }
+
+      events.sort((a, b) => a.time - b.time);
+
+      // Generate time buckets
+      const cfd: Array<{ timestamp: string; counts: Record<string, number> }> = [];
+
+      for (let t = minTime; t <= maxTime; t += bucketMs) {
+        // Replay events up to this point
+        for (const e of events) {
+          if (e.time <= t) taskStates.set(e.taskId, e.state);
+        }
+
+        const counts: Record<string, number> = {};
+        for (const s of states) counts[s] = 0;
+        for (const state of taskStates.values()) {
+          if (counts[state] !== undefined) counts[state]++;
+          else counts[state] = (counts[state] || 0) + 1;
+        }
+
+        cfd.push({ timestamp: new Date(t).toISOString(), counts });
+      }
+
+      res.json({ cfd, states, bucketMs });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // ─── Events (historical) ────────────────────────────────────────────
 
   router.get("/sessions/:sid/events", async (req: Request, res: Response) => {
