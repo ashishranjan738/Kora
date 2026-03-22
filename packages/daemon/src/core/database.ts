@@ -262,6 +262,27 @@ export class AppDatabase extends EventEmitter {
         PRAGMA user_version = 11;
       `);
     }
+
+    if (version < 12) {
+      this.db.exec(`
+        -- Cron session schedules
+        CREATE TABLE IF NOT EXISTS session_schedules (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          cron_expression TEXT NOT NULL,
+          timezone TEXT NOT NULL DEFAULT 'system',
+          playbook_id TEXT,
+          session_config TEXT NOT NULL,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          last_run_at TEXT,
+          next_run_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_schedules_next_run ON session_schedules(next_run_at, enabled);
+        PRAGMA user_version = 12;
+      `);
+    }
   }
 
   // ─── Events ──────────────────────────────────────────────

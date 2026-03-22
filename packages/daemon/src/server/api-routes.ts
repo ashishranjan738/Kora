@@ -2829,6 +2829,122 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ─── Cron Schedules ──────────────────────────────────────────────
+
+  const cronScheduler = require("../core/cron-scheduler.js") as typeof import("../core/cron-scheduler.js");
+
+  router.get("/schedules", (req: Request, res: Response) => {
+    try {
+      // Use any session's DB for global schedules (they're stored in each session's DB)
+      // For now, use a global approach — schedules are global, stored in first available DB
+      const schedules = Array.from(orchestrators.values()).flatMap(orch => {
+        try { return cronScheduler.listSchedules(orch.database); } catch { return []; }
+      });
+      // Dedupe by ID
+      const seen = new Set<string>();
+      const unique = schedules.filter(s => { if (seen.has(s.id)) return false; seen.add(s.id); return true; });
+      res.json({ schedules: unique });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.post("/schedules", (req: Request, res: Response) => {
+    try {
+      const { name, cronExpression, timezone, playbookId, sessionConfig } = req.body;
+      if (!name || !cronExpression || !sessionConfig) {
+        res.status(400).json({ error: "name, cronExpression, and sessionConfig are required" });
+        return;
+      }
+
+      // Validate cron expression
+      const validationError = cronScheduler.validateCronExpression(cronExpression);
+      if (validationError) {
+        res.status(400).json({ error: validationError });
+        return;
+      }
+
+      // Get first available DB for storage
+      const firstOrch = Array.from(orchestrators.values())[0];
+      if (!firstOrch) {
+        res.status(400).json({ error: "No active sessions — start a session first" });
+        return;
+      }
+
+      // Check global limit
+      if (!cronScheduler.canAddSchedule(firstOrch.database)) {
+        res.status(400).json({ error: "Maximum 5 active schedules reached. Disable or delete existing schedules." });
+        return;
+      }
+
+      const { randomUUID } = require("crypto");
+      const schedule = cronScheduler.createSchedule(firstOrch.database, {
+        id: randomUUID().slice(0, 8),
+        name, cronExpression, timezone, playbookId, sessionConfig,
+      });
+
+      res.status(201).json(schedule);
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.get("/schedules/:id", (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      for (const orch of orchestrators.values()) {
+        const schedule = cronScheduler.getSchedule(orch.database, id);
+        if (schedule) { res.json(schedule); return; }
+      }
+      res.status(404).json({ error: "Schedule not found" });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.put("/schedules/:id", (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      // Validate cron if provided
+      if (req.body.cronExpression) {
+        const err = cronScheduler.validateCronExpression(req.body.cronExpression);
+        if (err) { res.status(400).json({ error: err }); return; }
+      }
+      for (const orch of orchestrators.values()) {
+        if (cronScheduler.updateSchedule(orch.database, id, req.body)) {
+          res.json({ updated: true });
+          return;
+        }
+      }
+      res.status(404).json({ error: "Schedule not found" });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.delete("/schedules/:id", (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      for (const orch of orchestrators.values()) {
+        if (cronScheduler.deleteSchedule(orch.database, id)) {
+          res.json({ deleted: true });
+          return;
+        }
+      }
+      res.status(404).json({ error: "Schedule not found" });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.post("/schedules/:id/trigger", async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      let schedule: any = null;
+      let db: any = null;
+      for (const orch of orchestrators.values()) {
+        schedule = cronScheduler.getSchedule(orch.database, id);
+        if (schedule) { db = orch.database; break; }
+      }
+      if (!schedule) { res.status(404).json({ error: "Schedule not found" }); return; }
+
+      // Mark as run + update next_run_at
+      cronScheduler.markScheduleRun(db, id, schedule.cronExpression, schedule.timezone);
+
+      res.json({ triggered: true, schedule: schedule.name, nextRunAt: cronScheduler.computeNextRun(schedule.cronExpression, schedule.timezone).toISOString() });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
   // ─── Attachments (Image Sharing) ──────────────────────────────────
 
   const ALLOWED_IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
