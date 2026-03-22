@@ -287,5 +287,11 @@ export function useApi() {
       apiFetch<{ dataPoints: Array<{ taskSequence: number; taskTitle: string; cycleTimeMs: number; rollingAvgMs: number; completedAt: string }> }>(`/sessions/${sid}/task-metrics/trend`),
     getTaskMetricsCfd: (sid: string) =>
       apiFetch<{ dataPoints: Array<{ timestamp: string; counts: Record<string, number> }> }>(`/sessions/${sid}/task-metrics/cfd`),
+    // Cron schedules
+    getSchedules: () => apiFetch<{ schedules: any[] }>("/schedules"),
+    createSchedule: (data: any) => apiFetch("/schedules", { method: "POST", body: JSON.stringify(data) }),
+    updateSchedule: (id: string, data: any) => apiFetch(`/schedules/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    deleteSchedule: (id: string) => apiFetch(`/schedules/${id}`, { method: "DELETE" }),
+    triggerSchedule: (id: string) => apiFetch(`/schedules/${id}/trigger`, { method: "POST" }),
   };
 }
