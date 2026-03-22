@@ -128,7 +128,12 @@ export function AgentDetailPopover({ agent, tasks = [], onNudge, onExpand }: Age
       {activeTasks > 0 && (
         <div>
           <Group justify="space-between" mb={4}>
-            <Text size="xs" c="dimmed">Utilization</Text>
+            <Tooltip label="Working time / Total uptime. Higher = more productive.">
+              <Group gap={4} style={{ cursor: "help" }}>
+                <Text size="xs" c="dimmed">Utilization</Text>
+                <Text size="xs" c="dimmed" style={{ fontSize: 10 }}>&#8505;</Text>
+              </Group>
+            </Tooltip>
             <Text size="xs" fw={500} c={utilization > 80 ? "var(--accent-red)" : utilization > 50 ? "var(--accent-yellow)" : "var(--accent-green)"}>
               {utilization}%
             </Text>

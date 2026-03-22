@@ -119,7 +119,7 @@ export function AgentUtilization({ utilization, label }: AgentUtilizationProps) 
   const color = pct >= 70 ? "green" : pct >= 40 ? "yellow" : "red";
 
   return (
-    <Tooltip label={`${pct}% utilization${label ? ` — ${label}` : ""}`} withArrow>
+    <Tooltip label={`${pct}% utilization — Working time / Total uptime. Higher = more productive.${label ? ` ${label}` : ""}`} withArrow multiline w={220}>
       <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 80 }}>
         <Progress
           value={pct}
