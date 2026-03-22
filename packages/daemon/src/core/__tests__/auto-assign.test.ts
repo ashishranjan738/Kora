@@ -161,6 +161,50 @@ describe("AutoAssigner", () => {
     });
   });
 
+  describe("skill-aware scoring", () => {
+    it("prefers tasks matching agent skills (+50 bonus)", async () => {
+      const config = createMockConfig({
+        agent: {
+          id: "worker-1",
+          config: { name: "Frontend Dev", role: "worker", tmuxSession: "tmux-1", persona: "React frontend developer", skills: ["frontend"] },
+          status: "running",
+          activity: "idle",
+        },
+        tasks: [
+          { id: "t1", title: "Backend API", status: "pending", priority: "P2", assignedTo: null, dependencies: [], labels: ["backend"] },
+          { id: "t2", title: "Fix CSS", status: "pending", priority: "P2", assignedTo: null, dependencies: [], labels: ["frontend"] },
+        ],
+      });
+
+      const assigner = new AutoAssigner(config);
+      const result = await assigner.tryAutoAssign("worker-1");
+
+      expect(result).not.toBeNull();
+      expect(result!.taskId).toBe("t2"); // frontend task matches agent skills
+    });
+
+    it("penalizes skill mismatches (-100)", async () => {
+      const config = createMockConfig({
+        agent: {
+          id: "worker-1",
+          config: { name: "Tester", role: "worker", tmuxSession: "tmux-1", persona: "QA tester", skills: ["testing"] },
+          status: "running",
+          activity: "idle",
+        },
+        tasks: [
+          { id: "t1", title: "Frontend bug", status: "pending", priority: "P2", assignedTo: null, dependencies: [], labels: ["frontend"] },
+          { id: "t2", title: "No labels", status: "pending", priority: "P2", assignedTo: null, dependencies: [], labels: [] },
+        ],
+      });
+
+      const assigner = new AutoAssigner(config);
+      const result = await assigner.tryAutoAssign("worker-1");
+
+      expect(result).not.toBeNull();
+      expect(result!.taskId).toBe("t2"); // no-label task preferred over mismatched frontend task
+    });
+  });
+
   describe("checkDependencyUnblocks", () => {
     it("notifies assignee when all deps are done", async () => {
       const config = createMockConfig({
