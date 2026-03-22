@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { Badge, Button, Group, Paper, Text, TextInput, Textarea, Tooltip, Modal, Stack, Collapse } from "@mantine/core";
 import { useApi } from "../hooks/useApi";
 import { formatLastSeen } from "../utils/formatters";
+import { showError } from "../utils/notifications";
 
 interface KnowledgeEntry {
   text: string;
@@ -57,8 +58,8 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
       await api.clearKnowledge(sessionId);
       setEntries([]);
       setShowClearConfirm(false);
-    } catch {
-      // ignore
+    } catch (err: any) {
+      showError(err.message || "Failed to clear knowledge base", "Clear Failed");
     } finally {
       setClearing(false);
     }
@@ -68,20 +69,12 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
     if (!newEntryText.trim()) return;
     setAdding(true);
     try {
-      // Use the knowledge API — POST or append
-      await fetch(`/api/v1/sessions/${sessionId}/knowledge`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${(window as any).__KORA_TOKEN__ || ""}`,
-        },
-        body: JSON.stringify({ text: newEntryText.trim(), source: "dashboard" }),
-      });
+      await api.addKnowledge(sessionId, newEntryText.trim());
       setNewEntryText("");
       setShowAddModal(false);
       fetchKnowledge();
-    } catch {
-      // ignore
+    } catch (err: any) {
+      showError(err.message || "Failed to add knowledge entry", "Add Entry Failed");
     } finally {
       setAdding(false);
     }
