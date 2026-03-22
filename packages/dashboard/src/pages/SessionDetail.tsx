@@ -18,6 +18,7 @@ import { SessionSummary } from "../components/SessionSummary";
 import { KnowledgeViewer } from "../components/KnowledgeViewer";
 import { WorkloadChart, type TaskMetricsResponse } from "../components/WorkloadChart";
 import { BottleneckAlert } from "../components/BottleneckAlert";
+import { SessionMetricsBar } from "../components/SessionMetricsBar";
 import { DEFAULT_WORKFLOW_STATES } from "@kora/shared";
 import { TimelineView } from "../components/timeline/TimelineView";
 import { ExecutionTracing } from "../components/ExecutionTracing";
@@ -678,6 +679,17 @@ export function SessionDetail() {
           </Menu>
         </div>
       </div>
+
+      {/* Session Metrics Bar */}
+      {sessionId && (
+        <SessionMetricsBar
+          sessionId={sessionId}
+          agentCount={agents.length}
+          runningAgentCount={agents.filter((a: any) => a.status === "running" || a.status === "idle").length}
+          sessionStartedAt={session?.createdAt || session?.config?.createdAt}
+          onNavigateTab={(tab) => setActiveTab(tab as TabId)}
+        />
+      )}
 
       {/* Tab bar */}
       <div className="tab-bar">
