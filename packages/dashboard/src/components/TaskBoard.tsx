@@ -218,19 +218,83 @@ export function TaskBoard({ sessionId, initialTaskId, workflowStates }: TaskBoar
   </div>);
 }
 
+/** Simple similarity check: normalized substring + word overlap */
+function findSimilarTasks(title: string, tasks: Task[], threshold = 0.6): Task[] {
+  if (!title.trim() || title.trim().length < 5) return [];
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
+  const inputNorm = normalize(title);
+  const inputWords = new Set(inputNorm.split(/\s+/).filter(w => w.length > 2));
+  if (inputWords.size === 0) return [];
+
+  return tasks.filter(t => {
+    const tNorm = normalize(t.title);
+    // Exact substring match
+    if (tNorm.includes(inputNorm) || inputNorm.includes(tNorm)) return true;
+    // Word overlap similarity
+    const tWords = new Set(tNorm.split(/\s+/).filter(w => w.length > 2));
+    if (tWords.size === 0) return false;
+    const overlap = [...inputWords].filter(w => tWords.has(w)).length;
+    const similarity = overlap / Math.max(inputWords.size, tWords.size);
+    return similarity >= threshold;
+  });
+}
+
 function AddTaskModal({ opened, onClose, isMobile, modalStyles, inputStyles, selectDropdownStyles, newTitle, setNewTitle, newDescription, setNewDescription, newAssignee, setNewAssignee, newPriority, setNewPriority, newLabels, setNewLabels, newDueDate, setNewDueDate, agentSelectData, tasks, newDependencies, setNewDependencies, onSubmit, columnLabels, columnCssColors }: { opened: boolean; onClose: () => void; isMobile: boolean; modalStyles: any; inputStyles: any; selectDropdownStyles: any; newTitle: string; setNewTitle: (v: string) => void; newDescription: string; setNewDescription: (v: string) => void; newAssignee: string; setNewAssignee: (v: string) => void; newPriority: string; setNewPriority: (v: string) => void; newLabels: string[]; setNewLabels: (v: string[]) => void; newDueDate: string | null; setNewDueDate: (v: string | null) => void; agentSelectData: { value: string; label: string }[]; tasks: Task[]; newDependencies: string[]; setNewDependencies: (v: string[]) => void; onSubmit: () => void; columnLabels: Record<string, string>; columnCssColors: Record<string, string>; }) {
+  const [duplicateWarning, setDuplicateWarning] = useState<Task[]>([]);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+
   if (!opened) return null;
   const incomplete = tasks.filter(t => t.status !== "done");
-  return (<Modal opened onClose={onClose} title="Add New Task" size="md" fullScreen={isMobile} centered styles={modalStyles}><Stack gap="sm">
-    <TextInput label="Title *" value={newTitle} onChange={e => setNewTitle(e.currentTarget.value)} placeholder="Task title" autoFocus onKeyDown={e => { if (e.key === "Enter" && newTitle.trim()) onSubmit(); }} styles={inputStyles} />
+
+  const handleSubmitWithCheck = () => {
+    if (!newTitle.trim()) return;
+    const similar = findSimilarTasks(newTitle.trim(), tasks);
+    if (similar.length > 0) {
+      setDuplicateWarning(similar);
+      setShowDuplicateModal(true);
+    } else {
+      onSubmit();
+    }
+  };
+
+  const handleCreateAnyway = () => {
+    setShowDuplicateModal(false);
+    setDuplicateWarning([]);
+    onSubmit();
+  };
+
+  return (<>
+    <Modal opened onClose={onClose} title="Add New Task" size="md" fullScreen={isMobile} centered styles={modalStyles}><Stack gap="sm">
+    <TextInput label="Title *" value={newTitle} onChange={e => setNewTitle(e.currentTarget.value)} placeholder="Task title" autoFocus onKeyDown={e => { if (e.key === "Enter" && newTitle.trim()) handleSubmitWithCheck(); }} styles={inputStyles} />
     <Textarea label="Description" value={newDescription} onChange={e => setNewDescription(e.currentTarget.value)} placeholder="Optional description" rows={3} autosize minRows={2} maxRows={5} styles={inputStyles} />
     <Select label="Assign to Agent" placeholder="Unassigned" data={agentSelectData} value={newAssignee || null} onChange={v => setNewAssignee(v || "")} clearable styles={selectDropdownStyles} />
     <Box><Text size="xs" c="var(--text-secondary)" mb={6}>Priority</Text><SegmentedControl value={newPriority} onChange={setNewPriority} data={[{ value: "P0", label: "P0 Critical" }, { value: "P1", label: "P1 High" }, { value: "P2", label: "P2 Medium" }, { value: "P3", label: "P3 Low" }]} size="sm" styles={{ root: { backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border-color)" }, label: { color: "var(--text-primary)", fontWeight: 500, fontSize: 12, padding: "6px 12px" }, indicator: { backgroundColor: PRIORITY_COLORS[newPriority] === "red" ? "var(--mantine-color-red-6)" : PRIORITY_COLORS[newPriority] === "orange" ? "var(--mantine-color-orange-6)" : PRIORITY_COLORS[newPriority] === "blue" ? "var(--accent-blue)" : "var(--text-muted)", boxShadow: "none" } }} /></Box>
     <TagsInput label="Labels" placeholder="Add label (press Enter)" value={newLabels} onChange={setNewLabels} styles={inputStyles} />
     <DateInput label="Due Date" placeholder="Select due date" value={newDueDate ? new Date(newDueDate) : null} onChange={handleDateChange(setNewDueDate)} clearable popoverProps={{ styles: { dropdown: { backgroundColor: "var(--bg-secondary)", borderColor: "var(--border-color)" } } }} styles={{ ...inputStyles, calendarHeader: { backgroundColor: "var(--bg-secondary)" }, calendarHeaderControl: { color: "var(--text-primary)" }, calendarHeaderLevel: { color: "var(--text-primary)" }, weekday: { color: "var(--text-muted)" }, day: { color: "var(--text-primary)" } }} />
     {incomplete.length > 0 && <Box><Text size="xs" c="var(--text-secondary)" mb={4}>Dependencies (blocks this task)</Text><ScrollArea mah={150} style={{ border: "1px solid var(--border-color)", borderRadius: 6, backgroundColor: "var(--bg-tertiary)" }}>{incomplete.map(t => <Group key={t.id} gap={8} p="xs" style={{ borderBottom: "1px solid var(--border-color)", cursor: "pointer", minHeight: 44 }} onClick={() => { newDependencies.includes(t.id) ? setNewDependencies(newDependencies.filter(d => d !== t.id)) : setNewDependencies([...newDependencies, t.id]); }}><Checkbox checked={newDependencies.includes(t.id)} onChange={() => {}} size="sm" styles={{ input: { backgroundColor: "var(--bg-primary)", borderColor: "var(--border-color)" } }} /><Text size="xs" c="var(--text-primary)" style={{ flex: 1 }}>{t.title}</Text><Text size="xs" fw={500} c={columnCssColors[t.status] || "var(--text-muted)"}>{columnLabels[t.status] || t.status}</Text></Group>)}</ScrollArea></Box>}
-    <Group justify="flex-end" mt="md"><Button variant="default" onClick={onClose} styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)", minHeight: 44 } }}>Cancel</Button><Button onClick={onSubmit} disabled={!newTitle.trim()} styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)", minHeight: 44 } }}>Create Task</Button></Group>
-  </Stack></Modal>);
+    <Group justify="flex-end" mt="md"><Button variant="default" onClick={onClose} styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)", minHeight: 44 } }}>Cancel</Button><Button onClick={handleSubmitWithCheck} disabled={!newTitle.trim()} styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)", minHeight: 44 } }}>Create Task</Button></Group>
+  </Stack></Modal>
+
+    {/* Duplicate Warning Modal */}
+    <Modal opened={showDuplicateModal} onClose={() => setShowDuplicateModal(false)} title={"\u26A0\uFE0F Similar task found"} size="sm" centered styles={modalStyles}>
+      <Stack gap="sm">
+        <Text size="sm">A task with a similar title already exists:</Text>
+        {duplicateWarning.map(t => (
+          <Paper key={t.id} p="xs" withBorder>
+            <Text size="sm" fw={500} lineClamp={2}>{t.title}</Text>
+            <Group gap="xs" mt={4}>
+              <Badge size="xs" color={columnCssColors[t.status] || "gray"} variant="light">{columnLabels[t.status] || t.status}</Badge>
+              <Text size="xs" c="dimmed">ID: {t.id.slice(0, 8)}</Text>
+            </Group>
+          </Paper>
+        ))}
+        <Group justify="flex-end" mt="sm">
+          <Button variant="default" size="xs" onClick={() => setShowDuplicateModal(false)} styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" } }}>Cancel</Button>
+          <Button size="xs" color="orange" onClick={handleCreateAnyway}>Create Anyway</Button>
+        </Group>
+      </Stack>
+    </Modal>
+  </>);
 }
 
 function TaskDetailModal({ task, tasks, agents, sessionId, isMobile, modalStyles, commentText, setCommentText, onClose, onChangeStatus, onAddComment, onNavigateTask, inputStyles, fetchTasks, columns, columnLabels, columnColors, columnCssColors }: { task: Task; tasks: Task[]; agents: { id: string; name: string }[]; sessionId: string; isMobile: boolean; modalStyles: any; commentText: string; setCommentText: (v: string) => void; onClose: () => void; onChangeStatus: (taskId: string, status: string) => void; onAddComment: (taskId: string) => void; onNavigateTask: (taskId: string) => void; inputStyles: any; fetchTasks: () => void; columns: string[]; columnLabels: Record<string, string>; columnColors: Record<string, string>; columnCssColors: Record<string, string>; }) {
