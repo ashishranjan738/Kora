@@ -23,6 +23,7 @@ import { AgentDetailPopover } from "../components/AgentDetailPopover";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { Popover } from "@mantine/core";
 import type { AgentResponse, SessionResponse, TaskResponse } from "../types/api";
+import { getSkillRoleSummary } from "../utils/skillRoleSummary";
 
 const PANEL_BORDER_COLORS = [
   "#58a6ff",
@@ -921,16 +922,16 @@ export function MultiAgentView() {
               </span>
               <FlagIndicator flags={(agent.config?.extraCliArgs as string[]) || []} />
               <ChannelIndicator channels={(agent.config?.channels as string[]) || []} />
-              {(agent.config?.skills as string[] || []).length > 0 && (
-                <span style={{ display: "inline-flex", gap: 3, flexWrap: "wrap" }}>
-                  {(agent.config?.skills as string[]).slice(0, 3).map((skill: string) => (
-                    <Badge key={skill} size="xs" variant="dot" color={
-                      skill === "frontend" ? "cyan" : skill === "backend" ? "orange" : skill === "testing" ? "green" :
-                      skill === "review" ? "grape" : skill === "research" ? "violet" : "gray"
-                    }>{skill}</Badge>
-                  ))}
-                </span>
-              )}
+              {(() => {
+                const roleSummary = getSkillRoleSummary((agent.config?.skills as string[]) || []);
+                return roleSummary ? (
+                  <Tooltip label={(agent.config?.skills as string[] || []).join(", ")}>
+                    <Badge size="xs" variant="light" color="gray" style={{ flexShrink: 0 }}>
+                      {roleSummary}
+                    </Badge>
+                  </Tooltip>
+                ) : null;
+              })()}
               {(() => {
                 const agentTasks = tasks.filter(t =>
                   t.assignedTo === agent.id || t.assignedTo === (agent.config?.name || agent.name)
