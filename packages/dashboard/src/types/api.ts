@@ -81,6 +81,10 @@ export interface SessionResponse extends Omit<SessionConfig, "worktreeMode"> {
   /** API may return worktreeMode as a plain string */
   worktreeMode?: string;
   agentSummaries?: AgentSummary[];
+  /** Budget limit (from session config, flattened by some API paths) */
+  budgetLimit?: number;
+  /** Some API paths nest config — fallback access pattern */
+  config?: Partial<SessionConfig>;
 }
 
 export interface AgentSummary {

@@ -10,6 +10,7 @@ import { PersonaLibrary } from "../components/PersonaLibrary";
 import { showError } from "../utils/notifications";
 import { ScheduleManager } from "../components/ScheduleManager";
 import { SessionHealthBadge } from "../components/SessionHealthBadge";
+import type { SessionListItem } from "../types/api";
 
 interface PlaybookAgent {
   name: string;
@@ -71,7 +72,7 @@ export function AllSessions() {
   // Dialog states
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showPlaybookPicker, setShowPlaybookPicker] = useState(false);
-  const [stopConfirmSession, setStopConfirmSession] = useState<any>(null);
+  const [stopConfirmSession, setStopConfirmSession] = useState<SessionListItem | null>(null);
   const [stopping, setStopping] = useState(false);
   const [stopSuccess, setStopSuccess] = useState(false);
 

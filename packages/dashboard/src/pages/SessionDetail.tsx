@@ -62,6 +62,8 @@ import {
   CopyButton,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
+import type { AgentResponse, SessionResponse, TaskResponse } from "../types/api";
+import type { WorkflowState, OrchestratorEvent } from "@kora/shared";
 
 type TabId = "editor" | "agents" | "tasks" | "execution" | "timeline" | "changes" | "knowledge" | "workload";
 
@@ -93,11 +95,11 @@ const activityDotClass: Record<AgentActivity, string> = {
 
 /** Inline sub-component for the Workload tab to keep state isolated */
 function WorkloadTabContent({ sessionId, session, api, agents }: {
-  sessionId: string; session: any; api: ReturnType<typeof useApi>;
-  agents?: any[];
+  sessionId: string; session: SessionResponse | null; api: ReturnType<typeof useApi>;
+  agents?: AgentResponse[];
 }) {
   const [metrics, setMetrics] = useState<TaskMetricsResponse | null>(null);
-  const [tasks, setTasks] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
@@ -184,9 +186,9 @@ export function SessionDetail() {
   // Approval requests for autonomy enforcement
   const { requests: approvalRequests, approve, reject, getPendingForAgent } = useApprovalRequests(sessionId);
 
-  const [session, setSession] = useState<any>(null);
-  const [agents, setAgents] = useState<any[]>([]);
-  const [events, setEvents] = useState<any[]>([]);
+  const [session, setSession] = useState<SessionResponse | null>(null);
+  const [agents, setAgents] = useState<AgentResponse[]>([]);
+  const [events, setEvents] = useState<OrchestratorEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabId>(getInitialTab);
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
@@ -315,9 +317,9 @@ export function SessionDetail() {
         api.getAgents(sessionId),
         api.getEvents(sessionId, { limit: 50 }),
       ]);
-      setSession(s);
-      setAgents(a.agents || []);
-      setEvents(e.events || []);
+      setSession(s as SessionResponse);
+      setAgents((a.agents || []) as AgentResponse[]);
+      setEvents((e.events || []) as OrchestratorEvent[]);
     } catch (err: unknown) {
       console.error("Failed to load session data:", err);
     } finally {
@@ -612,7 +614,7 @@ export function SessionDetail() {
         <div className="session-header-left">
           <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, lineHeight: 1.3 }}>
             {session?.name || "Session"}
-            <span className={`badge ${getStatusBadge(session?.status)}`} style={{ marginLeft: 8, verticalAlign: "middle" }}>
+            <span className={`badge ${getStatusBadge(session?.status || "")}`} style={{ marginLeft: 8, verticalAlign: "middle" }}>
               {session?.status || "unknown"}
             </span>
           </h1>
@@ -1140,7 +1142,7 @@ export function SessionDetail() {
             name: session?.name || "Session",
             agentCount: agents.length,
             activeAgentCount: agents.filter(
-              (a) => a.status === "running" || a.status === "active" || a.status === "idle"
+              (a) => a.status === "running" || a.status === "idle" || a.status === "waiting"
             ).length,
           }}
           onCancel={() => {
@@ -1602,7 +1604,7 @@ function buildCliCommand(agent: any): string {
 }
 
 interface AgentsTabProps {
-  agents: any[];
+  agents: AgentResponse[];
   sessionId: string;
   sendingTo: string | null;
   quickMessage: string;
@@ -1620,12 +1622,12 @@ interface AgentsTabProps {
   getRoleBadgeClass: (role: string) => string;
   getRoleCardClass: (role: string) => string;
   openPlaybookDialog: () => void;
-  getPendingForAgent: (agentId: string) => any[];
+  getPendingForAgent: (agentId: string) => ApprovalRequest[];
   approve: (agentId: string, requestId: string) => Promise<void>;
   reject: (agentId: string, requestId: string) => Promise<void>;
   onBroadcast: () => void;
   onCloseTerminal: (id: string, name: string) => void;
-  workflowStates?: any[];
+  workflowStates?: WorkflowState[];
 }
 
 function AgentsTab({
@@ -1659,8 +1661,8 @@ function AgentsTab({
   const [activityHistory, setActivityHistory] = useState<Record<string, AgentActivity[]>>({});
   const [activitySince, setActivitySince] = useState<Record<string, string>>({});
   const [gearOpen, setGearOpen] = useState<string | null>(null);
-  const [personaModalAgent, setPersonaModalAgent] = useState<any | null>(null);
-  const [tasks, setTasks] = useState<any[]>([]);
+  const [personaModalAgent, setPersonaModalAgent] = useState<AgentResponse | null>(null);
+  const [tasks, setTasks] = useState<TaskResponse[]>([]);
 
   // Close gear dropdown when clicking outside
   useEffect(() => {
@@ -1949,8 +1951,8 @@ function AgentsTab({
                 )}
               </div>
               {a.currentTask && (
-                <div className="ac2-task" title={a.currentTask}>
-                  {a.currentTask}
+                <div className="ac2-task" title={typeof a.currentTask === "string" ? a.currentTask : a.currentTask.title}>
+                  {typeof a.currentTask === "string" ? a.currentTask : a.currentTask.title}
                 </div>
               )}
             </div>
