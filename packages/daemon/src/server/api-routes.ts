@@ -2383,10 +2383,41 @@ export function createApiRouter(deps: {
       if (!db) { res.status(404).json({ error: "Session not found" }); return; }
 
       const limit = parseInt(req.query.limit as string) || 50;
-      const transitions = db.getTransitions(tid, limit);
+      const rawTransitions = db.getTransitions(tid, limit);
       const durations = db.getStatusDurations(tid);
 
-      res.json({ transitions, durations });
+      // Enhance transitions with durationMs (time until next transition)
+      const transitions = rawTransitions.map((t, i) => {
+        const nextTime = i + 1 < rawTransitions.length
+          ? new Date(rawTransitions[i + 1].changedAt).getTime()
+          : Date.now();
+        const durationMs = nextTime - new Date(t.changedAt).getTime();
+        return { ...t, durationMs };
+      });
+
+      // Compute summary analytics
+      const totalCycleTimeMs = Object.values(durations).reduce((a, b) => a + b, 0);
+      const statusCounts: Record<string, number> = {};
+      for (const t of rawTransitions) {
+        statusCounts[t.toStatus] = (statusCounts[t.toStatus] || 0) + 1;
+      }
+      const avgTimePerStatus: Record<string, number> = {};
+      for (const [status, totalMs] of Object.entries(durations)) {
+        const visits = statusCounts[status] || 1;
+        avgTimePerStatus[status] = Math.round(totalMs / visits);
+      }
+      // Rework count: number of times a task moved backward (re-entered a prior status)
+      const seen = new Set<string>();
+      let reworkCount = 0;
+      for (const t of rawTransitions) {
+        if (seen.has(t.toStatus)) reworkCount++;
+        seen.add(t.toStatus);
+      }
+
+      res.json({
+        transitions,
+        summary: { totalCycleTimeMs, avgTimePerStatus, reworkCount },
+      });
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
