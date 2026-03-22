@@ -285,6 +285,34 @@ export class UsageMonitor {
     return result;
   }
 
+  /**
+   * Get files modified by an agent from JSONL session data.
+   * Returns list of file paths touched by Read/Edit/Write tool calls.
+   */
+  getFilesModified(agentId: string): string[] | null {
+    if (!this.jsonlReader.hasAgent(agentId)) return null;
+    return this.jsonlReader.getFilesModified(agentId);
+  }
+
+  /**
+   * Get conversation metrics for an agent from JSONL session data.
+   * Returns turn count + messages per minute rate.
+   */
+  getConversationMetrics(agentId: string): { turnCount: number; messagesPerMinute: number } | null {
+    if (!this.jsonlReader.hasAgent(agentId)) return null;
+    const turnCount = this.jsonlReader.getTurnCount(agentId);
+    // Compute messages/min from agent start time
+    const agentStartKey = this.agentSessions.get(agentId);
+    let messagesPerMinute = 0;
+    if (turnCount > 0) {
+      // Estimate from monitoring start time
+      const monitoringDurationMs = Date.now() - (this.lastCostPollTime.get(agentId) || Date.now());
+      const durationMinutes = Math.max(1, monitoringDurationMs / 60_000);
+      messagesPerMinute = Math.round((turnCount / durationMinutes) * 10) / 10;
+    }
+    return { turnCount, messagesPerMinute };
+  }
+
   /** Stop all monitoring */
   stopAll(): void {
     for (const [id] of this.intervals) this.stopMonitoring(id);

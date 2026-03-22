@@ -873,6 +873,40 @@ export function createApiRouter(deps: {
     }
   });
 
+  /** Get files modified by an agent (from Claude Code JSONL session data) */
+  router.get("/sessions/:sid/agents/:aid/files-modified", (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const orch = orchestrators.get(String(sid));
+      if (!orch) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const agent = orch.agentManager.getAgent(String(aid));
+      if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+
+      const files = orch.usageMonitor.getFilesModified(String(aid));
+      res.json({ agentId: aid, filesModified: files || [], count: files?.length || 0 });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  /** Get conversation metrics for an agent (turn count + messages/min) */
+  router.get("/sessions/:sid/agents/:aid/conversation-metrics", (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const orch = orchestrators.get(String(sid));
+      if (!orch) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const agent = orch.agentManager.getAgent(String(aid));
+      if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+
+      const metrics = orch.usageMonitor.getConversationMetrics(String(aid));
+      res.json({ agentId: aid, ...(metrics || { turnCount: 0, messagesPerMinute: 0 }) });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   router.delete("/sessions/:sid/agents/:aid", async (req: Request, res: Response) => {
     try {
       const { sid, aid } = req.params;
