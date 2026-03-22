@@ -22,6 +22,7 @@ import { CycleTimeChart } from "../components/CycleTimeChart";
 import { TransitionAnalytics } from "../components/TransitionAnalytics";
 import { TrendCfdCharts } from "../components/TrendCfdCharts";
 import { SessionMetricsBar } from "../components/SessionMetricsBar";
+import { BudgetWarning } from "../components/BudgetBar";
 import { DEFAULT_WORKFLOW_STATES } from "@kora/shared";
 import { TimelineView } from "../components/timeline/TimelineView";
 import { ExecutionTracing } from "../components/ExecutionTracing";
@@ -698,6 +699,12 @@ export function SessionDetail() {
           </Menu>
         </div>
       </div>
+
+      {/* Budget Warning */}
+      <BudgetWarning
+        currentCost={totalCost}
+        budgetLimit={session?.budgetLimit}
+      />
 
       {/* Session Metrics Bar — wrapped in subtle card for visual grouping */}
       {sessionId && (

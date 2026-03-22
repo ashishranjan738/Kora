@@ -524,6 +524,42 @@ export function SessionSettingsDialog({
           </Card>
         </Box>
 
+        {/* Budget Limit */}
+        <Divider my="md" />
+        <Stack gap="xs">
+          <Text size="sm" fw={600}>Session Budget</Text>
+          <Text size="xs" c="dimmed">Set a maximum cost limit. Agents will be auto-paused when exceeded.</Text>
+          <Group gap="sm">
+            <TextInput
+              size="xs"
+              placeholder="e.g. 5.00"
+              leftSection={<Text size="xs" c="dimmed">$</Text>}
+              style={{ width: 120 }}
+              styles={{
+                input: {
+                  backgroundColor: "var(--bg-primary)",
+                  borderColor: "var(--border-color)",
+                  color: "var(--text-primary)",
+                },
+              }}
+              defaultValue=""
+              onChange={async (e) => {
+                const val = parseFloat(e.currentTarget.value);
+                if (!isNaN(val) && val > 0) {
+                  try {
+                    await fetch(`/api/v1/sessions/${sessionId}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json", Authorization: `Bearer ${(window as any).__KORA_TOKEN__ || ""}` },
+                      body: JSON.stringify({ budgetLimit: val }),
+                    });
+                  } catch {}
+                }
+              }}
+            />
+            <Text size="xs" c="dimmed">Leave empty for no limit</Text>
+          </Group>
+        </Stack>
+
         {/* Auto-assign tasks to idle agents */}
         <Divider my="md" />
         <Group justify="space-between" align="center">
