@@ -79,6 +79,24 @@ export const WEAK_IDLE_PATTERNS = [
 export const IDLE_PROMPT_PATTERNS = [...STRONG_IDLE_PATTERNS, ...WEAK_IDLE_PATTERNS];
 
 /**
+ * Thinking/processing patterns — LLM spinner characters and processing text.
+ * When detected, agent is WORKING (thinking), NOT idle.
+ * These override idle detection to prevent false idle during LLM processing.
+ */
+export const THINKING_PATTERNS = [
+  // Braille spinner characters (Claude Code, various CLI tools)
+  /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/,
+  // Unicode spinner/star characters
+  /[✳✶✻✽✢⣾⣽⣻⢿⡿⣟⣯⣷]/,
+  // Text-based processing indicators (case insensitive)
+  /\b(?:thinking|processing|generating|analyzing|reasoning)\b/i,
+  // Claude Code fun spinners
+  /\b(?:photosynthesizing|hyperspacing|flummoxing|razzmatazzing|brewing|crunching|cooking|baking)\b/i,
+  // Generic progress indicators
+  /\b(?:loading|compiling|building|running|executing|searching|scanning)\.\.\./i,
+];
+
+/**
  * Keywords in agent messages that indicate the agent is idle/done.
  * When detected in send_message content, immediately infer idle status.
  */
@@ -232,10 +250,32 @@ export class AgentHealthMonitor extends EventEmitter {
       const output = rawOutput.split('\n').map(l => l.trimEnd()).filter(l => l).join('\n');
       const lastOutput = this.lastOutputCache.get(agentId) || "";
 
-      // Layer 2: Check if current output shows idle indicators.
-      // Check last 5 non-empty lines for both strong and weak patterns.
+      // Layer 2: Check if current output shows idle or thinking indicators.
+      // Check last 5 non-empty lines for patterns.
       const lines = output.trim().split('\n').filter(l => l.trim());
       const lastLines = lines.slice(-5);
+
+      // Check for thinking/spinner patterns FIRST — override idle detection
+      const isThinking = lastLines.some(line =>
+        THINKING_PATTERNS.some(pattern => pattern.test(line))
+      );
+
+      if (isThinking) {
+        // LLM is processing — definitely working, update timestamps
+        this.lastOutputTimestamps.set(agentId, Date.now());
+        if (agent.activity !== "working") {
+          agent.activity = "working";
+          agent.lastActivityAt = new Date().toISOString();
+          agent.lastOutputAt = new Date().toISOString();
+          delete agent.idleSince;
+          this.mcpIdleTimestamps.delete(agentId);
+          this.emit("agent-working", agentId);
+        } else {
+          agent.lastOutputAt = new Date().toISOString();
+        }
+        this.lastOutputCache.set(agentId, output);
+        return;
+      }
 
       const isStrongIdle = lastLines.some(line =>
         STRONG_IDLE_PATTERNS.some(pattern => pattern.test(line))
