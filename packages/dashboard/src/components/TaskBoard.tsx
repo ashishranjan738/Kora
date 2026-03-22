@@ -148,7 +148,10 @@ export function TaskBoard({ sessionId, initialTaskId, workflowStates }: TaskBoar
   const [confirmDeleteTaskId, setConfirmDeleteTaskId] = useState<string | null>(null); const [activeCol, setActiveCol] = useState<string>(firstCol);
   const [mobileView, setMobileView] = useState<"kanban" | "list">("list");
   const [filterAgent, setFilterAgent] = useState<string | null>(null); const [filterPriorities, setFilterPriorities] = useState<string[]>([]); const [filterLabels, setFilterLabels] = useState<string[]>([]);
-  const fetchTasks = useCallback(async () => { try { setTasks((await api.getTasks(sessionId)).tasks || []); } catch {} }, [sessionId]);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedCount, setArchivedCount] = useState(0);
+  const [archiving, setArchiving] = useState(false);
+  const fetchTasks = useCallback(async () => { try { const data = await api.getTasks(sessionId, showArchived); setTasks(data.tasks || []); if (data.archivedCount !== undefined) setArchivedCount(data.archivedCount); } catch {} }, [sessionId, showArchived]);
   const fetchAgents = useCallback(async () => { try { setAgents(((await api.getAgents(sessionId)).agents || []).map((a: any) => ({ id: a.id, name: a.config?.name || a.name || a.id }))); } catch {} }, [sessionId]);
   useEffect(() => { fetchTasks(); fetchAgents(); }, [fetchTasks, fetchAgents]);
   useEffect(() => { const i = setInterval(fetchTasks, 5000); return () => clearInterval(i); }, [fetchTasks]);
@@ -190,6 +193,21 @@ export function TaskBoard({ sessionId, initialTaskId, workflowStates }: TaskBoar
       <MultiSelect placeholder="All priorities" data={[{ value: "P0", label: "P0 Critical" }, { value: "P1", label: "P1 High" }, { value: "P2", label: "P2 Medium" }, { value: "P3", label: "P3 Low" }]} value={filterPriorities} onChange={setFilterPriorities} clearable styles={selectDropdownStyles} style={{ minWidth: 180 }} />
       {allLabels.length > 0 && <MultiSelect placeholder="All labels" data={allLabels} value={filterLabels} onChange={setFilterLabels} clearable searchable styles={selectDropdownStyles} style={{ minWidth: 180 }} />}
       {(filterAgent || filterPriorities.length > 0 || filterLabels.length > 0) && <Button variant="subtle" size="xs" color="gray" onClick={() => { setFilterAgent(null); setFilterPriorities([]); setFilterLabels([]); }}>Clear filters</Button>}
+      <div style={{ flex: 1 }} />
+      {archivedCount > 0 && (
+        <Tooltip label={showArchived ? "Hide archived tasks" : `${archivedCount} archived tasks`}>
+          <Badge variant={showArchived ? "filled" : "light"} color="gray" size="lg" style={{ cursor: "pointer" }}
+            onClick={() => setShowArchived(!showArchived)}>
+            &#x1F4E6; {archivedCount} archived
+          </Badge>
+        </Tooltip>
+      )}
+      <Tooltip label="Archive done tasks older than 7 days">
+        <Button variant="light" size="xs" color="gray" loading={archiving}
+          onClick={async () => { setArchiving(true); try { const r = await api.archiveTasks(sessionId); setArchivedCount(r.totalArchived); fetchTasks(); } catch {} finally { setArchiving(false); } }}>
+          Archive old
+        </Button>
+      </Tooltip>
     </Group>
     {isMobile ? (<Stack gap="sm">
       <Group justify="space-between" align="center"><SegmentedControl value={mobileView} onChange={v => setMobileView(v as "kanban" | "list")} data={[{ value: "list", label: "List" }, { value: "kanban", label: "Board" }]} size="xs" styles={{ root: { backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border-color)" }, label: { color: "var(--text-primary)", fontWeight: 500, fontSize: 12, padding: "4px 12px" }, indicator: { backgroundColor: "var(--accent-blue)", boxShadow: "none" } }} /><ActionIcon variant="light" color="blue" size="lg" onClick={() => setShowAddDialog(true)}><span style={{ fontSize: 18 }}>+</span></ActionIcon></Group>

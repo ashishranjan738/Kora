@@ -2031,7 +2031,8 @@ export function createApiRouter(deps: {
         res.json({ tasks });
       } else {
         // No filters — return full tasks (backward compatible)
-        res.json({ tasks: db.getTasks(sid) });
+        const includeArchived = req.query.includeArchived === "true";
+        res.json({ tasks: db.getTasks(sid, includeArchived), archivedCount: db.getArchivedCount(sid) });
       }
     } catch (err) {
       res.status(500).json({ error: String(err) });
@@ -2295,6 +2296,36 @@ export function createApiRouter(deps: {
       }
 
       res.json({ deleted: true, id: tid });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Archive done tasks older than X days
+  router.patch("/sessions/:sid/tasks/archive", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const daysOld = Number(req.body?.daysOld) || 7;
+      const archived = db.archiveDoneTasks(sid, daysOld);
+      const totalArchived = db.getArchivedCount(sid);
+
+      broadcastEvent({ event: "task-updated", sessionId: sid });
+      res.json({ archived, totalArchived });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Get archived task count
+  router.get("/sessions/:sid/tasks/archived-count", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+      res.json({ count: db.getArchivedCount(sid) });
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
