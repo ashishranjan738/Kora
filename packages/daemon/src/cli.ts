@@ -284,6 +284,14 @@ async function handleStart(): Promise<void> {
     suggestionsDb.close();
     playbookDb.close();
 
+    // Clean up holdpty pipe processes (prevents orphaned cat/tail processes)
+    if (ptyBackend && typeof (ptyBackend as any).cleanupAllPipeProcesses === 'function') {
+      try {
+        (ptyBackend as any).cleanupAllPipeProcesses();
+        logger.info("  Cleaned up holdpty pipe processes");
+      } catch {}
+    }
+
     // Close PtyManager connections cleanly (disconnect dashboard terminals)
     ptyManager.destroyAll();
 

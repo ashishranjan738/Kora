@@ -287,7 +287,10 @@ export class HoldptyController implements IPtyBackend {
       try { fs.unlinkSync(socketPath); } catch { /* may already be gone */ }
       try { fs.unlinkSync(metadataPath); } catch { /* may already be gone */ }
 
-      logger.debug({ sessionName: name }, "[HoldptyController] Cleaned up stale session files");
+      // Clear cached data for this session to prevent memory leaks
+      this.captureCache.delete(name);
+
+      logger.debug({ sessionName: name }, "[HoldptyController] Cleaned up stale session files + cache");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.debug({ sessionName: name, err: message }, "[HoldptyController] Failed to clean stale session");
