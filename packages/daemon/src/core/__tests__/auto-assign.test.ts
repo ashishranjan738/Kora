@@ -49,7 +49,7 @@ describe("AutoAssigner", () => {
       expect(result).not.toBeNull();
       expect(result!.taskId).toBe("t2"); // P0 has highest score
       expect(result!.priority).toBe("P0");
-      expect(config.database.updateTask).toHaveBeenCalledWith("t2", { assignedTo: "Worker 1" });
+      expect(config.database.updateTask).toHaveBeenCalledWith("t2", { assignedTo: "Worker 1", status: "in-progress" });
     });
 
     it("skips master agents", async () => {

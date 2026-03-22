@@ -24,7 +24,7 @@ const ROLE_TOOL_ACCESS: Record<string, Set<string>> = {
 
 function isToolAllowed(role: string, toolName: string): boolean {
   const allowed = ROLE_TOOL_ACCESS[role];
-  if (!allowed) return true; // unknown role — allow all
+  if (!allowed) return ROLE_TOOL_ACCESS.worker.has(toolName); // unknown role — default to worker (most restrictive)
   return allowed.has(toolName);
 }
 
@@ -91,13 +91,18 @@ describe("Tool access control — worker role", () => {
 // ---------------------------------------------------------------------------
 
 describe("Tool access control — unknown roles", () => {
-  it("unknown role defaults to allow all (safe for custom roles)", () => {
-    expect(isToolAllowed("custom-role", "spawn_agent")).toBe(true);
+  it("unknown role defaults to worker permissions (most restrictive)", () => {
+    expect(isToolAllowed("custom-role", "spawn_agent")).toBe(false);
+    expect(isToolAllowed("custom-role", "remove_agent")).toBe(false);
+    expect(isToolAllowed("custom-role", "peek_agent")).toBe(false);
+    expect(isToolAllowed("custom-role", "nudge_agent")).toBe(false);
     expect(isToolAllowed("custom-role", "send_message")).toBe(true);
+    expect(isToolAllowed("custom-role", "list_tasks")).toBe(true);
   });
 
-  it("empty role string defaults to allow all", () => {
-    expect(isToolAllowed("", "spawn_agent")).toBe(true);
+  it("empty role string defaults to worker permissions", () => {
+    expect(isToolAllowed("", "spawn_agent")).toBe(false);
+    expect(isToolAllowed("", "send_message")).toBe(true);
   });
 });
 

@@ -28,6 +28,10 @@ export interface AutoAssignConfig {
   messageQueue: MessageQueue;
   eventLog: EventLog;
   enabled?: boolean; // default true
+  /** First workflow state ID (e.g. "pending", "backlog"). Default: "pending" */
+  firstStateId?: string;
+  /** Second workflow state ID (e.g. "in-progress", "development"). Default: "in-progress" */
+  secondStateId?: string;
 }
 
 export class AutoAssigner {
@@ -74,9 +78,10 @@ export class AutoAssigner {
     if (!task) return null;
 
     // Assign task + auto-transition from first to second workflow state
+    const secondState = this.config.secondStateId || "in-progress";
     this.config.database.updateTask(task.id, {
       assignedTo: agent.config.name,
-      status: "in-progress", // Auto-move to in-progress on assignment
+      status: secondState,
     });
 
     // Notify agent via terminal + SQLite
@@ -203,10 +208,10 @@ export class AutoAssigner {
     const allTasks = this.config.database.getTasks(this.config.sessionId);
 
     // Get first workflow state ID (the "pending"/"backlog" state)
-    const firstState = this.getFirstWorkflowState();
+    const firstState = this.config.firstStateId || "pending";
 
     const available = allTasks.filter((t: any) =>
-      (t.status === firstState || t.status === "pending") &&
+      t.status === firstState &&
       (!t.assignedTo || t.assignedTo === "")
     );
 
@@ -261,11 +266,6 @@ export class AutoAssigner {
     }
 
     return best ? { id: best.id, title: best.title, priority: best.priority || "P2" } : null;
-  }
-
-  private getFirstWorkflowState(): string {
-    // Try to read from session config (not available directly, so default)
-    return "pending"; // Default — callers can override if needed
   }
 
   private resolveAgentId(nameOrId: string): string | undefined {

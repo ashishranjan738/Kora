@@ -14,10 +14,32 @@ const SCHEMA_VERSION = 6;
 export class AppDatabase extends EventEmitter {
   public db: Database.Database;
   private _open = true;
+  /** Closed-category status IDs from workflow states. Used for task-completed events. Default: ["done"] */
+  private closedStatuses = new Set<string>(["done"]);
+  /** First (initial) status ID from workflow states. Used for stale task exclusion. Default: "pending" */
+  private firstStatus = "pending";
 
   /** Check if the database connection is still open */
   get isOpen(): boolean {
     return this._open && this.db.open;
+  }
+
+  /** Configure workflow-aware status sets. Call after session config is loaded. */
+  setWorkflowStatuses(states: Array<{ id: string; category: string }>): void {
+    const closed = states.filter(s => s.category === "closed").map(s => s.id);
+    if (closed.length > 0) this.closedStatuses = new Set(closed);
+    const first = states.find(s => s.category === "not-started");
+    if (first) this.firstStatus = first.id;
+  }
+
+  /** Check if a status is a closed-category workflow state */
+  isClosedStatus(status: string): boolean {
+    return this.closedStatuses.has(status);
+  }
+
+  /** Get the first (not-started) workflow status */
+  getFirstStatus(): string {
+    return this.firstStatus;
   }
 
   constructor(runtimeDir: string) {
@@ -649,8 +671,8 @@ export class AppDatabase extends EventEmitter {
       } catch { /* non-fatal */ }
     }
 
-    // Emit task-completed event if status changed to "done"
-    const wasCompleted = task.status !== "done" && newStatus === "done";
+    // Emit task-completed event if status changed to any closed-category state
+    const wasCompleted = !this.closedStatuses.has(task.status) && this.closedStatuses.has(newStatus);
     if (wasCompleted) {
       this.emit("task-completed", { taskId, title: newTitle, assignedTo: newAssigned });
     }
@@ -859,9 +881,12 @@ export class AppDatabase extends EventEmitter {
   getStaleTasks(sessionId: string, statuses: string[], thresholdMinutes: number): any[] {
     const cutoff = new Date(Date.now() - thresholdMinutes * 60 * 1000).toISOString();
     const placeholders = statuses.map(() => "?").join(", ");
+    // Exclude closed-category and first (not-started) statuses dynamically
+    const excludeStatuses = [...this.closedStatuses, this.firstStatus];
+    const excludePlaceholders = excludeStatuses.map(() => "?").join(", ");
     return this.db.prepare(
-      `SELECT * FROM tasks WHERE session_id = ? AND status IN (${placeholders}) AND status != 'done' AND status != 'pending' AND COALESCE(status_changed_at, created_at) < ? ORDER BY COALESCE(status_changed_at, created_at) ASC`
-    ).all(sessionId, ...statuses, cutoff) as any[];
+      `SELECT * FROM tasks WHERE session_id = ? AND status IN (${placeholders}) AND status NOT IN (${excludePlaceholders}) AND COALESCE(status_changed_at, created_at) < ? ORDER BY COALESCE(status_changed_at, created_at) ASC`
+    ).all(sessionId, ...statuses, ...excludeStatuses, cutoff) as any[];
   }
 
   // ─── Task State Transitions ─────────────────────────────────
