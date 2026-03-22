@@ -31,6 +31,8 @@ export interface SpawnAgentOptions {
   skipArgValidation?: boolean;
   /** Reuse a specific agent ID instead of generating a new one (used by restart to preserve identity) */
   forceAgentId?: string;
+  /** Kiro workspace root directory (set internally during Kiro MCP config setup) */
+  _kiroWorkspaceRoot?: string;
 }
 
 /** Convert a name like "CSS Expert" to "css-expert" */
@@ -335,7 +337,7 @@ export class AgentManager extends EventEmitter {
             "utf-8"
           );
           // Store the Kiro workspace root so we cd there before starting chat
-          (options as any)._kiroWorkspaceRoot = kiroWorkspaceRoot;
+          options._kiroWorkspaceRoot = kiroWorkspaceRoot;
           logger.info(`[agent-manager] Wrote Kiro workspace MCP config for ${agentId} at ${kiroSettingsDir}/mcp.json`);
         }
       } catch (err) {
@@ -366,7 +368,7 @@ export class AgentManager extends EventEmitter {
 
     // 7. cd to workingDirectory (use worktree if available)
     // For Kiro: cd to the Kiro workspace root so it loads the per-agent .kiro/settings/mcp.json
-    const cdTarget = (options as any)._kiroWorkspaceRoot || agentWorkDir;
+    const cdTarget = options._kiroWorkspaceRoot || agentWorkDir;
     await this.tmux.sendKeys(tmuxSession, `cd ${cdTarget}`, { literal: false });
 
     // Wait for cd to complete — poll for prompt to reappear
