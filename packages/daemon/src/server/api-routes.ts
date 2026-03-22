@@ -10,6 +10,7 @@ import {
   getRuntimeDaemonDir,
   SESSIONS_SUBDIR,
   DEFAULT_WORKFLOW_STATES,
+  getEffectiveTransitions,
 } from "@kora/shared";
 import type {
   DaemonStatusResponse,
@@ -2350,19 +2351,9 @@ export function createApiRouter(deps: {
         if (currentTask && currentTask.status !== body.status) {
           const currentState = workflowStates.find((s: any) => s.id === currentTask.status);
           if (currentState?.transitions?.length) {
-            // Build effective transitions including skippable state targets + all closed states
-            const effective = new Set<string>(currentState.transitions);
-            for (const t of currentState.transitions) {
-              const ts = workflowStates.find((s: any) => s.id === t);
-              if (ts?.skippable && ts.transitions?.length) {
-                for (const st of ts.transitions) effective.add(st);
-              }
-            }
-            // Always allow closed states in effective transitions
-            for (const s of workflowStates) {
-              if (s.category === "closed") effective.add(s.id);
-            }
-            if (!effective.has(body.status)) {
+            // Use shared helper: skippable expansion is non-recursive to prevent pipeline bypass
+            const effective = getEffectiveTransitions(currentTask.status, workflowStates);
+            if (effective && !effective.has(body.status)) {
               const validNext = [...effective].join(", ");
               res.status(400).json({
                 error: `Invalid transition: "${currentTask.status}" → "${body.status}". Valid next states: ${validNext}`,
@@ -2570,18 +2561,8 @@ export function createApiRouter(deps: {
       if (currentTask) {
         const currentState = workflowStates_approve.find((s: any) => s.id === currentTask.status);
         if (currentState?.transitions?.length) {
-          const effective = new Set<string>(currentState.transitions);
-          // Include skippable targets + closed states
-          for (const t of currentState.transitions) {
-            const ts = workflowStates_approve.find((s: any) => s.id === t);
-            if (ts?.skippable && ts.transitions?.length) {
-              for (const st of ts.transitions) effective.add(st);
-            }
-          }
-          for (const s of workflowStates_approve) {
-            if (s.category === "closed") effective.add(s.id);
-          }
-          if (!effective.has(status)) {
+          const effective = getEffectiveTransitions(currentTask.status, workflowStates_approve);
+          if (effective && !effective.has(status)) {
             res.status(400).json({ error: `Invalid transition: "${currentTask.status}" → "${status}". Valid: ${[...effective].join(", ")}` });
             return;
           }

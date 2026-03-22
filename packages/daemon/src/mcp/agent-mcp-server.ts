@@ -1331,23 +1331,27 @@ async function handleToolCall(
             if (currentStatus && currentStatus !== status) {
               const currentState = workflowStates.find((s: any) => s.id === currentStatus);
               if (currentState?.transitions?.length) {
-                // Build effective transitions: include direct transitions + skip through skippable states
+                // Build effective transitions: skippable expansion is NON-RECURSIVE
+                // to prevent pipeline bypass (e.g. backlog→done via chained skips)
                 const effectiveTransitions = new Set<string>(currentState.transitions);
                 for (const t of currentState.transitions) {
-                  const targetState = workflowStates.find((s: any) => s.id === t);
-                  // If the target is skippable, also allow transitioning to its targets
-                  if (targetState?.skippable && targetState.transitions?.length) {
-                    for (const skipTarget of targetState.transitions) {
-                      effectiveTransitions.add(skipTarget);
+                  const ts = workflowStates.find((s: any) => s.id === t);
+                  if (ts?.skippable && ts.transitions?.length) {
+                    for (const skipTarget of ts.transitions) {
+                      // Only add non-closed targets — prevents skip chains reaching "done"
+                      const skipTargetState = workflowStates.find((s: any) => s.id === skipTarget);
+                      if (skipTargetState && skipTargetState.category !== "closed") {
+                        effectiveTransitions.add(skipTarget);
+                      }
                     }
                   }
                 }
+                // Always allow closed-category states as direct targets
+                for (const s of workflowStates) {
+                  if ((s as any).category === "closed") effectiveTransitions.add(s.id);
+                }
 
-                // Always allow transition to "closed" category states (e.g. "done")
-                const targetState = workflowStates.find((s: any) => s.id === status);
-                const isClosedCategory = targetState?.category === "closed";
-
-                if (!effectiveTransitions.has(status) && !isClosedCategory) {
+                if (!effectiveTransitions.has(status)) {
                   const validStates = [...effectiveTransitions].map((t: string) => {
                     const s = workflowStates.find((ws: any) => ws.id === t);
                     return s ? `"${s.label}" (${t})` : `"${t}"`;

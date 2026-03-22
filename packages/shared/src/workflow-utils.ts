@@ -51,6 +51,48 @@ export function autoGenerateTransitions(states: WorkflowState[]): WorkflowState[
 }
 
 /**
+ * Compute the effective set of valid transition targets from a given state.
+ * Handles skippable state expansion (one level only — NOT recursive).
+ * Always includes closed-category states as valid targets.
+ *
+ * @param currentStateId - The state to compute transitions from
+ * @param workflowStates - All workflow states in the pipeline
+ * @returns Set of valid target state IDs, or null if no transitions defined
+ */
+export function getEffectiveTransitions(
+  currentStateId: string,
+  workflowStates: WorkflowState[],
+): Set<string> | null {
+  const currentState = workflowStates.find(s => s.id === currentStateId);
+  if (!currentState?.transitions?.length) return null;
+
+  const effective = new Set<string>(currentState.transitions);
+
+  // Expand skippable states ONE level only — add their non-closed forward transitions.
+  // This prevents transitive chaining (e.g. skip e2e → skip staging → done).
+  for (const t of currentState.transitions) {
+    const targetState = workflowStates.find(s => s.id === t);
+    if (targetState?.skippable && targetState.transitions?.length) {
+      for (const skipTarget of targetState.transitions) {
+        const skipTargetState = workflowStates.find(s => s.id === skipTarget);
+        // Only add non-closed targets — closed states are handled separately below.
+        // This prevents skippable expansion from reaching "done" through intermediate states.
+        if (skipTargetState && skipTargetState.category !== "closed") {
+          effective.add(skipTarget);
+        }
+      }
+    }
+  }
+
+  // Always allow closed-category states as direct targets (e.g. "done")
+  for (const s of workflowStates) {
+    if (s.category === "closed") effective.add(s.id);
+  }
+
+  return effective;
+}
+
+/**
  * Validate a workflow pipeline for correctness.
  */
 export interface PipelineValidationResult {
