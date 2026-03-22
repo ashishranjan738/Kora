@@ -81,6 +81,8 @@ export function AllSessions() {
   const [newMessagingMode, setNewMessagingMode] = useState<"mcp" | "terminal" | "manual">("mcp");
   const [newWorktreeMode, setNewWorktreeMode] = useState<"isolated" | "shared">("isolated");
   const [newWorkflowStates, setNewWorkflowStates] = useState(getPipelineTemplate("standard").states);
+  const [taskCarryOver, setTaskCarryOver] = useState<"clean" | "active" | "all">("clean");
+  const [carryOverSource, setCarryOverSource] = useState<string>("");
   const [recentPaths, setRecentPaths] = useState<string[]>([]);
 
   // Playbook state
@@ -182,12 +184,20 @@ export function AllSessions() {
           ? autoGenerateTransitions(newWorkflowStates)
           : undefined,
       });
+      // Import tasks if carry-over selected
+      if (taskCarryOver !== "clean" && carryOverSource && result.id) {
+        try {
+          await api.importTasks(result.id, carryOverSource, taskCarryOver as "active" | "all");
+        } catch { /* non-fatal — session still created */ }
+      }
       useSessionStore.getState().addSession(result);
       setShowCreateDialog(false);
       setNewName("");
       setNewPath("");
       setNewMessagingMode("mcp");
       setNewWorktreeMode("isolated");
+      setTaskCarryOver("clean");
+      setCarryOverSource("");
       if (result.id) {
         navigate(`/session/${result.id}`);
       }
@@ -1002,6 +1012,31 @@ export function AllSessions() {
             </div>
             <div className="form-group">
               <WorkflowStateEditor states={newWorkflowStates} onChange={setNewWorkflowStates} />
+            </div>
+            <div className="form-group">
+              <label>Task Board</label>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+                <label className="radio-option">
+                  <input type="radio" name="task-carry" value="clean" checked={taskCarryOver === "clean"} onChange={() => setTaskCarryOver("clean")} style={{ marginTop: 2 }} />
+                  <span><strong>Clean start</strong><span style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>Empty task board. Start fresh.</span></span>
+                </label>
+                <label className="radio-option">
+                  <input type="radio" name="task-carry" value="active" checked={taskCarryOver === "active"} onChange={() => setTaskCarryOver("active")} style={{ marginTop: 2 }} />
+                  <span><strong>Carry over active tasks</strong><span style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>Import backlog/in-progress/review tasks from a prior session (skip done).</span></span>
+                </label>
+                <label className="radio-option">
+                  <input type="radio" name="task-carry" value="all" checked={taskCarryOver === "all"} onChange={() => setTaskCarryOver("all")} style={{ marginTop: 2 }} />
+                  <span><strong>Carry over all tasks</strong><span style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>Import everything including done tasks.</span></span>
+                </label>
+              </div>
+              {taskCarryOver !== "clean" && sessions.length > 0 && (
+                <select value={carryOverSource} onChange={(e) => setCarryOverSource(e.target.value)} style={{ marginTop: 8, width: "100%", padding: "8px 12px", fontSize: 13, backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border-color)", borderRadius: 6, color: "var(--text-primary)" }}>
+                  <option value="">Select source session...</option>
+                  {sessions.map((s: any) => (
+                    <option key={s.id} value={s.id}>{s.name || s.id}</option>
+                  ))}
+                </select>
+              )}
             </div>
             <div className="form-actions">
               <button onClick={() => setShowCreateDialog(false)}>Cancel</button>

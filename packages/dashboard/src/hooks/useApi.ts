@@ -277,5 +277,10 @@ export function useApi() {
         method: "PATCH",
         body: JSON.stringify({ daysOld }),
       }),
+    importTasks: (sid: string, sourceSessionId: string, mode: "active" | "all" = "active") =>
+      apiFetch<{ imported: number }>(`/sessions/${sid}/import-tasks`, {
+        method: "POST",
+        body: JSON.stringify({ sourceSessionId, mode }),
+      }),
   };
 }
