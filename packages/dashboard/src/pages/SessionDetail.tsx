@@ -606,22 +606,18 @@ export function SessionDetail() {
       </nav>
 
       {/* Header */}
-      <div className="session-header">
+      <div className="session-header" style={{ marginBottom: 12 }}>
         <div className="session-header-left">
-          <h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, lineHeight: 1.3 }}>
             {session?.name || "Session"}
-            <span className={`badge ${getStatusBadge(session?.status)}`}>
+            <span className={`badge ${getStatusBadge(session?.status)}`} style={{ marginLeft: 8, verticalAlign: "middle" }}>
               {session?.status || "unknown"}
             </span>
           </h1>
           {session?.projectPath && (
-            <div className="session-meta">{session.projectPath}</div>
+            <div className="session-meta" style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>{session.projectPath}</div>
           )}
-          <div className="session-stats">
-            <span className="stat-item">
-              {agents.length} agent{agents.length !== 1 ? "s" : ""}
-            </span>
-            <span className="stat-divider" />
+          <div className="session-stats" style={{ marginTop: 8 }}>
             <span className="stat-item">{_hasCostData ? `$${totalCost.toFixed(2)} cost` : "No cost data"}</span>
             <span className="stat-divider" />
             <span className="stat-item">
@@ -703,15 +699,22 @@ export function SessionDetail() {
         </div>
       </div>
 
-      {/* Session Metrics Bar */}
+      {/* Session Metrics Bar — wrapped in subtle card for visual grouping */}
       {sessionId && (
-        <SessionMetricsBar
-          sessionId={sessionId}
-          agentCount={agents.length}
-          runningAgentCount={agents.filter((a: any) => a.status === "running" || a.status === "idle").length}
-          sessionStartedAt={session?.createdAt || session?.config?.createdAt}
-          onNavigateTab={(tab) => setActiveTab(tab as TabId)}
-        />
+        <Paper
+          withBorder
+          p={0}
+          mb={12}
+          style={{ background: "var(--bg-secondary)", borderColor: "var(--border-color)", borderRadius: 6, overflow: "hidden" }}
+        >
+          <SessionMetricsBar
+            sessionId={sessionId}
+            agentCount={agents.length}
+            runningAgentCount={agents.filter((a: any) => a.status === "running" || a.status === "idle").length}
+            sessionStartedAt={session?.createdAt || session?.config?.createdAt}
+            onNavigateTab={(tab) => setActiveTab(tab as TabId)}
+          />
+        </Paper>
       )}
 
       {/* Tab bar */}
