@@ -304,6 +304,8 @@ export class Orchestrator extends EventEmitter {
           this.messageQueue.registerMcpAgent(agent.id);
         }
       }
+      // Register agent role for role-based rate limits (master: 25/min, worker: 10/min)
+      this.messageQueue.registerAgentRole(agent.id, agent.config.role);
 
       await this.eventLog.log({
         sessionId: this.config.sessionId,
@@ -988,6 +990,15 @@ export class Orchestrator extends EventEmitter {
         this.costTracker.initAgent(agent.id);
         this.usageMonitor.startMonitoring(agent);
         this.autoRelay.startMonitoring(agent);
+
+        // Re-register MCP agent + role for correct delivery channel and rate limits
+        if (agent.config.cliProvider) {
+          const provider = this.config.providerRegistry.get(agent.config.cliProvider);
+          if (provider?.supportsMcp) {
+            this.messageQueue.registerMcpAgent(agent.id);
+          }
+        }
+        this.messageQueue.registerAgentRole(agent.id, agent.config.role);
 
         restored++;
       } else {
