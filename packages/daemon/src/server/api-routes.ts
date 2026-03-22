@@ -1726,6 +1726,45 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ─── Knowledge Base (SQLite-backed key-value) ────────────────────────
+
+  router.post("/sessions/:sid/knowledge-db", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+      const { key, value, savedBy } = req.body;
+      if (!key || !value) { res.status(400).json({ error: "key and value are required" }); return; }
+      const { randomUUID } = require("crypto");
+      db.saveKnowledge({ id: randomUUID().slice(0, 8), sessionId: sid, key, value, savedBy });
+      res.status(201).json({ success: true, key });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.get("/sessions/:sid/knowledge-db/:key", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const key = String(req.params.key);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+      const entry = db.getKnowledge(sid, key);
+      if (!entry) { res.status(404).json({ error: `Knowledge key "${key}" not found` }); return; }
+      res.json(entry);
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.get("/sessions/:sid/knowledge-db", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+      const query = req.query.q as string | undefined;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const entries = query ? db.searchKnowledge(sid, query, limit) : db.listKnowledge(sid, limit);
+      res.json({ entries, count: entries.length });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
   // ─── Idle Detection & Task Assignment ──────────────────────────────────
 
   /** Agent reports it is idle and available for work */
