@@ -1985,6 +1985,9 @@ function AgentsTab({
               <span className="ac2-stat-sep">{"\u00B7"}</span>
               <AgentUtilization
                 utilization={(() => {
+                  // Prefer backend-computed utilization (survives page refresh)
+                  if ((a as any).utilizationPercent !== undefined) return (a as any).utilizationPercent / 100;
+                  // Fallback to frontend activity history
                   const hist = activityHistory[a.id] || [];
                   if (hist.length === 0) return activity === "working" ? 1 : 0;
                   const active = hist.filter(h => h === "working" || h === "reading" || h === "writing" || h === "running-command").length;
