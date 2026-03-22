@@ -209,8 +209,16 @@ export function createServer(options: ServerOptions) {
     }
   });
 
-  // WebSocket with auth
+  // WebSocket with auth + connection limit
+  const MAX_WS_CONNECTIONS = 50; // Max concurrent WebSocket connections
   wss.on("connection", (ws, req) => {
+    // Connection limit — reject when exceeded
+    if (wss.clients.size > MAX_WS_CONNECTIONS) {
+      logger.warn({ clientCount: wss.clients.size }, "WebSocket connection rejected: max connections reached");
+      ws.close(4008, "Too many connections");
+      return;
+    }
+
     if (!validateWsToken(req.url || "", token)) {
       const sanitizedUrl = req.url?.split('?')[0] || 'unknown';
       logger.warn({ path: sanitizedUrl }, 'WebSocket connection rejected: unauthorized');
