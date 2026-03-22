@@ -14,6 +14,9 @@ Kora is a multi-agent orchestration platform for AI coding CLI agents. It runs m
 /Users/ashishranjan738/Projects/Kora/
 ├── package.json                    # Root — name: "kora", workspaces
 ├── tsconfig.json                   # Root tsconfig with composite project references
+├── vitest.config.ts                # Root vitest config with worktree exclusions
+├── docs/
+│   └── dogfooding-session-report-2026-03-22.md  # Dogfooding session report
 ├── packages/
 │   ├── shared/                     # @kora/shared — Types, API contracts, constants
 │   │   ├── src/
@@ -31,7 +34,8 @@ Kora is a multi-agent orchestration platform for AI coding CLI agents. It runs m
 │   │   │   ├── index.ts            # Re-export
 │   │   │   ├── server/
 │   │   │   │   ├── index.ts        # Express app + WS server + token injection
-│   │   │   │   ├── api-routes.ts   # All REST endpoints (~1500 lines)
+│   │   │   │   ├── api-routes.ts   # All REST endpoints (~4500 lines)
+│   │   │   │   ├── webhook-routes.ts # Inbound webhook triggers (GitHub, Slack, generic)
 │   │   │   │   └── auth.ts         # Bearer token middleware
 │   │   │   ├── core/
 │   │   │   │   ├── orchestrator.ts # Main orchestrator — ties everything together
@@ -51,10 +55,15 @@ Kora is a multi-agent orchestration platform for AI coding CLI agents. It runs m
 │   │   │   │   ├── agent-health.ts # Health monitoring via tmux
 │   │   │   │   ├── agent-control-plane.ts # File-based command system
 │   │   │   │   ├── message-bus.ts  # File-based message system
-│   │   │   │   ├── notifications.ts # In-memory event bus
+│   │   │   │   ├── notifications.ts # In-memory event bus + macOS/Windows desktop notifications
 │   │   │   │   ├── project-config.ts # .kora.yml parser
 │   │   │   │   ├── playbook-loader.ts # Built-in playbook templates
-│   │   │   │   └── terminal-stream.ts # Terminal output ring buffer
+│   │   │   │   ├── terminal-stream.ts # Terminal output ring buffer
+│   │   │   │   ├── auto-assign.ts    # Skill-aware task auto-assignment to idle agents
+│   │   │   │   ├── stale-task-watchdog.ts # Nudge policies, escalation, batch delivery
+│   │   │   │   ├── cron-scheduler.ts  # Cron-based session auto-start
+│   │   │   │   ├── webhook-notifier.ts # Outbound webhook HTTP POST with retry
+│   │   │   │   ├── task-metrics.ts    # Cycle time, throughput, CFD analytics
 │   │   │   ├── mcp/
 │   │   │   │   └── agent-mcp-server.ts # MCP JSON-RPC server (send/check/list/broadcast/tasks)
 │   │   │   └── cli-providers/
@@ -99,7 +108,10 @@ Kora is a multi-agent orchestration platform for AI coding CLI agents. It runs m
 │       │   │   ├── ReplaceAgentDialog.tsx
 │       │   │   ├── RestartAllDialog.tsx # Professional dialog with progress states
 │       │   │   ├── StopSessionDialog.tsx
-│       │   │   └── SessionSettingsDialog.tsx
+│       │   │   ├── SessionSettingsDialog.tsx
+│       │   │   └── CleanupPanel.tsx     # Stale resource cleanup UI
+│       │   ├── types/
+│       │   │   └── api.ts               # TypeScript API response types
 │       │   ├── stores/
 │       │   │   ├── themeStore.ts    # Zustand — app/editor/terminal themes with localStorage
 │       │   │   └── sessionStore.ts  # Zustand — sessions + API token
@@ -141,35 +153,82 @@ Bearer token generated on daemon start, injected into HTML as `<script>window.__
 
 ### MCP Inter-Agent Messaging
 - MCP server runs per-agent as a child process (JSON-RPC over stdio)
-- Tools: `send_message`, `check_messages`, `list_agents`, `broadcast`, `list_tasks`, `update_task`, `create_task`, `get_task`, `spawn_agent`, `remove_agent`, `peek_agent`, `nudge_agent`, `report_idle`, `request_task`, `prepare_pr`
-- Messages delivered via file-based inbox (`{project}/.kora/messages/inbox-{agentId}/`)
+- Tools: `send_message`, `check_messages`, `list_agents`, `broadcast`, `list_tasks`, `update_task`, `create_task`, `get_task`, `spawn_agent`, `remove_agent`, `peek_agent`, `nudge_agent`, `report_idle`, `request_task`, `prepare_pr`, `list_personas`, `save_persona`, `get_workflow_states`
+- Messages delivered via SQLite (primary) + file-based inbox (fallback)
 - Short tmux notification sent after file write: `[New message from X. Use check_messages tool to read it.]`
 - Token/port read dynamically from `~/.kora/` (or `~/.kora-dev/`) on every API call — survives daemon restarts
+- MCP server sends `X-Agent-Id` and `X-Agent-Role` headers on all API calls for server-side role enforcement
+- **Role permissions**: unknown roles default to worker (most restrictive) — no spawn/remove/peek/nudge
 - Circuit breaker: 10 send_message calls per 2 minutes
+- Port fallback respects `KORA_DEV` env var (7891 dev, 7890 prod)
 
 ### Message Queue
 - `messagingMode`: "mcp" (default), "terminal", or "manual"
-- MCP mode: writes full message to inbox file, sends short notification to tmux
+- MCP mode: writes full message to inbox file + SQLite, sends short notification to tmux
 - Terminal mode: collapses newlines to `" | "`, truncates to 500 chars, sends via tmux send-keys
+- **Broadcast persistence**: long broadcasts (>500 chars) stored in SQLite + inbox files, short ones go direct to terminal. Prevents truncation of long messages.
 - Rate limiting: role-based (master: 25/min, worker: 10/min) — check BEFORE dequeue, buffer on limit
 - Conversation loop detection: 8 messages between same pair per 2 minutes
+- Priority queue: critical (task assignments) → high (questions) → normal → low (broadcasts)
+- Critical messages bypass queue via direct delivery with retry (1s, 2s, 4s exponential backoff)
 - Prompt detection: checks for `❯`, `>`, `$`, `%`, `? for shortcuts` before delivering
 - 60-second timeout: force delivers if agent never reaches prompt
+- Re-notification escalation: normal → ⚠️ (30s) → 🔴 (60s) → architect alert (120s)
 
 ### SQLite (better-sqlite3)
 - One `data.db` per session at `{project}/.kora/data.db`
 - WAL mode for concurrent reads during writes
-- Tables: `events` (with agent_id column), `tasks` (with priority, labels, due_date), `task_comments`, `suggestions` (paths + CLI flags)
+- Schema version 14 with incremental migrations
+- Tables: `events`, `tasks` (with priority, labels, due_date, status_changed_at, archived_at), `task_comments`, `task_nudges`, `task_state_transitions`, `suggestions`, `message_deliveries`, `messages`, `agent_reminders`, `knowledge_entries`, `session_schedules`, `agent_traces`, `webhooks`, `webhook_events`
 - All task operations are synchronous (better-sqlite3 is sync)
 - Events are indexed by `(session_id, timestamp DESC)` and `(type)`
 - EventLog class has SQLite primary path with JSONL fallback
+- **Workflow-aware status detection**: `database.setWorkflowStatuses()` configures closed-category and first-state IDs dynamically (not hardcoded "done"/"pending")
+- `task-completed` event fires for ANY closed-category state, triggering dependency unblocks and auto-assign follow-up
+
+### Workflow Pipeline
+- Configurable workflow states per session (frozen at creation) — default: pending → in-progress → review → done
+- `autoGenerateTransitions()` in `@kora/shared` — always call before creating session
+- `getEffectiveTransitions()` — one-level skip expansion for skippable states, closed states always allowed
+- Transition enforcement in both API routes and MCP `update_task` handler
+- Approval gates: `requiresApproval` on workflow states pauses task, stores pending target status, requires `/approve` endpoint
+- Force mode: bypasses pipeline validation — requires master role (enforced via `X-Agent-Id` header)
+- Auto-assign: configurable `firstStateId`/`secondStateId` from workflow config (not hardcoded)
+- Stale task watchdog: configurable nudge policies per status, batch delivery, escalation with self-loop protection
+
+### Skill Detection
+- `detectAgentSkills()` in `@kora/shared` — priority: explicit > persona > name > role defaults
+- If persona matches 4+ skills (shared context pollution), falls back to name-based detection
+- Name inference: "Dev" → backend/frontend, "Tester" → testing, "Reviewer" → review, "Researcher" → research
+- Used by auto-assign for skill-aware task matching (+50 skill match, -100 mismatch)
+
+### Cron Scheduling
+- `cron-scheduler.ts` — session auto-start on schedule using cron-parser
+- Pre-computed `next_run_at` for efficient DB polling
+- MAX_ACTIVE_SCHEDULES = 5
+- `validateSessionConfig()` validates shape at creation time (projectPath, name required)
+- Human-readable descriptions via cronstrue
+
+### Webhooks
+- Two webhook systems:
+  1. **Per-session outbound** (`webhook-notifier.ts`): fires HTTP POST to configured URLs on events, with retry + exponential backoff
+  2. **Inbound triggers** (`webhook-routes.ts`): external services create sessions via POST, with HMAC verification + dedup
+- HMAC-SHA256 verification (timing-safe) on per-webhook trigger endpoint
+- Optional HMAC on generic trigger endpoint via `KORA_WEBHOOK_SECRET` env var
+- Payload dedup: same hash within 60s is skipped
 
 ### Activity Detection
-- Polls agent terminal output every 3 seconds (last 15 lines)
-- Hashes output text to detect changes
-- If text is flowing (hash changed): working (with sub-classification via pattern matching)
-- If no change for 3+ minutes: idle
-- Pattern matching for specific states: Reading files, Writing files, Running command
+- Polls agent terminal output every 3 seconds (last 10 lines)
+- Hashes output text to detect changes (after filtering system-injected messages)
+- 3-layer confidence system:
+  - **Layer 1 (highest)**: MCP `report_idle` / completion message → instant idle (protected for 60s)
+  - **Layer 2**: Terminal pattern matching (STRONG/WEAK idle, THINKING patterns)
+  - **Layer 3**: Hash-based change detection → idle after 30s no change
+- **THINKING_PATTERNS** override idle detection: braille spinners, 30+ Claude Code spinner words (brewing, spelunking, scurrying, etc.), time counter `(2m51s)`, ellipsis pattern (`word…`)
+- **STRONG_IDLE_PATTERNS**: `? for shortcuts`, `Claude is waiting for your input`, `Worked/Cooked/Brewed for X`, `Total cost`
+- **WEAK_IDLE_PATTERNS**: shell prompts (`$`, `%`, `>`, `❯`) → wait 30s before marking idle
+- **System message filtering**: notifications, nudges, broadcasts, task assignments filtered from hash to prevent false "working" detection
+- `lastActivityAt` updated continuously in "still working" branches (not just on state transitions)
 - Crashed/stopped agents mapped directly from API status
 
 ### Theme System
@@ -182,11 +241,21 @@ Bearer token generated on daemon start, injected into HTML as `<script>window.__
 
 ### Scale Protections
 - Stale tmux cleanup: on startup (kills sessions not matching any active session), periodic (5 min), on session delete
-- Terminal log rotation: 5MB cap, truncates to last 1MB, checked every 60s
+- **Git worktree cleanup**: `pruneAll()` on agent stop, session delete, and daemon startup. Skips dirty worktrees with uncommitted changes. Cleans stale agent branches.
+- Terminal log rotation: 2MB cap, truncates to last 1MB, checked every 20s
 - WebSocket push: server broadcasts `agent-spawned`, `agent-removed`, `task-created`, `task-updated`, `task-deleted`, `session-stopped` — dashboard listens and refreshes instantly
 - Polling reduced from 3s to 10s (WebSocket handles instant updates)
-- Git worktree cleanup on agent stop and session delete
 - Message rate limiting prevents agent chat loops
+- MAX_AGENTS_PER_SESSION = 20 (enforced at spawn time)
+- Per-agent `maxSubAgents` enforced in MCP spawn_agent via API pre-check
+
+### Security Patterns
+- **sourcePath validation**: Image sharing validates path is within project directory — prevents arbitrary file read
+- **HMAC verification**: Webhook signatures use `crypto.timingSafeEqual()` — prevents timing-based brute-force
+- **Force mode role check**: `force: true` on task updates requires master role (via `X-Agent-Id` header)
+- **Webhook projectPath**: Validated against system path blocklist (`/etc`, `/usr`, `/bin`, etc.) — must be real directory
+- **AppleScript escaping**: Newlines and control characters stripped from notification strings — prevents injection
+- **Shell injection**: CLI args sanitized via `arg-validator.ts` — rejects pipe, redirect, backtick, $() patterns
 
 ### Dev Mode
 - `--dev` flag or `KORA_DEV=1` env var
@@ -298,12 +367,12 @@ agents:
 
 ## Codebase Stats
 
-- **120+ source files** across 3 packages
-- **~28,000 lines** of TypeScript/TSX/CSS
-- **Shared**: 5 files, ~500 LOC
-- **Daemon**: 40+ files, ~8,500 LOC
-- **Dashboard**: 45+ files, ~13,000 LOC
-- **New deps (Sprint 2)**: @mantine/core, @mantine/hooks, postcss-preset-mantine, postcss-simple-vars, marked, dompurify
+- **150+ source files** across 3 packages
+- **~35,000+ lines** of TypeScript/TSX/CSS
+- **Shared**: 8 files, ~800 LOC (types, workflow-utils, skill-detection, playbook validation)
+- **Daemon**: 55+ files, ~15,000 LOC (including 80+ test files, 1220+ tests)
+- **Dashboard**: 50+ files, ~15,000 LOC
+- **Key deps**: @mantine/core v8, better-sqlite3, cron-parser, pino, marked, dompurify, @xyflow/react, @dnd-kit
 
 ## Session History & Recovery Log
 
@@ -581,9 +650,40 @@ npm run build:shared && npx tsc -p packages/daemon/tsconfig.json
 cd packages/dashboard && npm install && npm run build && cd ../..
 ```
 
-### Agent Rules (established this session)
+### Session: KaroDev Dogfooding (March 22, 2026)
+
+**Session ID**: `karodev`
+**Project Path**: `/Users/ashishranjan738/Projects/Kora`
+**Mode**: Dev (port 7891, config `~/.kora-dev/`)
+**Agents**: Engineering Manager, Product Manager, Researcher, Dev 1, Dev 2, Dev 3, Reviewer, Tester (8 agents)
+**Purpose**: Dogfooding — running Kora ON Kora to find and fix bugs
+
+#### PRs Merged (Dogfooding Session)
+
+| PR Range | Summary |
+|----------|---------|
+| #276-#282 (Round 1) | Shell injection fix, HMAC bypass, MCP role perms, port fallback, unread count, session DELETE dead code, SQL params, EventLog dupe, invalid status, 5 HIGH UI bugs, worktree cleanup, P0 idle detection, workflow-aware status, 146 test fixes |
+| #283-#290 (Round 2) | Skill detection, auto-relay positional diff, AppleScript injection, path traversal, HMAC timing-safe, force-mode role check, broadcast persistence |
+| #291-#297 (Round 3 + Final Sprint) | Webhook HMAC, projectPath validation, approval verification, cron validation, cleanup UI, session report |
+
+**Total**: 22 PRs, 55+ bugs found, 50+ fixes shipped, 8 security vulnerabilities patched, 157+ test fixes
+
+#### Key Patterns Established
+
+- **Broadcast persistence**: Long broadcasts stored in SQLite + inbox; short ones direct to terminal
+- **Spinner detection**: 30+ Claude Code spinner words as STRONG WORKING indicators override idle patterns
+- **System message hash filtering**: Notifications/nudges/broadcasts excluded from activity hash
+- **Workflow-aware database**: `setWorkflowStatuses()` configures closed/first states dynamically
+- **Effective transitions**: `getEffectiveTransitions()` with one-level skip expansion, closed states always allowed
+- **Skill detection threshold**: 4+ persona matches → fall back to name-based detection
+- **MCP agent identification**: `X-Agent-Id` + `X-Agent-Role` headers on all API calls
+- **Worktree pruning**: `pruneAll()` on stop/delete/startup, skip dirty worktrees
+- **Approval gates**: Pending target status stored in task comment, verified on `/approve`
+
+### Agent Rules (established across sessions)
 1. **NEVER push directly to main** — always feature branch + PR
-2. **ALWAYS rebase onto origin/main** before pushing
+2. **ALWAYS rebase onto origin/main** before pushing — stale branches revert merged PRs
 3. **No Co-Authored-By** lines in commit messages
 4. **NEVER kill processes you didn't start** — especially the daemon
 5. **Dev testing only on port 7891** — never touch 7890 (prod)
+6. **Verify diff before PR**: `git diff origin/main --stat` should show ONLY your target files
