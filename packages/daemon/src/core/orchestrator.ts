@@ -68,6 +68,7 @@ export class Orchestrator extends EventEmitter {
   private blockingBuffers = new Map<string, Array<{ from: string; to: string; message: string; messageType?: string; timestamp: string }>>();
   private blockingTimestamps = new Map<string, number>(); // When each agent entered blocked state
   private _replayingBuffer = false; // Skip blocking checks during buffer replay
+  private _budgetPaused = false; // Prevent repeated auto-pause
 
   // Stale task watchdog
   public staleTaskWatchdog: StaleTaskWatchdog;
@@ -239,6 +240,51 @@ export class Orchestrator extends EventEmitter {
         this.database.updateReminderFiredAt(r.id);
       } catch { /* non-fatal */ }
     }
+  }
+
+  /** Check session-level budget and auto-pause all agents if exceeded */
+  private async checkSessionBudget(): Promise<void> {
+    if (this._budgetPaused) return; // Already paused
+
+    const maxBudget = (this.config as any).maxBudget as number | undefined;
+    if (!maxBudget) return; // No budget set
+
+    const totalCost = this.costTracker.getTotalCost();
+    if (totalCost < maxBudget) return;
+
+    this._budgetPaused = true;
+    logger.warn({ totalCost, maxBudget, sessionId: this.config.sessionId },
+      "[orchestrator] Session budget exceeded — auto-pausing all agents");
+
+    // Stop all running agents
+    const agents = this.agentManager.listAgents();
+    for (const agent of agents) {
+      if (agent.status === "running") {
+        try {
+          await this.agentManager.stopAgent(agent.id, "session budget exceeded");
+        } catch { /* best effort */ }
+      }
+    }
+
+    // Log event
+    await this.eventLog.log({
+      sessionId: this.config.sessionId,
+      type: "cost-threshold-reached" as any,
+      data: {
+        level: "session",
+        totalCostUsd: totalCost,
+        maxBudget,
+        action: "auto-paused all agents",
+      },
+    });
+
+    // Emit for WebSocket broadcast
+    this.emit("budget-exceeded", {
+      sessionId: this.config.sessionId,
+      totalCostUsd: totalCost,
+      maxBudget,
+      message: `Budget exceeded ($${totalCost.toFixed(2)} / $${maxBudget.toFixed(2)}) — agents paused`,
+    });
   }
 
   private wireEvents(): void {
@@ -428,6 +474,9 @@ export class Orchestrator extends EventEmitter {
       if (agent) {
         agent.cost = cost;
       }
+
+      // Session-level budget enforcement
+      this.checkSessionBudget().catch(() => {});
     });
 
     // Budget exceeded → emit cost-threshold-reached event
