@@ -610,45 +610,43 @@ export class MessageQueue {
   private async deliverViaMcp(msg: QueuedMessage): Promise<void> {
     const messageId = crypto.randomUUID();
     const senderName = extractSenderName(msg.message, msg.fromAgentId);
-
-    // OPTIMIZATION: Skip persistent storage for broadcasts (transient notifications)
     const isBroadcast = msg.message.includes("[Broadcast]");
+    const cleanMsg = msg.message.replace(/\x1b\[[0-9;]*m/g, "");
 
-    if (!isBroadcast) {
-      // Write to SQLite (if enabled) - skip for broadcasts and already-persisted messages
-      if (this.enableSqliteMessages && this.database && this.sessionId && !msg.sqlitePersisted) {
-        try {
-          const expiresAt = msg.ttl || (Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days default
-          this.database.insertMessage({
-            id: messageId,
-            sessionId: this.sessionId,
-            fromAgentId: msg.fromAgentId || 'system',
-            toAgentId: msg.agentId,
-            messageType: this.classifyMessageType(msg.message),
-            content: msg.message,
-            priority: msg.priority,
-            createdAt: msg.timestamp,
-            expiresAt,
-            channel: msg.targetAgentId ? null : '#broadcast',
-          });
-        } catch (err) {
-          logger.debug({ err }, "[MessageQueue] Failed to insert message to SQLite, falling back to file");
-        }
+    // Always persist to SQLite (broadcasts included — they may be long)
+    if (this.enableSqliteMessages && this.database && this.sessionId && !msg.sqlitePersisted) {
+      try {
+        const expiresAt = msg.ttl || (Date.now() + 7 * 24 * 60 * 60 * 1000);
+        this.database.insertMessage({
+          id: messageId,
+          sessionId: this.sessionId,
+          fromAgentId: msg.fromAgentId || 'system',
+          toAgentId: msg.agentId,
+          messageType: this.classifyMessageType(msg.message),
+          content: msg.message,
+          priority: msg.priority,
+          createdAt: msg.timestamp,
+          expiresAt,
+          channel: isBroadcast ? '#broadcast' : (msg.targetAgentId ? null : undefined),
+        });
+      } catch (err) {
+        logger.debug({ err }, "[MessageQueue] Failed to insert message to SQLite, falling back to file");
       }
+    }
 
-      // Write full message to inbox file (backward compatibility) - skip for broadcasts
+    // Write full message to inbox file (backward compatibility)
+    if (!msg.sqlitePersisted) {
       const inboxDir = path.join(this.runtimeDir, "messages", `inbox-${msg.agentId}`);
       await fs.mkdir(inboxDir, { recursive: true });
       const filename = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.md`;
       await fs.writeFile(path.join(inboxDir, filename), msg.message, "utf-8");
     }
 
-    // Send tmux notification
-    if (isBroadcast) {
-      // Broadcasts are transient — NOT stored for check_messages.
-      // Send content directly to avoid phantom notifications.
-      const cleanMsg = msg.message.replace(/\x1b\[[0-9;]*m/g, "").slice(0, 500);
-      await this.tmux.sendKeys(msg.tmuxSession, cleanMsg, { literal: true });
+    // Send tmux notification — short notification pointing to check_messages
+    // (broadcasts included — full content is now in SQLite/inbox)
+    if (isBroadcast && cleanMsg.length <= 500) {
+      // Short broadcasts: send content directly for convenience
+      await this.tmux.sendKeys(msg.tmuxSession, cleanMsg.slice(0, 500), { literal: true });
     } else {
       const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
       await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
@@ -659,33 +657,32 @@ export class MessageQueue {
   private async deliverViaMcpPending(msg: QueuedMessage): Promise<void> {
     const messageId = crypto.randomUUID();
     const senderName = extractSenderName(msg.message, msg.fromAgentId);
-
-    // OPTIMIZATION: Skip persistent storage for broadcasts (transient notifications)
     const isBroadcast = msg.message.includes("[Broadcast]");
+    const cleanMsg = msg.message.replace(/\x1b\[[0-9;]*m/g, "");
 
-    if (!isBroadcast) {
-      // Write to SQLite (if enabled) - skip for broadcasts and already-persisted messages
-      if (this.enableSqliteMessages && this.database && this.sessionId && !msg.sqlitePersisted) {
-        try {
-          const expiresAt = msg.ttl || (Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days default
-          this.database.insertMessage({
-            id: messageId,
-            sessionId: this.sessionId,
-            fromAgentId: msg.fromAgentId || 'system',
-            toAgentId: msg.agentId,
-            messageType: this.classifyMessageType(msg.message),
-            content: msg.message,
-            priority: msg.priority,
-            createdAt: msg.timestamp,
-            expiresAt,
-            channel: msg.targetAgentId ? null : '#broadcast',
-          });
-        } catch (err) {
-          logger.debug({ err }, "[MessageQueue] Failed to insert message to SQLite, falling back to file");
-        }
+    // Always persist to SQLite (broadcasts included — they may be long)
+    if (this.enableSqliteMessages && this.database && this.sessionId && !msg.sqlitePersisted) {
+      try {
+        const expiresAt = msg.ttl || (Date.now() + 7 * 24 * 60 * 60 * 1000);
+        this.database.insertMessage({
+          id: messageId,
+          sessionId: this.sessionId,
+          fromAgentId: msg.fromAgentId || 'system',
+          toAgentId: msg.agentId,
+          messageType: this.classifyMessageType(msg.message),
+          content: msg.message,
+          priority: msg.priority,
+          createdAt: msg.timestamp,
+          expiresAt,
+          channel: isBroadcast ? '#broadcast' : (msg.targetAgentId ? null : undefined),
+        });
+      } catch (err) {
+        logger.debug({ err }, "[MessageQueue] Failed to insert message to SQLite, falling back to file");
       }
+    }
 
-      // 1. Write to mcp-pending store (backward compatibility) - skip for broadcasts
+    // Write to mcp-pending store (backward compatibility)
+    if (!msg.sqlitePersisted) {
       const pendingDir = path.join(this.runtimeDir, "mcp-pending", msg.agentId);
       await fs.mkdir(pendingDir, { recursive: true });
       const filename = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.json`;
@@ -697,13 +694,10 @@ export class MessageQueue {
       await fs.writeFile(path.join(pendingDir, filename), JSON.stringify(payload), "utf-8");
     }
 
-    // 2. Send tmux notification
-    if (isBroadcast) {
-      // Broadcasts are transient — NOT stored for check_messages.
-      // Send the broadcast content directly instead of "use check_messages"
-      // to avoid phantom notifications (agent checks inbox but finds nothing).
-      const cleanMsg = msg.message.replace(/\x1b\[[0-9;]*m/g, "").slice(0, 500);
-      await this.tmux.sendKeys(msg.tmuxSession, cleanMsg, { literal: true });
+    // Send tmux notification — short notification pointing to check_messages
+    if (isBroadcast && cleanMsg.length <= 500) {
+      // Short broadcasts: send content directly for convenience
+      await this.tmux.sendKeys(msg.tmuxSession, cleanMsg.slice(0, 500), { literal: true });
     } else {
       const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
       await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
