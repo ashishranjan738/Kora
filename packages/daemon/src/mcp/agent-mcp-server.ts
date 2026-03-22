@@ -57,7 +57,9 @@ const ROLE_TOOL_ACCESS: Record<string, Set<string>> = {
     "send_message", "check_messages", "list_agents", "broadcast",
     "list_tasks", "get_task", "update_task", "create_task",
     "prepare_pr", "report_idle", "request_task",
-    "list_personas", "save_persona", "get_workflow_states", // All agents can browse personas + see workflow
+    "list_personas", "save_persona", "get_workflow_states",
+    "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
+    "verify_work", "create_pr",
   ]),
   // Deny: spawn_agent, remove_agent, peek_agent, nudge_agent (master-only)
 };
