@@ -2213,14 +2213,19 @@ export function createApiRouter(deps: {
         } catch {}
       }
 
-      // Enforce pipeline transitions if workflow states have transitions defined (skip if force mode)
-      if (body.status !== undefined && workflowStates && !forceMode) {
+      // Always allow transition to closed-category states (e.g. "done") — no validation needed
+      const targetState = workflowStates?.find((s: any) => s.id === body.status);
+      const isClosedTarget = targetState?.category === "closed";
+
+      // Enforce pipeline transitions if workflow states have transitions defined
+      // Skip if: force mode, or target is a closed state (always allowed)
+      if (body.status !== undefined && workflowStates && !forceMode && !isClosedTarget) {
         const orch = orchestrators.get(sid);
         const currentTask = orch?.database.getTask(String(tid));
         if (currentTask && currentTask.status !== body.status) {
           const currentState = workflowStates.find((s: any) => s.id === currentTask.status);
           if (currentState?.transitions?.length) {
-            // Build effective transitions including skippable state targets
+            // Build effective transitions including skippable state targets + all closed states
             const effective = new Set<string>(currentState.transitions);
             for (const t of currentState.transitions) {
               const ts = workflowStates.find((s: any) => s.id === t);
@@ -2228,11 +2233,11 @@ export function createApiRouter(deps: {
                 for (const st of ts.transitions) effective.add(st);
               }
             }
-            // Always allow transition to "closed" category states (e.g. "done") from anywhere
-            const targetState = workflowStates.find((s: any) => s.id === body.status);
-            const isClosedCategory = targetState?.category === "closed";
-
-            if (!effective.has(body.status) && !isClosedCategory) {
+            // Always allow closed states in effective transitions
+            for (const s of workflowStates) {
+              if (s.category === "closed") effective.add(s.id);
+            }
+            if (!effective.has(body.status)) {
               const validNext = [...effective].join(", ");
               res.status(400).json({
                 error: `Invalid transition: "${currentTask.status}" → "${body.status}". Valid next states: ${validNext}`,
