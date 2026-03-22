@@ -223,6 +223,27 @@ export class AppDatabase extends EventEmitter {
         PRAGMA user_version = 9;
       `);
     }
+
+    if (version < 10) {
+      this.db.exec(`
+        -- Custom per-agent reminders (nudge on condition)
+        CREATE TABLE IF NOT EXISTS agent_reminders (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          target_agent_id TEXT NOT NULL,
+          message TEXT NOT NULL,
+          condition TEXT NOT NULL CHECK(condition IN ('when-idle', 'when-has-unread', 'when-no-task', 'always')),
+          interval_minutes INTEGER NOT NULL DEFAULT 5,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          last_fired_at TEXT,
+          created_at TEXT NOT NULL,
+          created_by TEXT DEFAULT 'user'
+        );
+        CREATE INDEX IF NOT EXISTS idx_reminders_session ON agent_reminders(session_id);
+        CREATE INDEX IF NOT EXISTS idx_reminders_agent ON agent_reminders(target_agent_id);
+        PRAGMA user_version = 10;
+      `);
+    }
   }
 
   // ─── Events ──────────────────────────────────────────────
@@ -819,6 +840,64 @@ export class AppDatabase extends EventEmitter {
       `DELETE FROM message_deliveries WHERE enqueued_at < ?`
     ).run(cutoff);
     return result.changes;
+  }
+
+  // ─── Agent Reminders ─────────────────────────────────────────
+
+  insertReminder(reminder: {
+    id: string;
+    sessionId: string;
+    targetAgentId: string;
+    message: string;
+    condition: "when-idle" | "when-has-unread" | "when-no-task" | "always";
+    intervalMinutes?: number;
+    enabled?: boolean;
+    createdBy?: string;
+  }): void {
+    this.db.prepare(
+      `INSERT INTO agent_reminders (id, session_id, target_agent_id, message, condition, interval_minutes, enabled, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      reminder.id, reminder.sessionId, reminder.targetAgentId,
+      reminder.message, reminder.condition,
+      reminder.intervalMinutes ?? 5, reminder.enabled !== false ? 1 : 0,
+      new Date().toISOString(), reminder.createdBy || "user",
+    );
+  }
+
+  getReminders(sessionId: string): Array<any> {
+    return this.db.prepare(
+      `SELECT * FROM agent_reminders WHERE session_id = ? ORDER BY created_at ASC`
+    ).all(sessionId) as any[];
+  }
+
+  getRemindersForAgent(sessionId: string, agentId: string): Array<any> {
+    return this.db.prepare(
+      `SELECT * FROM agent_reminders WHERE session_id = ? AND target_agent_id = ? AND enabled = 1 ORDER BY created_at ASC`
+    ).all(sessionId, agentId) as any[];
+  }
+
+  updateReminder(id: string, updates: { message?: string; condition?: string; intervalMinutes?: number; enabled?: boolean }): boolean {
+    const reminder = this.db.prepare(`SELECT * FROM agent_reminders WHERE id = ?`).get(id) as any;
+    if (!reminder) return false;
+    this.db.prepare(
+      `UPDATE agent_reminders SET message = ?, condition = ?, interval_minutes = ?, enabled = ? WHERE id = ?`
+    ).run(
+      updates.message ?? reminder.message,
+      updates.condition ?? reminder.condition,
+      updates.intervalMinutes ?? reminder.interval_minutes,
+      updates.enabled !== undefined ? (updates.enabled ? 1 : 0) : reminder.enabled,
+      id,
+    );
+    return true;
+  }
+
+  deleteReminder(id: string): boolean {
+    return this.db.prepare(`DELETE FROM agent_reminders WHERE id = ?`).run(id).changes > 0;
+  }
+
+  updateReminderFiredAt(id: string): void {
+    this.db.prepare(`UPDATE agent_reminders SET last_fired_at = ? WHERE id = ?`)
+      .run(new Date().toISOString(), id);
   }
 
   // ─── Task Archival ────────────────────────────────────────────

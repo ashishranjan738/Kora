@@ -182,8 +182,62 @@ export class Orchestrator extends EventEmitter {
             }
           }
         }
+
+        // Process custom reminders for this agent
+        this.processReminders(agent, now).catch(() => {});
       }
     }, 60_000); // Check every minute
+  }
+
+  /** Process custom per-agent reminders */
+  private async processReminders(agent: AgentState, now: number): Promise<void> {
+    if (agent.status !== "running") return;
+    if (this.isAgentBlocked(agent.id)) return;
+
+    const reminders = this.database.getRemindersForAgent(this.config.sessionId, agent.id);
+    for (const r of reminders) {
+      // Check interval
+      const lastFired = r.last_fired_at ? new Date(r.last_fired_at).getTime() : 0;
+      if (now - lastFired < r.interval_minutes * 60_000) continue;
+
+      // Check condition
+      let shouldFire = false;
+      switch (r.condition) {
+        case "always":
+          shouldFire = true;
+          break;
+        case "when-idle":
+          shouldFire = agent.activity === "idle";
+          break;
+        case "when-has-unread": {
+          try {
+            const unread = await this.messageBus.getUnreadCount(agent.id);
+            shouldFire = unread > 0;
+          } catch { shouldFire = false; }
+          break;
+        }
+        case "when-no-task": {
+          const tasks = this.database.getFilteredTasks(this.config.sessionId, {
+            assignedTo: agent.id,
+            status: "active",
+          });
+          shouldFire = tasks.length === 0;
+          break;
+        }
+      }
+
+      if (!shouldFire) continue;
+
+      // Fire reminder
+      try {
+        this.messageQueue.enqueue(
+          agent.id,
+          agent.config.tmuxSession,
+          `\x1b[1;33m[Reminder] ${r.message}\x1b[0m`,
+        );
+        this.database.updateReminderFiredAt(r.id);
+      } catch { /* non-fatal */ }
+    }
   }
 
   private wireEvents(): void {

@@ -2385,6 +2385,84 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ─── Agent Reminders ──────────────────────────────────────────
+
+  router.get("/sessions/:sid/reminders", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+      res.json({ reminders: db.getReminders(sid) });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.post("/sessions/:sid/reminders", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const { targetAgentId, targetAgentName, message, condition, intervalMinutes } = req.body;
+      if (!message || !condition) {
+        res.status(400).json({ error: "message and condition are required" });
+        return;
+      }
+
+      // Resolve agent name to ID if needed
+      let resolvedAgentId = targetAgentId;
+      if (!resolvedAgentId && targetAgentName) {
+        const orch = orchestrators.get(sid);
+        const agents = orch ? orch.agentManager.listAgents() : [];
+        const match = agents.find(a =>
+          a.config.name.toLowerCase() === targetAgentName.toLowerCase()
+        );
+        resolvedAgentId = match?.id || targetAgentName;
+      }
+
+      if (!resolvedAgentId) {
+        res.status(400).json({ error: "targetAgentId or targetAgentName required" });
+        return;
+      }
+
+      const { randomUUID } = require("crypto");
+      const id = randomUUID().slice(0, 8);
+      db.insertReminder({
+        id,
+        sessionId: sid,
+        targetAgentId: resolvedAgentId,
+        message,
+        condition,
+        intervalMinutes: intervalMinutes || 5,
+      });
+
+      res.status(201).json({ id, created: true });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.put("/sessions/:sid/reminders/:rid", (req: Request, res: Response) => {
+    try {
+      const { sid, rid } = req.params;
+      const db = getDb(String(sid));
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const updated = db.updateReminder(String(rid), req.body);
+      if (!updated) { res.status(404).json({ error: "Reminder not found" }); return; }
+      res.json({ updated: true });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.delete("/sessions/:sid/reminders/:rid", (req: Request, res: Response) => {
+    try {
+      const { sid, rid } = req.params;
+      const db = getDb(String(sid));
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const deleted = db.deleteReminder(String(rid));
+      if (!deleted) { res.status(404).json({ error: "Reminder not found" }); return; }
+      res.json({ deleted: true });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
   // ─── Task State Transitions ──────────────────────────────────────
 
   router.get("/sessions/:sid/tasks/:tid/transitions", (req: Request, res: Response) => {
