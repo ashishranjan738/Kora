@@ -293,5 +293,13 @@ export function useApi() {
     updateSchedule: (id: string, data: any) => apiFetch(`/schedules/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     deleteSchedule: (id: string) => apiFetch(`/schedules/${id}`, { method: "DELETE" }),
     triggerSchedule: (id: string) => apiFetch(`/schedules/${id}/trigger`, { method: "POST" }),
+    // Stale resource cleanup
+    getOrphanedResources: (sid: string) =>
+      apiFetch<{ resources: Array<{ agentId: string; name: string; worktreePath?: string; branchName?: string; logSize?: number; createdAt?: string }> }>(`/sessions/${sid}/orphaned-resources`),
+    cleanupResources: (sid: string, agentIds: string[]) =>
+      apiFetch<{ cleaned: number; errors: string[] }>(`/sessions/${sid}/cleanup`, {
+        method: "POST",
+        body: JSON.stringify({ agentIds }),
+      }),
   };
 }

@@ -19,6 +19,7 @@ import {
 import { useMediaQuery } from "@mantine/hooks";
 import { AutonomyLevel } from "@kora/shared";
 import { NudgePolicyEditor } from "./NudgePolicyEditor";
+import { CleanupPanel } from "./CleanupPanel";
 
 const AUTONOMY_DESCRIPTIONS: Record<AutonomyLevel, string> = {
   [AutonomyLevel.SuggestOnly]: "Agent proposes actions and waits for approval",
@@ -606,6 +607,13 @@ export function SessionSettingsDialog({
         {/* Stale Task Nudge Policies */}
         <Divider my="md" />
         <NudgePolicyEditor sessionId={sessionId} />
+
+        {/* Maintenance: Orphaned Resource Cleanup */}
+        <Divider my="md" />
+        <Text fw={600} size="sm" c="var(--text-primary)" mb="xs">
+          Maintenance
+        </Text>
+        <CleanupPanel sessionId={sessionId} />
 
         <Group justify="flex-end" mt="md">
           <Button
