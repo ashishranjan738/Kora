@@ -25,9 +25,10 @@ interface NudgePolicy {
   enabled: boolean;
   nudgeAfterMinutes: number;
   intervalMinutes: number;
-  target: "assignee" | "architect" | "user" | "all";
+  target: "assignee" | "orchestrator" | "architect" | "user" | "all";
   escalateAfterCount: number;
-  escalateTo: "architect" | "user" | "all";
+  escalateTo: "orchestrator" | "architect" | "user" | "all";
+  alsoNotify?: "orchestrator" | "user" | null;
   maxNudges: number;
 }
 
@@ -56,15 +57,21 @@ interface NudgePolicyEditorProps {
 
 const TARGET_OPTIONS = [
   { value: "assignee", label: "Assignee" },
-  { value: "architect", label: "Architect / Master" },
+  { value: "orchestrator", label: "Orchestrator (master agent)" },
   { value: "user", label: "User (Dashboard)" },
   { value: "all", label: "All agents" },
 ];
 
 const ESCALATE_OPTIONS = [
-  { value: "architect", label: "Architect / Master" },
+  { value: "orchestrator", label: "Orchestrator (master agent)" },
   { value: "user", label: "User (Dashboard)" },
   { value: "all", label: "All agents" },
+];
+
+const ALSO_NOTIFY_OPTIONS = [
+  { value: "orchestrator", label: "Orchestrator (master agent)" },
+  { value: "user", label: "User (Dashboard)" },
+  { value: "", label: "None" },
 ];
 
 /** Default fallback colors for common statuses */
