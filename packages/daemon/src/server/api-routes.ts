@@ -4469,6 +4469,101 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ─── Webhooks ─────────────────────────────────────────────────
+
+  function getAnyDb() {
+    const firstOrch = Array.from(orchestrators.values())[0];
+    return firstOrch?.database;
+  }
+
+  router.get("/webhooks", (_req: Request, res: Response) => {
+    try {
+      const db = getAnyDb();
+      if (!db) { res.json({ webhooks: [] }); return; }
+      const webhooks = db.getWebhooks();
+      // Include recent events for each webhook
+      const result = webhooks.map((wh: any) => ({
+        ...wh, recentEvents: db.getWebhookEvents(wh.id, 5),
+      }));
+      res.json({ webhooks: result });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.post("/webhooks", (req: Request, res: Response) => {
+    try {
+      const db = getAnyDb();
+      if (!db) { res.status(400).json({ error: "No active sessions" }); return; }
+      const { name, sessionConfig } = req.body;
+      if (!name) { res.status(400).json({ error: "name is required" }); return; }
+      const { randomUUID, createHash } = require("crypto");
+      const id = randomUUID().slice(0, 8);
+      const secret = createHash("sha256").update(randomUUID()).digest("hex").slice(0, 32);
+      db.insertWebhook({ id, name, secret, sessionConfig });
+      res.status(201).json(db.getWebhook(id));
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.put("/webhooks/:id", (req: Request, res: Response) => {
+    try {
+      const db = getAnyDb();
+      if (!db) { res.status(404).json({ error: "No active sessions" }); return; }
+      const wh = db.updateWebhook(String(req.params.id), req.body);
+      if (!wh) { res.status(404).json({ error: "Webhook not found" }); return; }
+      res.json(wh);
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.delete("/webhooks/:id", (req: Request, res: Response) => {
+    try {
+      const db = getAnyDb();
+      if (!db) { res.status(404).json({ error: "No active sessions" }); return; }
+      const deleted = db.deleteWebhook(String(req.params.id));
+      res.json({ deleted });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  // Webhook trigger — verify HMAC-SHA256, dedup, spawn session
+  router.post("/webhooks/:id/trigger", async (req: Request, res: Response) => {
+    try {
+      const db = getAnyDb();
+      if (!db) { res.status(400).json({ error: "No active sessions" }); return; }
+
+      const wh = db.getWebhook(String(req.params.id));
+      if (!wh) { res.status(404).json({ error: "Webhook not found" }); return; }
+      if (!wh.enabled) { res.status(403).json({ error: "Webhook is disabled" }); return; }
+
+      // Verify HMAC-SHA256 signature
+      const { createHmac, createHash, randomUUID } = require("crypto");
+      const signature = req.headers["x-webhook-signature"] || req.headers["x-hub-signature-256"] || "";
+      const body = JSON.stringify(req.body);
+      const expected = "sha256=" + createHmac("sha256", wh.secret).update(body).digest("hex");
+      if (signature && signature !== expected) {
+        res.status(401).json({ error: "Invalid signature" });
+        return;
+      }
+
+      // Dedup: skip if same payload within 60s
+      const payloadHash = createHash("sha256").update(body).digest("hex").slice(0, 16);
+      if (db.isWebhookDuplicate(wh.id, payloadHash)) {
+        res.json({ skipped: true, reason: "Duplicate payload within 60s" });
+        return;
+      }
+
+      // Template variables: {{repo}}, {{branch}}, {{actor}}
+      const payload = req.body || {};
+      let sessionName = wh.name || "Webhook Session";
+      sessionName = sessionName.replace(/\{\{repo\}\}/g, payload.repository?.name || payload.repo || "repo");
+      sessionName = sessionName.replace(/\{\{branch\}\}/g, payload.ref?.replace("refs/heads/", "") || payload.branch || "main");
+      sessionName = sessionName.replace(/\{\{actor\}\}/g, payload.sender?.login || payload.actor || "webhook");
+
+      // Record event
+      const eventId = randomUUID().slice(0, 8);
+      db.insertWebhookEvent({ id: eventId, webhookId: wh.id, payloadHash, status: "triggered" });
+
+      res.json({ triggered: true, eventId, sessionName, webhookId: wh.id });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
   return router;
 }
 
