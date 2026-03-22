@@ -925,6 +925,55 @@ export class AppDatabase extends EventEmitter {
     this.db.prepare(`UPDATE tasks SET archived_at = NULL WHERE id = ?`).run(taskId);
   }
 
+  // ─── Task Import (Cross-Session Copy) ────────────────────────
+
+  /**
+   * Import tasks from another session's database.
+   * @param targetSessionId - The new session to copy tasks INTO
+   * @param sourceDb - The source session's database
+   * @param sourceSessionId - The source session ID
+   * @param mode - "active" (skip done/archived), "all" (everything including done)
+   * @returns Number of tasks imported
+   */
+  importTasks(targetSessionId: string, sourceDb: AppDatabase, sourceSessionId: string, mode: "active" | "all"): number {
+    const { randomUUID } = require("crypto");
+    const now = new Date().toISOString();
+
+    // Get tasks from source based on mode
+    const sourceTasks = mode === "active"
+      ? sourceDb.getTasks(sourceSessionId, false).filter((t: any) => t.status !== "done")
+      : sourceDb.getTasks(sourceSessionId, true);
+
+    if (sourceTasks.length === 0) return 0;
+
+    const insert = this.db.prepare(
+      `INSERT INTO tasks (id, session_id, title, description, status, assigned_to, created_by, dependencies, priority, labels, due_date, created_at, updated_at, status_changed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+
+    const insertMany = this.db.transaction((tasks: any[]) => {
+      let count = 0;
+      for (const t of tasks) {
+        const newId = randomUUID().slice(0, 8);
+        insert.run(
+          newId, targetSessionId, t.title, t.description || "",
+          mode === "active" ? t.status : t.status, // preserve status
+          null, // unassign — agents are different in new session
+          "imported",
+          JSON.stringify([]), // clear dependencies — IDs won't match
+          t.priority || "P2",
+          JSON.stringify(t.labels || []),
+          t.dueDate || null,
+          now, now, now,
+        );
+        count++;
+      }
+      return count;
+    });
+
+    return insertMany(sourceTasks);
+  }
+
   // ─── Messages (Inter-Agent Communication) ────────────────────
 
   /** Insert a new message */

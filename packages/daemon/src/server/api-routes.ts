@@ -2364,6 +2364,28 @@ export function createApiRouter(deps: {
     }
   });
 
+  // Import tasks from another session
+  router.post("/sessions/:sid/import-tasks", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const targetDb = getDb(sid);
+      if (!targetDb) { res.status(404).json({ error: "Target session not found" }); return; }
+
+      const { sourceSessionId, mode } = req.body as { sourceSessionId?: string; mode?: "active" | "all" };
+      if (!sourceSessionId) { res.status(400).json({ error: "sourceSessionId is required" }); return; }
+      if (mode && mode !== "active" && mode !== "all") { res.status(400).json({ error: "mode must be 'active' or 'all'" }); return; }
+
+      const sourceDb = getDb(sourceSessionId);
+      if (!sourceDb) { res.status(404).json({ error: "Source session not found" }); return; }
+
+      const imported = targetDb.importTasks(sid, sourceDb, sourceSessionId, mode || "active");
+      broadcastEvent({ event: "task-created", sessionId: sid });
+      res.json({ imported, mode: mode || "active", sourceSessionId });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   router.post("/sessions/:sid/tasks/:tid/comments", (req: Request, res: Response) => {
     try {
       const sid = String(req.params.sid);
