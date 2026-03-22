@@ -10,7 +10,7 @@ import { EditorTile } from "../components/EditorTile";
 import { Mosaic, MosaicWindow, MosaicNode, MosaicPath, MosaicWindowProps, getLeaves, createBalancedTreeFromLeaves } from "react-mosaic-component";
 import "react-mosaic-component/react-mosaic-component.css";
 import { FlagIndicator, ChannelIndicator } from "../components/FlagIndicator";
-import { Badge, Indicator, Tooltip, Modal, Button, Group, Text, Stack, TextInput } from "@mantine/core";
+import { Badge, Indicator, Tooltip, Modal, Button, Group, Text, Stack, TextInput, HoverCard } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { useTerminalSessionStore } from "../stores/terminalSessionStore";
 import { setMessageNotificationCallback } from "../stores/terminalRegistry";
@@ -872,16 +872,32 @@ export function MultiAgentView() {
               gap: 6,
             }}
           >
-            {/* LEFT: Agent identity — always visible, truncates */}
-            <span className={`agent-status-dot ${getStatusDotClass(agent.status)}`} />
-            <span className="mosaic-agent-name" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 1, minWidth: 0 }}>
-              {agent.config?.name || agent.name || "Agent"}
-            </span>
-            {agent.role && (
-              <span className={`badge ${getRoleBadgeClass(agent.role)}`} style={{ fontSize: 11, padding: "1px 8px", flexShrink: 0 }}>
-                {agent.role}
-              </span>
-            )}
+            {/* LEFT: Agent identity — hover shows detail panel */}
+            <HoverCard position="bottom-start" withArrow shadow="md" withinPortal openDelay={200} closeDelay={150}>
+              <HoverCard.Target>
+                <span
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "default", overflow: "hidden", flexShrink: 1, minWidth: 0 }}
+                >
+                  <span className={`agent-status-dot ${getStatusDotClass(agent.status)}`} />
+                  <span className="mosaic-agent-name" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 1, minWidth: 0 }}>
+                    {agent.config?.name || agent.name || "Agent"}
+                  </span>
+                  {agent.role && (
+                    <span className={`badge ${getRoleBadgeClass(agent.role)}`} style={{ fontSize: 11, padding: "1px 8px", flexShrink: 0 }}>
+                      {agent.role}
+                    </span>
+                  )}
+                </span>
+              </HoverCard.Target>
+              <HoverCard.Dropdown style={{ backgroundColor: "rgba(22, 27, 34, 0.95)", backdropFilter: "blur(8px)", border: "1px solid var(--border-color)" }}>
+                <AgentDetailPopover
+                  agent={agent}
+                  tasks={tasks}
+                  onNudge={async () => { try { await api.nudgeAgent(sessionId!, agent.id); } catch {} }}
+                  onExpand={() => toggleFullscreen(agent.id)}
+                />
+              </HoverCard.Dropdown>
+            </HoverCard>
 
             {/* Activity badge — ALWAYS visible (Tier 1+) */}
             {agent.idleSince && agent.activity === "idle" && (
@@ -897,28 +913,6 @@ export function MultiAgentView() {
             {isCrashed && (
               <Badge size="xs" variant="filled" color="red" style={{ flexShrink: 0 }}>Crashed</Badge>
             )}
-
-            {/* Info popover — shows ALL metadata */}
-            <Popover position="bottom-start" withArrow shadow="md" withinPortal>
-              <Popover.Target>
-                <button
-                  className="split-panel-btn"
-                  title="Agent details"
-                  onClick={(e) => e.stopPropagation()}
-                  style={{ flexShrink: 0 }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                </button>
-              </Popover.Target>
-              <Popover.Dropdown>
-                <AgentDetailPopover
-                  agent={agent}
-                  tasks={tasks}
-                  onNudge={async () => { try { await api.nudgeAgent(sessionId!, agent.id); } catch {} }}
-                  onExpand={() => toggleFullscreen(agent.id)}
-                />
-              </Popover.Dropdown>
-            </Popover>
 
             {/* MIDDLE: Metadata — overflows/hides when card is narrow */}
             <span style={{ display: "flex", alignItems: "center", gap: 6, overflow: "hidden", flex: 1, minWidth: 0 }}>

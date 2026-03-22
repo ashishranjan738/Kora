@@ -1,5 +1,5 @@
-import { Stack, Group, Text, Badge, Divider, Button } from "@mantine/core";
-import { formatCost, formatTokens, formatLastSeen } from "../utils/formatters";
+import { Stack, Group, Text, Badge, Divider, Button, Progress } from "@mantine/core";
+import { formatCost, formatTokens, formatLastSeen, formatUptime } from "../utils/formatters";
 
 // ---------- Types ----------
 
@@ -24,13 +24,18 @@ export function AgentDetailPopover({ agent, tasks = [], onNudge, onExpand }: Age
     t.assignedTo === agent.id || t.assignedTo === name
   );
   const activeTasks = agentTasks.filter((t: any) => t.status !== "done").length;
+  const pendingTasks = agentTasks.filter((t: any) => t.status === "pending" || t.status === "backlog").length;
   const doneTasks = agentTasks.filter((t: any) => t.status === "done").length;
+  const capacity = agent.capacity ?? 5;
+  const utilization = capacity > 0 ? Math.min(100, Math.round((activeTasks / capacity) * 100)) : 0;
+  const skills: string[] = agent.config?.skills || [];
+  const uptime = agent.startedAt ? formatUptime(agent.startedAt) : null;
 
   const isCrashed = agent.status === "crashed" || agent.status === "error";
   const isIdle = agent.activity === "idle";
 
   return (
-    <Stack gap="xs" style={{ minWidth: 220, maxWidth: 280 }}>
+    <Stack gap="xs" style={{ minWidth: 260, maxWidth: 300 }}>
       {/* Identity */}
       <div>
         <Text size="sm" fw={700}>{name}</Text>
@@ -72,8 +77,9 @@ export function AgentDetailPopover({ agent, tasks = [], onNudge, onExpand }: Age
         <Text size="xs" c="dimmed">Tasks</Text>
         <Text size="xs">
           <span style={{ color: "var(--accent-blue)" }}>{activeTasks} active</span>
-          {" | "}
-          <span>{doneTasks} done</span>
+          {pendingTasks > 0 && <span style={{ color: "var(--text-muted)" }}> · {pendingTasks} pending</span>}
+          {" · "}
+          <span style={{ color: "var(--accent-green)" }}>{doneTasks} done</span>
         </Text>
       </Group>
       {agent.currentTask && (
@@ -103,6 +109,55 @@ export function AgentDetailPopover({ agent, tasks = [], onNudge, onExpand }: Age
           <Text size="xs" c="dimmed">Last output</Text>
           <Text size="xs">{formatLastSeen(agent.lastOutputAt)}</Text>
         </Group>
+      )}
+
+      {/* Uptime */}
+      {uptime && (
+        <Group justify="space-between">
+          <Text size="xs" c="dimmed">Uptime</Text>
+          <Text size="xs">{uptime}</Text>
+        </Group>
+      )}
+
+      {/* Utilization */}
+      {activeTasks > 0 && (
+        <div>
+          <Group justify="space-between" mb={4}>
+            <Text size="xs" c="dimmed">Utilization</Text>
+            <Text size="xs" fw={500} c={utilization > 80 ? "var(--accent-red)" : utilization > 50 ? "var(--accent-yellow)" : "var(--accent-green)"}>
+              {utilization}%
+            </Text>
+          </Group>
+          <Progress
+            value={utilization}
+            size="xs"
+            color={utilization > 80 ? "red" : utilization > 50 ? "yellow" : "green"}
+            styles={{ root: { backgroundColor: "var(--bg-tertiary)" } }}
+          />
+        </div>
+      )}
+
+      {/* Skills */}
+      {skills.length > 0 && (
+        <div>
+          <Text size="xs" c="dimmed" mb={4}>Skills</Text>
+          <Group gap={4}>
+            {skills.map((skill: string) => (
+              <Badge
+                key={skill}
+                size="xs"
+                variant="dot"
+                color={
+                  skill === "frontend" ? "cyan" : skill === "backend" ? "orange" :
+                  skill === "testing" ? "green" : skill === "review" ? "grape" :
+                  skill === "research" ? "violet" : skill === "devops" ? "indigo" : "gray"
+                }
+              >
+                {skill}
+              </Badge>
+            ))}
+          </Group>
+        </div>
       )}
 
       <Divider />
