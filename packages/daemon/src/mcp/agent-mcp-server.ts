@@ -65,7 +65,7 @@ const ROLE_TOOL_ACCESS: Record<string, Set<string>> = {
 /** Check if the current agent role is allowed to use a tool */
 function isToolAllowed(toolName: string): boolean {
   const allowed = ROLE_TOOL_ACCESS[AGENT_ROLE];
-  if (!allowed) return true; // unknown role — allow all (safe default for custom roles)
+  if (!allowed) return ROLE_TOOL_ACCESS.worker.has(toolName); // unknown role — default to worker (most restrictive)
   return allowed.has(toolName);
 }
 
@@ -89,7 +89,8 @@ function getDaemonUrl(): string {
     const port = fs.readFileSync(path.join(getConfigDir(), "daemon.port"), "utf-8").trim();
     return `http://localhost:${port}`;
   } catch {
-    return "http://localhost:7890";
+    const isDev = process.env.KORA_DEV === "1";
+    return `http://localhost:${isDev ? 7891 : 7890}`;
   }
 }
 
@@ -123,29 +124,31 @@ if (!AGENT_ID && !SESSION_ID) {
 // Unread message counter for piggyback notifications
 // ---------------------------------------------------------------------------
 
-function countUnreadMessages(): number {
+async function countUnreadMessages(): Promise<number> {
   if (!PROJECT_PATH) return 0;
   let count = 0;
 
-  // Try SQLite first (primary source)
+  // Try SQLite via daemon API first (primary source)
   try {
-    const response = apiCallOnce("GET", `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}/messages/unread-count`) as any;
+    const response = await apiCallOnce("GET", `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}/messages/unread-count`) as any;
     if (response && typeof response === 'object' && 'count' in response) {
       count += response.count;
     }
   } catch { /* SQLite may not be available */ }
 
-  // Fall back to file counting (backward compat)
-  try {
-    const inboxDir = nodePath.join(PROJECT_PATH, getRuntimeDir(), "messages", `inbox-${AGENT_ID}`);
-    const files = fs.readdirSync(inboxDir);
-    count += files.filter((f: string) => f.endsWith(".md")).length;
-  } catch { /* inbox may not exist */ }
-  try {
-    const pendingDir = nodePath.join(PROJECT_PATH, getRuntimeDir(), "mcp-pending", AGENT_ID);
-    const files = fs.readdirSync(pendingDir);
-    count += files.filter((f: string) => f.endsWith(".json")).length;
-  } catch { /* pending dir may not exist */ }
+  // Fall back to file counting (backward compat) — only if API returned 0
+  if (count === 0) {
+    try {
+      const inboxDir = nodePath.join(PROJECT_PATH, getRuntimeDir(), "messages", `inbox-${AGENT_ID}`);
+      const files = fs.readdirSync(inboxDir);
+      count += files.filter((f: string) => f.endsWith(".md")).length;
+    } catch { /* inbox may not exist */ }
+    try {
+      const pendingDir = nodePath.join(PROJECT_PATH, getRuntimeDir(), "mcp-pending", AGENT_ID);
+      const files = fs.readdirSync(pendingDir);
+      count += files.filter((f: string) => f.endsWith(".json")).length;
+    } catch { /* pending dir may not exist */ }
+  }
   return count;
 }
 
@@ -2092,13 +2095,15 @@ rl.on("line", async (line: string) => {
 
           // Piggyback unread message notifications (except for check_messages itself)
           if (toolName !== "check_messages") {
-            const unread = countUnreadMessages();
-            if (unread > 0) {
-              content.push({
-                type: "text",
-                text: `\n[System: You have ${unread} unread message(s). Use check_messages tool to read them.]`,
-              });
-            }
+            try {
+              const unread = await countUnreadMessages();
+              if (unread > 0) {
+                content.push({
+                  type: "text",
+                  text: `\n[System: You have ${unread} unread message(s). Use check_messages tool to read them.]`,
+                });
+              }
+            } catch { /* non-fatal — don't block tool response */ }
           }
 
           sendResponse(id, { content });

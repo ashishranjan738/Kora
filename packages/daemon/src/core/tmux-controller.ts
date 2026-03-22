@@ -187,7 +187,7 @@ export class TmuxController implements IPtyBackend {
       "pipe-pane",
       "-t",
       session,
-      `cat >> ${outputFile}`
+      `cat >> '${outputFile.replace(/'/g, "'\\''")}'`
     );
   }
 
