@@ -17,6 +17,7 @@ import { TaskBoard } from "../components/TaskBoard";
 import { SessionSummary } from "../components/SessionSummary";
 import { KnowledgeViewer } from "../components/KnowledgeViewer";
 import { WorkloadChart, type TaskMetricsResponse } from "../components/WorkloadChart";
+import { BottleneckAlert } from "../components/BottleneckAlert";
 import { DEFAULT_WORKFLOW_STATES } from "@kora/shared";
 import { TimelineView } from "../components/timeline/TimelineView";
 import { ExecutionTracing } from "../components/ExecutionTracing";
@@ -85,16 +86,24 @@ const activityDotClass: Record<AgentActivity, string> = {
 };
 
 /** Inline sub-component for the Workload tab to keep state isolated */
-function WorkloadTabContent({ sessionId, session, api }: { sessionId: string; session: any; api: ReturnType<typeof useApi> }) {
+function WorkloadTabContent({ sessionId, session, api, agents }: {
+  sessionId: string; session: any; api: ReturnType<typeof useApi>;
+  agents?: any[];
+}) {
   const [metrics, setMetrics] = useState<TaskMetricsResponse | null>(null);
+  const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
-  const loadMetrics = useCallback(async () => {
+  const loadData = useCallback(async () => {
     try {
-      const data = await api.getTaskMetrics(sessionId);
-      setMetrics(data as TaskMetricsResponse);
+      const [metricsData, tasksData] = await Promise.all([
+        api.getTaskMetrics(sessionId),
+        api.getTasks(sessionId),
+      ]);
+      setMetrics(metricsData as TaskMetricsResponse);
+      setTasks((tasksData as any).tasks || []);
       setError(null);
     } catch (err: any) {
       if (err.message?.includes("404")) {
@@ -108,15 +117,23 @@ function WorkloadTabContent({ sessionId, session, api }: { sessionId: string; se
   }, [sessionId]);
 
   useEffect(() => {
-    loadMetrics();
-    pollRef.current = setInterval(loadMetrics, 10000);
+    loadData();
+    pollRef.current = setInterval(loadData, 10000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [loadMetrics]);
+  }, [loadData]);
 
   const workflowStates = session?.workflowStates ?? session?.config?.workflowStates ?? DEFAULT_WORKFLOW_STATES;
 
   return (
-    <div style={{ padding: "16px 0" }}>
+    <div style={{ padding: "16px 0", display: "flex", flexDirection: "column", gap: 16 }}>
+      {metrics && (
+        <BottleneckAlert
+          metrics={metrics}
+          sessionId={sessionId}
+          tasks={tasks}
+          agents={agents?.map((a: any) => ({ id: a.id, name: a.config?.name || a.name || a.id, status: a.status }))}
+        />
+      )}
       <WorkloadChart
         metrics={metrics}
         workflowStates={workflowStates}
@@ -947,6 +964,7 @@ export function SessionDetail() {
           sessionId={sessionId}
           session={session}
           api={api}
+          agents={agents}
         />
       )}
 
