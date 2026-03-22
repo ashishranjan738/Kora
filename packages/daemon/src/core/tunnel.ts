@@ -72,7 +72,8 @@ export async function startTunnel(
         tunnelUrl = match[0];
 
         // Append token to URL if provided
-        const fullUrl = token ? `${tunnelUrl}?token=${token}` : tunnelUrl;
+        // Use hash-based token (not query param) to avoid token leaking in server logs
+        const fullUrl = token ? `${tunnelUrl}#token=${token}` : tunnelUrl;
 
         // Display QR code
         displayQrCode(fullUrl);
