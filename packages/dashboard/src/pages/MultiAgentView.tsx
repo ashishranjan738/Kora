@@ -22,6 +22,7 @@ import { UnreadMessageBanner } from "../components/UnreadMessageBanner";
 import { AgentDetailPopover } from "../components/AgentDetailPopover";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { Popover } from "@mantine/core";
+import type { AgentResponse, SessionResponse, TaskResponse } from "../types/api";
 
 const PANEL_BORDER_COLORS = [
   "#58a6ff",
@@ -108,9 +109,9 @@ export function MultiAgentView() {
   const navigate = useNavigate();
   const api = useApi();
 
-  const [session, setSession] = useState<any>(null);
-  const [agents, setAgents] = useState<any[]>([]);
-  const [tasks, setTasks] = useState<any[]>([]);
+  const [session, setSession] = useState<SessionResponse | null>(null);
+  const [agents, setAgents] = useState<AgentResponse[]>([]);
+  const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [focusedPanel, setFocusedPanel] = useState<string | null>(null);
   const [messages, setMessages] = useState<Record<string, string>>({});
@@ -229,14 +230,14 @@ export function MultiAgentView() {
         api.getAgents(sessionId),
         api.getTasks(sessionId),
       ]);
-      setSession(s);
-      setTasks(t.tasks || []);
+      setSession(s as SessionResponse);
+      setTasks((t.tasks || []) as TaskResponse[]);
 
       // Only update agents if something actually changed
-      const newAgents = a.agents || [];
+      const newAgents = (a.agents || []) as AgentResponse[];
       setAgents(prev => {
         const prevKey = prev.map(a => `${a.id}:${a.status}:${a.config?.model}:${a.lastOutputAt}`).join("|");
-        const newKey = newAgents.map((a: any) => `${a.id}:${a.status}:${a.config?.model}:${a.lastOutputAt}`).join("|");
+        const newKey = newAgents.map(a => `${a.id}:${a.status}:${a.config?.model}:${a.lastOutputAt}`).join("|");
         return prevKey === newKey ? prev : newAgents;
       });
     } catch (err) {
@@ -943,8 +944,8 @@ export function MultiAgentView() {
                 const activeTasks = agentTasks.filter(t => t.status !== "done").length;
                 const doneTasks = agentTasks.filter(t => t.status === "done").length;
                 const blockedTasks = agentTasks.filter(t =>
-                  t.dependencies?.length > 0 &&
-                  t.dependencies.some((depId: string) => {
+                  (t.dependencies?.length ?? 0) > 0 &&
+                  t.dependencies!.some((depId: string) => {
                     const dep = tasks.find(dt => dt.id === depId);
                     return dep && dep.status !== "done";
                   })
@@ -1003,7 +1004,7 @@ export function MultiAgentView() {
               )}
               {/* Current task */}
               {agent.currentTask && (
-                <Tooltip label={`Working on: ${agent.currentTask.title || agent.currentTask}`}>
+                <Tooltip label={`Working on: ${typeof agent.currentTask === "string" ? agent.currentTask : agent.currentTask.title}`}>
                   <span style={{ fontSize: 10, color: "var(--accent-purple, #bc8cff)", flexShrink: 0, whiteSpace: "nowrap", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", display: "inline-block" }}>
                     {typeof agent.currentTask === "string" ? agent.currentTask : agent.currentTask.title}
                   </span>
