@@ -98,6 +98,11 @@ export class Orchestrator extends EventEmitter {
       this.costTracker,
       config.providerRegistry,
     );
+    // Wire idle checker so usage monitor can poll /cost on idle agents
+    this.usageMonitor.setIdleChecker((agentId: string) => {
+      const agent = this.agentManager.getAgent(agentId);
+      return agent?.activity === "idle" && agent?.status === "running";
+    });
     this.autoRelay = new AutoRelay(config.tmux, this.agentManager, this.eventLog, config.sessionId, config.messagingMode);
     this.messageQueue = new MessageQueue(config.tmux, config.runtimeDir, config.messagingMode || "mcp");
     this.autoRelay.setMessageQueue(this.messageQueue);
