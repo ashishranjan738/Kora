@@ -70,8 +70,8 @@ export function EditorTile({ sessionId }: EditorTileProps) {
           if (item.type === "file") {
             files.push(item.path);
           } else if (item.type === "directory") {
-            // Skip common non-code directories
-            const skip = ["node_modules", ".git", "dist", "build", ".next", "target", "__pycache__", "coverage", ".vscode", ".idea"];
+            // Skip common non-code directories and Kora runtime dirs
+            const skip = ["node_modules", ".git", "dist", "build", ".next", "target", "__pycache__", "coverage", ".vscode", ".idea", ".kora", ".kora-dev"];
             if (!skip.includes(item.name)) {
               await walk(item.path);
             }
@@ -252,8 +252,11 @@ export function EditorTile({ sessionId }: EditorTileProps) {
           </div>
         )}
 
-        {/* File list */}
-        {files.map(item => (
+        {/* File list — hide system/runtime files */}
+        {files.filter(item => {
+          const hidden = [".DS_Store", ".kora", ".kora-dev", "Thumbs.db", ".git"];
+          return !hidden.includes(item.name);
+        }).map(item => (
           <div
             key={item.path}
             onClick={() => item.type === "directory" ? navigateDir(item.path) : handleOpenFile(item.path)}
