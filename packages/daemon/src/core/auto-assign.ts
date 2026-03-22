@@ -6,10 +6,11 @@
  * - agent-idle event (from health monitor)
  * - report_idle MCP tool
  *
- * Reuses request_task scoring: priority (P0=1000..P3=1) + skill match (+50) + overdue (+500).
+ * Reuses request_task scoring: priority (P0=1000..P3=1) + skill match (+50) + mismatch (-100) + overdue (+500).
  */
 
 import { logger } from "./logger.js";
+import { detectAgentSkills, getSkillMismatches } from "@kora/shared";
 import type { AppDatabase } from "./database.js";
 import type { AgentManager } from "./agent-manager.js";
 import type { MessageQueue } from "./message-queue.js";
@@ -228,19 +229,30 @@ export class AutoAssigner {
       switch (p) { case "P0": return 1000; case "P1": return 100; case "P2": return 10; case "P3": return 1; default: return 10; }
     };
 
-    // Skill match from agent's persona keywords
-    const agentLabels = (agent.config.persona || "").toLowerCase();
-    const hasSkillMatch = (task: any) => {
-      const labels = task.labels || [];
-      return labels.some((l: string) => agentLabels.includes(l.toLowerCase()));
-    };
+    // Detect agent skills using shared skill-detection utilities
+    const agentSkills = detectAgentSkills({
+      explicit: agent.config.skills,
+      persona: agent.config.persona,
+      name: agent.config.name,
+      role: agent.config.role,
+    });
 
     let best: any = null;
-    let bestScore = -1;
+    let bestScore = -Infinity;
 
     for (const task of unblocked) {
       let score = priorityScore(task.priority || "P2");
-      if (hasSkillMatch(task)) score += 50;
+
+      // Skill match bonus: +50 if task labels match agent skills
+      const taskLabels: string[] = task.labels || [];
+      const skillMatches = taskLabels.filter((l: string) => agentSkills.includes(l));
+      if (skillMatches.length > 0) score += 50;
+
+      // Skill mismatch penalty: -100 if task has skill-specific labels the agent lacks
+      const mismatches = getSkillMismatches(agentSkills, taskLabels);
+      if (mismatches.length > 0) score -= 100;
+
+      // Overdue bonus
       if (task.dueDate && new Date(task.dueDate).getTime() < Date.now()) score += 500;
       if (score > bestScore) {
         bestScore = score;
