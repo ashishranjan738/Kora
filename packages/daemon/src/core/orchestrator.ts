@@ -54,7 +54,7 @@ export class Orchestrator extends EventEmitter {
   public eventLog: EventLog;
   public costTracker: CostTracker;
   public database: AppDatabase;
-  private usageMonitor: UsageMonitor;
+  public usageMonitor: UsageMonitor;
   private autoRelay: AutoRelay;
   public messageQueue: MessageQueue;
   private logRotationInterval?: NodeJS.Timeout;
