@@ -62,6 +62,7 @@ export const kiroProvider: CLIProvider = {
       const pct = parseInt(contextPctMatch[1], 10);
       result.contextWindowPercent = pct;
       const estimatedTotalTokens = Math.round((pct / 100) * 128_000);
+      // TODO: replace with actual token counts when Kiro exposes them
       // Split estimated tokens: ~60% input, ~40% output (rough heuristic)
       result.tokenUsage = {
         input: Math.round(estimatedTotalTokens * 0.6),

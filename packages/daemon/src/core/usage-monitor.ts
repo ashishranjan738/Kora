@@ -10,9 +10,7 @@ export class UsageMonitor {
   private cumulativeTokensIn = new Map<string, number>();
   private cumulativeTokensOut = new Map<string, number>();
   private agentProviders = new Map<string, CLIProvider>();
-  // Track cumulative credits for providers that report per-turn credits (Kiro)
-  private cumulativeCredits = new Map<string, number>();
-  private lastCreditsSeen = new Map<string, number>();
+  private agentSessions = new Map<string, string>();
 
   constructor(
     private tmux: IPtyBackend,
@@ -25,9 +23,6 @@ export class UsageMonitor {
     this.lastTokenCount.set(agent.id, 0);
     this.cumulativeTokensIn.set(agent.id, 0);
     this.cumulativeTokensOut.set(agent.id, 0);
-    this.cumulativeCredits.set(agent.id, 0);
-    this.lastCreditsSeen.set(agent.id, 0);
-
     // Resolve provider for provider-specific parsing
     if (this.providerRegistry) {
       const provider = this.providerRegistry.get(agent.config.cliProvider);
@@ -130,8 +125,6 @@ export class UsageMonitor {
     await Promise.all(promises);
   }
 
-  private agentSessions = new Map<string, string>();
-
   /** Stop monitoring an agent */
   stopMonitoring(agentId: string): void {
     this.agentSessions.delete(agentId);
@@ -144,8 +137,6 @@ export class UsageMonitor {
     this.cumulativeTokensIn.delete(agentId);
     this.cumulativeTokensOut.delete(agentId);
     this.agentProviders.delete(agentId);
-    this.cumulativeCredits.delete(agentId);
-    this.lastCreditsSeen.delete(agentId);
   }
 
   /** Stop all monitoring */
