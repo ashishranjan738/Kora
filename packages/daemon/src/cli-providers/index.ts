@@ -1,4 +1,6 @@
 export { CLIProviderRegistry, registry } from "./provider-registry.js";
+export { GenericCLIProvider, validatePluginConfig } from "./generic-provider.js";
+export { loadPluginProviders } from "./plugin-loader.js";
 
 import { registry } from "./provider-registry.js";
 import { claudeCodeProvider } from "./claude-code.js";

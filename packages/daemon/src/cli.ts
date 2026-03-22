@@ -13,6 +13,7 @@ import { createServer } from "./server/index.js";
 import { SessionManager } from "./core/session-manager.js";
 import { Orchestrator } from "./core/orchestrator.js";
 import { registry } from "./cli-providers/index.js";
+import { loadPluginProviders } from "./cli-providers/plugin-loader.js";
 import tmuxDefault from "./core/tmux-controller.js";
 import { HoldptyController } from "./core/holdpty-controller.js";
 import type { IPtyBackend } from "./core/pty-backend.js";
@@ -70,6 +71,10 @@ async function handleStart(): Promise<void> {
 
   // 2. Create SessionManager and load persisted sessions
   const globalConfigDir = getGlobalConfigDir();
+
+  // Load plugin providers from ~/.kora/providers/ (or ~/.kora-dev/providers/)
+  loadPluginProviders(registry, globalConfigDir);
+
   const sessionManager = new SessionManager(globalConfigDir);
   await sessionManager.load();
 
