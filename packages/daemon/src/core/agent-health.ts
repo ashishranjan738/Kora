@@ -114,7 +114,7 @@ export const IDLE_MESSAGE_KEYWORDS = [
 ];
 
 /** How long to wait at a prompt before considering an agent idle (ms) */
-const IDLE_TIMEOUT_MS = 10_000; // 10 seconds (was 30s — reduced for responsiveness)
+const IDLE_TIMEOUT_MS = 30_000; // 30 seconds — LLMs need time to think after reading files
 
 /**
  * How long an MCP-reported idle status is protected from terminal override (ms).
@@ -137,6 +137,10 @@ export class AgentHealthMonitor extends EventEmitter {
    * idle status while within the protection window.
    */
   private mcpIdleTimestamps = new Map<string, number>();
+
+  /** Track last MCP tool call time per agent — if recent, agent is "working" */
+  private lastMcpCallTimestamps = new Map<string, number>();
+  private static readonly MCP_ACTIVITY_WINDOW_MS = 30_000; // 30 seconds
 
   constructor(
     private tmux: IPtyBackend,
@@ -172,6 +176,29 @@ export class AgentHealthMonitor extends EventEmitter {
       agent.idleSince = new Date().toISOString();
       this.emit("agent-idle", agentId);
     }
+  }
+
+  /**
+   * Record that an agent made an MCP tool call.
+   * If agent made a tool call within the last 30s, they're "working"
+   * regardless of terminal state (they may be reading files, thinking, etc.)
+   */
+  recordMcpCall(agentId: string): void {
+    this.lastMcpCallTimestamps.set(agentId, Date.now());
+    // Also update the agent state
+    if (this.agents) {
+      const agent = this.agents.get(agentId);
+      if (agent) {
+        agent.lastMcpCallAt = new Date().toISOString();
+      }
+    }
+  }
+
+  /** Check if agent has made an MCP call recently (within 30s) */
+  hasRecentMcpActivity(agentId: string): boolean {
+    const lastCall = this.lastMcpCallTimestamps.get(agentId);
+    if (!lastCall) return false;
+    return Date.now() - lastCall < AgentHealthMonitor.MCP_ACTIVITY_WINDOW_MS;
   }
 
   /**
@@ -299,7 +326,12 @@ export class AgentHealthMonitor extends EventEmitter {
             this.emit("agent-idle", agentId);
           }
           // Weak idle signals → wait for timeout before marking idle
+          // Skip if agent has recent MCP activity (reading files, making tool calls)
           else if (isWeakIdle) {
+            if (this.hasRecentMcpActivity(agentId)) {
+              this.lastOutputTimestamps.set(agentId, Date.now());
+              return; // Agent is actively using MCP tools — not idle
+            }
             const lastOutputTime = this.lastOutputTimestamps.get(agentId) || Date.now();
             const timeSinceOutput = Date.now() - lastOutputTime;
             if (timeSinceOutput > IDLE_TIMEOUT_MS && agent.activity !== "idle") {
@@ -309,7 +341,11 @@ export class AgentHealthMonitor extends EventEmitter {
               this.emit("agent-idle", agentId);
             }
           }
-          // Don't update timestamp - we're at a prompt, not producing real output
+          // Update timestamp even at prompt — output DID change (agent received
+          // file content, tool results, etc.) and is now thinking. Without this,
+          // the idle timeout starts from the LAST non-prompt output, causing
+          // premature idle detection while the LLM is still processing.
+          this.lastOutputTimestamps.set(agentId, Date.now());
           return;
         }
 

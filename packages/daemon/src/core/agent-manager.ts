@@ -637,6 +637,14 @@ export class AgentManager extends EventEmitter {
   }
 
   /**
+   * Record that an agent made an MCP tool call (read file, send message, etc.)
+   * Prevents premature idle detection while agent is actively using tools.
+   */
+  recordMcpCall(agentId: string): void {
+    this.healthMonitor.recordMcpCall(agentId);
+  }
+
+  /**
    * Restore an agent from persisted state — re-registers without spawning tmux.
    * Used after daemon restart to reconnect to still-running tmux sessions.
    */

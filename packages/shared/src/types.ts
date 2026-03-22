@@ -113,6 +113,7 @@ export interface AgentState {
   lastActivityAt?: string;
   lastOutputAt?: string;
   idleSince?: string;
+  lastMcpCallAt?: string; // ISO 8601 — last time agent made any MCP tool call
   childAgents: string[];
   healthCheck: AgentHealthCheck;
   cost: AgentCost;
