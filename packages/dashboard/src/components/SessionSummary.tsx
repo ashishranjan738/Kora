@@ -17,6 +17,7 @@ interface SessionSummaryProps {
   onNudgeAgent?: (agentId: string) => void;
   onBroadcast?: () => void;
   onAgentClick?: (agentId: string) => void;
+  workflowStates?: Array<{ id: string; label: string; color: string; category?: string }>;
 }
 
 interface TaskData {
@@ -43,7 +44,7 @@ function formatDuration(ms: number): string {
   return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 }
 
-export function SessionSummary({ sessionId, agents, onNudgeAgent, onBroadcast, onAgentClick }: SessionSummaryProps) {
+export function SessionSummary({ sessionId, agents, onNudgeAgent, onBroadcast, onAgentClick, workflowStates }: SessionSummaryProps) {
   const api = useApi();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,10 +71,12 @@ export function SessionSummary({ sessionId, agents, onNudgeAgent, onBroadcast, o
   const idleAgents = agents.filter((a) => a.status === "idle");
   const crashedAgents = agents.filter((a) => a.status === "crashed" || a.status === "error");
 
-  // Task metrics
-  const doneTasks = tasks.filter((t) => t.status === "done");
-  const inProgressTasks = tasks.filter((t) => t.status === "in-progress");
-  const pendingTasks = tasks.filter((t) => t.status === "pending");
+  // Task metrics - use workflow state categories when available
+  const catMap: Record<string, string> = {};
+  if (workflowStates?.length) { for (const s of workflowStates) { if (s.category) catMap[s.id] = s.category; } }
+  const doneTasks = tasks.filter((t) => { const c = catMap[t.status]; return c ? c === "closed" : t.status === "done"; });
+  const inProgressTasks = tasks.filter((t) => { const c = catMap[t.status]; return c ? c === "active" : t.status === "in-progress" || t.status === "review"; });
+  const pendingTasks = tasks.filter((t) => { const c = catMap[t.status]; return c ? c === "not-started" : t.status === "pending" || t.status === "backlog"; });
   const totalTasks = tasks.length;
   const completionPct = totalTasks > 0 ? Math.round((doneTasks.length / totalTasks) * 100) : 0;
 

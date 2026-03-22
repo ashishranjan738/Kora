@@ -826,6 +826,7 @@ export function SessionDetail() {
           reject={reject}
           onBroadcast={() => setShowBroadcastModal(true)}
           onCloseTerminal={(id, name) => setConfirmCloseTerminal({ id, name })}
+          workflowStates={session?.workflowStates}
         />
       )}
 
@@ -1494,6 +1495,7 @@ interface AgentsTabProps {
   reject: (agentId: string, requestId: string) => Promise<void>;
   onBroadcast: () => void;
   onCloseTerminal: (id: string, name: string) => void;
+  workflowStates?: any[];
 }
 
 function AgentsTab({
@@ -1520,6 +1522,7 @@ function AgentsTab({
   reject,
   onBroadcast,
   onCloseTerminal,
+  workflowStates,
 }: AgentsTabProps) {
   const api = useApi();
   const [agentActivities, setAgentActivities] = useState<Record<string, AgentActivity>>({});
@@ -1680,6 +1683,7 @@ function AgentsTab({
       }}
       onBroadcast={onBroadcast}
       onAgentClick={(agentId) => onOpenTerminal(agentId, agents.find(a => a.id === agentId)?.config?.name || agentId)}
+      workflowStates={workflowStates}
     />
 
     {/* Agents Section Header */}

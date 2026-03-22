@@ -135,10 +135,17 @@ function generateMarkdown(data: ReportData): string {
   lines.push("");
   lines.push(`| Status | Count |`);
   lines.push(`|--------|-------|`);
-  lines.push(`| Done | ${data.tasks.done} |`);
-  lines.push(`| In Progress | ${data.tasks.inProgress} |`);
-  lines.push(`| Review | ${data.tasks.review} |`);
-  lines.push(`| Pending | ${data.tasks.pending} |`);
+  const sc = (data.tasks as any).statusCounts as Record<string, number> | undefined;
+  if (sc && Object.keys(sc).length > 0) {
+    for (const [status, count] of Object.entries(sc).sort(([, a], [, b]) => b - a)) {
+      lines.push(`| ${status.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")} | ${count} |`);
+    }
+  } else {
+    lines.push(`| Done | ${data.tasks.done} |`);
+    lines.push(`| In Progress | ${data.tasks.inProgress} |`);
+    lines.push(`| Review | ${data.tasks.review} |`);
+    lines.push(`| Pending | ${data.tasks.pending} |`);
+  }
   lines.push(`| **Total** | **${data.tasks.total}** |`);
   lines.push("");
 
@@ -276,13 +283,16 @@ export function SessionReport({
         };
       });
 
-      // Task breakdown
+      // Task breakdown - group by actual status dynamically
+      const statusCounts: Record<string, number> = {};
+      for (const t of tasks) { statusCounts[t.status] = (statusCounts[t.status] || 0) + 1; }
       const taskData = {
         total: tasks.length,
-        done: tasks.filter((t: any) => t.status === "done").length,
-        inProgress: tasks.filter((t: any) => t.status === "in-progress").length,
-        review: tasks.filter((t: any) => t.status === "review").length,
-        pending: tasks.filter((t: any) => t.status === "pending").length,
+        done: statusCounts["done"] || 0,
+        inProgress: statusCounts["in-progress"] || 0,
+        review: statusCounts["review"] || 0,
+        pending: statusCounts["pending"] || 0,
+        statusCounts,
         items: tasks.map((t: any) => ({
           title: t.title,
           status: t.status,
