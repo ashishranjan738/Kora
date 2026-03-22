@@ -48,6 +48,8 @@ const ALL_TOOLS = [
   "spawn_agent", "remove_agent", "peek_agent", "nudge_agent",
   "prepare_pr", "report_idle", "request_task",
   "list_personas", "save_persona", "get_workflow_states",
+  "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
+  "verify_work", "create_pr",
 ] as const;
 
 /** Tools allowed per role. Master gets everything, workers get subsets. */
