@@ -3,6 +3,7 @@ import { CostTracker } from "./cost-tracker.js";
 import type { AgentState, ParsedOutput, CLIProvider } from "@kora/shared";
 import { COST_UPDATE_INTERVAL_MS } from "@kora/shared";
 import { estimateTokens, estimateCost } from "./cost-estimator.js";
+import { ClaudeSessionReader } from "./claude-session-reader.js";
 import { logger } from "./logger.js";
 
 const COST_POLL_MIN_INTERVAL_MS = 60_000; // Max once per 60s
@@ -18,6 +19,10 @@ export class UsageMonitor {
   private lastCostPollTime = new Map<string, number>();
   /** Callback to check if agent is idle (set by orchestrator) */
   private isAgentIdleFn: ((agentId: string) => boolean) | null = null;
+  /** JSONL-based session reader for silent cost tracking (no terminal disruption) */
+  private jsonlReader = new ClaudeSessionReader();
+  /** Whether JSONL reader has been attempted for each agent */
+  private jsonlInitAttempted = new Set<string>();
 
   constructor(
     private tmux: IPtyBackend,
@@ -45,8 +50,20 @@ export class UsageMonitor {
 
     const interval = setInterval(async () => {
       try {
-        const output = await this.tmux.capturePane(agent.config.tmuxSession, 200, false);
         const provider = this.agentProviders.get(agent.id);
+
+        // Tier 1: Try JSONL file reading (silent, no terminal disruption)
+        if (provider?.id === "claude-code") {
+          const jsonlUsage = this.readJsonlUsage(agent);
+          if (jsonlUsage) {
+            // JSONL provides accurate cumulative tokens — use directly
+            this.costTracker.updateFromOutput(agent.id, jsonlUsage);
+            return; // Skip terminal scraping when JSONL data is available
+          }
+        }
+
+        // Tier 2: Terminal output parsing (passive — no commands sent)
+        const output = await this.tmux.capturePane(agent.config.tmuxSession, 200, false);
 
         if (provider) {
           // Use provider-specific parsing for accurate metrics
@@ -54,13 +71,6 @@ export class UsageMonitor {
         } else {
           // Fallback: generic tiktoken estimation
           this.updateFromEstimate(agent.id, output);
-        }
-
-        // DISABLED: /cost polling disrupts agent terminals (types into autocomplete).
-        // Cost data is captured via passive spinner parsing instead.
-        // TODO: Re-enable when we can read from Claude Code's internal cost file.
-        if (false && provider?.id === "claude-code" && this.isAgentIdleFn?.(agent.id)) {
-          await this.pollCostCommand(agent.id, agent.config.tmuxSession, provider);
         }
       } catch {
         // Agent may be dead, ignore
@@ -145,6 +155,55 @@ export class UsageMonitor {
   }
 
   /**
+   * Read usage from Claude Code's JSONL session files (silent — no terminal disruption).
+   * Returns ParsedOutput if JSONL data available, null otherwise.
+   */
+  private readJsonlUsage(agent: AgentState): ParsedOutput | null {
+    const agentId = agent.id;
+
+    // Lazy init: try to find JSONL session on first call
+    if (!this.jsonlReader.hasAgent(agentId) && !this.jsonlInitAttempted.has(agentId)) {
+      this.jsonlInitAttempted.add(agentId);
+      // We need the PID — try to get it from the tmux session
+      // For now, scan ~/.claude/sessions/ for a session matching the agent's cwd
+      try {
+        const fs = require("fs");
+        const path = require("path");
+        const os = require("os");
+        const sessionsDir = path.join(os.homedir(), ".claude", "sessions");
+        if (fs.existsSync(sessionsDir)) {
+          const files = fs.readdirSync(sessionsDir).filter((f: string) => f.endsWith(".json"));
+          for (const f of files) {
+            try {
+              const data = JSON.parse(fs.readFileSync(path.join(sessionsDir, f), "utf-8"));
+              const pid = parseInt(f.replace(".json", ""), 10);
+              if (data.cwd && agent.config.workingDirectory?.includes(data.cwd)) {
+                if (this.jsonlReader.initAgent(agentId, pid, data.cwd)) {
+                  logger.info({ agentId, pid }, "[UsageMonitor] JSONL reader initialized");
+                  break;
+                }
+              }
+            } catch { /* skip malformed */ }
+          }
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    if (!this.jsonlReader.hasAgent(agentId)) return null;
+
+    const usage = this.jsonlReader.getUsage(agentId);
+    if (!usage || usage.totalTokens === 0) return null;
+
+    return {
+      tokenUsage: {
+        input: usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens,
+        output: usage.outputTokens,
+      },
+      costUsd: undefined, // Let cost-tracker estimate from tokens
+    };
+  }
+
+  /**
    * Poll `/cost` command on an idle Claude Code agent to get cumulative token usage.
    * Only runs when: agent is idle, provider is claude-code, last poll >60s ago.
    */
@@ -190,6 +249,8 @@ export class UsageMonitor {
     this.cumulativeTokensOut.delete(agentId);
     this.agentProviders.delete(agentId);
     this.lastCostPollTime.delete(agentId);
+    this.jsonlReader.removeAgent(agentId);
+    this.jsonlInitAttempted.delete(agentId);
   }
 
   /** Stop all monitoring */
