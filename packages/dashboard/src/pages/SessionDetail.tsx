@@ -23,6 +23,7 @@ import { TransitionAnalytics } from "../components/TransitionAnalytics";
 import { TrendCfdCharts } from "../components/TrendCfdCharts";
 import { SessionMetricsBar } from "../components/SessionMetricsBar";
 import { BudgetWarning } from "../components/BudgetBar";
+import { ApprovalNotificationBanner } from "../components/TaskApprovalBadge";
 import { DEFAULT_WORKFLOW_STATES } from "@kora/shared";
 import { TimelineView } from "../components/timeline/TimelineView";
 import { ExecutionTracing } from "../components/ExecutionTracing";
@@ -699,6 +700,12 @@ export function SessionDetail() {
           </Menu>
         </div>
       </div>
+
+      {/* Approval Notification Banner */}
+      <ApprovalNotificationBanner
+        pendingCount={approvalRequests.filter((r: any) => r.status === "pending").length}
+        onClick={() => setActiveTab("agents")}
+      />
 
       {/* Budget Warning */}
       <BudgetWarning
