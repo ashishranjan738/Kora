@@ -56,8 +56,10 @@ export class UsageMonitor {
           this.updateFromEstimate(agent.id, output);
         }
 
-        // Poll /cost command when agent is idle (claude-code only)
-        if (provider?.id === "claude-code" && this.isAgentIdleFn?.(agent.id)) {
+        // DISABLED: /cost polling disrupts agent terminals (types into autocomplete).
+        // Cost data is captured via passive spinner parsing instead.
+        // TODO: Re-enable when we can read from Claude Code's internal cost file.
+        if (false && provider?.id === "claude-code" && this.isAgentIdleFn?.(agent.id)) {
           await this.pollCostCommand(agent.id, agent.config.tmuxSession, provider);
         }
       } catch {
