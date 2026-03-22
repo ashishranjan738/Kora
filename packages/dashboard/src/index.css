@@ -3280,7 +3280,7 @@ textarea:focus {
    Tablet (768px and below)
    =========================== */
 /* Mobile utility */
-.hide-on-mobile { display: flex; }
+.hide-on-mobile { display: inline; } /* inline not flex — flex on <span> creates block box that wraps to new line */
 @media (max-width: 768px) {
   .hide-on-mobile { display: none !important; }
 }
