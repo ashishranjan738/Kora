@@ -29,6 +29,7 @@ import fs from "fs";
 import { HoldptyController } from "./holdpty-controller.js";
 import { logger } from "./logger.js";
 import { StaleTaskWatchdog } from "./stale-task-watchdog.js";
+import { AutoAssigner } from "./auto-assign.js";
 import { PatternDetector } from "./orchestrator-blocking/detection/pattern-detector.js";
 import { OrchestratorStateMachine } from "./orchestrator-blocking/state-machine.js";
 import { OrchestratorState } from "./orchestrator-blocking/types.js";
@@ -68,6 +69,9 @@ export class Orchestrator extends EventEmitter {
 
   // Stale task watchdog
   public staleTaskWatchdog: StaleTaskWatchdog;
+
+  // Auto-assigner (Phase 0 autonomous orchestrator)
+  public autoAssigner: AutoAssigner;
 
   constructor(private config: OrchestratorConfig) {
     super();
@@ -136,6 +140,15 @@ export class Orchestrator extends EventEmitter {
     // Forward watchdog events to orchestrator for WebSocket broadcast
     this.staleTaskWatchdog.on("nudge", (data) => this.emit("task-nudge", data));
     this.staleTaskWatchdog.on("batch-nudge", (data) => this.emit("task-batch-nudge", data));
+
+    // Auto-assigner (Phase 0 autonomous orchestrator)
+    this.autoAssigner = new AutoAssigner({
+      sessionId: config.sessionId,
+      database: this.database,
+      agentManager: this.agentManager,
+      messageQueue: this.messageQueue,
+      eventLog: this.eventLog,
+    });
 
     this.wireEvents();
     this.startIdleMonitoring();
@@ -276,6 +289,16 @@ export class Orchestrator extends EventEmitter {
           previousStatus: "working",
         },
       });
+
+      // Phase 0: Auto-assign unassigned task to idle agent
+      try {
+        const assigned = await this.autoAssigner.tryAutoAssign(agentId);
+        if (assigned) {
+          this.emit("auto-assign", { sessionId: this.config.sessionId, agentId, ...assigned });
+        }
+      } catch (err) {
+        logger.warn({ err, agentId }, "[orchestrator] Auto-assign failed");
+      }
     });
 
     this.agentManager.on("agent-working", async (agentId: string) => {
@@ -336,14 +359,24 @@ export class Orchestrator extends EventEmitter {
       });
     });
 
-    // Task completed
-    this.database.on("task-completed", (data: { taskId: string; title: string; assignedTo?: string }) => {
+    // Task completed — notify + check dependency unblocks
+    this.database.on("task-completed", async (data: { taskId: string; title: string; assignedTo?: string }) => {
       let agentName: string | undefined;
       if (data.assignedTo) {
         const agent = this.agentManager.getAgent(data.assignedTo);
         agentName = agent?.config.name;
       }
       notificationService.taskCompleted(this.config.sessionId, data.title, agentName);
+
+      // Phase 0: Check if completing this task unblocks other tasks
+      try {
+        const unblockedCount = await this.autoAssigner.checkDependencyUnblocks(data.taskId);
+        if (unblockedCount > 0) {
+          logger.info({ taskId: data.taskId, unblockedCount }, "[orchestrator] Tasks unblocked by completion");
+        }
+      } catch (err) {
+        logger.warn({ err, taskId: data.taskId }, "[orchestrator] Dependency unblock check failed");
+      }
     });
   }
 
