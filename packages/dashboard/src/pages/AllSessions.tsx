@@ -8,6 +8,7 @@ import { WorkflowStateEditor } from "../components/WorkflowStateEditor";
 import { autoGenerateTransitions, getPipelineTemplate } from "@kora/shared";
 import { PersonaLibrary } from "../components/PersonaLibrary";
 import { showError } from "../utils/notifications";
+import { ScheduleManager } from "../components/ScheduleManager";
 import { SessionHealthBadge } from "../components/SessionHealthBadge";
 
 interface PlaybookAgent {
@@ -878,6 +879,11 @@ export function AllSessions() {
           </div>
         </>
       )}
+
+      {/* Scheduled Sessions */}
+      <div style={{ marginTop: 32, marginBottom: 24 }}>
+        <ScheduleManager />
+      </div>
 
       {/* Create Session Dialog */}
       {showCreateDialog && (
