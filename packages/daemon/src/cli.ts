@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import path from "path";
+import fs from "fs";
 import http from "http";
 import {
   startDaemon,
@@ -48,8 +49,13 @@ async function handleStart(): Promise<void> {
   // Select PTY backend: "tmux" (default) or "holdpty"
   let ptyBackend: IPtyBackend;
   if (backendFlag === "holdpty") {
+    // Use a persistent directory for holdpty sessions instead of /tmp/dt-{uid}
+    // which macOS cleans during sleep/wake cycles, killing all agent sessions.
+    const holdptyDir = path.join(require("os").homedir(), isDev ? ".kora-dev" : ".kora", "holdpty");
+    fs.mkdirSync(holdptyDir, { recursive: true, mode: 0o700 });
+    process.env.HOLDPTY_DIR = holdptyDir;
     ptyBackend = new HoldptyController();
-    logger.info(`  [pty backend] holdpty`);
+    logger.info(`  [pty backend] holdpty (sessions: ${holdptyDir})`);
   } else {
     ptyBackend = tmuxDefault;
     logger.info(`  [pty backend] tmux`);
@@ -381,6 +387,9 @@ async function handleRun(): Promise<void> {
   const backendFlag = (parseFlag("--backend") || process.env.KORA_PTY_BACKEND || DEFAULT_PTY_BACKEND) as PtyBackendType;
   let ptyBackend: IPtyBackend;
   if (backendFlag === "holdpty") {
+    const holdptyDir = path.join(require("os").homedir(), isDev ? ".kora-dev" : ".kora", "holdpty");
+    fs.mkdirSync(holdptyDir, { recursive: true, mode: 0o700 });
+    process.env.HOLDPTY_DIR = holdptyDir;
     ptyBackend = new HoldptyController();
   } else {
     ptyBackend = tmuxDefault;
