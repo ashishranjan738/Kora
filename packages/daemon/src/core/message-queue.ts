@@ -497,6 +497,16 @@ export class MessageQueue {
   /** Actually deliver the message (rate limit already checked in processOneQueue) */
   private async deliver(msg: QueuedMessage): Promise<void> {
     try {
+      const isBroadcast = msg.message.includes("[Broadcast]");
+      if (isBroadcast) {
+        const isMcpAgent = this.mcpAgents.has(msg.agentId);
+        logger.info({
+          agentId: msg.agentId,
+          isMcpAgent,
+          messagingMode: this.messagingMode,
+          mcpAgentCount: this.mcpAgents.size,
+        }, "[MessageQueue] Broadcast routing decision");
+      }
       if (this.mcpAgents.has(msg.agentId)) {
         // MCP agent: write to pending store + send tmux notification as fallback
         await this.deliverViaMcpPending(msg);
@@ -613,6 +623,18 @@ export class MessageQueue {
     const isBroadcast = msg.message.includes("[Broadcast]");
     const cleanMsg = msg.message.replace(/\x1b\[[0-9;]*m/g, "");
 
+    if (isBroadcast) {
+      logger.info({
+        agentId: msg.agentId,
+        hasDb: !!this.database,
+        hasSessionId: !!this.sessionId,
+        sqlitePersisted: !!msg.sqlitePersisted,
+        enableSqlite: this.enableSqliteMessages,
+        deliveryMode: "mcp",
+        contentLen: msg.message.length,
+      }, "[MessageQueue] Broadcast delivery via MCP — diagnostics");
+    }
+
     // Always persist to SQLite (broadcasts included — they may be long)
     if (this.enableSqliteMessages && this.database && this.sessionId && !msg.sqlitePersisted) {
       try {
@@ -659,6 +681,17 @@ export class MessageQueue {
     const senderName = extractSenderName(msg.message, msg.fromAgentId);
     const isBroadcast = msg.message.includes("[Broadcast]");
     const cleanMsg = msg.message.replace(/\x1b\[[0-9;]*m/g, "");
+
+    if (isBroadcast) {
+      logger.info({
+        agentId: msg.agentId,
+        hasDb: !!this.database,
+        hasSessionId: !!this.sessionId,
+        sqlitePersisted: !!msg.sqlitePersisted,
+        enableSqlite: this.enableSqliteMessages,
+        contentLen: msg.message.length,
+      }, "[MessageQueue] Broadcast delivery — diagnostics");
+    }
 
     // Always persist to SQLite (broadcasts included — they may be long)
     if (this.enableSqliteMessages && this.database && this.sessionId && !msg.sqlitePersisted) {
