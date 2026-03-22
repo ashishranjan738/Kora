@@ -283,6 +283,26 @@ export class AppDatabase extends EventEmitter {
         PRAGMA user_version = 12;
       `);
     }
+
+    if (version < 13) {
+      this.db.exec(`
+        -- Agent tool call traces for replay/debug
+        CREATE TABLE IF NOT EXISTS agent_traces (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          agent_id TEXT NOT NULL,
+          tool_name TEXT NOT NULL,
+          input_args TEXT,
+          output_result TEXT,
+          duration_ms INTEGER,
+          success INTEGER NOT NULL DEFAULT 1,
+          timestamp TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_traces_agent ON agent_traces(session_id, agent_id, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_traces_tool ON agent_traces(tool_name);
+        PRAGMA user_version = 13;
+      `);
+    }
   }
 
   // ─── Events ──────────────────────────────────────────────
@@ -878,6 +898,45 @@ export class AppDatabase extends EventEmitter {
     const result = this.db.prepare(
       `DELETE FROM message_deliveries WHERE enqueued_at < ?`
     ).run(cutoff);
+    return result.changes;
+  }
+
+  // ─── Agent Traces (Replay/Debug) ─────────────────────────────
+
+  /** Insert a tool call trace */
+  insertTrace(trace: {
+    id: string; sessionId: string; agentId: string; toolName: string;
+    inputArgs?: string; outputResult?: string; durationMs?: number;
+    success: boolean; timestamp: string;
+  }): void {
+    // Truncate large results to 10KB
+    const maxLen = 10240;
+    const input = trace.inputArgs && trace.inputArgs.length > maxLen ? trace.inputArgs.slice(0, maxLen) + "...[truncated]" : trace.inputArgs;
+    const output = trace.outputResult && trace.outputResult.length > maxLen ? trace.outputResult.slice(0, maxLen) + "...[truncated]" : trace.outputResult;
+    this.db.prepare(
+      `INSERT INTO agent_traces (id, session_id, agent_id, tool_name, input_args, output_result, duration_ms, success, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(trace.id, trace.sessionId, trace.agentId, trace.toolName, input || null, output || null, trace.durationMs || null, trace.success ? 1 : 0, trace.timestamp);
+  }
+
+  /** Get traces for an agent with optional filters */
+  getTraces(sessionId: string, agentId: string, filters?: {
+    toolName?: string; success?: boolean; limit?: number; before?: string;
+  }): any[] {
+    const conditions = ["session_id = ?", "agent_id = ?"];
+    const values: any[] = [sessionId, agentId];
+    if (filters?.toolName) { conditions.push("tool_name = ?"); values.push(filters.toolName); }
+    if (filters?.success !== undefined) { conditions.push("success = ?"); values.push(filters.success ? 1 : 0); }
+    if (filters?.before) { conditions.push("timestamp < ?"); values.push(filters.before); }
+    const limit = filters?.limit || 100;
+    return this.db.prepare(
+      `SELECT * FROM agent_traces WHERE ${conditions.join(" AND ")} ORDER BY timestamp DESC LIMIT ?`
+    ).all(...values, limit) as any[];
+  }
+
+  /** Cleanup old traces (24h retention) */
+  cleanupOldTraces(hoursToKeep = 24): number {
+    const cutoff = new Date(Date.now() - hoursToKeep * 60 * 60 * 1000).toISOString();
+    const result = this.db.prepare(`DELETE FROM agent_traces WHERE timestamp < ?`).run(cutoff);
     return result.changes;
   }
 

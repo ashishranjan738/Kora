@@ -2060,7 +2060,16 @@ rl.on("line", async (line: string) => {
         }
 
         try {
+          const traceStart = Date.now();
           const result = await handleToolCall(toolName, toolArgs);
+          const traceDuration = Date.now() - traceStart;
+
+          // Fire-and-forget trace logging (don't block tool response)
+          apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}/traces`, {
+            toolName, inputArgs: JSON.stringify(toolArgs),
+            outputResult: JSON.stringify(result).slice(0, 10240),
+            durationMs: traceDuration, success: true,
+          }).catch(() => {}); // non-fatal
 
           // === MCP PUSH: Non-destructive notification of pending messages ===
           // Only COUNT pending messages — don't consume them. check_messages is
@@ -2095,6 +2104,11 @@ rl.on("line", async (line: string) => {
           sendResponse(id, { content });
         } catch (err: unknown) {
           const errMsg = err instanceof Error ? err.message : String(err);
+          // Log failed trace
+          apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}/traces`, {
+            toolName, inputArgs: JSON.stringify(toolArgs),
+            outputResult: errMsg, durationMs: 0, success: false,
+          }).catch(() => {});
           sendResponse(id, {
             content: [{ type: "text", text: `Error: ${errMsg}` }],
             isError: true,
