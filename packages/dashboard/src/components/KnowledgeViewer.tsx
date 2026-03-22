@@ -1,11 +1,13 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Badge, Button, Group, Paper, Text, TextInput, Tooltip, Modal, Stack } from "@mantine/core";
+import { Badge, Button, Group, Paper, Text, TextInput, Textarea, Tooltip, Modal, Stack, Collapse } from "@mantine/core";
 import { useApi } from "../hooks/useApi";
+import { formatLastSeen } from "../utils/formatters";
 
 interface KnowledgeEntry {
   text: string;
   source: string;
   timestamp?: string;
+  savedBy?: string; // agent name/ID that saved this entry
 }
 
 interface KnowledgeViewerProps {
@@ -17,8 +19,12 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newEntryText, setNewEntryText] = useState("");
+  const [adding, setAdding] = useState(false);
 
   const fetchKnowledge = useCallback(async () => {
     try {
@@ -41,7 +47,7 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
     if (!search.trim()) return entries;
     const q = search.toLowerCase();
     return entries.filter(
-      (e) => e.text.toLowerCase().includes(q) || e.source.toLowerCase().includes(q)
+      (e) => e.text.toLowerCase().includes(q) || e.source.toLowerCase().includes(q) || (e.savedBy || "").toLowerCase().includes(q)
     );
   }, [entries, search]);
 
@@ -58,15 +64,40 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
     }
   }
 
-  // Group by source
-  const sourceColors: Record<string, string> = {
-    ".kora.yml": "blue",
-    "knowledge.md": "grape",
-  };
-
-  function getSourceColor(source: string): string {
-    return sourceColors[source] || "gray";
+  async function handleAddEntry() {
+    if (!newEntryText.trim()) return;
+    setAdding(true);
+    try {
+      // Use the knowledge API — POST or append
+      await fetch(`/api/v1/sessions/${sessionId}/knowledge`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${(window as any).__KORA_TOKEN__ || ""}`,
+        },
+        body: JSON.stringify({ text: newEntryText.trim(), source: "dashboard" }),
+      });
+      setNewEntryText("");
+      setShowAddModal(false);
+      fetchKnowledge();
+    } catch {
+      // ignore
+    } finally {
+      setAdding(false);
+    }
   }
+
+  // Source colors
+  function getSourceColor(source: string): string {
+    if (source === ".kora.yml") return "blue";
+    if (source === "knowledge.md") return "grape";
+    if (source === "dashboard") return "teal";
+    // Agent sources
+    if (source.includes("agent") || source.includes("mcp")) return "orange";
+    return "gray";
+  }
+
+  const PREVIEW_LENGTH = 200;
 
   return (
     <div style={{ marginTop: 32 }}>
@@ -94,6 +125,14 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
               },
             }}
           />
+          <Button
+            size="xs"
+            variant="light"
+            color="blue"
+            onClick={() => setShowAddModal(true)}
+          >
+            + Add Entry
+          </Button>
           {entries.length > 0 && (
             <Button
               size="xs"
@@ -124,7 +163,8 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
           }}
         >
           <Text size="sm" c="dimmed">
-            No knowledge entries yet. Agents can save knowledge using the save_knowledge MCP tool.
+            No knowledge entries yet. Agents can save knowledge using the save_knowledge MCP tool,
+            or add entries manually with the "+ Add Entry" button.
           </Text>
         </Paper>
       )}
@@ -137,35 +177,108 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
 
       {filteredEntries.length > 0 && (
         <Stack gap={8}>
-          {filteredEntries.map((entry, i) => (
-            <Paper
-              key={i}
-              p="sm"
-              withBorder
-              style={{
-                backgroundColor: "var(--bg-secondary)",
-                borderColor: "var(--border-color)",
-              }}
-            >
-              <Group gap={8} mb={4}>
-                <Badge variant="light" color={getSourceColor(entry.source)} size="xs">
-                  {entry.source}
-                </Badge>
-                {entry.timestamp && (
-                  <Tooltip label={entry.timestamp} withArrow>
-                    <Text size="xs" c="dimmed">
-                      {new Date(entry.timestamp).toLocaleString()}
+          {filteredEntries.map((entry, i) => {
+            const isLong = entry.text.length > PREVIEW_LENGTH;
+            const isExpanded = expandedIndex === i;
+            const displayText = isLong && !isExpanded
+              ? entry.text.slice(0, PREVIEW_LENGTH) + "..."
+              : entry.text;
+
+            return (
+              <Paper
+                key={i}
+                p="sm"
+                withBorder
+                style={{
+                  backgroundColor: "var(--bg-secondary)",
+                  borderColor: expandedIndex === i ? "var(--accent-blue)" : "var(--border-color)",
+                  cursor: isLong ? "pointer" : "default",
+                  transition: "border-color 0.2s",
+                }}
+                onClick={() => isLong && setExpandedIndex(isExpanded ? null : i)}
+              >
+                <Group gap={8} mb={4} wrap="wrap">
+                  <Badge variant="light" color={getSourceColor(entry.source)} size="xs">
+                    {entry.source}
+                  </Badge>
+                  {entry.savedBy && (
+                    <Badge variant="dot" color="orange" size="xs">
+                      {entry.savedBy}
+                    </Badge>
+                  )}
+                  {entry.timestamp && (
+                    <Tooltip label={new Date(entry.timestamp).toLocaleString()} withArrow>
+                      <Text size="xs" c="dimmed">
+                        {formatLastSeen(entry.timestamp)}
+                      </Text>
+                    </Tooltip>
+                  )}
+                  {isLong && (
+                    <Text size="xs" c="blue" style={{ marginLeft: "auto" }}>
+                      {isExpanded ? "collapse" : "expand"}
                     </Text>
-                  </Tooltip>
-                )}
-              </Group>
-              <Text size="sm" c="var(--text-primary)" style={{ lineHeight: 1.5 }}>
-                {entry.text}
-              </Text>
-            </Paper>
-          ))}
+                  )}
+                </Group>
+                <Text
+                  size="sm"
+                  c="var(--text-primary)"
+                  style={{ lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                >
+                  {displayText}
+                </Text>
+              </Paper>
+            );
+          })}
         </Stack>
       )}
+
+      {/* Add Entry Modal */}
+      <Modal
+        opened={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        title="Add Knowledge Entry"
+        size="md"
+        styles={{
+          header: { backgroundColor: "var(--bg-secondary)" },
+          body: { backgroundColor: "var(--bg-secondary)" },
+        }}
+      >
+        <Stack gap="sm">
+          <Text size="xs" c="dimmed">
+            Add a knowledge entry that all agents can access. Use this for project context,
+            conventions, or important decisions.
+          </Text>
+          <Textarea
+            placeholder="Enter knowledge text..."
+            value={newEntryText}
+            onChange={(e) => setNewEntryText(e.currentTarget.value)}
+            rows={4}
+            autosize
+            minRows={3}
+            maxRows={10}
+            styles={{
+              input: {
+                backgroundColor: "var(--bg-primary)",
+                borderColor: "var(--border-color)",
+                color: "var(--text-primary)",
+              },
+            }}
+          />
+          <Group justify="flex-end" gap={8}>
+            <Button variant="default" size="sm" onClick={() => setShowAddModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleAddEntry}
+              loading={adding}
+              disabled={!newEntryText.trim()}
+            >
+              Add Entry
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       {/* Clear confirmation modal */}
       <Modal
