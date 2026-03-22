@@ -48,7 +48,7 @@ export const kiroProvider: CLIProvider = {
 
     // Kiro shows: "▸ Credits: 0.07 • Time: 2s" after each response
     // Credits are cumulative per-turn cost in Kiro's credit system
-    const creditsMatch = rawOutput.match(/Credits:\s*([\d.]+)/);
+    const creditsMatch = rawOutput.match(/Credits:\s*\$?([\d.]+)/);
     if (creditsMatch) {
       // Kiro credits ≈ USD (roughly 1:1 for the free tier)
       result.costUsd = parseFloat(creditsMatch[1]);
