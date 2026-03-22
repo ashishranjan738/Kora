@@ -29,37 +29,58 @@ Most AI coding tools run a single agent at a time. Real software projects need *
 - **Multi-CLI support** — Claude Code, Codex, Aider, Kiro, Goose (pluggable provider system)
 - **Any model** — Use whatever model your CLI supports. No model validation — pass through freely
 - **Git worktree isolation** — Each agent gets its own worktree. No merge conflicts during work
+- **Automatic worktree cleanup** — Stale worktrees and branches pruned on agent stop, session delete, and daemon startup
 - **Session persistence** — Agents survive daemon restarts via tmux. Pick up where you left off
 - **Playbook templates** — Pre-configured team topologies (Full Stack Team, Master + Workers, Solo Agent)
+- **Skill-aware auto-assign** — Idle agents automatically assigned matching tasks based on persona and labels
+- **Activity detection** — Spinner pattern recognition, idle/working classification, frozen timestamp detection
+- **Cost tracking** — Token usage and cost parsed from CLI output including spinner indicators
 
 ### Inter-Agent Communication
 - **MCP Tools (primary)** — Agents use `send_message`, `check_messages`, `list_agents`, `broadcast` natively
 - **Terminal @mentions (fallback)** — `@AgentName: message` auto-relayed between terminals
-- **Rate limiting** — Prevents message loops (10 msgs/min per agent, 8 per conversation pair)
-- **File-based delivery** — Messages written to inbox files, supports 30K+ char messages
+- **Rate limiting** — Role-based limits (master: 25/min, worker: 10/min) + conversation loop detection
+- **Broadcast persistence** — Long broadcasts (500+ chars) stored in SQLite, retrievable via `check_messages`
+- **File + SQLite dual storage** — Messages persisted to both inbox files and SQLite for reliability
+- **Nudge system** — Dashboard button to remind agents about unread messages with Enter key delivery
 
 ### Task Management
 - **Kanban board** — Drag-and-drop tasks between Pending, In Progress, Review, Done
+- **Configurable workflow** — Custom pipeline states with enforced transitions and skippable stages
+- **Approval gates** — Require human sign-off before tasks enter specific states
 - **Agent assignment** — Assign tasks to agents, they get notified via MCP
 - **Comments** — Both users and agents can post updates on tasks
 - **MCP task tools** — Agents see tasks via `list_tasks` and post progress via `update_task`
+- **Cycle time analytics** — Track time per state, rework count, rolling averages, cumulative flow
+- **Stale task watchdog** — Auto-nudge agents and escalate when tasks stall
 - **SQLite storage** — Concurrent-safe, indexed, scales to thousands of tasks
 
 ### Dashboard
 - **Command Center** — VS Code-style mosaic tiling with free-form resize (react-mosaic)
+- **Agent hover panel** — HoverCard with full agent details, activity, and current task
 - **Live terminals** — xterm.js + node-pty streaming with full interactive input
 - **Monaco editor** — File editing with tabs, Ctrl+S save, Ctrl+P quick file search
 - **Side-by-side diff** — Monaco DiffEditor for git changes with nested repo support
 - **Event timeline** — Rich event log with expandable details and filtering
 - **Theme system** — Dark/Light/System + independently configurable editor and terminal themes
 - **Activity detection** — Real-time agent status via terminal text-flow analysis
+- **Session maintenance** — Stale resource cleanup UI (worktrees, branches, tmux sessions)
+
+### Security
+- **Bearer token auth** — Generated on daemon start, required for all API calls
+- **Shell injection protection** — All terminal commands use shell-escaped paths
+- **Webhook HMAC verification** — Timing-safe signature validation, signatures required
+- **MCP role permissions** — Deny-by-default for unknown roles, master/worker tool separation
+- **Path traversal protection** — Image sharing and file access confined to project directory
+- **SQL injection prevention** — Parameterized queries with LIKE wildcard escaping
 
 ### Architecture
 - **Daemon** — Node.js Express + WebSocket server with bearer token auth
-- **SQLite** — Events, tasks, and comments stored in `better-sqlite3` (WAL mode, indexed)
-- **tmux** — Process isolation, session persistence, terminal capture
+- **SQLite** — Events, tasks, messages, and comments stored in `better-sqlite3` (WAL mode, indexed)
+- **tmux / holdpty** — Process isolation, session persistence, terminal capture with macOS sleep recovery
 - **MCP server** — Per-agent JSON-RPC server for messaging and task tools
 - **WebSocket push** — Instant UI updates on agent/task state changes
+- **Configurable workflows** — Pipeline enforcement with transitions, approval gates, and skip states
 
 ---
 
@@ -163,7 +184,7 @@ Run `make help` to see all commands. Here's the full list:
 
 | Command | Description |
 |---------|-------------|
-| `make test` | Run all tests (54 vitest tests) |
+| `make test` | Run all tests (1800+ vitest tests, 99%+ pass rate) |
 | `make test-watch` | Run tests in watch mode |
 | `make typecheck` | Type-check daemon + dashboard |
 | `make lint` | Lint all source files |
@@ -255,10 +276,18 @@ Agents automatically get these tools via `--mcp-config`:
 |------|-------------|
 | `send_message(to, message)` | Send a message to another agent |
 | `check_messages()` | Check for unread messages |
-| `list_agents()` | See all agents and their status |
-| `broadcast(message)` | Message all agents |
+| `list_agents()` | See all agents with status, activity, and current task |
+| `broadcast(message)` | Message all agents (persisted for 500+ chars) |
 | `list_tasks()` | See assigned and unassigned tasks |
 | `update_task(taskId, status?, comment?)` | Update task status or post progress |
+| `create_task(title, description)` | Create a new task on the board |
+| `get_task(taskId)` | Get full task details with comments |
+| `request_task()` | Request assignment of next available task |
+| `report_idle()` | Signal availability for new work |
+| `prepare_pr()` | Prepare a pull request for review |
+| `get_workflow_states()` | See pipeline states and valid transitions |
+| `save_knowledge(key, value)` | Store knowledge for other agents |
+| `verify_work()` | Validate changes (build + tests pass) |
 
 ---
 
