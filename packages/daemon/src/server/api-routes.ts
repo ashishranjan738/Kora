@@ -2790,6 +2790,118 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ─── Attachments (Image Sharing) ──────────────────────────────────
+
+  const ALLOWED_IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
+  const MAX_BASE64_SIZE = 10 * 1024 * 1024; // 10MB cap
+
+  /** Serve attachment files with auth + security headers */
+  router.get("/sessions/:sid/attachments/:filename", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const filename = String(req.params.filename);
+
+      // Security: reject path traversal attempts
+      if (filename.includes("/") || filename.includes("..") || filename.includes("\\")) {
+        res.status(400).json({ error: "Invalid filename" });
+        return;
+      }
+
+      const session = sessionManager.getSession(sid);
+      if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const safeFilename = path.basename(filename);
+      const ext = path.extname(safeFilename).toLowerCase();
+      if (!ALLOWED_IMAGE_EXTS.has(ext)) {
+        res.status(400).json({ error: `Unsupported format: ${ext}. Allowed: ${[...ALLOWED_IMAGE_EXTS].join(", ")}` });
+        return;
+      }
+
+      const attachDir = path.join(session.runtimeDir, "attachments");
+      const filePath = path.join(attachDir, safeFilename);
+
+      // Verify file is within attachments dir (double-check path traversal)
+      if (!filePath.startsWith(attachDir)) {
+        res.status(400).json({ error: "Invalid path" });
+        return;
+      }
+
+      const fs = require("fs");
+      if (!fs.existsSync(filePath)) {
+        res.status(404).json({ error: "Attachment not found" });
+        return;
+      }
+
+      // Security headers
+      res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}"`);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.sendFile(filePath);
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  /** Upload attachment (used by share_image MCP tool) */
+  router.post("/sessions/:sid/attachments", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const session = sessionManager.getSession(sid);
+      if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const { filename, base64Data, sourcePath, toAgentId } = req.body;
+      if (!filename) { res.status(400).json({ error: "filename required" }); return; }
+
+      const ext = path.extname(filename).toLowerCase();
+      if (!ALLOWED_IMAGE_EXTS.has(ext)) {
+        res.status(400).json({ error: `Unsupported format. Allowed: ${[...ALLOWED_IMAGE_EXTS].join(", ")}` });
+        return;
+      }
+
+      // Validate receiver if specified
+      if (toAgentId) {
+        const orch = orchestrators.get(sid);
+        const agent = orch?.agentManager.getAgent(toAgentId);
+        if (!agent) {
+          res.status(404).json({ error: `Agent "${toAgentId}" not found` });
+          return;
+        }
+      }
+
+      const fs = require("fs");
+      const attachDir = path.join(session.runtimeDir, "attachments");
+      fs.mkdirSync(attachDir, { recursive: true });
+
+      const safeFilename = `${Date.now()}-${path.basename(filename)}`;
+      const destPath = path.join(attachDir, safeFilename);
+
+      if (base64Data) {
+        // Base64 input (from Chrome DevTools screenshots)
+        if (base64Data.length > MAX_BASE64_SIZE) {
+          res.status(400).json({ error: `Base64 data exceeds ${MAX_BASE64_SIZE / 1024 / 1024}MB limit` });
+          return;
+        }
+        const buffer = Buffer.from(base64Data, "base64");
+        fs.writeFileSync(destPath, buffer);
+      } else if (sourcePath) {
+        // File path input — copy file
+        const resolvedSource = path.resolve(sourcePath);
+        if (!fs.existsSync(resolvedSource)) {
+          res.status(404).json({ error: `Source file not found: ${sourcePath}` });
+          return;
+        }
+        fs.copyFileSync(resolvedSource, destPath);
+      } else {
+        res.status(400).json({ error: "Either base64Data or sourcePath required" });
+        return;
+      }
+
+      const url = `/api/v1/sessions/${sid}/attachments/${safeFilename}`;
+      res.status(201).json({ filename: safeFilename, url, size: fs.statSync(destPath).size });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // ─── Events (historical) ────────────────────────────────────────────
 
   router.get("/sessions/:sid/events", async (req: Request, res: Response) => {

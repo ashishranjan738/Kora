@@ -813,6 +813,37 @@ const TOOL_DEFINITIONS = [
       required: ["entry"],
     },
   },
+  {
+    name: "share_image",
+    description:
+      "Share an image or screenshot with another agent. Accepts a file path or base64 data. The image is stored server-side and a message is sent to the recipient with the image URL.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        to: {
+          type: "string",
+          description: "Agent name or ID to share with",
+        },
+        filePath: {
+          type: "string",
+          description: "Path to image file on disk (png, jpg, jpeg, gif, webp)",
+        },
+        base64Data: {
+          type: "string",
+          description: "Base64-encoded image data (for screenshots). Mutually exclusive with filePath.",
+        },
+        filename: {
+          type: "string",
+          description: "Filename for base64 data (e.g. 'screenshot.png'). Required when using base64Data.",
+        },
+        caption: {
+          type: "string",
+          description: "Optional caption/description for the image",
+        },
+      },
+      required: ["to"],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1860,6 +1891,41 @@ async function handleToolCall(
       });
 
       return { success: true, saved: toolArgs.entry.trim() };
+    }
+
+    case "share_image": {
+      if (!toolArgs.to) return { error: "to is required" };
+      if (!toolArgs.filePath && !toolArgs.base64Data) return { error: "Either filePath or base64Data is required" };
+
+      // Resolve target agent
+      const agentsImg = (await apiCall("GET", `/api/v1/sessions/${SESSION_ID}/agents`)) as AgentsResponse;
+      const targetImg = findAgentByNameOrId(agentsImg.agents || [], toolArgs.to);
+      if (!targetImg) return { error: `Agent "${toolArgs.to}" not found` };
+
+      // Determine filename
+      const imgFilename = toolArgs.filename || (toolArgs.filePath ? nodePath.basename(toolArgs.filePath) : "screenshot.png");
+
+      // Upload attachment
+      const uploadResult = (await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/attachments`, {
+        filename: imgFilename,
+        base64Data: toolArgs.base64Data || undefined,
+        sourcePath: toolArgs.filePath || undefined,
+        toAgentId: targetImg.id,
+      })) as { filename?: string; url?: string; error?: string };
+
+      if (uploadResult.error) return { error: uploadResult.error };
+
+      // Send message with image reference
+      const caption = toolArgs.caption || `Shared image: ${imgFilename}`;
+      await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/relay`, {
+        from: AGENT_ID,
+        to: targetImg.id,
+        message: `[Image] ${caption}\nView: ${uploadResult.url}`,
+        messageType: "image",
+      });
+
+      recordSendMessage();
+      return { success: true, sentTo: targetImg.config?.name || targetImg.id, url: uploadResult.url, filename: uploadResult.filename };
     }
 
     default:
