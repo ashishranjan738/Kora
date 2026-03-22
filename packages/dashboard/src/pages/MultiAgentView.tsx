@@ -19,7 +19,9 @@ import { showError } from "../utils/notifications";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { AgentLoadBadge } from "../components/AgentLoadBadge";
 import { UnreadMessageBanner } from "../components/UnreadMessageBanner";
+import { AgentDetailPopover } from "../components/AgentDetailPopover";
 import { useWebSocket } from "../hooks/useWebSocket";
+import { Popover } from "@mantine/core";
 
 const PANEL_BORDER_COLORS = [
   "#58a6ff",
@@ -877,6 +879,43 @@ export function MultiAgentView() {
                 {agent.role}
               </span>
             )}
+
+            {/* Activity badge — ALWAYS visible (Tier 1+) */}
+            {agent.idleSince && agent.activity === "idle" && (
+              <Badge size="xs" variant="light" color="yellow" style={{ flexShrink: 0 }}>
+                Idle {formatLastSeen(agent.idleSince).replace(" ago", "")}
+              </Badge>
+            )}
+            {agent.activity === "working" && !isCrashed && (
+              <Badge size="xs" variant="light" color="green" style={{ flexShrink: 0 }}>
+                {agent.subActivity || "Working"}
+              </Badge>
+            )}
+            {isCrashed && (
+              <Badge size="xs" variant="filled" color="red" style={{ flexShrink: 0 }}>Crashed</Badge>
+            )}
+
+            {/* Info popover — shows ALL metadata */}
+            <Popover position="bottom-start" withArrow shadow="md" withinPortal>
+              <Popover.Target>
+                <button
+                  className="split-panel-btn"
+                  title="Agent details"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ flexShrink: 0 }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                </button>
+              </Popover.Target>
+              <Popover.Dropdown>
+                <AgentDetailPopover
+                  agent={agent}
+                  tasks={tasks}
+                  onNudge={async () => { try { await api.nudgeAgent(sessionId!, agent.id); } catch {} }}
+                  onExpand={() => toggleFullscreen(agent.id)}
+                />
+              </Popover.Dropdown>
+            </Popover>
 
             {/* MIDDLE: Metadata — overflows/hides when card is narrow */}
             <span style={{ display: "flex", alignItems: "center", gap: 6, overflow: "hidden", flex: 1, minWidth: 0 }}>
