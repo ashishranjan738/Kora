@@ -2470,7 +2470,39 @@ export function createApiRouter(deps: {
       const { status } = req.body as { status: string };
       if (!status) { res.status(400).json({ error: "status is required" }); return; }
 
-      // Update with approved flag to bypass the gate
+      // Validate the target status exists in workflow states
+      const session_approve = sessionManager.getSession(sid);
+      const workflowStates_approve = session_approve?.config.workflowStates || DEFAULT_WORKFLOW_STATES;
+      const validStatuses_approve = workflowStates_approve.map((s: any) => s.id);
+      if (!validStatuses_approve.includes(status)) {
+        res.status(400).json({ error: `status must be one of: ${validStatuses_approve.join(", ")}` });
+        return;
+      }
+
+      // Validate transition is valid (approve bypasses requiresApproval gate, NOT pipeline order)
+      const currentTask = db.getTask(tid);
+      if (currentTask) {
+        const currentState = workflowStates_approve.find((s: any) => s.id === currentTask.status);
+        if (currentState?.transitions?.length) {
+          const effective = new Set<string>(currentState.transitions);
+          // Include skippable targets + closed states
+          for (const t of currentState.transitions) {
+            const ts = workflowStates_approve.find((s: any) => s.id === t);
+            if (ts?.skippable && ts.transitions?.length) {
+              for (const st of ts.transitions) effective.add(st);
+            }
+          }
+          for (const s of workflowStates_approve) {
+            if (s.category === "closed") effective.add(s.id);
+          }
+          if (!effective.has(status)) {
+            res.status(400).json({ error: `Invalid transition: "${currentTask.status}" → "${status}". Valid: ${[...effective].join(", ")}` });
+            return;
+          }
+        }
+      }
+
+      // Update with approved flag to bypass the requiresApproval gate
       const task = db.updateTask(tid, { status });
       const { randomUUID } = require("crypto");
       db.addTaskComment({ id: randomUUID().slice(0, 8), taskId: tid, text: `Approved: moved to "${status}" by human reviewer.`, author: "user", authorName: "user", createdAt: new Date().toISOString() });
