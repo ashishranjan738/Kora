@@ -1602,6 +1602,44 @@ export function createApiRouter(deps: {
   // ─── SQLite Messages ─────────────────────────────────────────────────────
 
   /** Get messages for an agent (SQLite-based) */
+  // Agent tool call traces (replay/debug)
+  router.get("/sessions/:sid/agents/:aid/traces", (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const db = getDb(String(sid));
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+      const toolName = req.query.tool as string | undefined;
+      const success = req.query.success !== undefined ? req.query.success === "true" : undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
+      const before = req.query.before as string | undefined;
+      const traces = db.getTraces(String(sid), String(aid), { toolName, success, limit, before });
+      res.json({ traces });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  // Log a tool call trace (called by MCP server)
+  router.post("/sessions/:sid/agents/:aid/traces", (req: Request, res: Response) => {
+    try {
+      const { sid, aid } = req.params;
+      const db = getDb(String(sid));
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+      const { randomUUID } = require("crypto");
+      const { toolName, inputArgs, outputResult, durationMs, success } = req.body;
+      db.insertTrace({
+        id: randomUUID().slice(0, 12),
+        sessionId: String(sid), agentId: String(aid),
+        toolName: toolName || "unknown",
+        inputArgs: typeof inputArgs === "string" ? inputArgs : JSON.stringify(inputArgs),
+        outputResult: typeof outputResult === "string" ? outputResult : JSON.stringify(outputResult),
+        durationMs, success: success !== false,
+        timestamp: new Date().toISOString(),
+      });
+      // Periodic cleanup (every ~100 inserts, cleanup old traces)
+      if (Math.random() < 0.01) { try { db.cleanupOldTraces(24); } catch {} }
+      res.json({ logged: true });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
   router.get("/sessions/:sid/agents/:aid/messages", (req: Request, res: Response) => {
     try {
       const { sid, aid } = req.params;
