@@ -520,6 +520,10 @@ const TOOL_DEFINITIONS = [
           type: "string",
           description: "A progress update or comment to add to the task",
         },
+        force: {
+          type: "boolean",
+          description: "Force status transition, bypassing pipeline validation. Use when a task needs to skip states (e.g. force-close after PR merge). Master agents only.",
+        },
       },
       required: ["taskId"],
     },
@@ -1191,7 +1195,7 @@ async function handleToolCall(
     }
 
     case "update_task": {
-      const { taskId, status, comment, title, description, priority, assignedTo, dueDate } = toolArgs;
+      const { taskId, status, comment, title, description, priority, assignedTo, dueDate, force } = toolArgs;
       const labels = (toolArgs as any).labels; // array type from MCP
       const results: { statusUpdate?: unknown; commentAdded?: unknown } = {};
 
@@ -1219,8 +1223,8 @@ async function handleToolCall(
         }
       }
 
-      // Workflow transition enforcement: validate status change against pipeline
-      if (status) {
+      // Workflow transition enforcement: validate status change against pipeline (skip if force mode)
+      if (status && !force) {
         try {
           const sessionRes = (await apiCall("GET", `/api/v1/sessions/${SESSION_ID}`)) as any;
           const workflowStates = sessionRes?.config?.workflowStates || sessionRes?.workflowStates;
@@ -1278,6 +1282,7 @@ async function handleToolCall(
       if (assignedTo !== undefined) updatePayload.assignedTo = assignedTo;
       if (labels !== undefined) updatePayload.labels = labels;
       if (dueDate !== undefined) updatePayload.dueDate = dueDate || null;
+      if (force) updatePayload.force = true;
 
       // Send update if any fields to update
       if (Object.keys(updatePayload).length > 0) {
