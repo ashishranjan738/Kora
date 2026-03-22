@@ -1581,7 +1581,13 @@ async function handleToolCall(
         return { success: false, error: `Agent "${toolArgs.agentId}" not found` };
       }
 
-      const msg = toolArgs.message || "You have pending messages. Run check_messages now.";
+      // Get sender name for reply path
+      const selfAgents = (await apiCall("GET", `/api/v1/sessions/${SESSION_ID}/agents`)) as AgentsResponse;
+      const selfAgent = (selfAgents.agents || []).find(a => a.id === AGENT_ID);
+      const senderName = selfAgent?.config?.name || AGENT_ID;
+
+      const baseMsg = toolArgs.message || "You have pending messages. Run check_messages now.";
+      const msg = `[Nudge from ${senderName}]: ${baseMsg}\n↳ Reply using: send_message(to="${senderName}", message="your response")`;
       await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents/${target2.id}/nudge`, {
         message: msg,
       });
