@@ -23,8 +23,9 @@ export class NotificationService {
           `display notification "${escapeAppleScript(body)}" with title "${escapeAppleScript(title)}"`,
         ]);
       } else if (process.platform === "linux") {
-        // Linux: use notify-send
-        await execFileAsync("notify-send", [title, body]);
+        // Linux: use notify-send — strip HTML tags to prevent Pango markup injection
+        const cleanBody = body.replace(/<[^>]*>/g, "");
+        await execFileAsync("notify-send", [title, cleanBody]);
       } else if (process.platform === "win32") {
         // Windows: use PowerShell toast
         const escapedTitle = escapePowerShell(title);
