@@ -29,6 +29,8 @@ export interface SessionConfig {
   webhooks?: WebhookConfig[];
   /** Configurable workflow states for the task pipeline. Frozen at session creation. */
   workflowStates?: WorkflowState[];
+  /** Auto-assign unassigned tasks to idle agents. Default: true */
+  autoAssign?: boolean;
 }
 
 export interface WebhookConfig {
