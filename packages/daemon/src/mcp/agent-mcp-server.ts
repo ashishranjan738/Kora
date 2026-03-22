@@ -1676,11 +1676,14 @@ async function handleToolCall(
         const stderr = error.stderr || "";
         const stdout = error.stdout || "";
 
-        // Check if it's a rebase conflict
-        if (stderr.includes("CONFLICT") || stdout.includes("CONFLICT")) {
+        // Check if it's a rebase conflict — abort to leave worktree clean
+        if (stderr.includes("CONFLICT") || stdout.includes("CONFLICT") || stderr.includes("could not apply")) {
+          try {
+            await execFileAsync("git", ["rebase", "--abort"], { cwd: workDir });
+          } catch { /* may not be in rebase state */ }
           return {
             success: false,
-            error: "Rebase conflict detected. You need to resolve conflicts manually.",
+            error: "Rebase conflict detected. Rebase aborted to keep worktree clean. Resolve conflicts manually: git fetch origin main && git rebase origin/main, fix conflicts, then git rebase --continue && git push --force-with-lease.",
             conflicts: true,
             output: stdout + "\n" + stderr,
           };
