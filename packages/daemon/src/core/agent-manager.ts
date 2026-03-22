@@ -1,6 +1,7 @@
 import type { AgentConfig, AgentState, AgentRole, AgentPermissions, AgentCost, MessagingMode, WorktreeMode } from "@kora/shared";
 import { AutonomyLevel, DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS, DEFAULT_MAX_RESTARTS, PERSONAS_DIR, GRACEFUL_SHUTDOWN_TIMEOUT_MS, getRuntimeTmuxPrefix, MCP_SERVER_NAME, SPAWN_TIMEOUT_MS, MAX_AGENTS_PER_SESSION } from "@kora/shared";
 import type { CLIProvider } from "@kora/shared";
+import { detectAgentSkills } from "@kora/shared";
 import type { IPtyBackend } from "./pty-backend.js";
 import { AgentHealthMonitor } from "./agent-health.js";
 import { WorktreeManager } from "./worktree.js";
@@ -449,6 +450,7 @@ export class AgentManager extends EventEmitter {
         maxRestarts: DEFAULT_MAX_RESTARTS,
         extraCliArgs: options.extraCliArgs,
         envVars: options.envVars,
+        skills: detectAgentSkills({ persona: options.persona, name: options.name, role: options.role }),
       },
       status: "running",
       activity: "working",

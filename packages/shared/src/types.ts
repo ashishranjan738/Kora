@@ -75,6 +75,7 @@ export interface AgentConfig {
   maxRestarts: number;
   budgetLimit?: number; // Max cost in dollars, undefined = no limit
   channels?: string[];  // Message channels the agent is subscribed to (e.g. #all, #frontend)
+  skills?: string[];    // Capability tags (e.g. ["frontend", "backend", "testing"]) — auto-detected from persona/name
 }
 
 export type AgentRole = "master" | "worker";
