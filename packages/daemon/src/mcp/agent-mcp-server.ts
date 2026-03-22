@@ -1659,12 +1659,31 @@ async function handleToolCall(
         // Step 4: Force-push (with lease to prevent accidental overwrites)
         const { stdout: pushOut, stderr: pushErr } = await execFileAsync("git", ["push", "origin", "HEAD", "--force-with-lease"], { cwd: workDir });
 
+        // Auto-transition: move agent's in-progress tasks to "review" after successful PR
+        let autoTransitioned: string[] = [];
+        try {
+          const tasksResp = (await apiCall("GET",
+            `/api/v1/sessions/${SESSION_ID}/tasks?assignedTo=${AGENT_ID}&status=in-progress&summary=true`
+          )) as any;
+          for (const task of (tasksResp.tasks || [])) {
+            try {
+              await apiCall("PUT", `/api/v1/sessions/${SESSION_ID}/tasks/${task.id}`, {
+                status: "review",
+              });
+              autoTransitioned.push(task.title || task.id);
+            } catch { /* non-fatal — task may not allow this transition */ }
+          }
+        } catch { /* non-fatal */ }
+
         return {
           success: true,
           commitsBehind,
           message: commitsBehind > 0
             ? `Rebased successfully! Your branch was ${commitsBehind} commit(s) behind main.`
             : "Already up to date with main. Branch pushed.",
+          autoTransitioned: autoTransitioned.length > 0
+            ? `Moved ${autoTransitioned.length} task(s) to review: ${autoTransitioned.join(", ")}`
+            : undefined,
           output: {
             fetch: fetchOut + fetchErr,
             rebase: rebaseOut + rebaseErr,

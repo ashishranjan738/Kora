@@ -1340,11 +1340,20 @@ export class Orchestrator extends EventEmitter {
       const fs = await import("fs/promises");
       const stats = await fs.stat(logPath);
       if (stats.size > maxSizeBytes) {
-        // Keep only the last 1MB of the file
-        const content = await fs.readFile(logPath, "utf-8");
-        const truncated = content.slice(-1024 * 1024); // last 1MB
-        await fs.writeFile(logPath, truncated, "utf-8");
-        logger.info(`[orchestrator] Rotated log file: ${logPath} (was ${Math.round(stats.size / 1024 / 1024)}MB)`);
+        // Keep only the last 1MB — read from offset instead of loading entire file
+        const keepBytes = 1024 * 1024;
+        const readOffset = stats.size - keepBytes;
+        const fh = await fs.open(logPath, "r");
+        try {
+          const buf = Buffer.alloc(keepBytes);
+          await fh.read(buf, 0, keepBytes, readOffset);
+          await fh.close();
+          await fs.writeFile(logPath, buf);
+          logger.info(`[orchestrator] Rotated log file: ${logPath} (was ${Math.round(stats.size / 1024 / 1024)}MB)`);
+        } catch (readErr) {
+          await fh.close().catch(() => {});
+          throw readErr;
+        }
       }
     } catch (err) {
       // Catch ALL errors — never let log rotation crash the daemon

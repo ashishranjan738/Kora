@@ -175,8 +175,20 @@ export function createWebhookRouter(deps: WebhookDeps): Router {
       }
 
       // Fire and forget — agents spawn in background
-      executor.run(payload.task).catch((err) => {
+      executor.run(payload.task).catch(async (err) => {
         logger.error({ err }, `[webhook] Playbook execution failed for session ${config.id}`);
+        // Clean up failed session to avoid orphans
+        try {
+          const failedOrch = orchestrators.get(config.id);
+          if (failedOrch) {
+            await failedOrch.stop();
+            orchestrators.delete(config.id);
+          }
+          await sessionManager.stopSession(config.id);
+          logger.info(`[webhook] Cleaned up failed session ${config.id}`);
+        } catch (cleanupErr) {
+          logger.warn({ err: cleanupErr }, `[webhook] Failed to clean up session ${config.id}`);
+        }
       });
 
       // Log the trigger event

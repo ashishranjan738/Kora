@@ -16,7 +16,7 @@ import { logger } from "./logger.js";
 export class AutoRelay {
   private intervals = new Map<string, NodeJS.Timeout>();
   private lastOutput = new Map<string, string>();
-  private processedMessages = new Set<string>();
+  private processedMessages = new Map<string, number>(); // key → timestamp
   private relayCountWindow = new Map<string, { count: number; windowStart: number }>();
 
   private _messageQueue: MessageQueue | null = null;
@@ -88,11 +88,21 @@ export class AutoRelay {
     // Create a unique key to avoid processing the same message twice
     const msgKey = `${fromAgent.id}:${targetName}:${message.substring(0, 50)}`;
     if (this.processedMessages.has(msgKey)) return;
-    this.processedMessages.add(msgKey);
-    // Clean up old keys to prevent memory leak
+    this.processedMessages.set(msgKey, Date.now());
+    // LRU eviction: remove entries older than 5 minutes when map exceeds 1000
     if (this.processedMessages.size > 1000) {
-      const keys = [...this.processedMessages];
-      for (let i = 0; i < 500; i++) this.processedMessages.delete(keys[i]);
+      const cutoff = Date.now() - 5 * 60 * 1000;
+      for (const [key, ts] of this.processedMessages) {
+        if (ts < cutoff) this.processedMessages.delete(key);
+      }
+      // If still over limit after time-based eviction, remove oldest
+      if (this.processedMessages.size > 1000) {
+        let oldest = Infinity, oldestKey = "";
+        for (const [key, ts] of this.processedMessages) {
+          if (ts < oldest) { oldest = ts; oldestKey = key; }
+        }
+        if (oldestKey) this.processedMessages.delete(oldestKey);
+      }
     }
 
     // Find target agent(s)
