@@ -129,6 +129,17 @@ function mapScheduleRow(r: any): ScheduleConfig {
 
 // ─── Database CRUD (uses raw db access since schedules are global, not per-session) ───
 
+/**
+ * Validate sessionConfig has required fields for session creation.
+ * Catches malformed configs at schedule creation time instead of at cron fire time.
+ */
+export function validateSessionConfig(config: Record<string, unknown>): string | null {
+  if (!config || typeof config !== "object") return "sessionConfig must be an object";
+  if (!config.projectPath || typeof config.projectPath !== "string") return "sessionConfig.projectPath is required";
+  if (!config.name || typeof config.name !== "string") return "sessionConfig.name is required";
+  return null;
+}
+
 export function createSchedule(db: AppDatabase, schedule: {
   id: string;
   name: string;
@@ -137,6 +148,10 @@ export function createSchedule(db: AppDatabase, schedule: {
   playbookId?: string;
   sessionConfig: Record<string, unknown>;
 }): ScheduleConfig {
+  // Validate sessionConfig shape before persisting
+  const configError = validateSessionConfig(schedule.sessionConfig);
+  if (configError) throw new Error(`Invalid schedule: ${configError}`);
+
   const now = new Date().toISOString();
   const nextRun = computeNextRun(schedule.cronExpression, schedule.timezone).toISOString();
 

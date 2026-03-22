@@ -73,6 +73,21 @@ export function createWebhookRouter(deps: WebhookDeps): Router {
 
   router.post("/webhooks/trigger", async (req: Request, res: Response) => {
     try {
+      // Optional HMAC-SHA256 verification if X-Webhook-Secret is configured
+      // External callers (GitHub, Slack) can authenticate via HMAC instead of bearer token
+      const signature = req.headers["x-webhook-signature"] || req.headers["x-hub-signature-256"];
+      const webhookSecret = process.env.KORA_WEBHOOK_SECRET;
+      if (webhookSecret && signature) {
+        const { createHmac, timingSafeEqual } = await import("crypto");
+        const body = JSON.stringify(req.body);
+        const expected = "sha256=" + createHmac("sha256", webhookSecret).update(body).digest("hex");
+        if (typeof signature !== "string" || signature.length !== expected.length ||
+            !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+          res.status(401).json({ error: "Invalid webhook signature" });
+          return;
+        }
+      }
+
       // Detect source from headers
       const payload = parseWebhookPayload(req);
 
@@ -82,6 +97,26 @@ export function createWebhookRouter(deps: WebhookDeps): Router {
       }
       if (!payload.projectPath) {
         res.status(400).json({ error: "projectPath is required" });
+        return;
+      }
+
+      // Validate projectPath: must be absolute, exist, be a directory, and not a system path
+      const path = await import("path");
+      const fs = await import("fs");
+      const resolvedProject = path.resolve(payload.projectPath);
+      const systemPaths = ["/etc", "/usr", "/bin", "/sbin", "/var", "/tmp", "/dev", "/proc", "/sys"];
+      if (systemPaths.some(sp => resolvedProject === sp || resolvedProject.startsWith(sp + "/"))) {
+        res.status(403).json({ error: "projectPath cannot be a system directory" });
+        return;
+      }
+      try {
+        const stat = fs.statSync(resolvedProject);
+        if (!stat.isDirectory()) {
+          res.status(400).json({ error: "projectPath must be a directory" });
+          return;
+        }
+      } catch {
+        res.status(404).json({ error: "projectPath does not exist" });
         return;
       }
 
