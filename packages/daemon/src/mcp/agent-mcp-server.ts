@@ -436,7 +436,11 @@ const TOOL_DEFINITIONS = [
         },
         summary: {
           type: "boolean",
-          description: "If true (default), return compact fields only (id, title, status, assignedTo, priority, labels, dueDate). Set false for full details.",
+          description: "If true (default), return compact fields only (id, title, status, priority, assignedTo). Set false for full details.",
+        },
+        maxTasks: {
+          type: "number",
+          description: "Maximum tasks to return. Default: 10 for workers, 25 for masters. Use -1 for unlimited.",
         },
       },
     },
@@ -1075,20 +1079,49 @@ async function handleToolCall(
         }
       }
 
-      // In summary mode (default), return ultra-compact fields to save context tokens
+      // Sort by priority (P0 first) before any capping
+      const priorityOrder: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
+      tasks.sort((a, b) => {
+        const pa = priorityOrder[(a as any).priority] ?? 2;
+        const pb = priorityOrder[(b as any).priority] ?? 2;
+        return pa - pb;
+      });
+
+      // Cap response size: default 10 for workers, 25 for masters
+      const maxTasksRaw = toolArgs.maxTasks != null ? Number(toolArgs.maxTasks) : (AGENT_ROLE === "master" ? 25 : 10);
+      const maxTasks = isNaN(maxTasksRaw) ? 10 : maxTasksRaw;
+      const totalMatching = tasks.length;
+      const truncated = maxTasks > 0 && tasks.length > maxTasks;
+      const cappedTasks = maxTasks > 0 ? tasks.slice(0, maxTasks) : tasks;
+
+      // In summary mode (default), return compact fields with priority to save context tokens
       if (summaryArg === "true") {
-        return {
-          tasks: tasks.map((t) => ({
+        const result: any = {
+          tasks: cappedTasks.map((t) => ({
             id: t.id,
             title: t.title,
             status: t.status,
+            priority: (t as any).priority || "P2",
             ...(t.assignedTo ? { assignedTo: t.assignedTo } : {}),
             ...((t as any).blocked ? { blocked: true, blockedReason: (t as any).blockedReason } : {}),
           })),
         };
+        if (truncated) {
+          result.totalMatching = totalMatching;
+          result.truncated = true;
+          result.hint = `Showing ${cappedTasks.length} of ${totalMatching} tasks (sorted by priority). Use get_task(id) for details.`;
+        }
+        return result;
       }
 
-      return response;
+      // Full mode — still cap and add truncation info
+      const fullResult: any = { tasks: cappedTasks };
+      if (truncated) {
+        fullResult.totalMatching = totalMatching;
+        fullResult.truncated = true;
+        fullResult.hint = `Showing ${cappedTasks.length} of ${totalMatching} tasks. Use get_task(id) for details.`;
+      }
+      return fullResult;
     }
 
     case "get_task": {
