@@ -2045,12 +2045,18 @@ export function createApiRouter(deps: {
         }
       }
 
+      // Use the session's first workflow state as default status (e.g. "backlog" for Full Pipeline).
+      // Falls back to "pending" for sessions without custom workflow states.
+      const session = sessionManager.getSession(sid);
+      const firstState = session?.config.workflowStates?.[0]?.id;
+      const defaultStatus = firstState || "pending";
+
       const task = {
         id: randomUUID().slice(0, 8),
         sessionId: sid,
         title: body.title,
         description: body.description || "",
-        status: "pending",
+        status: (body as any).status || defaultStatus,
         assignedTo: body.assignedTo || undefined,
         createdBy: "user",
         dependencies: body.dependencies || [],
