@@ -8,6 +8,7 @@ import { WorkflowStateEditor } from "../components/WorkflowStateEditor";
 import { autoGenerateTransitions, getPipelineTemplate } from "@kora/shared";
 import { PersonaLibrary } from "../components/PersonaLibrary";
 import { showError } from "../utils/notifications";
+import { SessionHealthBadge } from "../components/SessionHealthBadge";
 
 interface PlaybookAgent {
   name: string;
@@ -673,6 +674,18 @@ export function AllSessions() {
                     ${typeof s.cost === "number" ? s.cost.toFixed(2) : "0.00"}
                   </span>
                 </div>
+
+                {/* Session health: task counts + last activity */}
+                {s.status === "active" && (
+                  <div style={{ marginBottom: 6 }}>
+                    <SessionHealthBadge
+                      sessionId={s.id}
+                      activeAgentCount={s.activeAgentCount ?? 0}
+                      crashedAgentCount={s.crashedAgentCount ?? 0}
+                      totalAgentCount={s.agentCount ?? 0}
+                    />
+                  </div>
+                )}
 
                 {/* Agent names */}
                 {s.agentSummaries && (s.agentSummaries as any[]).length > 0 && (
