@@ -3,6 +3,7 @@ import Editor from "@monaco-editor/react";
 import { useApi } from "../hooks/useApi";
 import { useThemeStore } from "../stores/themeStore";
 import { showError } from "../utils/notifications";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface EditorTileProps {
   sessionId: string;
@@ -31,6 +32,9 @@ export function EditorTile({ sessionId }: EditorTileProps) {
   const [saving, setSaving] = useState(false);
   const openTabsRef = useRef(openTabs);
   const activeTabPathRef = useRef(activeTabPath);
+
+  // Unsaved changes close confirmation state
+  const [pendingCloseTab, setPendingCloseTab] = useState<string | null>(null);
 
   // Quick-open state
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
@@ -66,8 +70,8 @@ export function EditorTile({ sessionId }: EditorTileProps) {
           if (item.type === "file") {
             files.push(item.path);
           } else if (item.type === "directory") {
-            // Skip common non-code directories
-            const skip = ["node_modules", ".git", "dist", "build", ".next", "target", "__pycache__", "coverage", ".vscode", ".idea"];
+            // Skip common non-code directories and Kora runtime dirs
+            const skip = ["node_modules", ".git", "dist", "build", ".next", "target", "__pycache__", "coverage", ".vscode", ".idea", ".kora", ".kora-dev"];
             if (!skip.includes(item.name)) {
               await walk(item.path);
             }
@@ -112,14 +116,22 @@ export function EditorTile({ sessionId }: EditorTileProps) {
     }
   }
 
-  // Close a tab
+  // Close a tab — prompts to save if modified
   function closeTab(tabPath: string) {
     const tab = openTabs.find(t => t.path === tabPath);
     if (tab?.modified) {
-      if (!confirm(`Save changes to ${tab.path.split("/").pop()}?`)) {
-        // User declined to save, close anyway
-      } else {
-        // Save before closing
+      // Show confirmation dialog instead of blocking window.confirm()
+      setPendingCloseTab(tabPath);
+      return;
+    }
+    executeCloseTab(tabPath);
+  }
+
+  // Actually close the tab (after optional save)
+  function executeCloseTab(tabPath: string, saveFirst = false) {
+    if (saveFirst) {
+      const tab = openTabs.find(t => t.path === tabPath);
+      if (tab) {
         api.writeFile(sessionId, tab.path, tab.content).catch(() => {});
       }
     }
@@ -133,6 +145,7 @@ export function EditorTile({ sessionId }: EditorTileProps) {
       }
       return updated;
     });
+    setPendingCloseTab(null);
   }
 
   // Save the active tab
@@ -239,8 +252,11 @@ export function EditorTile({ sessionId }: EditorTileProps) {
           </div>
         )}
 
-        {/* File list */}
-        {files.map(item => (
+        {/* File list — hide system/runtime files */}
+        {files.filter(item => {
+          const hidden = [".DS_Store", ".kora", ".kora-dev", "Thumbs.db", ".git"];
+          return !hidden.includes(item.name);
+        }).map(item => (
           <div
             key={item.path}
             onClick={() => item.type === "directory" ? navigateDir(item.path) : handleOpenFile(item.path)}
@@ -477,6 +493,22 @@ export function EditorTile({ sessionId }: EditorTileProps) {
           </div>
         )}
       </div>
+
+      {/* Unsaved changes confirmation dialog */}
+      <ConfirmDialog
+        opened={!!pendingCloseTab}
+        onClose={() => {
+          if (pendingCloseTab) executeCloseTab(pendingCloseTab, false);
+        }}
+        onConfirm={() => {
+          if (pendingCloseTab) executeCloseTab(pendingCloseTab, true);
+        }}
+        title="Unsaved Changes"
+        message={`Save changes to ${pendingCloseTab ? (openTabs.find(t => t.path === pendingCloseTab)?.path.split("/").pop() || "this file") : "this file"} before closing?`}
+        confirmLabel="Save & Close"
+        confirmColor="blue"
+        cancelLabel="Discard"
+      />
     </div>
   );
 }

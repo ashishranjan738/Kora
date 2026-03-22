@@ -141,13 +141,15 @@ export function SessionMetricsBar({
         {bottleneck && bottleneck.score >= 40 && (
           <>
             <span style={sepStyle}>{SEPARATOR}</span>
-            <Text
-              size="xs"
-              style={{ ...sectionStyle(true), color: bottleneckColor(bottleneck.score) }}
-              onClick={() => onNavigateTab("workload")}
-            >
-              {"\u26A0"} {bottleneck.agentName}
-            </Text>
+            <Tooltip label={`Bottleneck: ${bottleneck.reason} (severity ${bottleneck.score}/100)`}>
+              <Text
+                size="xs"
+                style={{ ...sectionStyle(true), color: bottleneckColor(bottleneck.score) }}
+                onClick={() => onNavigateTab("workload")}
+              >
+                {"\u26A0"} {bottleneck.agentName}
+              </Text>
+            </Tooltip>
           </>
         )}
       </div>
@@ -199,14 +201,14 @@ export function SessionMetricsBar({
       {bottleneck && bottleneck.score >= 40 && (
         <>
           <span style={sepStyle}>{SEPARATOR}</span>
-          <Tooltip label={bottleneck.reason}>
+          <Tooltip label={`Bottleneck: ${bottleneck.reason} (severity ${bottleneck.score}/100)`}>
             <Text
               size="xs"
               style={{ ...sectionStyle(true), color: bottleneckColor(bottleneck.score) }}
               onClick={() => onNavigateTab("workload")}
             >
               {"\u26A0"} {bottleneck.agentName}
-              <span style={{ fontWeight: 600 }}>({bottleneck.score})</span>
+              <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> bottleneck</span>
             </Text>
           </Tooltip>
         </>
