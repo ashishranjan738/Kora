@@ -1421,6 +1421,18 @@ async function handleToolCall(
     }
 
     case "spawn_agent": {
+      // Enforce per-agent sub-agent limit before spawning
+      try {
+        const agentsResp = (await apiCall("GET", `/api/v1/sessions/${SESSION_ID}/agents`)) as any;
+        const allAgents = agentsResp?.agents || [];
+        const myChildren = allAgents.filter((a: any) => a.config?.spawnedBy === AGENT_ID);
+        const myAgent = allAgents.find((a: any) => a.id === AGENT_ID);
+        const maxSub = myAgent?.config?.permissions?.maxSubAgents ?? 5;
+        if (myChildren.length >= maxSub) {
+          return { success: false, error: `Max sub-agents (${maxSub}) reached. You have ${myChildren.length} active sub-agents.` };
+        }
+      } catch { /* non-fatal — proceed with spawn, session limit still applies */ }
+
       // Resolve persona: explicit text takes priority, then personaId from library
       let persona = toolArgs.persona || "";
       if (!persona && toolArgs.personaId) {

@@ -71,7 +71,11 @@ export class NotificationService {
  * Escape a string for safe inclusion in an AppleScript double-quoted string.
  */
 function escapeAppleScript(str: string): string {
-  return str.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return str
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/[\n\r]/g, " ")      // Strip newlines — break AppleScript string literals
+    .replace(/[\x00-\x1F\x7F]/g, ""); // Strip all other control characters
 }
 
 /**

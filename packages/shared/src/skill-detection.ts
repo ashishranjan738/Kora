@@ -88,13 +88,21 @@ export function detectAgentSkills(opts: {
   // If explicit skills provided, use them
   if (opts.explicit && opts.explicit.length > 0) return opts.explicit;
 
-  // Try persona detection
+  // Try persona detection — but if persona matches too many skills (4+),
+  // it's likely scanning shared context (project rules, protocol, etc.)
+  // rather than role-specific content. Fall through to name-based detection.
   const personaSkills = detectSkillsFromPersona(opts.persona || "");
-  if (personaSkills.length > 0) return personaSkills;
+  if (personaSkills.length > 0 && personaSkills.length < 4) return personaSkills;
 
   // Try name inference
   const nameSkills = detectSkillsFromName(opts.name || "");
   if (nameSkills.length > 0) return nameSkills;
+
+  // If persona had results but was too broad (4+), merge with name for specificity
+  if (personaSkills.length >= 4) {
+    // Persona was too generic — return name skills if available, else top 2 persona skills
+    return personaSkills.slice(0, 2);
+  }
 
   // Fall back to role defaults
   return ROLE_DEFAULTS[opts.role || "worker"] || ["backend", "frontend"];

@@ -47,9 +47,15 @@ export class AutoRelay {
         if (output === lastOut) return;
         this.lastOutput.set(agent.id, output);
 
-        // Find new lines (diff from last capture)
-        const lastLines = new Set(lastOut.split("\n"));
-        const newLines = output.split("\n").filter(line => !lastLines.has(line));
+        // Find new lines using positional diff (not Set-based, which misses duplicates)
+        const lastArr = lastOut.split("\n");
+        const newArr = output.split("\n");
+        // Find where the new output diverges from the old — skip shared prefix
+        let commonPrefix = 0;
+        while (commonPrefix < lastArr.length && commonPrefix < newArr.length && lastArr[commonPrefix] === newArr[commonPrefix]) {
+          commonPrefix++;
+        }
+        const newLines = newArr.slice(commonPrefix);
 
         // Scan for @mention patterns in new lines
         for (const line of newLines) {
@@ -98,12 +104,12 @@ export class AutoRelay {
         await this.deliverRelay(fromAgent, target, message);
       }
     } else {
-      // Find by name (case-insensitive, partial match)
-      const target = allAgents.find(a => {
-        const name = a.config.name.toLowerCase();
-        const search = targetName.toLowerCase();
-        return name === search || name.includes(search) || a.id.includes(search);
-      });
+      // Find by name (case-insensitive) — prioritize exact match over partial
+      const search = targetName.toLowerCase();
+      const target =
+        allAgents.find(a => a.config.name.toLowerCase() === search) ||    // exact name
+        allAgents.find(a => a.id.toLowerCase() === search) ||              // exact ID
+        allAgents.find(a => a.config.name.toLowerCase().includes(search)); // partial name (fallback)
 
       if (target) {
         await this.deliverRelay(fromAgent, target, message);
