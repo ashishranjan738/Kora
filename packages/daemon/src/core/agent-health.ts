@@ -26,7 +26,11 @@ export function stripAnsi(text: string): string {
   if (!text.includes('\u001B') && !text.includes('\u009B')) {
     return text;
   }
-  return text.replace(ANSI_REGEX, '');
+  // Replace cursor-forward (ESC[nC) with n spaces BEFORE stripping other ANSI.
+  // Claude Code uses ESC[1C instead of literal spaces — without this,
+  // stripAnsi collapses all spacing, breaking spinner parsing and activity detection.
+  let result = text.replace(/\x1b\[(\d*)C/g, (_, n) => ' '.repeat(parseInt(n || '1', 10)));
+  return result.replace(ANSI_REGEX, '');
 }
 
 /** Shell prompt patterns that indicate the agent is idle at a command prompt */
