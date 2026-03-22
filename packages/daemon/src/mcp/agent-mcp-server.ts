@@ -1684,6 +1684,7 @@ async function handleToolCall(
           autoTransitioned: autoTransitioned.length > 0
             ? `Moved ${autoTransitioned.length} task(s) to review: ${autoTransitioned.join(", ")}`
             : undefined,
+          reminder: "MANDATORY: Update your task status now. Call update_task(taskId, status: 'done') after PR is merged. Never go idle with a completed task still in-progress.",
           output: {
             fetch: fetchOut + fetchErr,
             rebase: rebaseOut + rebaseErr,
