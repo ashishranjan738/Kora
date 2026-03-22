@@ -161,7 +161,7 @@ describe("autoGenerateTransitions", () => {
     ];
     const result = autoGenerateTransitions(states);
     expect(result[0].transitions).toEqual(["in-progress"]); // first: forward only
-    expect(result[1].transitions).toEqual(["review"]); // no backward to not-started
+    expect(result[1].transitions).toEqual(["review", "pending"]); // forward + backward
     expect(result[2].transitions).toEqual(["done", "in-progress"]); // forward + back to active
     expect(result[3].transitions).toEqual([]); // terminal
   });
@@ -174,7 +174,7 @@ describe("autoGenerateTransitions", () => {
     ];
     const result = autoGenerateTransitions(states);
     expect(result[0].transitions).toEqual(["b", "c"]); // b is skippable
-    expect(result[1].transitions).toEqual(["c"]); // no backward to not-started
+    expect(result[1].transitions).toEqual(["c", "a"]); // forward + backward
     expect(result[2].transitions).toEqual([]);
   });
 
@@ -186,7 +186,7 @@ describe("autoGenerateTransitions", () => {
     ];
     const result = autoGenerateTransitions(states);
     expect(result[0].transitions).toEqual(["c"]); // preserved
-    expect(result[1].transitions).toEqual(["c"]); // auto-generated
+    expect(result[1].transitions).toEqual(["c", "a"]); // auto-generated: forward + backward
   });
 
   it("handles empty and single state", () => {
