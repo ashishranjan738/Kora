@@ -980,17 +980,51 @@ async function handleToolCall(
         `/api/v1/sessions/${SESSION_ID}/agents`,
       )) as AgentsResponse;
 
+      // Fetch tasks to compute currentTask and availableForWork
+      let allTasks: Array<{ id: string; title: string; status: string; assignedTo?: string }> = [];
+      try {
+        const tasksResp = (await apiCall("GET", `/api/v1/sessions/${SESSION_ID}/tasks?status=active&summary=true`)) as any;
+        allTasks = tasksResp.tasks || [];
+      } catch { /* non-fatal */ }
+
       return {
-        agents: (agents.agents || []).map((a) => ({
-          name: a.config?.name,
-          id: a.id,
-          role: a.config?.role,
-          status: a.status,
-          activity: (a as any).activity || a.status,
-          provider: a.config?.cliProvider,
-          model: a.config?.model,
-          isMe: a.id === AGENT_ID,
-        })),
+        agents: (agents.agents || []).map((a) => {
+          const agentState = a as any;
+          // Find in-progress task assigned to this agent
+          const inProgressTask = allTasks.find(t =>
+            (t.assignedTo === a.id || t.assignedTo === a.config?.name) && t.status === "in-progress"
+          );
+          const activeTasks = allTasks.filter(t =>
+            t.assignedTo === a.id || t.assignedTo === a.config?.name
+          );
+          const idleSinceMs = agentState.idleSince ? new Date(agentState.idleSince).getTime() : 0;
+          const idleDurationMs = idleSinceMs > 0 ? Date.now() - idleSinceMs : 0;
+
+          return {
+            name: a.config?.name,
+            id: a.id,
+            role: a.config?.role,
+            status: a.status,
+            activity: agentState.activity || a.status,
+            provider: a.config?.cliProvider,
+            model: a.config?.model,
+            isMe: a.id === AGENT_ID,
+            // Enriched fields
+            idleSince: agentState.idleSince || null,
+            lastActivityAt: agentState.lastActivityAt || null,
+            currentTask: inProgressTask ? inProgressTask.title : null,
+            currentTaskId: inProgressTask ? inProgressTask.id : null,
+            activeTasks: activeTasks.length,
+            pendingMessages: agentState.unreadMessages || 0,
+            skills: (a.config as any)?.skills || [],
+            availableForWork: (
+              agentState.activity === "idle" &&
+              !inProgressTask &&
+              a.config?.role !== "master" &&
+              idleDurationMs > 0
+            ),
+          };
+        }),
       };
     }
 
