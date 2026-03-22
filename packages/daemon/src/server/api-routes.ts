@@ -435,6 +435,11 @@ export function createApiRouter(deps: {
       // Stop orchestrator (stops agents, message bus, control plane, kills tmux sessions)
       const orch = orchestrators.get(sid);
       if (orch) {
+        // Log to SQLite BEFORE stopping (DB closes on stop)
+        try {
+          orch.eventLog.log({ sessionId: sid, type: "session-stopped" as any, data: {} });
+        } catch { /* non-fatal */ }
+
         // Run orphan cleanup first (catches stale sessions from crashes)
         await orch.cleanup();
         await orch.stop();
@@ -467,12 +472,6 @@ export function createApiRouter(deps: {
 
       // Broadcast session-stopped event
       broadcastEvent({ event: "session-stopped", sessionId: sid });
-
-      // Log to SQLite for timeline
-      const orch_ss = orchestrators.get(sid);
-      if (orch_ss) {
-        orch_ss.eventLog.log({ sessionId: sid, type: "session-stopped" as any, data: {} });
-      }
 
       await sessionManager.stopSession(sid);
       res.status(204).send();
@@ -1029,12 +1028,9 @@ export function createApiRouter(deps: {
       }
       orch.messageQueue.flushQueues(); // Single delivery pass for all agents
 
-      // Log broadcast event to timeline
-      const broadcastSession = sessionManager.getSession(sid);
-      if (broadcastSession) {
-        const { EventLog } = await import("../core/event-log.js");
-        const eventLog = new EventLog(broadcastSession.runtimeDir);
-        await eventLog.log({
+      // Log broadcast event to timeline (reuse orchestrator's event log to avoid duplicate DB connections)
+      if (orch) {
+        await orch.eventLog.log({
           sessionId: sid,
           type: "message-sent" as any,
           data: {
@@ -2064,8 +2060,12 @@ export function createApiRouter(deps: {
         }
       }
 
-      // Assign task to agent
-      db.updateTask(bestTask.id, { assignedTo: String(aid), status: "assigned" });
+      // Assign task to agent — use session's second workflow state (e.g. "in-progress")
+      // instead of hardcoded "assigned" which isn't a valid workflow state
+      const session_rt = sessionManager.getSession(String(sid));
+      const ws_rt = session_rt?.config.workflowStates || DEFAULT_WORKFLOW_STATES;
+      const assignedStatus = ws_rt.length > 1 ? ws_rt[1].id : "in-progress";
+      db.updateTask(bestTask.id, { assignedTo: String(aid), status: assignedStatus });
 
       // Fetch updated task
       const updatedTask = db.getTask(bestTask.id);
@@ -2073,7 +2073,7 @@ export function createApiRouter(deps: {
       // Update agent activity
       agent.activity = "working";
       agent.lastActivityAt = new Date().toISOString();
-      delete agent.idleSince;
+      agent.idleSince = undefined;
 
       res.json({
         success: true,
@@ -4372,12 +4372,9 @@ export function createApiRouter(deps: {
       }
       orch.messageQueue.flushQueues();
 
-      // Log event
-      const session = sessionManager.getSession(sid);
-      if (session) {
-        const { EventLog } = await import("../core/event-log.js");
-        const eventLog = new EventLog(session.runtimeDir);
-        await eventLog.log({
+      // Log event (reuse orchestrator's event log to avoid duplicate DB connections)
+      if (orch) {
+        await orch.eventLog.log({
           sessionId: sid,
           type: "message-sent" as any,
           data: {
