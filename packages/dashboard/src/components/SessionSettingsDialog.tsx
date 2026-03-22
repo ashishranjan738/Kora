@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useApi } from "../hooks/useApi";
 import {
   Modal,
@@ -67,6 +67,8 @@ export function SessionSettingsDialog({
   const [defaultModel, setDefaultModel] = useState("");
   const [worktreeMode, setWorktreeMode] = useState<string>("");
   const [autoAssign, setAutoAssign] = useState(true);
+  const [budgetLimit, setBudgetLimit] = useState<string>("");
+  const budgetSaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // TODO Sprint 5: Wire to session settings API, apply to new agent spawns
   const [defaultAutonomyLevel, setDefaultAutonomyLevel] = useState<AutonomyLevel>(
     AutonomyLevel.AutoRead
@@ -93,6 +95,9 @@ export function SessionSettingsDialog({
           }
           if (sessionData?.autoAssign !== undefined) {
             setAutoAssign(sessionData.autoAssign);
+          }
+          if (sessionData?.budgetLimit) {
+            setBudgetLimit(String(sessionData.budgetLimit));
           }
         }
       } catch {
@@ -542,18 +547,24 @@ export function SessionSettingsDialog({
                   color: "var(--text-primary)",
                 },
               }}
-              defaultValue=""
-              onChange={async (e) => {
-                const val = parseFloat(e.currentTarget.value);
-                if (!isNaN(val) && val > 0) {
-                  try {
-                    await fetch(`/api/v1/sessions/${sessionId}`, {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json", Authorization: `Bearer ${(window as any).__KORA_TOKEN__ || ""}` },
-                      body: JSON.stringify({ budgetLimit: val }),
-                    });
-                  } catch {}
-                }
+              value={budgetLimit}
+              onChange={(e) => {
+                const raw = e.currentTarget.value;
+                setBudgetLimit(raw);
+                // Debounce save — 800ms after last keystroke
+                if (budgetSaveTimer.current) clearTimeout(budgetSaveTimer.current);
+                budgetSaveTimer.current = setTimeout(async () => {
+                  const val = parseFloat(raw);
+                  if (!isNaN(val) && val > 0) {
+                    try {
+                      await fetch(`/api/v1/sessions/${sessionId}`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${(window as any).__KORA_TOKEN__ || ""}` },
+                        body: JSON.stringify({ budgetLimit: val }),
+                      });
+                    } catch {}
+                  }
+                }, 800);
               }}
             />
             <Text size="xs" c="dimmed">Leave empty for no limit</Text>
