@@ -403,6 +403,9 @@ function TaskColumn({
   onTaskClick,
   onTaskDelete,
   onAddClick,
+  colLabel,
+  colColor,
+  colCssColor,
 }: {
   column: string;
   tasks: Task[];
@@ -416,6 +419,9 @@ function TaskColumn({
   onTaskClick: (id: string) => void;
   onTaskDelete: (id: string) => void;
   onAddClick: () => void;
+  colLabel?: string;
+  colColor?: string;
+  colCssColor?: string;
 }) {
   const isDragOver = dragOverColumn === column;
 
@@ -446,7 +452,7 @@ function TaskColumn({
         mb="sm"
         pb="xs"
         style={{
-          borderBottom: `2px solid ${COLUMN_CSS_COLORS[column]}`,
+          borderBottom: `2px solid ${colCssColor || COLUMN_CSS_COLORS[column] || "var(--border-color)"}`,
         }}
       >
         <Group gap={8} align="center">
@@ -455,17 +461,17 @@ function TaskColumn({
               width: 10,
               height: 10,
               borderRadius: "50%",
-              background: COLUMN_CSS_COLORS[column],
+              background: colCssColor || COLUMN_CSS_COLORS[column] || "var(--accent-blue)",
               flexShrink: 0,
             }}
           />
           <Text fw={600} size="sm" c="var(--text-primary)">
-            {COLUMN_LABELS[column]}
+            {colLabel || COLUMN_LABELS[column] || column}
           </Text>
           <Badge
             size="sm"
             variant="light"
-            color={COLUMN_COLORS[column]}
+            color={colColor || COLUMN_COLORS[column] || "blue"}
           >
             {tasks.length}
           </Badge>
@@ -1190,6 +1196,9 @@ export function TaskBoard({ sessionId, initialTaskId, workflowStates }: TaskBoar
               onTaskClick={setExpandedTaskId}
               onTaskDelete={handleDeleteTask}
               onAddClick={() => setShowAddDialog(true)}
+              colLabel={effectiveLabels[col]}
+              colColor={effectiveColors[col]}
+              colCssColor={effectiveCssColors[col]}
             />
           ))}
         </SimpleGrid>
