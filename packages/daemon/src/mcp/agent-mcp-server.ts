@@ -918,6 +918,29 @@ async function handleToolCall(
       });
 
       recordSendMessage();
+
+      // If message looks like a completion, remind about stale tasks
+      const msgLower = (toolArgs.message || "").toLowerCase();
+      const isCompletion = ["task complete", "pr merged", "done", "shipped", "standing by", "ready for"].some(kw => msgLower.includes(kw));
+      if (isCompletion) {
+        try {
+          const tasksResp = (await apiCall("GET",
+            `/api/v1/sessions/${SESSION_ID}/tasks?assignedTo=${AGENT_ID}&status=active&summary=true`
+          )) as any;
+          const staleTasks = (tasksResp.tasks || []).filter((t: any) =>
+            t.status === "in-progress" || t.status === "review"
+          );
+          if (staleTasks.length > 0) {
+            return {
+              success: true,
+              sentTo: target.config?.name || target.id,
+              reminder: `You have ${staleTasks.length} task(s) still in-progress/review. Remember to update_task to mark them done.`,
+              staleTasks: staleTasks.map((t: any) => ({ id: t.id, title: t.title, status: t.status })),
+            };
+          }
+        } catch { /* non-fatal */ }
+      }
+
       return { success: true, sentTo: target.config?.name || target.id };
     }
 
@@ -1777,9 +1800,34 @@ async function handleToolCall(
 
     case "report_idle": {
       const reason = toolArgs.reason || "task completed";
+
+      // Check for stale in-progress tasks before allowing idle
+      let staleTasks: Array<{ id: string; title: string; status: string }> = [];
+      try {
+        const tasksResp = (await apiCall("GET",
+          `/api/v1/sessions/${SESSION_ID}/tasks?assignedTo=${AGENT_ID}&status=active&summary=true`
+        )) as any;
+        staleTasks = (tasksResp.tasks || []).filter((t: any) =>
+          t.status === "in-progress" || t.status === "review"
+        );
+      } catch { /* non-fatal */ }
+
       const result = await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}/report-idle`, {
         reason,
       }) as Record<string, unknown>;
+
+      if (staleTasks.length > 0) {
+        const taskList = staleTasks.map(t => `- "${t.title}" (${t.id}) — status: ${t.status}`).join("\n");
+        return {
+          success: true,
+          activity: "idle",
+          reason,
+          ...result,
+          warning: `You have ${staleTasks.length} task(s) still in-progress/review. Update their status before going idle:`,
+          staleTasks: staleTasks.map(t => ({ id: t.id, title: t.title, status: t.status })),
+        };
+      }
+
       return { success: true, activity: "idle", reason, ...result };
     }
 

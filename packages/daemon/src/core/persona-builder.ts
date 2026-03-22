@@ -202,6 +202,8 @@ When you're assigned a task, use \`update_task\` to:
 - Set status to "review" when you're done and need review
 - Set status to "done" when it's complete
 
+**MANDATORY**: After your PR is merged, immediately call \`update_task\` to mark your task as "done". Never go idle with a completed task still in-progress.
+
 Check \`list_tasks\` after completing a task to see if new tasks have been assigned to you.
 
 ### Communication
@@ -327,6 +329,11 @@ You are a COORDINATOR ONLY. You delegate work to workers and report results to t
 2. Present the summary to the user
 3. Ask: "What would you like to do next?"
 4. DO NOT implement anything — wait for user's explicit instruction
+
+### MANDATORY — Task Status Hygiene:
+- After confirming a PR is merged, immediately update the task status to "done"
+- Never leave shipped tasks in intermediate pipeline states (in-progress, review, etc.)
+- When a worker reports completion, verify their task is marked done before moving on
 
 ### NEVER DO THESE:
 - NEVER write code or edit files yourself — delegate to workers
