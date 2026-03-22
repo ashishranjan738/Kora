@@ -8,6 +8,7 @@ import {
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { useMediaQuery } from "@mantine/hooks";
+import { Virtuoso } from "react-virtuoso";
 import { MarkdownText } from "./MarkdownText";
 
 const handleDateChange = (setter: (v: string | null) => void) => (value: Date | string | null) => {
@@ -55,12 +56,79 @@ function TaskCard({ task, agents, isDragging, onDragStart, onClick, onDelete }: 
   </Card>);
 }
 
+const COLLAPSE_THRESHOLD = 20; // Auto-collapse columns with more than this many tasks
+
 function TaskColumn({ column, tasks, agents, draggedTaskId, dragOverColumn, onDragStart, onDragOver, onDragLeave, onDrop, onTaskClick, onTaskDelete, onAddClick, showAddButton, columnLabels, columnColors, columnCssColors }: { column: string; tasks: Task[]; agents: { id: string; name: string }[]; draggedTaskId: string | null; dragOverColumn: string | null; onDragStart: (id: string) => void; onDragOver: (e: React.DragEvent, col: string) => void; onDragLeave: () => void; onDrop: (e: React.DragEvent, col: string) => void; onTaskClick: (id: string) => void; onTaskDelete: (id: string) => void; onAddClick: () => void; showAddButton?: boolean; columnLabels: Record<string, string>; columnColors: Record<string, string>; columnCssColors: Record<string, string>; }) {
-  const isDO = dragOverColumn === column; const css = columnCssColors[column] || "var(--text-muted)"; const bc = columnColors[column] || "gray"; const lb = columnLabels[column] || column;
-  return (<Paper withBorder p="sm" style={{ backgroundColor: isDO ? "rgba(88,166,255,0.06)" : "var(--bg-secondary)", borderColor: isDO ? "var(--accent-blue)" : "var(--border-color)", borderStyle: isDO ? "dashed" : "solid", borderWidth: isDO ? 2 : 1, minHeight: 400, display: "flex", flexDirection: "column", transition: "border-color 0.15s, background-color 0.15s" }} onDragOver={(e) => onDragOver(e, column)} onDragLeave={onDragLeave} onDrop={(e) => onDrop(e, column)}>
-    <Group justify="space-between" align="center" mb="sm" pb="xs" style={{ borderBottom: `2px solid ${css}` }}><Group gap={8} align="center"><Box style={{ width: 10, height: 10, borderRadius: "50%", background: css, flexShrink: 0 }} /><Text fw={600} size="sm" c="var(--text-primary)">{lb}</Text><Badge size="sm" variant="light" color={bc}>{tasks.length}</Badge></Group>{showAddButton && <ActionIcon variant="subtle" size="sm" onClick={onAddClick} title="Add task" style={{ color: "var(--text-secondary)" }}><span style={{ fontSize: 16 }}>+</span></ActionIcon>}</Group>
-    <Stack gap="xs" style={{ flex: 1 }}>{tasks.map((t) => <TaskCard key={t.id} task={t} agents={agents} isDragging={draggedTaskId === t.id} onDragStart={() => onDragStart(t.id)} onClick={() => onTaskClick(t.id)} onDelete={() => onTaskDelete(t.id)} />)}{tasks.length === 0 && <Text size="xs" c="var(--text-muted)" ta="center" py="xl" fs="italic">No tasks</Text>}</Stack>
-  </Paper>);
+  const isDO = dragOverColumn === column;
+  const css = columnCssColors[column] || "var(--text-muted)";
+  const bc = columnColors[column] || "gray";
+  const lb = columnLabels[column] || column;
+  const [collapsed, setCollapsed] = useState(tasks.length > COLLAPSE_THRESHOLD);
+
+  // Auto-collapse when task count crosses threshold
+  useEffect(() => {
+    if (tasks.length > COLLAPSE_THRESHOLD) setCollapsed(true);
+  }, [tasks.length > COLLAPSE_THRESHOLD]);
+
+  return (
+    <Paper withBorder p="sm" style={{
+      backgroundColor: isDO ? "rgba(88,166,255,0.06)" : "var(--bg-secondary)",
+      borderColor: isDO ? "var(--accent-blue)" : "var(--border-color)",
+      borderStyle: isDO ? "dashed" : "solid", borderWidth: isDO ? 2 : 1,
+      minHeight: collapsed ? "auto" : 400, display: "flex", flexDirection: "column",
+      transition: "border-color 0.15s, background-color 0.15s",
+    }} onDragOver={(e) => onDragOver(e, column)} onDragLeave={onDragLeave} onDrop={(e) => onDrop(e, column)}>
+      {/* Column header */}
+      <Group justify="space-between" align="center" mb="sm" pb="xs" style={{ borderBottom: `2px solid ${css}` }}>
+        <Group gap={8} align="center" style={{ cursor: tasks.length > COLLAPSE_THRESHOLD ? "pointer" : undefined }} onClick={() => { if (tasks.length > COLLAPSE_THRESHOLD) setCollapsed(!collapsed); }}>
+          <Box style={{ width: 10, height: 10, borderRadius: "50%", background: css, flexShrink: 0 }} />
+          <Text fw={600} size="sm" c="var(--text-primary)">{lb}</Text>
+          <Badge size="sm" variant="light" color={bc}>{tasks.length}</Badge>
+          {tasks.length > COLLAPSE_THRESHOLD && (
+            <Text size="xs" c="var(--text-muted)" style={{ cursor: "pointer" }}>
+              {collapsed ? "\u25B6" : "\u25BC"}
+            </Text>
+          )}
+        </Group>
+        {showAddButton && <ActionIcon variant="subtle" size="sm" onClick={onAddClick} title="Add task" style={{ color: "var(--text-secondary)" }}><span style={{ fontSize: 16 }}>+</span></ActionIcon>}
+      </Group>
+
+      {/* Collapsed state: just show count */}
+      {collapsed ? (
+        <Box ta="center" py="md">
+          <Text size="sm" c="var(--text-muted)" style={{ cursor: "pointer" }} onClick={() => setCollapsed(false)}>
+            {tasks.length} tasks (click to expand)
+          </Text>
+        </Box>
+      ) : (
+        /* Expanded: use Virtuoso for large lists, Stack for small */
+        <div style={{ flex: 1, minHeight: 0 }}>
+          {tasks.length === 0 ? (
+            <Text size="xs" c="var(--text-muted)" ta="center" py="xl" fs="italic">No tasks</Text>
+          ) : tasks.length > 50 ? (
+            <Virtuoso
+              style={{ height: "100%", minHeight: 300 }}
+              totalCount={tasks.length}
+              itemContent={(index) => {
+                const t = tasks[index];
+                return (
+                  <div style={{ paddingBottom: 8 }}>
+                    <TaskCard key={t.id} task={t} agents={agents} isDragging={draggedTaskId === t.id}
+                      onDragStart={() => onDragStart(t.id)} onClick={() => onTaskClick(t.id)} onDelete={() => onTaskDelete(t.id)} />
+                  </div>
+                );
+              }}
+            />
+          ) : (
+            <Stack gap="xs">
+              {tasks.map((t) => <TaskCard key={t.id} task={t} agents={agents} isDragging={draggedTaskId === t.id}
+                onDragStart={() => onDragStart(t.id)} onClick={() => onTaskClick(t.id)} onDelete={() => onTaskDelete(t.id)} />)}
+            </Stack>
+          )}
+        </div>
+      )}
+    </Paper>
+  );
 }
 
 export function TaskBoard({ sessionId, initialTaskId, workflowStates }: TaskBoardProps) {
