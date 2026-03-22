@@ -221,6 +221,11 @@ export class AgentHealthMonitor extends EventEmitter {
     }
   }
 
+  /** Alias for recordMcpActivity — called from AgentManager */
+  recordMcpCall(agentId: string): void {
+    this.recordMcpActivity(agentId);
+  }
+
   /**
    * Check if agent has recent MCP activity (within IDLE_TIMEOUT_MS).
    */
