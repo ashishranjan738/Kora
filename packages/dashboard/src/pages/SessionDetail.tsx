@@ -19,6 +19,7 @@ import { KnowledgeViewer } from "../components/KnowledgeViewer";
 import { WorkloadChart, type TaskMetricsResponse } from "../components/WorkloadChart";
 import { BottleneckAlert } from "../components/BottleneckAlert";
 import { CycleTimeChart } from "../components/CycleTimeChart";
+import { TransitionAnalytics } from "../components/TransitionAnalytics";
 import { SessionMetricsBar } from "../components/SessionMetricsBar";
 import { DEFAULT_WORKFLOW_STATES } from "@kora/shared";
 import { TimelineView } from "../components/timeline/TimelineView";
@@ -147,6 +148,14 @@ function WorkloadTabContent({ sessionId, session, api, agents }: {
         <CycleTimeChart
           metrics={metrics}
           workflowStates={workflowStates}
+        />
+      )}
+      {metrics && tasks.length > 0 && (
+        <TransitionAnalytics
+          tasks={tasks}
+          workflowStates={workflowStates}
+          agents={agents?.map((a: any) => ({ id: a.id, name: a.config?.name || a.name || a.id })) || []}
+          sessionAvgCycleTimeMs={metrics.session.avgCycleTimeMs}
         />
       )}
     </div>
