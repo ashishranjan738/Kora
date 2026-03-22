@@ -1076,10 +1076,23 @@ export function createApiRouter(deps: {
       // Layer 1 idle detection: check if sender's message indicates they're idle/done.
       // Keywords like "Standing by", "Task complete" in the message content
       // trigger an immediate idle status for the SENDER.
+      // BUT: skip idle marking if the agent has in-progress tasks — broadcast acks
+      // like "Standing by" should NOT make agents forget their active work.
       if (body.from && body.from !== "user") {
         const { AgentHealthMonitor } = await import("../core/agent-health.js");
         if (AgentHealthMonitor.isMessageIdle(body.message)) {
-          orch.agentManager.markIdleFromMcp(body.from, "completion message detected");
+          // Check if agent has active (in-progress) tasks before marking idle
+          const db = getDb(sid);
+          const activeTasks = db ? db.getFilteredTasks(sid, {
+            assignedTo: body.from,
+            status: "active", // pending + in-progress + review
+          }) : [];
+          if (activeTasks.length === 0) {
+            orch.agentManager.markIdleFromMcp(body.from, "completion message detected");
+          } else {
+            logger.debug({ agentId: body.from, activeTasks: activeTasks.length },
+              "[relay] Skipping idle detection — agent has active tasks");
+          }
         }
       }
 
@@ -1718,9 +1731,27 @@ export function createApiRouter(deps: {
       // Layer 1 (MCP signal): Mark agent as idle with protection from terminal override.
       // This sets activity to "idle" AND protects it from being flapped back to "working"
       // by terminal polling for 2 minutes.
-      orch.agentManager.markIdleFromMcp(String(aid), reason);
+      // BUT: if agent has active tasks, warn instead of marking idle — prevents
+      // broadcast acks from making agents forget their assigned work.
+      const db = getDb(String(sid));
+      const activeTasks = db ? db.getFilteredTasks(String(sid), {
+        assignedTo: String(aid),
+        status: "active",
+      }) : [];
 
-      res.json({ success: true, activity: "idle", reason });
+      if (activeTasks.length > 0) {
+        // Agent has active tasks — don't mark idle, return a warning
+        res.json({
+          success: true,
+          activity: agent.activity,
+          reason,
+          warning: `Not marked idle — you have ${activeTasks.length} active task(s). Use update_task to mark them done first.`,
+          activeTasks: activeTasks.map((t: any) => ({ id: t.id, title: t.title, status: t.status })),
+        });
+      } else {
+        orch.agentManager.markIdleFromMcp(String(aid), reason);
+        res.json({ success: true, activity: "idle", reason });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
