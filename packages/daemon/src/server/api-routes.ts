@@ -2373,6 +2373,25 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ─── Task State Transitions ──────────────────────────────────────
+
+  router.get("/sessions/:sid/tasks/:tid/transitions", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const tid = String(req.params.tid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const limit = parseInt(req.query.limit as string) || 50;
+      const transitions = db.getTransitions(tid, limit);
+      const durations = db.getStatusDurations(tid);
+
+      res.json({ transitions, durations });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // ─── Task Metrics ──────────────────────────────────────────────────
 
   const taskMetricsDebouncer = new TaskMetricsDebouncer();
