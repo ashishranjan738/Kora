@@ -1179,29 +1179,36 @@ export function TaskBoard({ sessionId, initialTaskId, workflowStates }: TaskBoar
           )}
         </Stack>
       ) : (
-        /* Desktop / Tablet: grid columns */
-        <SimpleGrid cols={isTablet ? 2 : 4} spacing="md">
+        /* Desktop / Tablet: single-row scrollable columns */
+        <div style={{
+          display: "flex",
+          gap: 16,
+          overflowX: "auto",
+          overflowY: "hidden",
+          paddingBottom: 4,
+        }}>
           {effectiveColumns.map((col) => (
-            <TaskColumn
-              key={col}
-              column={col}
-              tasks={tasksByColumn(col)}
-              agents={agents}
-              draggedTaskId={draggedTaskId}
-              dragOverColumn={dragOverColumn}
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDragLeave={() => setDragOverColumn(null)}
-              onDrop={handleDrop}
-              onTaskClick={setExpandedTaskId}
-              onTaskDelete={handleDeleteTask}
-              onAddClick={() => setShowAddDialog(true)}
-              colLabel={effectiveLabels[col]}
-              colColor={effectiveColors[col]}
-              colCssColor={effectiveCssColors[col]}
-            />
+            <div key={col} style={{ minWidth: 260, flex: "1 0 0" }}>
+              <TaskColumn
+                column={col}
+                tasks={tasksByColumn(col)}
+                agents={agents}
+                draggedTaskId={draggedTaskId}
+                dragOverColumn={dragOverColumn}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragLeave={() => setDragOverColumn(null)}
+                onDrop={handleDrop}
+                onTaskClick={setExpandedTaskId}
+                onTaskDelete={handleDeleteTask}
+                onAddClick={() => setShowAddDialog(true)}
+                colLabel={effectiveLabels[col]}
+                colColor={effectiveColors[col]}
+                colCssColor={effectiveCssColors[col]}
+              />
+            </div>
           ))}
-        </SimpleGrid>
+        </div>
       )}
 
       {/* Add Task Modal */}
