@@ -1,4 +1,7 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi } from 'vitest';
+import * as matchers from '@testing-library/jest-dom/matchers';
+expect.extend(matchers);
 import { render, screen } from '@testing-library/react';
 import { TimelineEvent } from '../TimelineEvent';
 import type { TimelineEventData } from '../TimelineEvent';

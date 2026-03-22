@@ -1,4 +1,7 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as matchers from '@testing-library/jest-dom/matchers';
+expect.extend(matchers);
 import { render, screen, waitFor } from '@testing-library/react';
 import { TimelineView } from '../TimelineView';
 import * as useApiModule from '../../../hooks/useApi';
@@ -13,6 +16,15 @@ vi.mock('@mantine/core', () => ({
   Badge: ({ children }: any) => <span data-testid="badge">{children}</span>,
   Loader: () => <div data-testid="loader">Loading...</div>,
   Text: ({ children }: any) => <span>{children}</span>,
+  SegmentedControl: ({ value, onChange, data }: any) => (
+    <div data-testid="segmented-control">
+      {data?.map?.((item: any) => (
+        <button key={typeof item === 'string' ? item : item.value} onClick={() => onChange?.(typeof item === 'string' ? item : item.value)}>
+          {typeof item === 'string' ? item : item.label}
+        </button>
+      ))}
+    </div>
+  ),
 }));
 
 describe('TimelineView - Pagination', () => {

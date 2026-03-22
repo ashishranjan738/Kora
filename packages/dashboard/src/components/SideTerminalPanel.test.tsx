@@ -1,4 +1,7 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as matchers from '@testing-library/jest-dom/matchers';
+expect.extend(matchers);
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { SideTerminalPanel } from './SideTerminalPanel';
 import { useTerminalSessionStore } from '../stores/terminalSessionStore';
