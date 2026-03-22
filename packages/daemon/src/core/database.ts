@@ -303,6 +303,34 @@ export class AppDatabase extends EventEmitter {
         PRAGMA user_version = 13;
       `);
     }
+
+    if (version < 14) {
+      this.db.exec(`
+        -- Webhook triggers for external event-driven session spawning
+        CREATE TABLE IF NOT EXISTS webhooks (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          secret TEXT NOT NULL,
+          playbook_id TEXT,
+          session_config TEXT,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS webhook_events (
+          id TEXT PRIMARY KEY,
+          webhook_id TEXT NOT NULL,
+          payload_hash TEXT,
+          session_spawned TEXT,
+          status TEXT NOT NULL DEFAULT 'success',
+          timestamp TEXT NOT NULL,
+          FOREIGN KEY (webhook_id) REFERENCES webhooks(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_webhook_events_webhook ON webhook_events(webhook_id, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_webhook_events_hash ON webhook_events(payload_hash, timestamp);
+        PRAGMA user_version = 14;
+      `);
+    }
   }
 
   // ─── Events ──────────────────────────────────────────────
@@ -938,6 +966,60 @@ export class AppDatabase extends EventEmitter {
     const cutoff = new Date(Date.now() - hoursToKeep * 60 * 60 * 1000).toISOString();
     const result = this.db.prepare(`DELETE FROM agent_traces WHERE timestamp < ?`).run(cutoff);
     return result.changes;
+  }
+
+  // ─── Webhooks ──────────────────────────────────────────────────
+
+  insertWebhook(wh: { id: string; name: string; secret: string; playbookId?: string; sessionConfig?: any; enabled?: boolean }): void {
+    const now = new Date().toISOString();
+    this.db.prepare(
+      `INSERT INTO webhooks (id, name, secret, playbook_id, session_config, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(wh.id, wh.name, wh.secret, wh.playbookId || null, wh.sessionConfig ? JSON.stringify(wh.sessionConfig) : null, wh.enabled !== false ? 1 : 0, now, now);
+  }
+
+  getWebhooks(): any[] {
+    return (this.db.prepare(`SELECT * FROM webhooks ORDER BY created_at DESC`).all() as any[]).map(w => ({
+      ...w, enabled: !!w.enabled, sessionConfig: w.session_config ? JSON.parse(w.session_config) : null,
+    }));
+  }
+
+  getWebhook(id: string): any | undefined {
+    const w = this.db.prepare(`SELECT * FROM webhooks WHERE id = ?`).get(id) as any;
+    if (!w) return undefined;
+    return { ...w, enabled: !!w.enabled, sessionConfig: w.session_config ? JSON.parse(w.session_config) : null };
+  }
+
+  updateWebhook(id: string, updates: { name?: string; secret?: string; enabled?: boolean; sessionConfig?: any }): any | undefined {
+    const wh = this.getWebhook(id);
+    if (!wh) return undefined;
+    const name = updates.name ?? wh.name;
+    const secret = updates.secret ?? wh.secret;
+    const enabled = updates.enabled !== undefined ? (updates.enabled ? 1 : 0) : (wh.enabled ? 1 : 0);
+    const config = updates.sessionConfig !== undefined ? JSON.stringify(updates.sessionConfig) : wh.session_config;
+    this.db.prepare(`UPDATE webhooks SET name = ?, secret = ?, enabled = ?, session_config = ?, updated_at = ? WHERE id = ?`).run(name, secret, enabled, config, new Date().toISOString(), id);
+    return this.getWebhook(id);
+  }
+
+  deleteWebhook(id: string): boolean {
+    const r = this.db.prepare(`DELETE FROM webhooks WHERE id = ?`).run(id);
+    return r.changes > 0;
+  }
+
+  insertWebhookEvent(evt: { id: string; webhookId: string; payloadHash?: string; sessionSpawned?: string; status?: string }): void {
+    this.db.prepare(
+      `INSERT INTO webhook_events (id, webhook_id, payload_hash, session_spawned, status, timestamp) VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(evt.id, evt.webhookId, evt.payloadHash || null, evt.sessionSpawned || null, evt.status || "success", new Date().toISOString());
+  }
+
+  getWebhookEvents(webhookId: string, limit = 20): any[] {
+    return this.db.prepare(`SELECT * FROM webhook_events WHERE webhook_id = ? ORDER BY timestamp DESC LIMIT ?`).all(webhookId, limit) as any[];
+  }
+
+  /** Check if same payload was received within dedup window (60s) */
+  isWebhookDuplicate(webhookId: string, payloadHash: string, windowSeconds = 60): boolean {
+    const cutoff = new Date(Date.now() - windowSeconds * 1000).toISOString();
+    const row = this.db.prepare(`SELECT 1 FROM webhook_events WHERE webhook_id = ? AND payload_hash = ? AND timestamp > ? LIMIT 1`).get(webhookId, payloadHash, cutoff) as any;
+    return !!row;
   }
 
   // ─── Agent Reminders ─────────────────────────────────────────
