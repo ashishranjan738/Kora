@@ -119,6 +119,12 @@ export interface AgentState {
   childAgents: string[];
   healthCheck: AgentHealthCheck;
   cost: AgentCost;
+  /** Cumulative milliseconds spent in "working" activity */
+  workingMs?: number;
+  /** Cumulative milliseconds spent in "idle" activity */
+  idleMs?: number;
+  /** Utilization percentage (0-100), computed as workingMs / (workingMs + idleMs) * 100 */
+  utilizationPercent?: number;
 }
 
 export type AgentStatus =

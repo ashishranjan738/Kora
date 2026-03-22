@@ -140,6 +140,11 @@ export class AgentHealthMonitor extends EventEmitter {
   private lastOutputCache = new Map<string, string>();
   private agents?: Map<string, AgentState>;
 
+  // ─── Utilization accumulators ──────────────────────────────
+  private workingAccumulator = new Map<string, number>();
+  private idleAccumulator = new Map<string, number>();
+  private lastActivityChange = new Map<string, { activity: string; at: number }>();
+
   /**
    * Layer 1: MCP-reported idle timestamps.
    * When an agent calls report_idle or sends a completion message,
@@ -189,6 +194,7 @@ export class AgentHealthMonitor extends EventEmitter {
       agent.lastActivityAt = new Date().toISOString();
       agent.idleSince = new Date().toISOString();
       this.emit("agent-idle", agentId);
+      this.recordActivityTransition(agentId, "idle");
     }
   }
 
@@ -228,6 +234,7 @@ export class AgentHealthMonitor extends EventEmitter {
       delete agent.idleSince;
       this.mcpIdleTimestamps.delete(agentId);
       this.emit("agent-working", agentId);
+      this.recordActivityTransition(agentId, "working");
     }
   }
 
@@ -258,6 +265,41 @@ export class AgentHealthMonitor extends EventEmitter {
     return (Date.now() - mcpTime) < MCP_IDLE_PROTECTION_MS;
   }
 
+  /**
+   * Record an activity state transition and accumulate working/idle time.
+   * Called on every working↔idle transition.
+   */
+  private recordActivityTransition(agentId: string, newActivity: string): void {
+    const last = this.lastActivityChange.get(agentId);
+    const now = Date.now();
+
+    if (last) {
+      const elapsed = now - last.at;
+      if (last.activity === "working") {
+        this.workingAccumulator.set(agentId, (this.workingAccumulator.get(agentId) || 0) + elapsed);
+      } else {
+        this.idleAccumulator.set(agentId, (this.idleAccumulator.get(agentId) || 0) + elapsed);
+      }
+    }
+
+    this.lastActivityChange.set(agentId, { activity: newActivity, at: now });
+    this.flushUtilization(agentId);
+  }
+
+  /** Flush current utilization to agent state (real-time display without mutating accumulators) */
+  private flushUtilization(agentId: string): void {
+    const agent = this.agents?.get(agentId);
+    if (!agent) return;
+    const lastChange = this.lastActivityChange.get(agentId);
+    const elapsed = lastChange ? Date.now() - lastChange.at : 0;
+    const workingMs = (this.workingAccumulator.get(agentId) || 0) + (lastChange?.activity === "working" ? elapsed : 0);
+    const idleMs = (this.idleAccumulator.get(agentId) || 0) + (lastChange?.activity !== "working" ? elapsed : 0);
+    const total = workingMs + idleMs;
+    agent.workingMs = workingMs;
+    agent.idleMs = idleMs;
+    agent.utilizationPercent = total > 0 ? Math.round((workingMs / total) * 100) : 0;
+  }
+
   /** Start monitoring an agent */
   startMonitoring(agentId: string, tmuxSession: string): void {
     const interval = setInterval(async () => {
@@ -282,6 +324,15 @@ export class AgentHealthMonitor extends EventEmitter {
     }, HEALTH_CHECK_INTERVAL_MS);
     this.intervals.set(agentId, interval);
     this.lastOutputTimestamps.set(agentId, Date.now());
+
+    // Initialize utilization tracking (restore from persisted state if available)
+    const agent = this.agents?.get(agentId);
+    if (agent?.workingMs) this.workingAccumulator.set(agentId, agent.workingMs);
+    if (agent?.idleMs) this.idleAccumulator.set(agentId, agent.idleMs);
+    this.lastActivityChange.set(agentId, {
+      activity: agent?.activity === "working" ? "working" : "idle",
+      at: Date.now(),
+    });
   }
 
   /**
@@ -342,6 +393,7 @@ export class AgentHealthMonitor extends EventEmitter {
           delete agent.idleSince;
           this.mcpIdleTimestamps.delete(agentId);
           this.emit("agent-working", agentId);
+          this.recordActivityTransition(agentId, "working");
         } else {
           agent.lastOutputAt = new Date().toISOString();
           agent.lastActivityAt = new Date().toISOString();
@@ -378,6 +430,7 @@ export class AgentHealthMonitor extends EventEmitter {
             agent.lastActivityAt = new Date().toISOString();
             agent.idleSince = new Date().toISOString();
             this.emit("agent-idle", agentId);
+            this.recordActivityTransition(agentId, "idle");
           }
           // Weak idle signals → wait for timeout before marking idle
           else if (isWeakIdle) {
@@ -390,6 +443,7 @@ export class AgentHealthMonitor extends EventEmitter {
               agent.lastActivityAt = new Date().toISOString();
               agent.idleSince = new Date().toISOString();
               this.emit("agent-idle", agentId);
+              this.recordActivityTransition(agentId, "idle");
             }
           }
           return;
@@ -414,6 +468,7 @@ export class AgentHealthMonitor extends EventEmitter {
           delete agent.idleSince;
           this.mcpIdleTimestamps.delete(agentId); // Clear stale MCP idle
           this.emit("agent-working", agentId);
+          this.recordActivityTransition(agentId, "working");
         } else {
           // Still working, just update timestamps
           agent.lastOutputAt = new Date().toISOString();
@@ -435,6 +490,7 @@ export class AgentHealthMonitor extends EventEmitter {
           agent.lastActivityAt = new Date().toISOString();
           agent.idleSince = new Date().toISOString();
           this.emit("agent-idle", agentId);
+          this.recordActivityTransition(agentId, "idle");
         } else if (isWeakIdle) {
           // Weak pattern → wait for timeout
           const lastOutputTime = this.lastOutputTimestamps.get(agentId) || Date.now();
@@ -444,9 +500,12 @@ export class AgentHealthMonitor extends EventEmitter {
             agent.lastActivityAt = new Date().toISOString();
             agent.idleSince = new Date(lastOutputTime).toISOString();
             this.emit("agent-idle", agentId);
+            this.recordActivityTransition(agentId, "idle");
           }
         }
       }
+      // Periodic utilization flush (real-time display without mutating accumulators)
+      this.flushUtilization(agentId);
     } catch (err) {
       // Ignore errors during idle detection (tmux might be unavailable temporarily)
     }
@@ -463,6 +522,11 @@ export class AgentHealthMonitor extends EventEmitter {
     this.lastOutputCache.delete(agentId);
     this.mcpIdleTimestamps.delete(agentId);
     this.lastMcpCallTimestamps.delete(agentId);
+    // Flush final utilization before cleanup
+    this.recordActivityTransition(agentId, "stopped");
+    this.workingAccumulator.delete(agentId);
+    this.idleAccumulator.delete(agentId);
+    this.lastActivityChange.delete(agentId);
   }
 
   /** Stop all monitoring */
