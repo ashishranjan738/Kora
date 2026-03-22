@@ -3293,6 +3293,95 @@ export function createApiRouter(deps: {
     }
   });
 
+  // ─── Orphaned Resource Cleanup ──────────────────────────────────────
+
+  /** List orphaned resources (worktrees, branches, logs) for cleanup UI */
+  router.get("/sessions/:sid/orphaned-resources", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const session = sessionManager.getSession(sid);
+      if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const orch = orchestrators.get(sid);
+      const activeIds = new Set(
+        orch ? orch.agentManager.listAgents().filter(a => a.status === "running").map(a => a.id) : []
+      );
+
+      const orphaned: Array<{ agentId: string; type: string; path?: string }> = [];
+      const fsModule = require("fs");
+      const pathModule = require("path");
+
+      // Scan worktrees directory
+      const worktreesDir = pathModule.join(session.runtimeDir, "worktrees");
+      try {
+        const entries = fsModule.readdirSync(worktreesDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory() && !activeIds.has(entry.name)) {
+            orphaned.push({ agentId: entry.name, type: "worktree", path: pathModule.join(worktreesDir, entry.name) });
+          }
+        }
+      } catch { /* dir may not exist */ }
+
+      // Scan for stale agent branches
+      try {
+        const { execFileSync } = require("child_process");
+        const stdout = execFileSync("git", ["branch", "--list", "agent/*"], { cwd: session.config.projectPath, encoding: "utf-8" });
+        const branches = stdout.split("\n").map((b: string) => b.trim().replace(/^\*\s*/, "")).filter(Boolean);
+        for (const branch of branches) {
+          const agentId = branch.replace("agent/", "");
+          if (!activeIds.has(agentId)) {
+            orphaned.push({ agentId, type: "branch" });
+          }
+        }
+      } catch { /* non-fatal */ }
+
+      res.json({ orphaned, activeAgentCount: activeIds.size });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  /** Clean up orphaned resources for specific agent IDs */
+  router.post("/sessions/:sid/cleanup", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const session = sessionManager.getSession(sid);
+      if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const { agentIds } = req.body as { agentIds?: string[] };
+      if (!agentIds || !Array.isArray(agentIds) || agentIds.length === 0) {
+        res.status(400).json({ error: "agentIds array is required" });
+        return;
+      }
+
+      const orch = orchestrators.get(sid);
+      const activeIds = new Set(
+        orch ? orch.agentManager.listAgents().filter(a => a.status === "running").map(a => a.id) : []
+      );
+
+      // Safety: never clean up active agents
+      const safeIds = agentIds.filter(id => !activeIds.has(id));
+      if (safeIds.length === 0) {
+        res.status(400).json({ error: "All specified agents are still active" });
+        return;
+      }
+
+      const { WorktreeManager } = await import("../core/worktree.js");
+      const wm = new WorktreeManager();
+      const keepActive = new Set([...activeIds]); // Keep all active + exclude requested
+      const result = await wm.pruneAll(session.config.projectPath, session.runtimeDir, keepActive);
+
+      res.json({
+        cleaned: safeIds.length,
+        removedWorktrees: result.removedWorktrees,
+        removedBranches: result.removedBranches,
+        skippedDirty: result.skippedDirty,
+      });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // ─── Events (historical) ────────────────────────────────────────────
 
   router.get("/sessions/:sid/events", async (req: Request, res: Response) => {
