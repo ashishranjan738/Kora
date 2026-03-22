@@ -3,6 +3,9 @@ import { CostTracker } from "./cost-tracker.js";
 import type { AgentState, ParsedOutput, CLIProvider } from "@kora/shared";
 import { COST_UPDATE_INTERVAL_MS } from "@kora/shared";
 import { estimateTokens, estimateCost } from "./cost-estimator.js";
+import { logger } from "./logger.js";
+
+const COST_POLL_MIN_INTERVAL_MS = 60_000; // Max once per 60s
 
 export class UsageMonitor {
   private intervals = new Map<string, NodeJS.Timeout>();
@@ -11,12 +14,21 @@ export class UsageMonitor {
   private cumulativeTokensOut = new Map<string, number>();
   private agentProviders = new Map<string, CLIProvider>();
   private agentSessions = new Map<string, string>();
+  /** Last time /cost was polled for each agent (prevents spamming) */
+  private lastCostPollTime = new Map<string, number>();
+  /** Callback to check if agent is idle (set by orchestrator) */
+  private isAgentIdleFn: ((agentId: string) => boolean) | null = null;
 
   constructor(
     private tmux: IPtyBackend,
     private costTracker: CostTracker,
     private providerRegistry?: { get(id: string): CLIProvider | undefined },
   ) {}
+
+  /** Set callback to check agent idle status */
+  setIdleChecker(fn: (agentId: string) => boolean): void {
+    this.isAgentIdleFn = fn;
+  }
 
   /** Start monitoring an agent's token usage */
   startMonitoring(agent: AgentState): void {
@@ -42,6 +54,11 @@ export class UsageMonitor {
         } else {
           // Fallback: generic tiktoken estimation
           this.updateFromEstimate(agent.id, output);
+        }
+
+        // Poll /cost command when agent is idle (claude-code only)
+        if (provider?.id === "claude-code" && this.isAgentIdleFn?.(agent.id)) {
+          await this.pollCostCommand(agent.id, agent.config.tmuxSession, provider);
         }
       } catch {
         // Agent may be dead, ignore
@@ -125,6 +142,39 @@ export class UsageMonitor {
     await Promise.all(promises);
   }
 
+  /**
+   * Poll `/cost` command on an idle Claude Code agent to get cumulative token usage.
+   * Only runs when: agent is idle, provider is claude-code, last poll >60s ago.
+   */
+  private async pollCostCommand(agentId: string, tmuxSession: string, provider: CLIProvider): Promise<void> {
+    const now = Date.now();
+    const lastPoll = this.lastCostPollTime.get(agentId) || 0;
+    if (now - lastPoll < COST_POLL_MIN_INTERVAL_MS) return;
+
+    this.lastCostPollTime.set(agentId, now);
+
+    try {
+      // Send /cost command (literal mode to avoid interpretation)
+      await this.tmux.sendKeys(tmuxSession, "/cost", { literal: true });
+      await this.tmux.sendKeys(tmuxSession, "", { literal: false }); // Enter
+
+      // Wait for output to appear
+      await new Promise(resolve => setTimeout(resolve, 2500));
+
+      // Capture and parse the output
+      const output = await this.tmux.capturePane(tmuxSession, 30, false);
+      const parsed = provider.parseOutput(output);
+
+      if (parsed.tokenUsage || parsed.costUsd !== undefined) {
+        this.costTracker.updateFromOutput(agentId, parsed);
+        logger.debug({ agentId, tokens: parsed.tokenUsage, cost: parsed.costUsd },
+          "[UsageMonitor] /cost poll captured metrics");
+      }
+    } catch (err) {
+      logger.debug({ err, agentId }, "[UsageMonitor] /cost poll failed (non-fatal)");
+    }
+  }
+
   /** Stop monitoring an agent */
   stopMonitoring(agentId: string): void {
     this.agentSessions.delete(agentId);
@@ -137,6 +187,7 @@ export class UsageMonitor {
     this.cumulativeTokensIn.delete(agentId);
     this.cumulativeTokensOut.delete(agentId);
     this.agentProviders.delete(agentId);
+    this.lastCostPollTime.delete(agentId);
   }
 
   /** Stop all monitoring */
