@@ -350,6 +350,7 @@ export class AppDatabase extends EventEmitter {
   getFilteredTasks(sessionId: string, filters: {
     assignedTo?: string | null;
     status?: string | null;
+    activeStatuses?: string[]; // When status="active", use these IDs instead of hardcoded defaults
     priority?: string | null;
     label?: string | null;
     due?: string | null;
@@ -366,7 +367,15 @@ export class AppDatabase extends EventEmitter {
 
     if (filters.status) {
       if (filters.status === "active") {
-        conditions.push("status IN ('pending', 'in-progress', 'review')");
+        // "active" shortcut: match all non-closed statuses.
+        // Use activeStatuses if provided (from session workflow states),
+        // otherwise fall back to default statuses for backward compat.
+        const activeList = filters.activeStatuses && filters.activeStatuses.length > 0
+          ? filters.activeStatuses
+          : ["pending", "in-progress", "review"];
+        const placeholders = activeList.map(() => "?").join(", ");
+        conditions.push(`status IN (${placeholders})`);
+        values.push(...activeList);
       } else {
         conditions.push("status = ?");
         values.push(filters.status);

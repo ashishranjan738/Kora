@@ -506,7 +506,8 @@ export class Orchestrator extends EventEmitter {
       // Still log the event for timeline
     } else {
       // Queue the message — delivers to terminal when agent is at a prompt
-      this.messageQueue.enqueue(toAgentId, toAgent.config.tmuxSession, relayMsg, fromAgentId);
+      // sqlitePersisted: true — message was already written to SQLite above, skip duplicate write in delivery
+      this.messageQueue.enqueue(toAgentId, toAgent.config.tmuxSession, relayMsg, fromAgentId, undefined, { sqlitePersisted: true });
     }
 
     await this.eventLog.log({

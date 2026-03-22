@@ -39,6 +39,7 @@ interface QueuedMessage {
   ttl: number;  // absolute expiry timestamp (ms)
   fromAgentId?: string;
   targetAgentId?: string;  // Tier 3: If set, only deliver to this agent (targeted message). If undefined, broadcast to all.
+  sqlitePersisted?: boolean; // If true, message was already written to SQLite by relayMessage() — skip duplicate write in deliverViaMcpPending
 }
 
 /** Auto-classify message priority based on content patterns */
@@ -247,11 +248,11 @@ export class MessageQueue {
   }
 
   /** Queue a message for delivery to an agent. Returns false if dropped (loop). */
-  enqueue(agentId: string, tmuxSession: string, message: string, fromAgentId?: string, targetAgentId?: string): boolean {
-    return this._enqueue(agentId, tmuxSession, message, fromAgentId, targetAgentId, true);
+  enqueue(agentId: string, tmuxSession: string, message: string, fromAgentId?: string, targetAgentId?: string, options?: { sqlitePersisted?: boolean }): boolean {
+    return this._enqueue(agentId, tmuxSession, message, fromAgentId, targetAgentId, true, options);
   }
 
-  private _enqueue(agentId: string, tmuxSession: string, message: string, fromAgentId: string | undefined, targetAgentId: string | undefined, immediateFlush: boolean): boolean {
+  private _enqueue(agentId: string, tmuxSession: string, message: string, fromAgentId: string | undefined, targetAgentId: string | undefined, immediateFlush: boolean, options?: { sqlitePersisted?: boolean }): boolean {
     // Conversation loop detection — max 8 messages between same pair in 2 minutes
     if (fromAgentId) {
       const pairKey = [fromAgentId, agentId].sort().join(":");
@@ -309,6 +310,7 @@ export class MessageQueue {
       ttl: now + PRIORITY_TTL[priority],
       fromAgentId,
       targetAgentId,
+      sqlitePersisted: options?.sqlitePersisted,
     });
 
     // Sort queue by priority (highest first), then by timestamp (oldest first)
@@ -609,8 +611,8 @@ export class MessageQueue {
     const isBroadcast = msg.message.includes("[Broadcast]");
 
     if (!isBroadcast) {
-      // Write to SQLite (if enabled) - skip for broadcasts
-      if (this.enableSqliteMessages && this.database && this.sessionId) {
+      // Write to SQLite (if enabled) - skip for broadcasts and already-persisted messages
+      if (this.enableSqliteMessages && this.database && this.sessionId && !msg.sqlitePersisted) {
         try {
           const expiresAt = msg.ttl || (Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days default
           this.database.insertMessage({
@@ -658,8 +660,8 @@ export class MessageQueue {
     const isBroadcast = msg.message.includes("[Broadcast]");
 
     if (!isBroadcast) {
-      // Write to SQLite (if enabled) - skip for broadcasts
-      if (this.enableSqliteMessages && this.database && this.sessionId) {
+      // Write to SQLite (if enabled) - skip for broadcasts and already-persisted messages
+      if (this.enableSqliteMessages && this.database && this.sessionId && !msg.sqlitePersisted) {
         try {
           const expiresAt = msg.ttl || (Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days default
           this.database.insertMessage({
