@@ -801,13 +801,17 @@ const TOOL_DEFINITIONS = [
   {
     name: "save_knowledge",
     description:
-      "Save a knowledge entry that persists across sessions. Use this to record important findings, patterns, or decisions that future agents should know about. Entries are injected into all agent personas at spawn.",
+      "Save a knowledge entry that persists across sessions. Optionally provide a key for SQLite-backed retrieval via get_knowledge/search_knowledge.",
     inputSchema: {
       type: "object" as const,
       properties: {
         entry: {
           type: "string",
-          description: "Knowledge entry to save (e.g. 'Express 5 uses path-to-regexp v8 — no * wildcard for SPA fallback')",
+          description: "Knowledge entry text (e.g. 'Express 5 uses path-to-regexp v8')",
+        },
+        key: {
+          type: "string",
+          description: "Optional key for structured storage (e.g. 'express-routing-pattern'). Enables get_knowledge/search_knowledge retrieval.",
         },
       },
       required: ["entry"],
@@ -842,6 +846,40 @@ const TOOL_DEFINITIONS = [
         },
       },
       required: ["to"],
+    },
+  },
+  {
+    name: "get_knowledge",
+    description:
+      "Get a knowledge entry by key. Use to retrieve shared context saved by you or other agents (e.g. file paths, patterns, decisions).",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        key: {
+          type: "string",
+          description: "The knowledge key to look up (e.g. 'auth-module-path', 'api-pattern')",
+        },
+      },
+      required: ["key"],
+    },
+  },
+  {
+    name: "search_knowledge",
+    description:
+      "Search shared knowledge entries by keyword. Returns all entries where the key or value contains the query string.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        query: {
+          type: "string",
+          description: "Search query (substring match on key and value)",
+        },
+        limit: {
+          type: "number",
+          description: "Max results (default 20)",
+        },
+      },
+      required: ["query"],
     },
   },
 ];
@@ -1885,12 +1923,37 @@ async function handleToolCall(
       const self = (agents3.agents || []).find((a) => a.id === AGENT_ID);
       const agentName = self?.config?.name || AGENT_ID;
 
+      // Save to file-based knowledge (existing)
       await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/knowledge`, {
         entry: toolArgs.entry.trim(),
         agentName,
       });
 
-      return { success: true, saved: toolArgs.entry.trim() };
+      // Also save to SQLite knowledge DB if key provided
+      if (toolArgs.key) {
+        await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/knowledge-db`, {
+          key: toolArgs.key,
+          value: toolArgs.entry.trim(),
+          savedBy: agentName,
+        });
+      }
+
+      return { success: true, saved: toolArgs.entry.trim(), key: toolArgs.key || null };
+    }
+
+    case "get_knowledge": {
+      if (!toolArgs.key) return { error: "key is required" };
+      const entry = await apiCall("GET", `/api/v1/sessions/${SESSION_ID}/knowledge-db/${encodeURIComponent(toolArgs.key)}`);
+      return entry;
+    }
+
+    case "search_knowledge": {
+      if (!toolArgs.query) return { error: "query is required" };
+      const limit = toolArgs.limit || 20;
+      const results = await apiCall("GET",
+        `/api/v1/sessions/${SESSION_ID}/knowledge-db?q=${encodeURIComponent(toolArgs.query)}&limit=${limit}`
+      );
+      return results;
     }
 
     case "share_image": {

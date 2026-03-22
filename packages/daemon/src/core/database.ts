@@ -244,6 +244,24 @@ export class AppDatabase extends EventEmitter {
         PRAGMA user_version = 10;
       `);
     }
+
+    if (version < 11) {
+      this.db.exec(`
+        -- Knowledge base: key-value entries shared between agents
+        CREATE TABLE IF NOT EXISTS knowledge_entries (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          key TEXT NOT NULL,
+          value TEXT NOT NULL,
+          saved_by TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_knowledge_session ON knowledge_entries(session_id);
+        CREATE INDEX IF NOT EXISTS idx_knowledge_key ON knowledge_entries(session_id, key);
+        PRAGMA user_version = 11;
+      `);
+    }
   }
 
   // ─── Events ──────────────────────────────────────────────
@@ -898,6 +916,49 @@ export class AppDatabase extends EventEmitter {
   updateReminderFiredAt(id: string): void {
     this.db.prepare(`UPDATE agent_reminders SET last_fired_at = ? WHERE id = ?`)
       .run(new Date().toISOString(), id);
+  }
+
+  // ─── Knowledge Base ──────────────────────────────────────────
+
+  saveKnowledge(entry: { id: string; sessionId: string; key: string; value: string; savedBy?: string }): void {
+    const now = new Date().toISOString();
+    // Upsert: if key exists for this session, update value
+    const existing = this.db.prepare(
+      `SELECT id FROM knowledge_entries WHERE session_id = ? AND key = ?`
+    ).get(entry.sessionId, entry.key) as any;
+
+    if (existing) {
+      this.db.prepare(
+        `UPDATE knowledge_entries SET value = ?, saved_by = ?, updated_at = ? WHERE id = ?`
+      ).run(entry.value, entry.savedBy || null, now, existing.id);
+    } else {
+      this.db.prepare(
+        `INSERT INTO knowledge_entries (id, session_id, key, value, saved_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).run(entry.id, entry.sessionId, entry.key, entry.value, entry.savedBy || null, now, now);
+    }
+  }
+
+  getKnowledge(sessionId: string, key: string): { key: string; value: string; savedBy: string | null; updatedAt: string } | null {
+    const row = this.db.prepare(
+      `SELECT key, value, saved_by, updated_at FROM knowledge_entries WHERE session_id = ? AND key = ?`
+    ).get(sessionId, key) as any;
+    if (!row) return null;
+    return { key: row.key, value: row.value, savedBy: row.saved_by, updatedAt: row.updated_at };
+  }
+
+  searchKnowledge(sessionId: string, query: string, limit = 20): Array<{ key: string; value: string; savedBy: string | null; updatedAt: string }> {
+    const pattern = `%${query}%`;
+    const rows = this.db.prepare(
+      `SELECT key, value, saved_by, updated_at FROM knowledge_entries WHERE session_id = ? AND (key LIKE ? OR value LIKE ?) ORDER BY updated_at DESC LIMIT ?`
+    ).all(sessionId, pattern, pattern, limit) as any[];
+    return rows.map(r => ({ key: r.key, value: r.value, savedBy: r.saved_by, updatedAt: r.updated_at }));
+  }
+
+  listKnowledge(sessionId: string, limit = 50): Array<{ key: string; value: string; savedBy: string | null; updatedAt: string }> {
+    const rows = this.db.prepare(
+      `SELECT key, value, saved_by, updated_at FROM knowledge_entries WHERE session_id = ? ORDER BY updated_at DESC LIMIT ?`
+    ).all(sessionId, limit) as any[];
+    return rows.map(r => ({ key: r.key, value: r.value, savedBy: r.saved_by, updatedAt: r.updated_at }));
   }
 
   // ─── Task Archival ────────────────────────────────────────────
