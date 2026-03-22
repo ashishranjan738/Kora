@@ -129,6 +129,11 @@ export class Orchestrator extends EventEmitter {
       },
     );
 
+    // Wire MCP activity checker for recovery detection
+    this.messageQueue.setMcpActivityChecker(
+      (agentId: string) => this.healthMonitor.hasRecentMcpActivity(agentId),
+    );
+
     // Wire delivery tracking (Tier 3 event routing)
     this.messageQueue.setDeliveryTracking(this.database, config.sessionId);
 

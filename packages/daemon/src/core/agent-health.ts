@@ -229,6 +229,11 @@ export class AgentHealthMonitor extends EventEmitter {
   /**
    * Check if agent has recent MCP activity (within IDLE_TIMEOUT_MS).
    */
+  /** Check if agent has recent MCP activity (within idle timeout). Public for recovery detection. */
+  hasRecentMcpActivity(agentId: string): boolean {
+    return this.hasMcpActivity(agentId);
+  }
+
   private hasMcpActivity(agentId: string): boolean {
     const t = this.lastMcpCallTimestamps.get(agentId);
     return !!t && (Date.now() - t) < IDLE_TIMEOUT_MS;

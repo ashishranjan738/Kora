@@ -105,6 +105,10 @@ export class MessageQueue {
   private firstUnreadTime = new Map<string, number>();
   /** Track whether architect has been alerted for an agent (avoid repeated alerts) */
   private architectAlerted = new Set<string>();
+  /** Track recovery state for escalated agents */
+  private recoveryState = new Map<string, "escalated" | "partial-recovery" | "recovered">();
+  /** Callback to check if agent has recent MCP activity (from AgentHealthMonitor) */
+  private hasMcpActivityFn: ((agentId: string) => boolean) | null = null;
   private renotifyInterval: ReturnType<typeof setTimeout> | null = null;
   /** Callback to get unread count for an agent — set by orchestrator */
   private getUnreadCountFn: ((agentId: string) => Promise<number>) | null = null;
@@ -822,6 +826,11 @@ export class MessageQueue {
     if (onEscalation) this.onEscalationFn = onEscalation;
   }
 
+  /** Set MCP activity checker for recovery detection */
+  setMcpActivityChecker(fn: (agentId: string) => boolean): void {
+    this.hasMcpActivityFn = fn;
+  }
+
   /** Configure escalation thresholds (in milliseconds). Partial updates supported. */
   setEscalationThresholds(thresholds: Partial<typeof this.escalationThresholds>): void {
     Object.assign(this.escalationThresholds, thresholds);
@@ -884,11 +893,28 @@ export class MessageQueue {
       try {
         const unread = await this.getUnreadCountFn(agentId);
         if (unread === 0) {
-          // Clear all escalation state when no unread messages
+          // Clear all escalation + recovery state when messages are read
+          const wasEscalated = this.recoveryState.has(agentId);
           this.notificationAttempts.delete(agentId);
           this.lastNotificationTime.delete(agentId);
           this.firstUnreadTime.delete(agentId);
           this.architectAlerted.delete(agentId);
+          this.recoveryState.delete(agentId);
+
+          // Log recovery + clear dashboard alert
+          if (wasEscalated) {
+            logger.info({ agentId }, "[MessageQueue] Agent recovered — messages read");
+            if (this.broadcastFn) {
+              this.broadcastFn({
+                event: "message-escalation",
+                agentId,
+                unreadCount: 0,
+                elapsedMs: 0,
+                tier: "recovered",
+                timestamp: Date.now(),
+              });
+            }
+          }
           continue;
         }
 
@@ -906,7 +932,30 @@ export class MessageQueue {
 
         const elapsedMs = now - this.firstUnreadTime.get(agentId)!;
         const attempts = this.notificationAttempts.get(agentId) || 0;
+        const hasMcpActivity = this.hasMcpActivityFn ? this.hasMcpActivityFn(agentId) : false;
         let notification: string;
+
+        // Recovery detection: if agent was escalated but now has MCP activity,
+        // they're partially recovered (using tools but haven't read messages yet)
+        const currentRecovery = this.recoveryState.get(agentId);
+        if (currentRecovery === "escalated" && hasMcpActivity) {
+          this.recoveryState.set(agentId, "partial-recovery");
+          notification = `\n[Reminder: You have ${unread} unread message(s). Run check_messages when ready.]\n`;
+          // Downgrade dashboard alert
+          if (this.broadcastFn) {
+            this.broadcastFn({
+              event: "message-escalation",
+              agentId,
+              unreadCount: unread,
+              elapsedMs,
+              tier: "partial-recovery",
+              timestamp: now,
+            });
+          }
+          await this.tmux.sendKeys(tmuxSession, notification, { literal: false });
+          this.lastNotificationTime.set(agentId, now);
+          continue;
+        }
 
         if (elapsedMs < this.escalationThresholds.warning) {
           // Tier 0: Normal notification (< 30s)
@@ -918,15 +967,22 @@ export class MessageQueue {
           // Tier 2: Urgent escalation (60s - 120s)
           notification = `\n🔴 URGENT: ${unread} unread message(s) waiting ${Math.round(elapsedMs / 1000)}s! Run check_messages NOW.\n`;
         } else {
-          // Tier 3: Critical — alert architect (120s+)
-          notification = `\n🚨 CRITICAL: ${unread} unread message(s) waiting ${Math.round(elapsedMs / 1000)}s! Run check_messages IMMEDIATELY.\n`;
+          // Tier 3: Critical — alert architect/dashboard (120s+)
+          this.recoveryState.set(agentId, "escalated");
+
+          // Auto-nudge at 5+ min (300s): forceful terminal sendKeys
+          if (elapsedMs > 300_000) {
+            notification = `\n[SYSTEM] You have ${unread} unread messages. Run check_messages NOW.\n`;
+          } else {
+            notification = `\n🚨 CRITICAL: ${unread} unread message(s) waiting ${Math.round(elapsedMs / 1000)}s! Run check_messages IMMEDIATELY.\n`;
+          }
 
           // Alert architect once per escalation cycle
           if (!this.architectAlerted.has(agentId)) {
             this.architectAlerted.add(agentId);
             logger.warn(
               { agentId, unreadCount: unread, elapsedMs, attempts },
-              "[MessageQueue] Agent has not read messages for >120s — escalating to architect",
+              "[MessageQueue] Agent has not read messages for >120s — escalating",
             );
 
             // Notify orchestrator/architect via callback
@@ -938,7 +994,7 @@ export class MessageQueue {
               }
             }
 
-            // Broadcast escalation event for dashboard
+            // Broadcast escalation event for dashboard (WebSocket toast)
             if (this.broadcastFn) {
               this.broadcastFn({
                 event: "message-escalation",
@@ -949,6 +1005,11 @@ export class MessageQueue {
                 timestamp: now,
               });
             }
+          }
+
+          // Re-escalate at 10+ min if still no activity
+          if (elapsedMs > 600_000 && !hasMcpActivity) {
+            this.architectAlerted.delete(agentId); // Allow re-alert
           }
         }
 
