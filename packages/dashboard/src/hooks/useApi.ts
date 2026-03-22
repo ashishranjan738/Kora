@@ -282,5 +282,10 @@ export function useApi() {
         method: "POST",
         body: JSON.stringify({ sourceSessionId, mode }),
       }),
+    // Trend + CFD analytics
+    getTaskMetricsTrend: (sid: string) =>
+      apiFetch<{ dataPoints: Array<{ taskSequence: number; taskTitle: string; cycleTimeMs: number; rollingAvgMs: number; completedAt: string }> }>(`/sessions/${sid}/task-metrics/trend`),
+    getTaskMetricsCfd: (sid: string) =>
+      apiFetch<{ dataPoints: Array<{ timestamp: string; counts: Record<string, number> }> }>(`/sessions/${sid}/task-metrics/cfd`),
   };
 }
