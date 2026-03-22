@@ -224,11 +224,13 @@ export function MultiAgentView() {
   const loadData = useCallback(async () => {
     if (!sessionId) return;
     try {
-      const [s, a] = await Promise.all([
+      const [s, a, t] = await Promise.all([
         api.getSession(sessionId),
         api.getAgents(sessionId),
+        api.getTasks(sessionId),
       ]);
       setSession(s);
+      setTasks(t.tasks || []);
 
       // Only update agents if something actually changed
       const newAgents = a.agents || [];
@@ -277,19 +279,19 @@ export function MultiAgentView() {
     return () => { if (sessionId) unsubscribe(sessionId); };
   }, [sessionId, subscribe, unsubscribe]);
 
-  // Fetch tasks for agent task count indicators
+  // Tasks are now fetched as part of loadData — no separate polling needed
+
+  // Close gear menu on outside click
   useEffect(() => {
-    if (!sessionId) return;
-    const fetchTasks = async () => {
-      try {
-        const data = await api.getTasks(sessionId);
-        setTasks(data.tasks || []);
-      } catch { /* ignore */ }
+    if (!menuOpen) return;
+    const handleClick = () => setMenuOpen(null);
+    // Delay listener to avoid closing from the same click that opened it
+    const timer = setTimeout(() => document.addEventListener("click", handleClick), 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("click", handleClick);
     };
-    fetchTasks();
-    const interval = setInterval(fetchTasks, 10000);
-    return () => clearInterval(interval);
-  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [menuOpen]);
 
   // Cleanup toast timer
   useEffect(() => {
@@ -1270,7 +1272,7 @@ export function MultiAgentView() {
         </div>
       </MosaicWindow>
     );
-  }, [sessionId, agents, focusedPanel, menuOpen, inlineMsgOpen, messages, sendingMap, sendAsMap, fullscreenAgentId, flashingAgents]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionId, session, agents, tasks, focusedPanel, menuOpen, inlineMsgOpen, messages, sendingMap, sendAsMap, fullscreenAgentId, flashingAgents]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- Fullscreen overlay rendered via Portal to document.body ---- */
   function renderFullscreenPortal() {

@@ -137,6 +137,7 @@ export function TaskBoard({ sessionId, initialTaskId, workflowStates }: TaskBoar
   const COLUMN_COLORS: Record<string, string> = workflowStates?.length ? Object.fromEntries(workflowStates.map(s => [s.id, hexToMantineColor(s.color)])) : DEFAULT_COLUMN_COLORS;
   const COLUMN_CSS_COLORS: Record<string, string> = workflowStates?.length ? Object.fromEntries(workflowStates.map(s => [s.id, s.color])) : DEFAULT_COLUMN_CSS_COLORS;
   const transitionMap: Record<string, string[] | undefined> = workflowStates?.length ? Object.fromEntries(workflowStates.map(s => [s.id, s.transitions])) : {};
+  const hasWorkflowStates = !!(workflowStates?.length);
   const firstCol = COLUMNS[0] || "pending";
   const api = useApi(); const isMobile = useMediaQuery("(max-width: 48em)"); const isTablet = useMediaQuery("(max-width: 62em)");
   const [tasks, setTasks] = useState<Task[]>([]); const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
@@ -160,7 +161,9 @@ export function TaskBoard({ sessionId, initialTaskId, workflowStates }: TaskBoar
     e.preventDefault(); setDragOverColumn(null); if (!draggedTaskId) return;
     const task = tasks.find(t => t.id === draggedTaskId); if (!task || task.status === column) { setDraggedTaskId(null); return; }
     if (task.blocked && column === "in-progress") { showInfo(task.blockedReason || "This task has incomplete dependencies", "Cannot start task"); setDraggedTaskId(null); return; }
-    const allowed = transitionMap[task.status]; if (allowed?.length && !allowed.includes(column)) { showError(`Cannot move from "${COLUMN_LABELS[task.status] || task.status}" to "${COLUMN_LABELS[column] || column}". Valid: ${allowed.map(t => COLUMN_LABELS[t] || t).join(", ")}`, "Invalid transition"); setDraggedTaskId(null); return; }
+    const allowed = transitionMap[task.status];
+    if (hasWorkflowStates && allowed !== undefined && allowed.length > 0 && !allowed.includes(column)) { showError(`Cannot move from "${COLUMN_LABELS[task.status] || task.status}" to "${COLUMN_LABELS[column] || column}". Valid: ${allowed.map(t => COLUMN_LABELS[t] || t).join(", ")}`, "Invalid transition"); setDraggedTaskId(null); return; }
+    if (hasWorkflowStates && allowed !== undefined && allowed.length === 0) { showError(`"${COLUMN_LABELS[task.status] || task.status}" is a terminal state with no allowed transitions.`, "Invalid transition"); setDraggedTaskId(null); return; }
     setTasks(p => p.map(t => t.id === draggedTaskId ? { ...t, status: column } : t)); try { await api.updateTask(sessionId, draggedTaskId, { status: column }); } catch { fetchTasks(); } setDraggedTaskId(null);
   };
   const handleAddTask = async () => { if (!newTitle.trim()) return; try { await api.createTask(sessionId, { title: newTitle.trim(), description: newDescription.trim(), assignedTo: newAssignee || undefined, priority: newPriority, labels: newLabels.length > 0 ? newLabels : undefined, dueDate: newDueDate || undefined, dependencies: newDependencies.length > 0 ? newDependencies : undefined }); setNewTitle(""); setNewDescription(""); setNewAssignee(""); setNewPriority("P2"); setNewLabels([]); setNewDueDate(null); setNewDependencies([]); setShowAddDialog(false); fetchTasks(); } catch {} };
@@ -169,7 +172,9 @@ export function TaskBoard({ sessionId, initialTaskId, workflowStates }: TaskBoar
   const handleChangeStatus = async (taskId: string, newStatus: string) => {
     const task = tasks.find(t => t.id === taskId); if (!task || task.status === newStatus) return;
     if (task.blocked && newStatus === "in-progress") { showInfo(task.blockedReason || "This task has incomplete dependencies", "Cannot start task"); return; }
-    const allowed = transitionMap[task.status]; if (allowed?.length && !allowed.includes(newStatus)) { showError(`Cannot move from "${COLUMN_LABELS[task.status] || task.status}" to "${COLUMN_LABELS[newStatus] || newStatus}". Valid: ${allowed.map(t => COLUMN_LABELS[t] || t).join(", ")}`, "Invalid transition"); return; }
+    const allowed = transitionMap[task.status];
+    if (hasWorkflowStates && allowed !== undefined && allowed.length > 0 && !allowed.includes(newStatus)) { showError(`Cannot move from "${COLUMN_LABELS[task.status] || task.status}" to "${COLUMN_LABELS[newStatus] || newStatus}". Valid: ${allowed.map(t => COLUMN_LABELS[t] || t).join(", ")}`, "Invalid transition"); return; }
+    if (hasWorkflowStates && allowed !== undefined && allowed.length === 0) { showError(`"${COLUMN_LABELS[task.status] || task.status}" is a terminal state with no allowed transitions.`, "Invalid transition"); return; }
     setTasks(p => p.map(t => t.id === taskId ? { ...t, status: newStatus } : t)); try { await api.updateTask(sessionId, taskId, { status: newStatus }); } catch { fetchTasks(); }
   };
   const tasksByColumn = (col: string) => { const po: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 }; return tasks.filter(t => t.status === col && (!filterAgent || t.assignedTo === filterAgent) && (filterPriorities.length === 0 || filterPriorities.includes(t.priority)) && (filterLabels.length === 0 || t.labels?.some(l => filterLabels.includes(l)))).sort((a, b) => { const d = (po[a.priority] ?? 2) - (po[b.priority] ?? 2); return d !== 0 ? d : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(); }); };
