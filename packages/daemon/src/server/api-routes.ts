@@ -317,6 +317,10 @@ export function createApiRouter(deps: {
       orch.messageQueue.setBroadcastCallback((event) => {
         broadcastEvent({ ...event, sessionId: config.id });
       });
+      // Wire debounced activity-changed events to WebSocket
+      orch.on("agent-activity-changed", (data) => {
+        broadcastEvent({ event: "agent-activity-changed", ...data });
+      });
       orchestrators.set(config.id, orch);
 
       const agents = orch.agentManager.listAgents();

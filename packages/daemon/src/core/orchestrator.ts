@@ -322,6 +322,33 @@ export class Orchestrator extends EventEmitter {
       });
     });
 
+    // Debounced WebSocket push for activity changes (max 1 per agent per 5s)
+    const activityDebounceTimers = new Map<string, NodeJS.Timeout>();
+    const ACTIVITY_DEBOUNCE_MS = 5000;
+
+    const emitActivityChange = (agentId: string, activity: string, previousActivity: string) => {
+      // Clear existing debounce timer for this agent
+      const existing = activityDebounceTimers.get(agentId);
+      if (existing) clearTimeout(existing);
+
+      activityDebounceTimers.set(agentId, setTimeout(() => {
+        activityDebounceTimers.delete(agentId);
+        const agent = this.agentManager.getAgent(agentId);
+        if (!agent) return;
+        this.emit("agent-activity-changed", {
+          sessionId: this.config.sessionId,
+          agentId,
+          agentName: agent.config.name,
+          activity,
+          previousActivity,
+          idleSince: agent.idleSince || null,
+        });
+      }, ACTIVITY_DEBOUNCE_MS));
+    };
+
+    this.agentManager.on("agent-idle", (agentId: string) => emitActivityChange(agentId, "idle", "working"));
+    this.agentManager.on("agent-working", (agentId: string) => emitActivityChange(agentId, "working", "idle"));
+
     // When a message is detected in an agent's outbox, route it
     this.messageBus.on("message", async (message, _fromAgentId, _filename) => {
       await this.messageBus.routeMessage(message);
