@@ -2603,7 +2603,67 @@ export function createApiRouter(deps: {
       const workflowStates = session.config.workflowStates || DEFAULT_WORKFLOW_STATES;
 
       const metrics = computeTaskMetrics(db, sid, agents, workflowStates);
-      res.json(metrics);
+
+      // Auto-assign metrics from events table (Phase 0 evaluation)
+      let autoAssignMetrics = {
+        totalAutoAssigns: 0,
+        successRate: 100,
+        avgIdleGapMs: 0,
+        masterOverrideCount: 0,
+        skillMismatchCount: 0,
+      };
+      try {
+        // Count auto-assign events
+        const autoAssignEvents = db.db.prepare(
+          `SELECT data FROM events WHERE session_id = ? AND type = 'auto-assign'`
+        ).all(sid) as Array<{ data: string }>;
+        autoAssignMetrics.totalAutoAssigns = autoAssignEvents.length;
+
+        if (autoAssignEvents.length > 0) {
+          const TEN_MIN_MS = 10 * 60 * 1000;
+          const FIVE_MIN_MS = 5 * 60 * 1000;
+          let reassignedCount = 0;
+          let mismatchCount = 0;
+          let totalIdleGap = 0;
+          let idleGapCount = 0;
+
+          for (const evt of autoAssignEvents) {
+            const data = JSON.parse(evt.data || "{}");
+            const taskId = data.taskId;
+            if (!taskId) continue;
+
+            // Check if task was reassigned within 10 min (master override)
+            const transitions = db.getTransitions(taskId, 100);
+            const autoAssignTime = transitions.find(
+              (t: any) => t.changedBy === data.agentName || t.changedBy === data.agentId
+            );
+
+            // Check if assignee changed within 10 min
+            const task = db.getTask(taskId);
+            if (task && task.assignedTo !== data.agentName && task.assignedTo !== data.agentId) {
+              const timeSinceAssign = task.updatedAt
+                ? Date.now() - new Date(task.updatedAt).getTime()
+                : Infinity;
+              // If reassigned recently, count as override
+              if (timeSinceAssign < TEN_MIN_MS) {
+                reassignedCount++;
+              }
+              // If reassigned within 5 min, likely skill mismatch
+              if (timeSinceAssign < FIVE_MIN_MS) {
+                mismatchCount++;
+              }
+            }
+          }
+
+          autoAssignMetrics.successRate = autoAssignEvents.length > 0
+            ? Math.round(((autoAssignEvents.length - reassignedCount) / autoAssignEvents.length) * 100)
+            : 100;
+          autoAssignMetrics.masterOverrideCount = reassignedCount;
+          autoAssignMetrics.skillMismatchCount = mismatchCount;
+        }
+      } catch { /* non-fatal */ }
+
+      res.json({ ...metrics, autoAssignMetrics });
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
