@@ -22,7 +22,7 @@ describe("StaleTaskWatchdog", () => {
       expect(policy.intervalMinutes).toBe(20);
       expect(policy.target).toBe("assignee");
       expect(policy.escalateAfterCount).toBe(3);
-      expect(policy.escalateTo).toBe("architect");
+      expect(policy.escalateTo).toBe("orchestrator");
     });
 
     it("pending and done are disabled", () => {
@@ -37,7 +37,7 @@ describe("StaleTaskWatchdog", () => {
       expect(policy.intervalMinutes).toBe(30);
       expect(policy.target).toBe("assignee");
       expect(policy.escalateAfterCount).toBe(3);
-      expect(policy.escalateTo).toBe("architect");
+      expect(policy.escalateTo).toBe("orchestrator");
       expect(policy.maxNudges).toBe(8);
     });
 
@@ -46,7 +46,7 @@ describe("StaleTaskWatchdog", () => {
       expect(policy.enabled).toBe(true);
       expect(policy.nudgeAfterMinutes).toBe(30);
       expect(policy.intervalMinutes).toBe(20);
-      expect(policy.target).toBe("architect");
+      expect(policy.target).toBe("orchestrator");
       expect(policy.escalateAfterCount).toBe(3);
       expect(policy.escalateTo).toBe("user");
     });
@@ -66,9 +66,9 @@ describe("StaleTaskWatchdog", () => {
         expect(typeof policy.enabled).toBe("boolean");
         expect(typeof policy.nudgeAfterMinutes).toBe("number");
         expect(typeof policy.intervalMinutes).toBe("number");
-        expect(["assignee", "architect", "user", "all"]).toContain(policy.target);
+        expect(["assignee", "orchestrator", "user", "all"]).toContain(policy.target);
         expect(typeof policy.escalateAfterCount).toBe("number");
-        expect(["architect", "user", "all"]).toContain(policy.escalateTo);
+        expect(["orchestrator", "user", "all"]).toContain(policy.escalateTo);
         expect(typeof policy.maxNudges).toBe("number");
       }
     });
@@ -173,14 +173,14 @@ describe("Escalation self-loop protection (Fix #2)", () => {
   it("detects self-loop when architect is also assignee", () => {
     const task = { assigned_to: "master-agent-1" };
     const resolvedArchitect = "master-agent-1";
-    const isSelfLoop = "architect" !== "assignee" && resolvedArchitect === task.assigned_to;
+    const isSelfLoop = "orchestrator" !== "assignee" && resolvedArchitect === task.assigned_to;
     expect(isSelfLoop).toBe(true);
   });
 
   it("does not trigger for different agents", () => {
     const task = { assigned_to: "worker-agent-1" };
     const resolvedArchitect = "master-agent-2";
-    const isSelfLoop = "architect" !== "assignee" && resolvedArchitect === task.assigned_to;
+    const isSelfLoop = "orchestrator" !== "assignee" && resolvedArchitect === task.assigned_to;
     expect(isSelfLoop).toBe(false);
   });
 });
