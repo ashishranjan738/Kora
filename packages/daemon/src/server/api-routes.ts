@@ -2404,6 +2404,10 @@ export function createApiRouter(deps: {
         try {
           db.addTaskComment({ id: randomUUID().slice(0, 8), taskId: tid, text: `Approval required to move to "${targetState.label}". Waiting for human sign-off.`, author: "system", authorName: "system", createdAt: now });
         } catch {}
+        // Store pending target status in a comment for verification on /approve
+        try {
+          db.addTaskComment({ id: randomUUID().slice(0, 8), taskId: tid, text: `__pending_approval__:${body.status}`, author: "system", authorName: "system", createdAt: now });
+        } catch {}
         // Broadcast approval-needed event
         broadcastEvent({ event: "approval-needed", sessionId: sid, taskId: tid, taskTitle: oldTask.title, targetStatus: body.status, targetLabel: targetState.label, requestedBy: oldTask.assigned_to });
         res.json({ pendingApproval: true, taskId: tid, targetStatus: body.status, message: `Task paused — approval required for "${targetState.label}". Waiting for human sign-off via dashboard.` });
@@ -2570,8 +2574,20 @@ export function createApiRouter(deps: {
         return;
       }
 
-      // Validate transition is valid (approve bypasses requiresApproval gate, NOT pipeline order)
+      // Verify there's a pending approval for this status
       const currentTask = db.getTask(tid);
+      if (currentTask) {
+        const pendingComment = currentTask.comments?.find((c: any) => c.text?.startsWith("__pending_approval__:"));
+        if (pendingComment) {
+          const pendingStatus = pendingComment.text.split(":")[1];
+          if (pendingStatus && pendingStatus !== status) {
+            res.status(400).json({ error: `Approval mismatch: task is pending approval for "${pendingStatus}", not "${status}"` });
+            return;
+          }
+        }
+      }
+
+      // Validate transition is valid (approve bypasses requiresApproval gate, NOT pipeline order)
       if (currentTask) {
         const currentState = workflowStates_approve.find((s: any) => s.id === currentTask.status);
         if (currentState?.transitions?.length) {
