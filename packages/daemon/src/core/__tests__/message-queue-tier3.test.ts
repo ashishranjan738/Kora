@@ -734,11 +734,12 @@ describe("Event Routing Tier 3 - Database Migration", () => {
     }).not.toThrow();
   });
 
-  it("should set user_version to 7 after migration", () => {
+  it("should set user_version to latest schema after migration", () => {
     const database = new AppDatabase(testRuntimeDir);
 
-    const version = database.db.pragma("user_version", { simple: true });
-    expect(version).toBe(7);
+    const version = database.db.pragma("user_version", { simple: true }) as number;
+    // Schema version should be at least 14 (current latest migration)
+    expect(version).toBeGreaterThanOrEqual(14);
 
     database.close();
   });
