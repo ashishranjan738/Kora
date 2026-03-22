@@ -1154,6 +1154,7 @@ async function handleToolCall(
 
       await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/broadcast`, {
         message: `[From ${AGENT_ID}]: ${toolArgs.message}`,
+        from: AGENT_ID,
       });
       recordSendMessage();
       return { success: true, broadcast: true };
@@ -2075,36 +2076,26 @@ rl.on("line", async (line: string) => {
           }).catch(() => {}); // non-fatal
 
           // === MCP PUSH: Non-destructive notification of pending messages ===
-          // Only COUNT pending messages — don't consume them. check_messages is
-          // the ONLY consumer. This fixes messages being silently eaten by
-          // piggyback injection into random tool responses.
-          const pendingCount = (toolName !== "check_messages") ? countPendingMessages() : 0;
+          // Single unified unread count to avoid duplicate notifications.
+          // Uses countUnreadMessages() which checks API + file fallback.
+          // Only check_messages should consume messages — this only counts.
           const content: Array<{ type: string; text: string }> = [];
 
-          // Notify agent they have unread messages (without consuming content)
-          if (pendingCount > 0) {
-            content.push({
-              type: "text",
-              text: `[System: You have ${pendingCount} unread message(s). Run check_messages to read them.]`,
-            });
-          }
-
-          content.push(
-            { type: "text", text: JSON.stringify(result, null, 2) },
-          );
-
-          // Piggyback unread message notifications (except for check_messages itself)
           if (toolName !== "check_messages") {
             try {
               const unread = await countUnreadMessages();
               if (unread > 0) {
                 content.push({
                   type: "text",
-                  text: `\n[System: You have ${unread} unread message(s). Use check_messages tool to read them.]`,
+                  text: `[System: You have ${unread} unread message(s). Use check_messages tool to read them.]`,
                 });
               }
             } catch { /* non-fatal — don't block tool response */ }
           }
+
+          content.push(
+            { type: "text", text: JSON.stringify(result, null, 2) },
+          );
 
           sendResponse(id, { content });
         } catch (err: unknown) {

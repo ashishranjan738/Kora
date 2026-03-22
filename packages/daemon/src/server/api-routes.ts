@@ -1056,9 +1056,16 @@ export function createApiRouter(deps: {
       const agents = orch.agentManager.listAgents().filter((a) => a.status === "running");
       const results: Array<{ agentId: string; name: string; sent: boolean; error?: string }> = [];
 
+      // Determine sender to exclude from broadcast recipients (prevent self-delivery)
+      const senderId = (body as any).from as string | undefined;
+
       // Batch enqueue all messages, then flush once (avoids N redundant processQueues calls)
       const broadcastMsg = `\x1b[1;33m[Broadcast]\x1b[0m: ${body.message}`;
       for (const agent of agents) {
+        // Skip the sender — they already know what they broadcast
+        if (senderId && (agent.id === senderId || agent.config.name === senderId)) {
+          continue;
+        }
         try {
           orch.messageQueue.enqueueBatch(agent.id, agent.config.tmuxSession, broadcastMsg);
           results.push({ agentId: agent.id, name: agent.config.name, sent: true });
