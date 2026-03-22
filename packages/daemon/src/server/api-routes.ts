@@ -9,6 +9,7 @@ import {
   getRuntimeTmuxPrefix,
   getRuntimeDaemonDir,
   SESSIONS_SUBDIR,
+  DEFAULT_WORKFLOW_STATES,
 } from "@kora/shared";
 import type {
   DaemonStatusResponse,
@@ -43,6 +44,7 @@ import type { StandaloneTerminal } from "../core/terminal-persistence.js";
 import { WebhookNotifier } from "../core/webhook-notifier.js";
 import type { WebhookConfig } from "@kora/shared";
 import { analyzeTerminalOutput } from "../core/terminal-analyzer.js";
+import { computeTaskMetrics, TaskMetricsDebouncer } from "../core/task-metrics.js";
 
 // Cache strip-ansi import (ESM module loaded once at startup)
 let stripAnsiFunc: ((text: string) => string) | null = null;
@@ -1731,7 +1733,6 @@ export function createApiRouter(deps: {
     try {
       const session = sessionManager.getSession(String(req.params.sid));
       if (!session) { res.status(404).json({ error: "Session not found" }); return; }
-      const { DEFAULT_WORKFLOW_STATES } = require("@kora/shared");
       const states = session.config.workflowStates || DEFAULT_WORKFLOW_STATES;
       res.json({ states, frozen: true });
     } catch (err) { res.status(500).json({ error: String(err) }); }
@@ -2077,6 +2078,7 @@ export function createApiRouter(deps: {
 
       // Broadcast task-created event via WebSocket
       broadcastEvent({ event: "task-created", sessionId: sid, taskId: task.id });
+      taskMetricsDebouncer.schedule(sid, () => broadcastEvent({ event: "task-metrics-updated", sessionId: sid }));
 
       // Log to SQLite for timeline
       const orch_tc = orchestrators.get(sid);
@@ -2185,6 +2187,7 @@ export function createApiRouter(deps: {
 
       // Broadcast task-updated event via WebSocket
       broadcastEvent({ event: "task-updated", sessionId: sid, taskId: tid });
+      taskMetricsDebouncer.schedule(sid, () => broadcastEvent({ event: "task-metrics-updated", sessionId: sid }));
 
       // Log to SQLite for timeline
       const orch_tu = orchestrators.get(sid);
@@ -2210,6 +2213,7 @@ export function createApiRouter(deps: {
 
       // Broadcast task-deleted event via WebSocket
       broadcastEvent({ event: "task-deleted", sessionId: sid, taskId: tid });
+      taskMetricsDebouncer.schedule(sid, () => broadcastEvent({ event: "task-metrics-updated", sessionId: sid }));
 
       // Log to SQLite for timeline
       const orch_td = orchestrators.get(sid);
@@ -2260,6 +2264,39 @@ export function createApiRouter(deps: {
       if (!db) { res.status(404).json({ error: "Session not found" }); return; }
 
       res.json({ comments: db.getTaskComments(tid) });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // ─── Task Metrics ──────────────────────────────────────────────────
+
+  const taskMetricsDebouncer = new TaskMetricsDebouncer();
+
+  router.get("/sessions/:sid/task-metrics", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const session = sessionManager.getSession(sid);
+      if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session database not found" }); return; }
+
+      const orch = orchestrators.get(sid);
+      const agentList = orch ? orch.agentManager.listAgents() : [];
+
+      // Map agents to the info shape needed by computeTaskMetrics
+      const agents = agentList.map(a => ({
+        id: a.id,
+        name: a.config.name,
+        role: a.config.role,
+        activity: a.activity,
+      }));
+
+      const workflowStates = session.config.workflowStates || DEFAULT_WORKFLOW_STATES;
+
+      const metrics = computeTaskMetrics(db, sid, agents, workflowStates);
+      res.json(metrics);
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
