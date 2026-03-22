@@ -21,9 +21,9 @@ export interface NudgePolicy {
   enabled: boolean;
   nudgeAfterMinutes: number;
   intervalMinutes: number;
-  target: "assignee" | "architect" | "user" | "all";
+  target: "assignee" | "orchestrator" | "user" | "all";
   escalateAfterCount: number;
-  escalateTo: "architect" | "user" | "all";
+  escalateTo: "orchestrator" | "user" | "all";
   maxNudges: number;
 }
 
@@ -44,14 +44,14 @@ export const DEFAULT_NUDGE_POLICIES: Record<string, NudgePolicy> = {
     intervalMinutes: 30,
     target: "assignee",
     escalateAfterCount: 3,
-    escalateTo: "architect",
+    escalateTo: "orchestrator",
     maxNudges: 8,
   },
   "review": {
     enabled: true,
     nudgeAfterMinutes: 30,   // Fix #4: adjusted from 15min to 30min
     intervalMinutes: 20,      // Fix #4: adjusted from 15min to 20min
-    target: "architect",
+    target: "orchestrator",
     escalateAfterCount: 3,
     escalateTo: "user",
     maxNudges: 8,
@@ -62,7 +62,7 @@ export const DEFAULT_NUDGE_POLICIES: Record<string, NudgePolicy> = {
     intervalMinutes: 20,
     target: "assignee",
     escalateAfterCount: 3,
-    escalateTo: "architect",
+    escalateTo: "orchestrator",
     maxNudges: 8,
   },
   "blocked": {
@@ -295,7 +295,8 @@ export class StaleTaskWatchdog extends EventEmitter {
     switch (targetType) {
       case "assignee":
         return task.assigned_to || undefined;
-      case "architect": {
+      case "orchestrator":
+      case "architect": { // backward compat
         const agents = this.agentManager.listAgents();
         const master = agents.find(a =>
           a.config.sessionId === this.sessionId && a.config.role === "master" && a.status === "running"
