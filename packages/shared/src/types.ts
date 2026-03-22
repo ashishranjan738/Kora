@@ -316,6 +316,8 @@ export interface WorkflowState {
   skippable?: boolean;
   /** Instructions for agents — what this state means and what to do when a task enters it */
   instructions?: string;
+  /** If true, moving a task INTO this state requires human approval via dashboard */
+  requiresApproval?: boolean;
 }
 
 /** Default workflow states for new sessions */

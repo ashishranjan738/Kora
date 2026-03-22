@@ -2305,6 +2305,20 @@ export function createApiRouter(deps: {
         }
       }
 
+      // Approval gate: if target state requires approval and not force mode, pause the task
+      if (body.status && targetState?.requiresApproval && !forceMode && !(body as any).approved) {
+        // Don't update status — instead mark as pending approval
+        const { randomUUID } = require("crypto");
+        const now = new Date().toISOString();
+        try {
+          db.addTaskComment({ id: randomUUID().slice(0, 8), taskId: tid, text: `Approval required to move to "${targetState.label}". Waiting for human sign-off.`, author: "system", authorName: "system", createdAt: now });
+        } catch {}
+        // Broadcast approval-needed event
+        broadcastEvent({ event: "approval-needed", sessionId: sid, taskId: tid, taskTitle: oldTask.title, targetStatus: body.status, targetLabel: targetState.label, requestedBy: oldTask.assigned_to });
+        res.json({ pendingApproval: true, taskId: tid, targetStatus: body.status, message: `Task paused — approval required for "${targetState.label}". Waiting for human sign-off via dashboard.` });
+        return;
+      }
+
       const task = db.updateTask(tid, {
         title: body.title,
         description: body.description,
@@ -2440,6 +2454,74 @@ export function createApiRouter(deps: {
       const imported = targetDb.importTasks(sid, sourceDb, sourceSessionId, mode || "active");
       broadcastEvent({ event: "task-created", sessionId: sid });
       res.json({ imported, mode: mode || "active", sourceSessionId });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Approve a pending approval gate transition
+  router.post("/sessions/:sid/tasks/:tid/approve", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const tid = String(req.params.tid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const { status } = req.body as { status: string };
+      if (!status) { res.status(400).json({ error: "status is required" }); return; }
+
+      // Update with approved flag to bypass the gate
+      const task = db.updateTask(tid, { status });
+      const { randomUUID } = require("crypto");
+      db.addTaskComment({ id: randomUUID().slice(0, 8), taskId: tid, text: `Approved: moved to "${status}" by human reviewer.`, author: "user", authorName: "user", createdAt: new Date().toISOString() });
+
+      // Notify assigned agent
+      const orch = orchestrators.get(sid);
+      if (orch && task.assignedTo) {
+        try {
+          const agent = orch.agentManager.getAgent(task.assignedTo);
+          if (agent) {
+            orch.messageQueue.enqueue(task.assignedTo, agent.config.tmuxSession,
+              `\x1b[1;32m[Approved] Task "${task.title}" moved to "${status}". Continue working.\x1b[0m`);
+          }
+        } catch {}
+      }
+
+      broadcastEvent({ event: "task-updated", sessionId: sid, taskId: tid });
+      broadcastEvent({ event: "approval-resolved", sessionId: sid, taskId: tid, status, action: "approved" });
+      res.json({ approved: true, task });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Reject a pending approval gate transition
+  router.post("/sessions/:sid/tasks/:tid/reject", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const tid = String(req.params.tid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const { reason } = req.body as { reason?: string };
+      const { randomUUID } = require("crypto");
+      db.addTaskComment({ id: randomUUID().slice(0, 8), taskId: tid, text: `Rejected: ${reason || "approval denied"}. Task stays in current state.`, author: "user", authorName: "user", createdAt: new Date().toISOString() });
+
+      // Notify assigned agent
+      const task = db.getTask(tid);
+      const orch = orchestrators.get(sid);
+      if (orch && task?.assignedTo) {
+        try {
+          const agent = orch.agentManager.getAgent(task.assignedTo);
+          if (agent) {
+            orch.messageQueue.enqueue(task.assignedTo, agent.config.tmuxSession,
+              `\x1b[1;31m[Rejected] Approval denied for task "${task.title}": ${reason || "no reason given"}. Address feedback and try again.\x1b[0m`);
+          }
+        } catch {}
+      }
+
+      broadcastEvent({ event: "approval-resolved", sessionId: sid, taskId: tid, action: "rejected", reason });
+      res.json({ rejected: true, taskId: tid });
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
