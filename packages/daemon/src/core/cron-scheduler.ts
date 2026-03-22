@@ -190,8 +190,9 @@ export function updateSchedule(db: AppDatabase, id: string, updates: Partial<{
   if (!existing) return false;
 
   const now = new Date().toISOString();
-  const newCron = updates.cronExpression || existing.cron_expression;
-  const newTz = updates.timezone || existing.timezone;
+  const newName = updates.name !== undefined ? updates.name : existing.name;
+  const newCron = updates.cronExpression !== undefined ? updates.cronExpression : existing.cron_expression;
+  const newTz = updates.timezone !== undefined ? updates.timezone : existing.timezone;
   const newEnabled = updates.enabled !== undefined ? (updates.enabled ? 1 : 0) : existing.enabled;
 
   // Recompute next_run_at if cron changed
@@ -203,10 +204,10 @@ export function updateSchedule(db: AppDatabase, id: string, updates: Partial<{
   db.db.prepare(
     `UPDATE session_schedules SET name = ?, cron_expression = ?, timezone = ?, playbook_id = ?, session_config = ?, enabled = ?, next_run_at = ?, updated_at = ? WHERE id = ?`
   ).run(
-    updates.name || existing.name,
+    newName,
     newCron, newTz,
     updates.playbookId !== undefined ? updates.playbookId : existing.playbook_id,
-    updates.sessionConfig ? JSON.stringify(updates.sessionConfig) : existing.session_config,
+    updates.sessionConfig !== undefined ? JSON.stringify(updates.sessionConfig) : existing.session_config,
     newEnabled, nextRun, now, id,
   );
 
