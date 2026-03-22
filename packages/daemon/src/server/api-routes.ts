@@ -2847,9 +2847,29 @@ export function createApiRouter(deps: {
             }
           }
 
+          // Compute avgIdleGapMs: time between auto-assign events per agent
+          // (approximation — time between successive auto-assign events for same agent)
+          const eventsByAgent = new Map<string, number[]>();
+          const autoEvents = db.db.prepare(
+            `SELECT data, timestamp FROM events WHERE session_id = ? AND type = 'auto-assign' ORDER BY timestamp ASC`
+          ).all(sid) as Array<{ data: string; timestamp: string }>;
+          for (const ae of autoEvents) {
+            const d = JSON.parse(ae.data || "{}");
+            const agentId = d.agentId || "unknown";
+            if (!eventsByAgent.has(agentId)) eventsByAgent.set(agentId, []);
+            eventsByAgent.get(agentId)!.push(new Date(ae.timestamp).getTime());
+          }
+          for (const times of eventsByAgent.values()) {
+            for (let i = 1; i < times.length; i++) {
+              totalIdleGap += times[i] - times[i - 1];
+              idleGapCount++;
+            }
+          }
+
           autoAssignMetrics.successRate = autoAssignEvents.length > 0
             ? Math.round(((autoAssignEvents.length - reassignedCount) / autoAssignEvents.length) * 100)
             : 100;
+          autoAssignMetrics.avgIdleGapMs = idleGapCount > 0 ? Math.round(totalIdleGap / idleGapCount) : 0;
           autoAssignMetrics.masterOverrideCount = reassignedCount;
           autoAssignMetrics.skillMismatchCount = mismatchCount;
         }
