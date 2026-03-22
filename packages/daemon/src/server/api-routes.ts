@@ -1067,6 +1067,11 @@ export function createApiRouter(deps: {
         return;
       }
 
+      // Record MCP activity for the sender (prevents premature idle detection)
+      if (body.from && body.from !== "user") {
+        try { orch.agentManager.recordMcpCall(body.from); } catch { /* non-fatal */ }
+      }
+
       const success = await orch.relayMessage(body.from || "user", body.to, body.message, body.messageType);
       if (!success) {
         res.status(404).json({ error: `Target agent "${body.to}" not found or not running` });
@@ -1601,6 +1606,9 @@ export function createApiRouter(deps: {
         res.status(404).json({ error: `Session "${sid}" not found` });
         return;
       }
+
+      // Record MCP activity — agent is actively checking messages
+      try { orch.agentManager.recordMcpCall(String(aid)); } catch { /* non-fatal */ }
 
       const status = req.query.status as string | string[] | undefined;
       const since = req.query.since ? parseInt(req.query.since as string, 10) : undefined;
