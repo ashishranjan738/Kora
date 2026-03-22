@@ -180,6 +180,22 @@ async function readSqliteMessages(): Promise<Array<{ id: string; from: string; c
   }
 }
 
+/**
+ * Non-destructive count of pending messages. Used for piggyback notifications
+ * ("You have N unread messages") without consuming the actual content.
+ * Only check_messages should consume messages via readAndConsumePendingMessages().
+ */
+function countPendingMessages(): number {
+  if (!PROJECT_PATH) return 0;
+  const pendingDir = nodePath.join(PROJECT_PATH, getRuntimeDir(), "mcp-pending", AGENT_ID);
+  try {
+    const files = fs.readdirSync(pendingDir);
+    return files.filter((f: string) => f.endsWith(".json")).length;
+  } catch {
+    return 0;
+  }
+}
+
 function readAndConsumePendingMessages(): Array<{ from: string; content: string; timestamp: string }> {
   if (!PROJECT_PATH) return [];
 
@@ -1854,18 +1870,19 @@ rl.on("line", async (line: string) => {
         try {
           const result = await handleToolCall(toolName, toolArgs);
 
-          // === MCP PUSH: Inject pending messages into response ===
-          const pendingMessages = (toolName !== "check_messages") ? readAndConsumePendingMessages() : [];
+          // === MCP PUSH: Non-destructive notification of pending messages ===
+          // Only COUNT pending messages — don't consume them. check_messages is
+          // the ONLY consumer. This fixes messages being silently eaten by
+          // piggyback injection into random tool responses.
+          const pendingCount = (toolName !== "check_messages") ? countPendingMessages() : 0;
           const content: Array<{ type: string; text: string }> = [];
 
-          // Prepend pending messages so agent sees them BEFORE the tool result
-          if (pendingMessages.length > 0) {
-            for (const pm of pendingMessages) {
-              content.push({
-                type: "text",
-                text: `[Message from ${pm.from}]: ${pm.content}`,
-              });
-            }
+          // Notify agent they have unread messages (without consuming content)
+          if (pendingCount > 0) {
+            content.push({
+              type: "text",
+              text: `[System: You have ${pendingCount} unread message(s). Run check_messages to read them.]`,
+            });
           }
 
           content.push(
