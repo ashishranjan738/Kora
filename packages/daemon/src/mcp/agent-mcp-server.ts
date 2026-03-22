@@ -252,6 +252,8 @@ function apiCallOnce(method: string, urlPath: string, body?: unknown): Promise<u
       headers: {
         Authorization: `Bearer ${getToken()}`,
         "Content-Type": "application/json",
+        "X-Agent-Id": AGENT_ID,
+        "X-Agent-Role": AGENT_ROLE,
       },
     };
     const req = http.request(options, (res) => {
