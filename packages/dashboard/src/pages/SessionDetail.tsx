@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { SpawnAgentDialog } from "../components/SpawnAgentDialog";
-import { ReplaceAgentDialog } from "../components/ReplaceAgentDialog";
+import { ReplaceAgentDialog, RestartAgentDialog } from "../components/ReplaceAgentDialog";
 import { SessionSettingsDialog } from "../components/SessionSettingsDialog";
 import { StopSessionDialog } from "../components/StopSessionDialog";
 import { RestartAllDialog } from "../components/RestartAllDialog";
@@ -121,6 +121,7 @@ export function SessionDetail() {
   const [personaEditIndex, setPersonaEditIndex] = useState<number | null>(null);
   const [personaLibraryForIndex, setPersonaLibraryForIndex] = useState<number | null>(null);
   const [replaceAgentId, setReplaceAgentId] = useState<string | null>(null);
+  const [restartAgentId, setRestartAgentId] = useState<string | null>(null);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [sendingTo, setSendingTo] = useState<string | null>(null);
   const [quickMessage, setQuickMessage] = useState("");
@@ -311,13 +312,8 @@ export function SessionDetail() {
     }
   }
 
-  async function handleRestartAgent(agentId: string) {
-    try {
-      await api.restartAgent(sessionId!, agentId);
-      loadData();
-    } catch (err: any) {
-      showError(err.message, "Failed to restart agent");
-    }
+  function handleRestartAgent(agentId: string) {
+    setRestartAgentId(agentId);
   }
 
   async function handleBroadcastMessage() {
@@ -830,6 +826,7 @@ export function SessionDetail() {
           reject={reject}
           onBroadcast={() => setShowBroadcastModal(true)}
           onCloseTerminal={(id, name) => setConfirmCloseTerminal({ id, name })}
+          workflowStates={session?.workflowStates}
         />
       )}
 
@@ -957,6 +954,21 @@ export function SessionDetail() {
         />
       )}
 
+      {/* Restart Agent Dialog */}
+      {restartAgentId && sessionId && (
+        <RestartAgentDialog
+          sessionId={sessionId}
+          agentId={restartAgentId}
+          agentName={
+            agents.find((a) => a.id === restartAgentId)?.name || agents.find((a) => a.id === restartAgentId)?.config?.name || restartAgentId
+          }
+          onClose={() => setRestartAgentId(null)}
+          onRestarted={() => {
+            setRestartAgentId(null);
+            loadData();
+          }}
+        />
+      )}
       {/* Replace Agent Dialog */}
       {replaceAgentId && sessionId && (
         <ReplaceAgentDialog
@@ -1483,6 +1495,7 @@ interface AgentsTabProps {
   reject: (agentId: string, requestId: string) => Promise<void>;
   onBroadcast: () => void;
   onCloseTerminal: (id: string, name: string) => void;
+  workflowStates?: any[];
 }
 
 function AgentsTab({
@@ -1509,6 +1522,7 @@ function AgentsTab({
   reject,
   onBroadcast,
   onCloseTerminal,
+  workflowStates,
 }: AgentsTabProps) {
   const api = useApi();
   const [agentActivities, setAgentActivities] = useState<Record<string, AgentActivity>>({});
@@ -1660,14 +1674,6 @@ function AgentsTab({
       </div>
     )}
 
-    {/* Agent Topology — visual graph of master → worker hierarchy */}
-    {agents.length > 0 && (
-      <AgentTopology
-        agents={agents}
-        onAgentClick={(agentId) => onOpenTerminal(agentId, agents.find(a => a.id === agentId)?.config?.name || agentId)}
-      />
-    )}
-
     {/* Session Summary Dashboard */}
     <SessionSummary
       sessionId={sessionId}
@@ -1676,9 +1682,22 @@ function AgentsTab({
         try { await api.nudgeAgent(sessionId, agentId); } catch {}
       }}
       onBroadcast={onBroadcast}
+      onAgentClick={(agentId) => onOpenTerminal(agentId, agents.find(a => a.id === agentId)?.config?.name || agentId)}
+      workflowStates={workflowStates}
     />
 
-    <SessionCostSummary agents={agents} />
+    {/* Agents Section Header */}
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, marginTop: 8 }}>
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+        Agents
+        <Badge variant="light" color="blue" size="sm" style={{ marginLeft: 8 }}>
+          {agents.length}
+        </Badge>
+      </h2>
+      <Button size="sm" onClick={onShowSpawnDialog}>
+        + Add Agent
+      </Button>
+    </div>
 
     <div className="agent-grid">
       {agents.map((a) => {
@@ -1945,10 +1964,10 @@ function AgentsTab({
                     {gearOpen === a.id && (
                       <div className="agent-settings-dropdown" style={{ bottom: "100%", top: "auto", marginBottom: 4 }}>
                         <div className="dropdown-item" onClick={() => { onSendingToChange(sendingTo === a.id ? null : a.id); setGearOpen(null); }}>Send Message</div>
-                        <div className="dropdown-item" onClick={() => { onReplaceAgent(a.id); setGearOpen(null); }}>Replace Agent</div>
+                        <div className="dropdown-item" onClick={() => { onReplaceAgent(a.id); setGearOpen(null); }}>Replace</div>
                         <div className="dropdown-item" onClick={() => { onRestartAgent(a.id); setGearOpen(null); }}>Restart</div>
                         <div className="divider" />
-                        <div className="dropdown-item danger" onClick={() => { onRemoveAgent(a.id); setGearOpen(null); }}>Remove Agent</div>
+                        <div className="dropdown-item danger" onClick={() => { onRemoveAgent(a.id); setGearOpen(null); }}>Remove</div>
                       </div>
                     )}
                   </div>

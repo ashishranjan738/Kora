@@ -40,6 +40,10 @@ export class CostTracker extends EventEmitter {
       cost.totalCostUsd = Math.max(cost.totalCostUsd, parsed.costUsd);
     }
 
+    if (parsed.contextWindowPercent !== undefined) {
+      cost.contextWindowPercent = parsed.contextWindowPercent;
+    }
+
     cost.lastUpdatedAt = now;
     this.emit("cost-updated", agentId, cost);
   }

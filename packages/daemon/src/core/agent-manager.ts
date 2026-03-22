@@ -7,6 +7,7 @@ import { WorktreeManager } from "./worktree.js";
 import { EventEmitter } from "events";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs/promises";
+import { readFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { logger } from "./logger.js";
@@ -203,43 +204,76 @@ export class AgentManager extends EventEmitter {
       skipArgValidation: options.skipArgValidation,
     });
 
-    // 3c. Append --mcp-config and pre-approve tools for MCP-capable providers
+    // 3c. Apply autonomy level flags
+    const effectiveAutonomy = options.autonomyLevel ?? AutonomyLevel.AutoApply;
+    if (effectiveAutonomy === AutonomyLevel.FullAuto) {
+      // Full auto: skip all permission prompts
+      if (options.provider.id === "claude-code" && !command.includes("--dangerously-skip-permissions")) {
+        command.push("--dangerously-skip-permissions");
+      } else if (options.provider.id === "aider" && !command.includes("--yes")) {
+        command.push("--yes");
+      } else if (options.provider.id === "kiro" && !command.includes("--trust-all-tools")) {
+        command.push("--trust-all-tools");
+      }
+    }
+
+    // 3d. Append MCP config and pre-approve tools for MCP-capable providers
     if (options.provider.supportsMcp) {
       if (mcpConfigPath && effectiveMessagingMode === "mcp") {
-        command.push("--mcp-config", mcpConfigPath);
-        // Pre-approve read operations + MCP messaging so agents work autonomously
-        command.push(
-          "--allowedTools",
-          // Read operations — agents need to freely explore the codebase
-          "Read",
-          "Glob",
-          "Grep",
-          "LS",
-          // MCP messaging tools — inter-agent communication without approval
-          "mcp__kora__send_message",
-          "mcp__kora__check_messages",
-          "mcp__kora__list_agents",
-          "mcp__kora__broadcast",
-          // MCP task tools — agents can view and update their assigned tasks
-          "mcp__kora__list_tasks",
-          "mcp__kora__update_task",
-          "mcp__kora__create_task",
-          // Observation + nudge tools — check worker status and send urgent pokes
-          "mcp__kora__peek_agent",
-          "mcp__kora__nudge_agent",
-          // Idle detection + task assignment — report idle status and request tasks
-          "mcp__kora__report_idle",
-          "mcp__kora__request_task",
-          // Persona library — available to all agents
-          "mcp__kora__list_personas",
-          "mcp__kora__save_persona",
-        );
-        // Master agents get agent management tools
-        if (options.role === "master") {
-          command.push(
-            "mcp__kora__spawn_agent",
-            "mcp__kora__remove_agent",
-          );
+        // Provider-specific MCP config flag
+        if (options.provider.id === "kiro") {
+          // Kiro uses its own MCP config management — we'll set it up via kiro-cli mcp add before spawning
+          // For now, trust tools via --trust-tools
+        } else {
+          // Claude Code and others use --mcp-config
+          command.push("--mcp-config", mcpConfigPath);
+        }
+
+        // Build list of pre-approved tools (provider-specific names)
+        const isKiro = options.provider.id === "kiro";
+
+        if (isKiro) {
+          // Kiro: --trust-tools accepts only: read, write, shell as built-in names.
+          // MCP tools use @server/tool format. For FullAuto we already pass
+          // --trust-all-tools so no need for --trust-tools at all.
+          if (effectiveAutonomy < AutonomyLevel.FullAuto) {
+            const kiroTools: string[] = ["read"];
+            // MCP tools with @kora/ prefix
+            const mcpToolNames = [
+              "send_message", "check_messages", "list_agents", "broadcast",
+              "list_tasks", "update_task", "create_task",
+              "peek_agent", "nudge_agent",
+              "report_idle", "request_task",
+              "list_personas", "save_persona",
+            ];
+            kiroTools.push(...mcpToolNames.map(t => `@kora/${t}`));
+            if (effectiveAutonomy >= AutonomyLevel.AutoApply) {
+              kiroTools.push("write", "shell");
+            }
+            if (options.role === "master") {
+              kiroTools.push("@kora/spawn_agent", "@kora/remove_agent");
+            }
+            command.push(`--trust-tools=${kiroTools.join(",")}`);
+          }
+          // FullAuto: --trust-all-tools already added in step 3c, no --trust-tools needed
+        } else {
+          // Claude Code: --allowedTools with space-separated tool names
+          const approvedTools: string[] = [
+            "Read", "Glob", "Grep", "LS",
+            "mcp__kora__send_message", "mcp__kora__check_messages",
+            "mcp__kora__list_agents", "mcp__kora__broadcast",
+            "mcp__kora__list_tasks", "mcp__kora__update_task", "mcp__kora__create_task",
+            "mcp__kora__peek_agent", "mcp__kora__nudge_agent",
+            "mcp__kora__report_idle", "mcp__kora__request_task",
+            "mcp__kora__list_personas", "mcp__kora__save_persona",
+          ];
+          if (effectiveAutonomy >= AutonomyLevel.AutoApply) {
+            approvedTools.push("Edit", "Write", "Bash");
+          }
+          if (options.role === "master") {
+            approvedTools.push("mcp__kora__spawn_agent", "mcp__kora__remove_agent");
+          }
+          command.push("--allowedTools", ...approvedTools);
         }
       } else {
         // Non-MCP modes: only pre-approve read operations
@@ -268,6 +302,47 @@ export class AgentManager extends EventEmitter {
       await new Promise(r => setTimeout(r, pollInterval));
     }
 
+    // 5b. For Kiro: write workspace MCP config directly to <worktree>/.kiro/settings/mcp.json
+    // All Kiro agents (built-in and custom) have includeMcpJson: true by default,
+    // so they automatically load MCP servers from the workspace config.
+    // This gives per-agent isolation (each worktree has its own config)
+    // and works with any agent (kiro_planner, kiro_help, custom agents).
+    if (options.provider.id === "kiro" && mcpConfigPath && effectiveMessagingMode === "mcp") {
+      try {
+        const mcpConfig = JSON.parse(readFileSync(mcpConfigPath, "utf-8"));
+        const serverConfig = mcpConfig?.mcpServers?.kora || mcpConfig?.mcpServers?.[MCP_SERVER_NAME];
+        if (serverConfig) {
+          // For Kiro, write workspace MCP config to a per-agent directory.
+          // In isolated mode, agentWorkDir is already unique per agent (git worktree).
+          // In shared mode, agentWorkDir is the project root (shared by all agents),
+          // so we use a per-agent subdirectory under runtimeDir to avoid overwrites.
+          const kiroWorkspaceRoot = agentWorkDir === options.workingDirectory
+            ? path.join(options.runtimeDir, "kiro-workspaces", agentId)  // shared: use per-agent dir
+            : agentWorkDir;                                                // isolated: worktree is already unique
+          const kiroSettingsDir = path.join(kiroWorkspaceRoot, ".kiro", "settings");
+          await fs.mkdir(kiroSettingsDir, { recursive: true });
+          const kiroMcpConfig = {
+            mcpServers: {
+              kora: {
+                command: serverConfig.command,
+                args: serverConfig.args || [],
+              },
+            },
+          };
+          await fs.writeFile(
+            path.join(kiroSettingsDir, "mcp.json"),
+            JSON.stringify(kiroMcpConfig, null, 2),
+            "utf-8"
+          );
+          // Store the Kiro workspace root so we cd there before starting chat
+          (options as any)._kiroWorkspaceRoot = kiroWorkspaceRoot;
+          logger.info(`[agent-manager] Wrote Kiro workspace MCP config for ${agentId} at ${kiroSettingsDir}/mcp.json`);
+        }
+      } catch (err) {
+        logger.warn({ err }, `[agent-manager] Failed to write Kiro MCP config for ${agentId}`);
+      }
+    }
+
     // 6. Set environment variables via export commands (works for both tmux and holdpty)
     const envEntries: [string, string][] = [];
     if (options.envVars) {
@@ -290,7 +365,9 @@ export class AgentManager extends EventEmitter {
     }
 
     // 7. cd to workingDirectory (use worktree if available)
-    await this.tmux.sendKeys(tmuxSession, `cd ${agentWorkDir}`, { literal: false });
+    // For Kiro: cd to the Kiro workspace root so it loads the per-agent .kiro/settings/mcp.json
+    const cdTarget = (options as any)._kiroWorkspaceRoot || agentWorkDir;
+    await this.tmux.sendKeys(tmuxSession, `cd ${cdTarget}`, { literal: false });
 
     // Wait for cd to complete — poll for prompt to reappear
     startTime = Date.now();
@@ -310,20 +387,25 @@ export class AgentManager extends EventEmitter {
     // 8b. Fire-and-forget verification: after a delay, check if the CLI command
     //     actually reached the terminal. If sendKeys failed silently (e.g. holdpty
     //     socket race), retry once. This runs async to avoid blocking spawn.
-    setTimeout(async () => {
-      try {
-        const verifyOutput = await this.tmux.capturePane(tmuxSession, 10, false);
-        const cliBinary = command[0]; // e.g. "claude", "aider", "codex"
-        // Only retry if we got real terminal output but the command is missing
-        if (verifyOutput.length > 20 && !verifyOutput.includes(cliBinary)) {
-          logger.warn(`[agent-manager] CLI command not detected in terminal for ${agentId}, retrying sendKeys...`);
-          await new Promise(r => setTimeout(r, 800));
-          await this.tmux.sendKeys(tmuxSession, fullCommand, { literal: false });
+    //     Skip for providers that launch interactive UIs quickly (Kiro) — their
+    //     output won't contain the binary name, causing false-positive retries.
+    const skipRetryProviders = ["kiro"];
+    if (!skipRetryProviders.includes(options.provider.id)) {
+      setTimeout(async () => {
+        try {
+          const verifyOutput = await this.tmux.capturePane(tmuxSession, 10, false);
+          const cliBinary = command[0]; // e.g. "claude", "aider", "codex"
+          // Only retry if we got real terminal output but the command is missing
+          if (verifyOutput.length > 20 && !verifyOutput.includes(cliBinary)) {
+            logger.warn(`[agent-manager] CLI command not detected in terminal for ${agentId}, retrying sendKeys...`);
+            await new Promise(r => setTimeout(r, 800));
+            await this.tmux.sendKeys(tmuxSession, fullCommand, { literal: false });
+          }
+        } catch {
+          // capturePane may fail for mock backends — skip verification
         }
-      } catch {
-        // capturePane may fail for mock backends — skip verification
-      }
-    }, 1500);
+      }, 1500);
+    }
 
     // 9. If initialTask, wait 5 seconds then send it via sendKeys
     //    (Claude Code needs time to fully start up)

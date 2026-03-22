@@ -141,15 +141,18 @@ export function useApi() {
         method: "PUT",
         body: JSON.stringify({ model }),
       }),
-    replaceAgent: (sid: string, aid: string) =>
+    replaceAgent: (sid: string, aid: string, opts?: { name?: string; model?: string; cliProvider?: string; persona?: string }) =>
       apiFetch<any>(`/sessions/${sid}/agents/${aid}/replace`, {
         method: "POST",
+        body: JSON.stringify(opts ?? {}),
       }),
-    restartAgent: (sid: string, aid: string, opts?: { carryContext?: boolean }) =>
+    restartAgent: (sid: string, aid: string, opts?: { carryContext?: boolean; contextLines?: number; summaryMode?: boolean }) =>
       apiFetch<any>(`/sessions/${sid}/agents/${aid}/restart`, {
         method: "POST",
         body: JSON.stringify(opts ?? {}),
       }),
+    pollUsage: (sid: string) =>
+      apiFetch<{ polled: boolean }>(`/sessions/${sid}/poll-usage`, { method: "POST" }),
     restartAllAgents: (sid: string, opts?: { carryContext?: boolean }) =>
       apiFetch<any>(`/sessions/${sid}/restart-all`, {
         method: "POST",

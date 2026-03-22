@@ -4,7 +4,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { AgentTerminal } from "../components/AgentTerminal";
 import { SpawnAgentDialog } from "../components/SpawnAgentDialog";
-import { ReplaceAgentDialog } from "../components/ReplaceAgentDialog";
+import { ReplaceAgentDialog, RestartAgentDialog } from "../components/ReplaceAgentDialog";
 import { RestartAllDialog } from "../components/RestartAllDialog";
 import { EditorTile } from "../components/EditorTile";
 import { Mosaic, MosaicWindow, MosaicNode, MosaicPath, MosaicWindowProps, getLeaves, createBalancedTreeFromLeaves } from "react-mosaic-component";
@@ -132,7 +132,7 @@ export function MultiAgentView() {
   // Dialog state
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
   const [replaceTarget, setReplaceTarget] = useState<{ id: string; name: string } | null>(null);
-  const [confirmRestartAgentId, setConfirmRestartAgentId] = useState<string | null>(null);
+  const [restartTarget, setRestartTarget] = useState<{ id: string; name: string } | null>(null);
   const [confirmRemoveAgentId, setConfirmRemoveAgentId] = useState<string | null>(null);
   const [confirmRestartAll, setConfirmRestartAll] = useState(false);
   const [restartAllRestarting, setRestartAllRestarting] = useState(false);
@@ -560,21 +560,11 @@ export function MultiAgentView() {
     }
   }
 
-  async function handleRestart(agentId: string) {
-    setConfirmRestartAgentId(agentId);
-  }
-
-  async function executeRestart() {
-    if (!confirmRestartAgentId) return;
-    try {
-      await api.restartAgent(sessionId!, confirmRestartAgentId);
-      setMenuOpen(null);
-      setConfirmRestartAgentId(null);
-      showToast("Agent restarting...");
-      loadData();
-    } catch (err: any) {
-      showError(err.message, "Failed to restart agent");
-    }
+  function handleRestart(agentId: string) {
+    setMenuOpen(null);
+    const agent = agents.find(a => a.id === agentId);
+    const name = agent?.config?.name || agent?.name || agentId;
+    setRestartTarget({ id: agentId, name });
   }
 
   async function handleRemove(agentId: string) {
@@ -856,6 +846,7 @@ export function MultiAgentView() {
             <span className="mosaic-agent-name">
               {agent.config?.name || agent.name || "Agent"}
             </span>
+            <span style={{ color: 'var(--text-muted)', fontSize: 9, fontFamily: 'monospace', opacity: 0.7 }}>{agent.id}</span>
             {agent.role && (
               <span className={`badge ${getRoleBadgeClass(agent.role)}`} style={{ fontSize: 11, padding: "1px 8px" }}>
                 {agent.role}
@@ -1192,6 +1183,7 @@ export function MultiAgentView() {
         }}>
           <span className={`agent-status-dot ${getStatusDotClass(agent.status)}`} style={{ width: 10, height: 10 }} />
           <span style={{ fontWeight: 600, fontSize: 16 }}>{agent.config?.name || agent.name || "Agent"}</span>
+          <span style={{ color: 'var(--text-muted)', fontSize: 10, fontFamily: 'monospace' }}>{agent.id}</span>
           <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{agent.provider}/{agent.model}</span>
           <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
             In: {formatTokens(tokenIn)} | Out: {formatTokens(tokenOut)} | {formatCost(cost)}
@@ -1486,9 +1478,12 @@ export function MultiAgentView() {
                     {/* Row 1: Name + role + status */}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                       <span className={`agent-status-dot ${getStatusDotClass(agent.status)}`} />
-                      <span style={{ fontWeight: 700, fontSize: 15, color: "var(--text-primary)", flex: 1 }}>
-                        {agent.config?.name || agent.name || "Agent"}
-                      </span>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontWeight: 700, fontSize: 15, color: "var(--text-primary)" }}>
+                          {agent.config?.name || agent.name || "Agent"}
+                        </span>
+                        <div style={{ color: 'var(--text-muted)', fontSize: 10, fontFamily: 'monospace', opacity: 0.7 }}>{agent.id}</div>
+                      </div>
                       <Badge size="xs" color={agent.role === "master" ? "grape" : "blue"} variant="light">
                         {agent.role}
                       </Badge>
@@ -1598,15 +1593,7 @@ export function MultiAgentView() {
       )}
 
       {/* Confirm Dialogs */}
-      <ConfirmDialog
-        opened={!!confirmRestartAgentId}
-        onClose={() => setConfirmRestartAgentId(null)}
-        onConfirm={executeRestart}
-        title="Restart Agent"
-        message="Restart this agent? It will get a fresh session with the latest configuration."
-        confirmLabel="Restart"
-        confirmColor="yellow"
-      />
+      {/* Restart confirm dialog removed — now handled by ReplaceAgentDialog with defaultMode */}
       <ConfirmDialog
         opened={!!confirmRemoveAgentId}
         onClose={() => setConfirmRemoveAgentId(null)}
@@ -1701,6 +1688,19 @@ export function MultiAgentView() {
       )}
 
       {/* Replace Agent Dialog */}
+      {restartTarget && sessionId && (
+        <RestartAgentDialog
+          sessionId={sessionId}
+          agentId={restartTarget.id}
+          agentName={restartTarget.name}
+          onClose={() => setRestartTarget(null)}
+          onRestarted={() => {
+            setRestartTarget(null);
+            showToast("Agent restarting...");
+            loadData();
+          }}
+        />
+      )}
       {replaceTarget && sessionId && (
         <ReplaceAgentDialog
           sessionId={sessionId}

@@ -253,6 +253,27 @@ describe('Task Status Colors', () => {
   });
 });
 
+describe('Dynamic Workflow Columns', () => {
+  function hexToMantineColor(hex: string): string {
+    const map: Record<string, string> = { "#6b7280": "gray", "#3b82f6": "blue", "#f59e0b": "yellow", "#22c55e": "green", "#8b5cf6": "grape", "#06b6d4": "cyan", "#ef4444": "red", "#f97316": "orange" };
+    return map[hex?.toLowerCase()] || "blue";
+  }
+  const STATES = [
+    { id: "backlog", label: "Backlog", color: "#6b7280", category: "not-started", transitions: ["in-progress"] },
+    { id: "in-progress", label: "In Progress", color: "#3b82f6", category: "active", transitions: ["review"] },
+    { id: "review", label: "Review", color: "#f59e0b", category: "active", transitions: ["e2e-testing", "staging", "in-progress"] },
+    { id: "e2e-testing", label: "E2E Testing", color: "#8b5cf6", category: "active", transitions: ["staging", "done", "review"] },
+    { id: "staging", label: "Staging", color: "#06b6d4", category: "active", transitions: ["done", "e2e-testing"] },
+    { id: "done", label: "Done", color: "#22c55e", category: "closed" },
+  ];
+  it('should derive 6 columns from full pipeline', () => { expect(STATES.map(s => s.id)).toHaveLength(6); });
+  it('should derive labels', () => { const l = Object.fromEntries(STATES.map(s => [s.id, s.label])); expect(l["e2e-testing"]).toBe("E2E Testing"); });
+  it('should derive badge colors', () => { const c = Object.fromEntries(STATES.map(s => [s.id, hexToMantineColor(s.color)])); expect(c["e2e-testing"]).toBe("grape"); expect(c["staging"]).toBe("cyan"); });
+  it('should fall back to blue for unknown hex', () => { expect(hexToMantineColor("#123456")).toBe("blue"); });
+  it('should build transition map', () => { const m = Object.fromEntries(STATES.map(s => [s.id, s.transitions])); expect(m["backlog"]).toEqual(["in-progress"]); expect(m["done"]).toBeUndefined(); });
+  it('should validate transitions', () => { const m = Object.fromEntries(STATES.map(s => [s.id, s.transitions])); expect(m["in-progress"]!.includes("review")).toBe(true); expect(m["backlog"]!.includes("done")).toBe(false); });
+});
+
 describe('Priority Colors', () => {
   const PRIORITY_COLORS: Record<string, string> = {
     P0: "red",
