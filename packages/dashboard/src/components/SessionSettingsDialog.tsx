@@ -552,6 +552,10 @@ export function SessionSettingsDialog({
           />
         </Group>
 
+        {/* Board Cleanup */}
+        <Divider my="md" />
+        <BoardCleanup sessionId={sessionId} />
+
         {/* Stale Task Nudge Policies */}
         <Divider my="md" />
         <NudgePolicyEditor sessionId={sessionId} />
@@ -574,5 +578,65 @@ export function SessionSettingsDialog({
         </Group>
       </Stack>
     </Modal>
+  );
+}
+
+/** Board cleanup section — archive done tasks */
+function BoardCleanup({ sessionId }: { sessionId: string }) {
+  const api = useApi();
+  const [archiving, setArchiving] = useState(false);
+  const [result, setResult] = useState<{ archived: number; totalArchived: number } | null>(null);
+
+  const handleArchive = async (daysOld: number) => {
+    setArchiving(true);
+    try {
+      const data = await api.archiveDoneTasks(sessionId, daysOld);
+      setResult(data);
+    } catch {
+      // silently fail
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  return (
+    <Stack gap="xs">
+      <Text size="sm" fw={600}>Board Cleanup</Text>
+      <Text size="xs" c="dimmed">Archive completed tasks to keep your board focused on active work.</Text>
+      <Group gap="sm" wrap="wrap">
+        <Button
+          size="xs"
+          variant="light"
+          color="blue"
+          loading={archiving}
+          onClick={() => handleArchive(0)}
+        >
+          Archive all done tasks
+        </Button>
+        <Button
+          size="xs"
+          variant="light"
+          color="gray"
+          loading={archiving}
+          onClick={() => handleArchive(1)}
+        >
+          Archive done &gt; 1 day
+        </Button>
+        <Button
+          size="xs"
+          variant="light"
+          color="gray"
+          loading={archiving}
+          onClick={() => handleArchive(7)}
+        >
+          Archive done &gt; 7 days
+        </Button>
+      </Group>
+      {result && (
+        <Text size="xs" c="green">
+          Archived {result.archived} task{result.archived !== 1 ? "s" : ""}. Total archived: {result.totalArchived}.
+        </Text>
+      )}
+    </Stack>
   );
 }
