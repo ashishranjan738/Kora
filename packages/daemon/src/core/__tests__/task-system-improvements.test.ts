@@ -421,9 +421,9 @@ describe("Task due date", () => {
 // ---------------------------------------------------------------------------
 
 describe("DB migration — schema version", () => {
-  it("schema version is 7", () => {
+  it("schema version is 14", () => {
     const version = db.db.pragma("user_version", { simple: true }) as number;
-    expect(version).toBe(7);
+    expect(version).toBe(14);
   });
 
   it("priority column exists with default P2", () => {

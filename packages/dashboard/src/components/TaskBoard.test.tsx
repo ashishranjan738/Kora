@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 /**
  * Tests for TaskBoard component
  *
@@ -8,9 +9,10 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as matchers from '@testing-library/jest-dom/matchers';
+expect.extend(matchers);
 import { render, screen } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import '@testing-library/jest-dom';
 
 // Import the component (we'll mock API calls)
 // Note: Since TaskBoard has many utility functions, we'll extract and test them separately
