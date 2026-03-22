@@ -11,6 +11,11 @@ import { EventEmitter } from "events";
 
 const SCHEMA_VERSION = 6;
 
+/** Escape SQL LIKE wildcards (%, _) in user-provided search strings */
+function escapeLike(str: string): string {
+  return str.replace(/[%_]/g, '\\$&');
+}
+
 export class AppDatabase extends EventEmitter {
   public db: Database.Database;
   private _open = true;
@@ -401,7 +406,7 @@ export class AppDatabase extends EventEmitter {
       values.push(...params.types);
     }
     if (params.agentId) { conditions.push("agent_id = ?"); values.push(params.agentId); }
-    if (params.search) { conditions.push("data LIKE ?"); values.push(`%${params.search}%`); }
+    if (params.search) { conditions.push("data LIKE ? ESCAPE '\\'"); values.push(`%${escapeLike(params.search)}%`); }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const order = params.order === "asc" ? "ASC" : "DESC";
@@ -452,7 +457,7 @@ export class AppDatabase extends EventEmitter {
       values.push(...params.types);
     }
     if (params.agentId) { conditions.push("agent_id = ?"); values.push(params.agentId); }
-    if (params.search) { conditions.push("data LIKE ?"); values.push(`%${params.search}%`); }
+    if (params.search) { conditions.push("data LIKE ? ESCAPE '\\'"); values.push(`%${escapeLike(params.search)}%`); }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const row = this.db.prepare(`SELECT COUNT(*) as count FROM events ${where}`).get(...values) as { count: number };
@@ -1140,9 +1145,9 @@ export class AppDatabase extends EventEmitter {
   }
 
   searchKnowledge(sessionId: string, query: string, limit = 20): Array<{ key: string; value: string; savedBy: string | null; updatedAt: string }> {
-    const pattern = `%${query}%`;
+    const pattern = `%${escapeLike(query)}%`;
     const rows = this.db.prepare(
-      `SELECT key, value, saved_by, updated_at FROM knowledge_entries WHERE session_id = ? AND (key LIKE ? OR value LIKE ?) ORDER BY updated_at DESC LIMIT ?`
+      `SELECT key, value, saved_by, updated_at FROM knowledge_entries WHERE session_id = ? AND (key LIKE ? ESCAPE '\\' OR value LIKE ? ESCAPE '\\') ORDER BY updated_at DESC LIMIT ?`
     ).all(sessionId, pattern, pattern, limit) as any[];
     return rows.map(r => ({ key: r.key, value: r.value, savedBy: r.saved_by, updatedAt: r.updated_at }));
   }
