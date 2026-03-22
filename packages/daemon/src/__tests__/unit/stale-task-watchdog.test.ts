@@ -14,6 +14,17 @@ describe("StaleTaskWatchdog", () => {
       expect(DEFAULT_NUDGE_POLICIES["done"]).toBeDefined();
     });
 
+    it("has e2e-testing policy (Fix #5)", () => {
+      expect(DEFAULT_NUDGE_POLICIES["e2e-testing"]).toBeDefined();
+      const policy = DEFAULT_NUDGE_POLICIES["e2e-testing"];
+      expect(policy.enabled).toBe(true);
+      expect(policy.nudgeAfterMinutes).toBe(30);
+      expect(policy.intervalMinutes).toBe(20);
+      expect(policy.target).toBe("assignee");
+      expect(policy.escalateAfterCount).toBe(3);
+      expect(policy.escalateTo).toBe("architect");
+    });
+
     it("pending and done are disabled", () => {
       expect(DEFAULT_NUDGE_POLICIES["pending"].enabled).toBe(false);
       expect(DEFAULT_NUDGE_POLICIES["done"].enabled).toBe(false);
@@ -30,11 +41,11 @@ describe("StaleTaskWatchdog", () => {
       expect(policy.maxNudges).toBe(8);
     });
 
-    it("review nudges after 15 minutes", () => {
+    it("review nudges after 30 minutes (Fix #4: adjusted from 15)", () => {
       const policy = DEFAULT_NUDGE_POLICIES["review"];
       expect(policy.enabled).toBe(true);
-      expect(policy.nudgeAfterMinutes).toBe(15);
-      expect(policy.intervalMinutes).toBe(15);
+      expect(policy.nudgeAfterMinutes).toBe(30);
+      expect(policy.intervalMinutes).toBe(20);
       expect(policy.target).toBe("architect");
       expect(policy.escalateAfterCount).toBe(3);
       expect(policy.escalateTo).toBe("user");
@@ -86,10 +97,10 @@ describe("Stale task detection logic", () => {
   it("identifies tasks stuck longer than threshold", () => {
     const now = Date.now();
     const tasks = [
-      { id: "t1", status: "in-progress", status_changed_at: new Date(now - 90 * 60_000).toISOString() }, // 90min
-      { id: "t2", status: "in-progress", status_changed_at: new Date(now - 30 * 60_000).toISOString() }, // 30min
-      { id: "t3", status: "review", status_changed_at: new Date(now - 20 * 60_000).toISOString() }, // 20min
-      { id: "t4", status: "review", status_changed_at: new Date(now - 5 * 60_000).toISOString() }, // 5min
+      { id: "t1", status: "in-progress", status_changed_at: new Date(now - 90 * 60_000).toISOString() },
+      { id: "t2", status: "in-progress", status_changed_at: new Date(now - 30 * 60_000).toISOString() },
+      { id: "t3", status: "review", status_changed_at: new Date(now - 35 * 60_000).toISOString() },
+      { id: "t4", status: "review", status_changed_at: new Date(now - 5 * 60_000).toISOString() },
     ];
 
     const inProgressThreshold = DEFAULT_NUDGE_POLICIES["in-progress"].nudgeAfterMinutes;
@@ -107,10 +118,10 @@ describe("Stale task detection logic", () => {
       return mins >= reviewThreshold;
     });
 
-    expect(staleInProgress).toHaveLength(1); // t1 (90min > 60min threshold)
+    expect(staleInProgress).toHaveLength(1);
     expect(staleInProgress[0].id).toBe("t1");
 
-    expect(staleReview).toHaveLength(1); // t3 (20min > 15min threshold)
+    expect(staleReview).toHaveLength(1);
     expect(staleReview[0].id).toBe("t3");
   });
 
@@ -118,63 +129,59 @@ describe("Stale task detection logic", () => {
     const policy = DEFAULT_NUDGE_POLICIES["in-progress"];
     const escalateAfter = policy.escalateAfterCount;
 
-    expect(1 >= escalateAfter).toBe(false); // nudge 1 — no escalation
-    expect(2 >= escalateAfter).toBe(false); // nudge 2 — no escalation
-    expect(3 >= escalateAfter).toBe(true);  // nudge 3 — ESCALATE
-    expect(4 >= escalateAfter).toBe(true);  // nudge 4 — still escalated
+    expect(1 >= escalateAfter).toBe(false);
+    expect(2 >= escalateAfter).toBe(false);
+    expect(3 >= escalateAfter).toBe(true);
+    expect(4 >= escalateAfter).toBe(true);
   });
 
   it("respects max nudge limit", () => {
     const policy = DEFAULT_NUDGE_POLICIES["in-progress"];
-    const maxNudges = policy.maxNudges;
-
-    expect(maxNudges).toBe(8);
-    // At nudge count 8, should stop
-    expect(8 >= maxNudges).toBe(true);
-    expect(7 >= maxNudges).toBe(false);
+    expect(policy.maxNudges).toBe(8);
+    expect(8 >= policy.maxNudges).toBe(true);
+    expect(7 >= policy.maxNudges).toBe(false);
   });
 });
 
-describe("Nudge message formatting", () => {
-  it("creates proper stale task alert message", () => {
-    const task = { title: "Fix CSS bug", status: "review", assigned_to: "frontend-abc" };
-    const nudgeCount = 2;
-    const maxNudges = 8;
-    const minutesInStatus = 47;
-
-    const message = `[Stale Task Alert] Task "${task.title}" has been in "${task.status}" for ${minutesInStatus}min. ` +
-      `Nudge #${nudgeCount} of ${maxNudges}. ` +
-      `Assigned to: ${task.assigned_to}. ` +
-      `Action needed: update status or reassign.`;
-
-    expect(message).toContain("Fix CSS bug");
-    expect(message).toContain("review");
-    expect(message).toContain("47min");
-    expect(message).toContain("Nudge #2 of 8");
-    expect(message).toContain("frontend-abc");
+describe("Reassignment grace period (Fix #6)", () => {
+  it("skips nudge if task was updated within 5 min grace period", () => {
+    const now = Date.now();
+    const task = {
+      updated_at: new Date(now - 2 * 60_000).toISOString(),
+      status_changed_at: new Date(now - 90 * 60_000).toISOString(),
+    };
+    const updatedAt = new Date(task.updated_at).getTime();
+    const statusChangedAt = new Date(task.status_changed_at).getTime();
+    const wasRecentlyReassigned = updatedAt > statusChangedAt && (now - updatedAt) / 60_000 < 5;
+    expect(wasRecentlyReassigned).toBe(true);
   });
 
-  it("creates escalation message", () => {
-    const prefix = "[ESCALATION]";
-    expect(prefix).toBe("[ESCALATION]");
+  it("does not skip if reassignment was more than 5 min ago", () => {
+    const now = Date.now();
+    const task = {
+      updated_at: new Date(now - 10 * 60_000).toISOString(),
+      status_changed_at: new Date(now - 90 * 60_000).toISOString(),
+    };
+    const updatedAt = new Date(task.updated_at).getTime();
+    const statusChangedAt = new Date(task.status_changed_at).getTime();
+    const wasRecentlyReassigned = updatedAt > statusChangedAt && (now - updatedAt) / 60_000 < 5;
+    expect(wasRecentlyReassigned).toBe(false);
+  });
+});
+
+describe("Escalation self-loop protection (Fix #2)", () => {
+  it("detects self-loop when architect is also assignee", () => {
+    const task = { assigned_to: "master-agent-1" };
+    const resolvedArchitect = "master-agent-1";
+    const isSelfLoop = "architect" !== "assignee" && resolvedArchitect === task.assigned_to;
+    expect(isSelfLoop).toBe(true);
   });
 
-  it("creates batch summary for multiple stale tasks", () => {
-    const tasks = [
-      { title: "Fix CSS", status: "review", minutesInStatus: 47, nudgeCount: 3 },
-      { title: "Add tests", status: "in-progress", minutesInStatus: 120, nudgeCount: 2 },
-      { title: "Update docs", status: "review", minutesInStatus: 30, nudgeCount: 1 },
-    ];
-
-    const summaries = tasks.map(t =>
-      `  - "${t.title}" (${t.status}, ${t.minutesInStatus}min, nudge #${t.nudgeCount})`
-    );
-    const message = `[Stale Task Summary] ${tasks.length} tasks need attention:\n${summaries.join("\n")}`;
-
-    expect(message).toContain("3 tasks need attention");
-    expect(message).toContain("Fix CSS");
-    expect(message).toContain("Add tests");
-    expect(message).toContain("Update docs");
+  it("does not trigger for different agents", () => {
+    const task = { assigned_to: "worker-agent-1" };
+    const resolvedArchitect = "master-agent-2";
+    const isSelfLoop = "architect" !== "assignee" && resolvedArchitect === task.assigned_to;
+    expect(isSelfLoop).toBe(false);
   });
 });
 
@@ -183,7 +190,6 @@ describe("Rate limiting", () => {
     const MAX = 10;
     const counts = new Map<string, { count: number; windowStart: number }>();
     const now = Date.now();
-
     function isWithinLimit(key: string): boolean {
       const record = counts.get(key);
       if (!record || now - record.windowStart > 3600_000) {
@@ -194,15 +200,8 @@ describe("Rate limiting", () => {
       record.count++;
       return true;
     }
-
-    // First 10 should pass
-    for (let i = 0; i < 10; i++) {
-      expect(isWithinLimit("agent-1")).toBe(true);
-    }
-    // 11th should be rate-limited
+    for (let i = 0; i < 10; i++) expect(isWithinLimit("agent-1")).toBe(true);
     expect(isWithinLimit("agent-1")).toBe(false);
-
-    // Different agent is fine
     expect(isWithinLimit("agent-2")).toBe(true);
   });
 });
