@@ -1081,11 +1081,16 @@ export function createApiRouter(deps: {
       if (body.from && body.from !== "user") {
         const { AgentHealthMonitor } = await import("../core/agent-health.js");
         if (AgentHealthMonitor.isMessageIdle(body.message)) {
-          // Check if agent has active (in-progress) tasks before marking idle
+          // Check if agent has active (non-closed) tasks before marking idle
           const db = getDb(sid);
+          const session_relay = sessionManager.getSession(sid);
+          const activeStateIds = (session_relay?.config.workflowStates || DEFAULT_WORKFLOW_STATES)
+            .filter((s: any) => s.category !== "closed")
+            .map((s: any) => s.id);
           const activeTasks = db ? db.getFilteredTasks(sid, {
             assignedTo: body.from,
-            status: "active", // pending + in-progress + review
+            status: "active",
+            activeStatuses: activeStateIds,
           }) : [];
           if (activeTasks.length === 0) {
             orch.agentManager.markIdleFromMcp(body.from, "completion message detected");
@@ -1734,9 +1739,14 @@ export function createApiRouter(deps: {
       // BUT: if agent has active tasks, warn instead of marking idle — prevents
       // broadcast acks from making agents forget their assigned work.
       const db = getDb(String(sid));
+      const session_idle = sessionManager.getSession(String(sid));
+      const activeStateIds_idle = (session_idle?.config.workflowStates || DEFAULT_WORKFLOW_STATES)
+        .filter((s: any) => s.category !== "closed")
+        .map((s: any) => s.id);
       const activeTasks = db ? db.getFilteredTasks(String(sid), {
         assignedTo: String(aid),
         status: "active",
+        activeStatuses: activeStateIds_idle,
       }) : [];
 
       if (activeTasks.length > 0) {
