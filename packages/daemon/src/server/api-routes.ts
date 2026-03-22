@@ -2228,7 +2228,11 @@ export function createApiRouter(deps: {
                 for (const st of ts.transitions) effective.add(st);
               }
             }
-            if (!effective.has(body.status)) {
+            // Always allow transition to "closed" category states (e.g. "done") from anywhere
+            const targetState = workflowStates.find((s: any) => s.id === body.status);
+            const isClosedCategory = targetState?.category === "closed";
+
+            if (!effective.has(body.status) && !isClosedCategory) {
               const validNext = [...effective].join(", ");
               res.status(400).json({
                 error: `Invalid transition: "${currentTask.status}" → "${body.status}". Valid next states: ${validNext}`,
