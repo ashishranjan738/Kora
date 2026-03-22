@@ -146,7 +146,7 @@ describe("Idle Detection API", () => {
       expect(res.body.task).toBeDefined();
       expect(res.body.task.title).toContain("frontend");
       expect(res.body.task.assignedTo).toBe(agentId);
-      expect(res.body.task.status).toBe("assigned");
+      expect(res.body.task.status).toBe("in-progress"); // PR #277 changed request-task to use session's second workflow state
 
       // Verify agent is no longer idle
       const agentRes = await request(app)
