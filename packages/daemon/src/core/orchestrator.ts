@@ -66,6 +66,7 @@ export class Orchestrator extends EventEmitter {
   private blockingDetector = new PatternDetector();
   private blockingStateMachines = new Map<string, OrchestratorStateMachine>();
   private blockingBuffers = new Map<string, Array<{ from: string; to: string; message: string; messageType?: string; timestamp: string }>>();
+  private blockingTimestamps = new Map<string, number>(); // When each agent entered blocked state
   private _replayingBuffer = false; // Skip blocking checks during buffer replay
 
   // Stale task watchdog
@@ -619,11 +620,19 @@ export class Orchestrator extends EventEmitter {
       logger.warn({ err, from: fromAgentId, to: toAgentId }, "[orchestrator] Failed to persist message to SQLite");
     }
 
-    // If the TARGET agent is blocked, buffer the message for later terminal delivery
+    // If the TARGET agent is blocked, buffer the FULL message for later replay,
+    // but ALWAYS send a short notification so agent knows they have messages.
     if (this.isAgentBlocked(toAgentId)) {
       this.bufferMessage(toAgentId, fromAgentId, toAgentId, message, messageType);
       logger.debug({ from: fromAgentId, to: toAgentId }, "[orchestrator] Message buffered (target agent is blocked)");
-      // Still log the event for timeline
+
+      // Always send short notification via direct sendKeys — even for blocked agents.
+      // This ensures the agent sees "you have a message" even when full content is buffered.
+      const senderName = fromAgent?.config.name || fromAgentId;
+      const shortNotification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
+      try {
+        await this.config.tmux.sendKeys(toAgent.config.tmuxSession, shortNotification, { literal: true });
+      } catch { /* non-fatal — agent terminal may be busy */ }
     } else {
       // Queue the message — delivers to terminal when agent is at a prompt
       // sqlitePersisted: true — message was already written to SQLite above, skip duplicate write in delivery
@@ -706,6 +715,9 @@ export class Orchestrator extends EventEmitter {
         logger.warn({ err, agentId: fromAgentId }, "[orchestrator] Failed to transition to BLOCKED");
         return null;
       }
+
+      // Track when blocking started (for auto-expire)
+      this.blockingTimestamps.set(fromAgentId, Date.now());
 
       // Log blocking event
       await this.eventLog.log({
@@ -816,7 +828,21 @@ export class Orchestrator extends EventEmitter {
    */
   isAgentBlocked(agentId: string): boolean {
     const sm = this.blockingStateMachines.get(agentId);
-    return sm?.isBlocked() ?? false;
+    if (!sm?.isBlocked()) return false;
+
+    // Auto-expire blocking state after 5 minutes to prevent permanent blocks
+    const blockedSince = this.blockingTimestamps.get(agentId);
+    if (blockedSince) {
+      const blockedDuration = Date.now() - blockedSince;
+      if (blockedDuration > 5 * 60 * 1000) {
+        logger.info({ agentId, blockedDurationMs: blockedDuration }, "[orchestrator] Auto-expiring stale blocking state (>5min)");
+        this.resumeBlocked(agentId).catch(() => {});
+        this.blockingTimestamps.delete(agentId);
+        return false;
+      }
+    }
+
+    return true;
   }
 
   /**
