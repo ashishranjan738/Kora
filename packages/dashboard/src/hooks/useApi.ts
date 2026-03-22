@@ -271,5 +271,11 @@ export function useApi() {
     // Task metrics / workload
     getTaskMetrics: (sid: string) =>
       apiFetch<TaskMetricsResponse>(`/sessions/${sid}/task-metrics`),
+    // Task archival
+    archiveDoneTasks: (sid: string, daysOld = 0) =>
+      apiFetch<{ archived: number; totalArchived: number }>(`/sessions/${sid}/tasks/archive`, {
+        method: "PATCH",
+        body: JSON.stringify({ daysOld }),
+      }),
   };
 }
