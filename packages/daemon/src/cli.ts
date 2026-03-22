@@ -189,6 +189,36 @@ async function handleStart(): Promise<void> {
     if (cleaned > 0) logger.info(`  Cleaned up ${cleaned} orphaned tmux sessions`);
   } catch {}
 
+  // 5a-2. Prune orphaned git worktrees and stale agent branches on startup
+  try {
+    const { worktreeManager } = await import("./core/worktree.js");
+    for (const sessionConfig of sessionManager.listSessions()) {
+      if (sessionConfig.status === "stopped") continue;
+      try {
+        const runtimeDir = path.join(
+          sessionConfig.projectPath,
+          getRuntimeDaemonDir(isDev),
+          SESSIONS_SUBDIR,
+          sessionConfig.id,
+        );
+        // Get active agent IDs from the orchestrator (if restored)
+        const orch = orchestrators.get(sessionConfig.id);
+        const activeIds = new Set(
+          orch ? orch.getAgents().filter(a => a.status === "running").map(a => a.id) : [],
+        );
+        const pruneResult = await worktreeManager.pruneAll(sessionConfig.projectPath, runtimeDir, activeIds);
+        if (pruneResult.removedWorktrees.length > 0 || pruneResult.removedBranches.length > 0) {
+          logger.info(
+            `  Pruned ${pruneResult.removedWorktrees.length} worktrees, ${pruneResult.removedBranches.length} branches for session ${sessionConfig.id}` +
+            (pruneResult.skippedDirty.length > 0 ? ` (skipped ${pruneResult.skippedDirty.length} with uncommitted changes)` : ""),
+          );
+        }
+      } catch (err) {
+        logger.debug({ err, sessionId: sessionConfig.id }, "Failed to prune worktrees for session");
+      }
+    }
+  } catch {}
+
   // 5b. Set up periodic cleanup of orphaned tmux sessions (every 5 minutes)
   const cleanupInterval = setInterval(async () => {
     for (const [sid, orch] of orchestrators) {
