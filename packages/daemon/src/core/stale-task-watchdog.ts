@@ -127,6 +127,9 @@ export class StaleTaskWatchdog extends EventEmitter {
   /** Main check loop — find stale tasks and send nudges */
   async checkStaleTasks(): Promise<void> {
     try {
+      // Periodic cleanup of old nudge records
+      try { this.database.cleanupOldNudges(7); } catch { /* non-fatal */ }
+
       const enabledStatuses = Object.entries(this.nudgePolicies)
         .filter(([, policy]) => policy.enabled)
         .map(([status]) => status);
@@ -150,19 +153,27 @@ export class StaleTaskWatchdog extends EventEmitter {
       const agentTasks = new Map<string, any[]>();
 
       for (const task of staleTasks) {
-        const policy = this.nudgePolicies[task.status];
+        // Re-read task to get fresh status (guard against race with status updates)
+        const freshTask = this.database.getTask(task.id);
+        if (!freshTask || freshTask.status === "done" || freshTask.status === "pending") continue;
+        // Use fresh status for policy lookup
+        const effectiveTask = { ...task, status: freshTask.status, status_changed_at: freshTask.status_changed_at };
+
+        const policy = this.nudgePolicies[effectiveTask.status];
         if (!policy?.enabled) continue;
 
         // Check if this specific task has been in this status long enough
-        const statusChangedAt = task.status_changed_at ? new Date(task.status_changed_at).getTime() : 0;
+        const statusChangedAt = effectiveTask.status_changed_at
+          ? new Date(effectiveTask.status_changed_at).getTime()
+          : (effectiveTask.created_at ? new Date(effectiveTask.created_at).getTime() : Date.now());
         const minutesInStatus = (Date.now() - statusChangedAt) / 60_000;
 
         if (minutesInStatus < policy.nudgeAfterMinutes) continue;
 
         // Check nudge interval — don't nudge again too soon
-        const nudgeCount = this.database.getNudgeCount(task.id, task.status);
+        const nudgeCount = this.database.getNudgeCount(effectiveTask.id, effectiveTask.status);
         if (nudgeCount > 0 && policy.intervalMinutes > 0) {
-          const lastNudge = this.database.getNudgeHistory(task.id, 1)[0];
+          const lastNudge = this.database.getNudgeHistory(effectiveTask.id, 1)[0];
           if (lastNudge) {
             const lastNudgeTime = new Date(lastNudge.created_at).getTime();
             const minutesSinceNudge = (Date.now() - lastNudgeTime) / 60_000;
@@ -176,13 +187,13 @@ export class StaleTaskWatchdog extends EventEmitter {
         // Determine target
         const isEscalation = nudgeCount >= policy.escalateAfterCount && policy.escalateAfterCount > 0;
         const targetType = isEscalation ? policy.escalateTo : policy.target;
-        const targetAgentId = this.resolveTarget(targetType, task);
+        const targetAgentId = this.resolveTarget(targetType, effectiveTask);
 
         // Group by target for batching
         const targetKey = targetAgentId || targetType;
         if (!agentTasks.has(targetKey)) agentTasks.set(targetKey, []);
         agentTasks.get(targetKey)!.push({
-          task,
+          task: effectiveTask,
           nudgeCount: nudgeCount + 1,
           isEscalation,
           targetType,
