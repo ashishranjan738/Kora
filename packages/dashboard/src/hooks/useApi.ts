@@ -97,8 +97,13 @@ export function useApi() {
         `/sessions/${sid}/events?types=${types.join(",")}&limit=${limit || 1000}`
       ),
     getStatus: () => apiFetch<any>("/status"),
-    getTasks: (sid: string) =>
-      apiFetch<{ tasks: any[] }>(`/sessions/${sid}/tasks`),
+    getTasks: (sid: string, includeArchived = false) =>
+      apiFetch<{ tasks: any[]; archivedCount?: number }>(`/sessions/${sid}/tasks${includeArchived ? "?includeArchived=true" : ""}`),
+    archiveTasks: (sid: string, daysOld = 7) =>
+      apiFetch<{ archived: number; totalArchived: number }>(`/sessions/${sid}/tasks/archive`, {
+        method: "PATCH",
+        body: JSON.stringify({ daysOld }),
+      }),
     createTask: (sid: string, data: any) =>
       apiFetch(`/sessions/${sid}/tasks`, {
         method: "POST",

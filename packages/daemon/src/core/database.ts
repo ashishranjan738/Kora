@@ -195,6 +195,15 @@ export class AppDatabase extends EventEmitter {
         PRAGMA user_version = 7;
       `);
     }
+
+    if (version < 8) {
+      this.db.exec(`
+        -- Add archived_at to tasks (NULL = not archived)
+        ALTER TABLE tasks ADD COLUMN archived_at TEXT;
+        CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived_at);
+        PRAGMA user_version = 8;
+      `);
+    }
   }
 
   // ─── Events ──────────────────────────────────────────────
@@ -328,9 +337,10 @@ export class AppDatabase extends EventEmitter {
     );
   }
 
-  getTasks(sessionId: string): Array<any> {
+  getTasks(sessionId: string, includeArchived = false): Array<any> {
+    const archiveFilter = includeArchived ? "" : " AND archived_at IS NULL";
     const rows = this.db.prepare(
-      `SELECT * FROM tasks WHERE session_id = ? ORDER BY created_at DESC`
+      `SELECT * FROM tasks WHERE session_id = ?${archiveFilter} ORDER BY created_at DESC`
     ).all(sessionId) as any[];
 
     return rows.map(r => this.mapTaskRow(r, true));
@@ -712,6 +722,31 @@ export class AppDatabase extends EventEmitter {
       `DELETE FROM message_deliveries WHERE enqueued_at < ?`
     ).run(cutoff);
     return result.changes;
+  }
+
+  // ─── Task Archival ────────────────────────────────────────────
+
+  /** Archive done tasks older than `daysOld` days. Returns count of archived tasks. */
+  archiveDoneTasks(sessionId: string, daysOld = 7): number {
+    const cutoff = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000).toISOString();
+    const now = new Date().toISOString();
+    const result = this.db.prepare(
+      `UPDATE tasks SET archived_at = ? WHERE session_id = ? AND status = 'done' AND archived_at IS NULL AND updated_at < ?`
+    ).run(now, sessionId, cutoff);
+    return result.changes;
+  }
+
+  /** Get count of archived tasks in a session */
+  getArchivedCount(sessionId: string): number {
+    const row = this.db.prepare(
+      `SELECT COUNT(*) as count FROM tasks WHERE session_id = ? AND archived_at IS NOT NULL`
+    ).get(sessionId) as any;
+    return row?.count ?? 0;
+  }
+
+  /** Unarchive a task */
+  unarchiveTask(taskId: string): void {
+    this.db.prepare(`UPDATE tasks SET archived_at = NULL WHERE id = ?`).run(taskId);
   }
 
   // ─── Messages (Inter-Agent Communication) ────────────────────
