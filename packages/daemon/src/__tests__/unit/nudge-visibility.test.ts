@@ -169,14 +169,13 @@ describe("Nudge Visibility Fixes", () => {
 
       await messageQueue.nudgeAgent("agent-1", "test-session");
 
-      // nudgeAgent fires deliverDirect as fire-and-forget, wait for microtasks
-      await new Promise(resolve => setTimeout(resolve, 50));
-
-      const notificationCall = sendKeysCallArgs[sendKeysCallArgs.length - 1];
-      // Notification is wrapped by deliverDirect, so check for generic format
-      expect(notificationCall).toBeDefined();
-      expect(notificationCall.keys).toContain("message");
-      expect(notificationCall.keys).toContain("check_messages");
+      // nudgeAgent now calls sendKeys directly (not fire-and-forget deliverDirect)
+      // First call: literal text, second call: Enter keypress
+      expect(sendKeysCallArgs.length).toBeGreaterThanOrEqual(2);
+      const textCall = sendKeysCallArgs[sendKeysCallArgs.length - 2];
+      expect(textCall).toBeDefined();
+      expect(textCall.keys).toContain("UNREAD MESSAGE");
+      expect(textCall.keys).toContain("check_messages");
     });
   });
 
@@ -220,18 +219,17 @@ describe("Nudge Visibility Fixes", () => {
   });
 
   describe("Notification Format", () => {
-    it("should send notification with literal:true flag", async () => {
+    it("should send notification with literal:true then Enter with literal:false", async () => {
       messageQueue.registerMcpAgent("agent-1");
 
       await messageQueue.nudgeAgent("agent-1", "test-session");
 
-      // nudgeAgent fires deliverDirect as fire-and-forget, wait for microtasks
-      await new Promise(resolve => setTimeout(resolve, 50));
-
-      const notificationCall = sendKeysCallArgs[sendKeysCallArgs.length - 1];
-      expect(notificationCall).toBeDefined();
-      // The important fix: literal flag should be true for consistent rendering
-      expect(notificationCall.options?.literal).toBe(true);
+      // nudgeAgent sends 2 calls: text (literal:true) + Enter (literal:false)
+      expect(sendKeysCallArgs.length).toBeGreaterThanOrEqual(2);
+      const textCall = sendKeysCallArgs[sendKeysCallArgs.length - 2];
+      const enterCall = sendKeysCallArgs[sendKeysCallArgs.length - 1];
+      expect(textCall.options?.literal).toBe(true);
+      expect(enterCall.options?.literal).toBe(false); // Enter keypress
     });
 
     it("should send check_messages prompt in notification", async () => {
@@ -239,13 +237,11 @@ describe("Nudge Visibility Fixes", () => {
 
       await messageQueue.nudgeAgent("agent-1", "test-session");
 
-      // nudgeAgent fires deliverDirect as fire-and-forget, wait for microtasks
-      await new Promise(resolve => setTimeout(resolve, 50));
-
-      const notificationCall = sendKeysCallArgs[sendKeysCallArgs.length - 1];
-      expect(notificationCall).toBeDefined();
-      // Notification should tell agent to check messages
-      expect(notificationCall.keys).toContain("check_messages");
+      // nudgeAgent sends text directly — check the text call (second-to-last)
+      expect(sendKeysCallArgs.length).toBeGreaterThanOrEqual(2);
+      const textCall = sendKeysCallArgs[sendKeysCallArgs.length - 2];
+      expect(textCall).toBeDefined();
+      expect(textCall.keys).toContain("check_messages");
     });
 
     it("should not accidentally execute commands with literal:true", async () => {

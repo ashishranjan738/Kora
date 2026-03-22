@@ -71,6 +71,16 @@ export const claudeCodeProvider: CLIProvider = {
       };
     }
 
+    // Parse spinner token counts: "✶Moonwalking… (6m11s·↓4.7k tokens)"
+    if (!result.tokenUsage) {
+      const spinnerTokenMatch = cleanOutput.match(/[↓↑⬇⬆]([\d,.]+)\s*k?\s*tokens?\)/i);
+      if (spinnerTokenMatch) {
+        const raw = spinnerTokenMatch[1] + (spinnerTokenMatch[0].includes('k') ? 'k' : '');
+        const tokenCount = parseTokenCount(raw);
+        result.tokenUsage = { input: tokenCount, output: Math.round(tokenCount * 0.3) };
+      }
+    }
+
     // Look for cost — "$X.XX" pattern (e.g. "Cost: $0.42" or "sonnet-4-6 · $0.42")
     const costMatch = cleanOutput.match(/\$(\d+\.?\d*)/);
     if (costMatch) {
