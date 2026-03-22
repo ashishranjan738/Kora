@@ -1,7 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 import express from "express";
 import request from "supertest";
+import { mkdtempSync, rmSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 import { createWebhookRouter } from "../webhook-routes.js";
+
+// Use a real temp directory outside system paths — home dir is safe
+const TEST_PROJECT_DIR = mkdtempSync(join(process.env.HOME || tmpdir(), ".kora-webhook-test-"));
+afterAll(() => { try { rmSync(TEST_PROJECT_DIR, { recursive: true }); } catch {} });
 
 // Mock playbook loader
 vi.mock("../../core/playbook-loader.js", () => ({
@@ -34,7 +41,7 @@ vi.mock("../../core/playbook-executor.js", () => {
 // Create mock deps
 function createMockDeps() {
   const mockSession = {
-    config: { id: "test-session", projectPath: "/tmp/test", name: "test" },
+    config: { id: "test-session", projectPath: TEST_PROJECT_DIR, name: "test" },
     runtimeDir: "/tmp/test/.kora",
   };
 
@@ -46,7 +53,7 @@ function createMockDeps() {
 
   return {
     sessionManager: {
-      createSession: vi.fn().mockResolvedValue({ id: "test-session", projectPath: "/tmp/test", name: "test", defaultProvider: "claude-code" }),
+      createSession: vi.fn().mockResolvedValue({ id: "test-session", projectPath: TEST_PROJECT_DIR, name: "test", defaultProvider: "claude-code" }),
       getSession: vi.fn().mockReturnValue(mockSession),
     } as any,
     orchestrators: new Map() as any,
@@ -76,7 +83,7 @@ describe("webhook-routes", () => {
         .post("/api/v1/webhooks/trigger")
         .send({
           playbook: "master-workers",
-          projectPath: "/tmp/test",
+          projectPath: TEST_PROJECT_DIR,
           task: "Fix the login bug",
         });
 
@@ -92,7 +99,7 @@ describe("webhook-routes", () => {
     it("rejects missing playbook", async () => {
       const res = await request(app)
         .post("/api/v1/webhooks/trigger")
-        .send({ projectPath: "/tmp/test" });
+        .send({ projectPath: TEST_PROJECT_DIR });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain("playbook");
@@ -110,7 +117,7 @@ describe("webhook-routes", () => {
     it("returns 404 for unknown playbook", async () => {
       const res = await request(app)
         .post("/api/v1/webhooks/trigger")
-        .send({ playbook: "nonexistent", projectPath: "/tmp/test" });
+        .send({ playbook: "nonexistent", projectPath: TEST_PROJECT_DIR });
 
       expect(res.status).toBe(404);
       expect(res.body.error).toContain("not found");
@@ -122,7 +129,7 @@ describe("webhook-routes", () => {
         .set("X-GitHub-Event", "push")
         .send({
           playbook: "master-workers",
-          projectPath: "/tmp/test",
+          projectPath: TEST_PROJECT_DIR,
           ref: "refs/heads/main",
           commits: [{ id: "abc123" }],
           sender: { login: "octocat" },
@@ -141,7 +148,7 @@ describe("webhook-routes", () => {
         .set("X-GitHub-Event", "pull_request")
         .send({
           playbook: "master-workers",
-          projectPath: "/tmp/test",
+          projectPath: TEST_PROJECT_DIR,
           pull_request: {
             number: 42,
             title: "Fix auth bug",
@@ -167,7 +174,7 @@ describe("webhook-routes", () => {
           team_id: "T12345",
           channel_name: "engineering",
           user_name: "alice",
-          projectPath: "/tmp/test",
+          projectPath: TEST_PROJECT_DIR,
         });
 
       expect(res.status).toBe(201);
