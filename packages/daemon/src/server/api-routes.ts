@@ -4537,8 +4537,8 @@ export function createApiRouter(deps: {
       const signature = req.headers["x-webhook-signature"] || req.headers["x-hub-signature-256"] || "";
       const body = JSON.stringify(req.body);
       const expected = "sha256=" + createHmac("sha256", wh.secret).update(body).digest("hex");
-      if (signature && signature !== expected) {
-        res.status(401).json({ error: "Invalid signature" });
+      if (!signature || signature !== expected) {
+        res.status(401).json({ error: "Invalid or missing signature" });
         return;
       }
 
