@@ -917,6 +917,37 @@ export function MultiAgentView() {
                   {agent.status || "unknown"}
                 </span>
               )}
+              {/* Sub-activity badge */}
+              {agent.subActivity && !isCrashed && (
+                <Badge size="xs" variant="light" color={
+                  agent.subActivity === "reading" ? "cyan" :
+                  agent.subActivity === "writing" ? "teal" :
+                  agent.subActivity === "thinking" ? "grape" :
+                  agent.subActivity === "running-command" ? "indigo" : "gray"
+                } style={{ flexShrink: 0 }}>
+                  {agent.subActivity === "running-command" ? "cmd" : agent.subActivity}
+                </Badge>
+              )}
+              {/* Available indicator */}
+              {agent.availableForWork && !isCrashed && (
+                <Tooltip label="Available for new tasks">
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent-green)", flexShrink: 0, display: "inline-block" }} />
+                </Tooltip>
+              )}
+              {/* Idle duration */}
+              {agent.idleSince && agent.activity === "idle" && (
+                <span style={{ fontSize: 10, color: "var(--text-muted)", flexShrink: 0, whiteSpace: "nowrap" }}>
+                  Idle {formatLastSeen(agent.idleSince).replace(" ago", "")}
+                </span>
+              )}
+              {/* Current task */}
+              {agent.currentTask && (
+                <Tooltip label={`Working on: ${agent.currentTask.title || agent.currentTask}`}>
+                  <span style={{ fontSize: 10, color: "var(--accent-purple, #bc8cff)", flexShrink: 0, whiteSpace: "nowrap", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", display: "inline-block" }}>
+                    {typeof agent.currentTask === "string" ? agent.currentTask : agent.currentTask.title}
+                  </span>
+                </Tooltip>
+              )}
               <Tooltip label={`Last terminal output: ${agent.lastOutputAt ? new Date(agent.lastOutputAt).toLocaleTimeString() : "unknown"}`}>
                 <span style={{
                   fontSize: 11, flexShrink: 0, whiteSpace: "nowrap",
