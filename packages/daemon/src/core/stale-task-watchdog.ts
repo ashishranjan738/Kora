@@ -1,9 +1,8 @@
 /**
  * StaleTaskWatchdog — monitors tasks for stale statuses and sends nudges.
  *
- * Runs a check loop every 60 seconds. For each active task stuck in a status
- * longer than the configured threshold, sends a nudge to the responsible party.
- * Escalates after configurable nudge count.
+ * Pure library pattern: call check() from an external scheduler (orchestrator).
+ * The start() method wraps check() in setInterval for backward compatibility.
  *
  * Nudge delivery channels:
  * - Terminal sendKeys (for agents)
@@ -50,11 +49,20 @@ export const DEFAULT_NUDGE_POLICIES: Record<string, NudgePolicy> = {
   },
   "review": {
     enabled: true,
-    nudgeAfterMinutes: 15,
-    intervalMinutes: 15,
+    nudgeAfterMinutes: 30,   // Fix #4: adjusted from 15min to 30min
+    intervalMinutes: 20,      // Fix #4: adjusted from 15min to 20min
     target: "architect",
     escalateAfterCount: 3,
     escalateTo: "user",
+    maxNudges: 8,
+  },
+  "e2e-testing": {            // Fix #5: new default policy for e2e-testing
+    enabled: true,
+    nudgeAfterMinutes: 30,
+    intervalMinutes: 20,
+    target: "assignee",
+    escalateAfterCount: 3,
+    escalateTo: "architect",
     maxNudges: 8,
   },
   "blocked": {
@@ -77,9 +85,10 @@ export const DEFAULT_NUDGE_POLICIES: Record<string, NudgePolicy> = {
   },
 };
 
-const CHECK_INTERVAL_MS = 60_000; // 1 minute
 const MAX_NUDGES_PER_AGENT_PER_HOUR = 10;
-const BATCH_THRESHOLD = 5; // Send summary if agent has 5+ stale tasks
+const BATCH_THRESHOLD = 5;
+const REASSIGNMENT_GRACE_MINUTES = 5; // Fix #6
+const NUDGE_TTL_DAYS = 7;             // Fix #7
 
 export class StaleTaskWatchdog extends EventEmitter {
   private checkInterval?: NodeJS.Timeout;
@@ -97,13 +106,12 @@ export class StaleTaskWatchdog extends EventEmitter {
     this.nudgePolicies = policies || { ...DEFAULT_NUDGE_POLICIES };
   }
 
-  /** Start the watchdog check loop */
+  /** Start the watchdog — wraps check() in setInterval for backward compat. */
   start(): void {
     if (this.checkInterval) return;
     logger.info(`[StaleTaskWatchdog] Started for session ${this.sessionId}`);
-    this.checkInterval = setInterval(() => this.checkStaleTasks(), CHECK_INTERVAL_MS);
-    // Run immediately on start
-    setTimeout(() => this.checkStaleTasks(), 5000);
+    this.checkInterval = setInterval(() => this.check(), 60_000);
+    setTimeout(() => this.check(), 5000);
   }
 
   /** Stop the watchdog */
@@ -114,18 +122,19 @@ export class StaleTaskWatchdog extends EventEmitter {
     }
   }
 
-  /** Update nudge policies (e.g. from session settings) */
   updatePolicies(policies: Record<string, NudgePolicy>): void {
     this.nudgePolicies = { ...this.nudgePolicies, ...policies };
   }
 
-  /** Get current policies */
   getPolicies(): Record<string, NudgePolicy> {
     return { ...this.nudgePolicies };
   }
 
-  /** Main check loop — find stale tasks and send nudges */
-  async checkStaleTasks(): Promise<void> {
+  /**
+   * Fix #3: Pure check function callable by external scheduler.
+   * Finds stale tasks and sends nudges.
+   */
+  async check(): Promise<void> {
     try {
       const enabledStatuses = Object.entries(this.nudgePolicies)
         .filter(([, policy]) => policy.enabled)
@@ -133,7 +142,6 @@ export class StaleTaskWatchdog extends EventEmitter {
 
       if (enabledStatuses.length === 0) return;
 
-      // Find the minimum threshold to query broadly
       const minThreshold = Math.min(
         ...enabledStatuses.map(s => this.nudgePolicies[s].nudgeAfterMinutes)
       );
@@ -146,55 +154,56 @@ export class StaleTaskWatchdog extends EventEmitter {
 
       if (staleTasks.length === 0) return;
 
-      // Group by target agent for batch nudging
+      // Fix #1: Batch queries for nudge counts + last nudge times
+      const taskIds = staleTasks.map((t: any) => t.id);
+      const nudgeCounts = this.getBatchNudgeCounts(taskIds);
+      const lastNudgeTimes = this.getBatchLastNudgeTimes(taskIds);
+
       const agentTasks = new Map<string, any[]>();
 
       for (const task of staleTasks) {
         const policy = this.nudgePolicies[task.status];
         if (!policy?.enabled) continue;
 
-        // Check if this specific task has been in this status long enough
         const statusChangedAt = task.status_changed_at ? new Date(task.status_changed_at).getTime() : 0;
         const minutesInStatus = (Date.now() - statusChangedAt) / 60_000;
 
         if (minutesInStatus < policy.nudgeAfterMinutes) continue;
 
-        // Check nudge interval — don't nudge again too soon
-        const nudgeCount = this.database.getNudgeCount(task.id, task.status);
+        // Fix #6: Skip if task was reassigned within grace period
+        if (this.wasRecentlyReassigned(task)) continue;
+
+        // Fix #1: Use batch-fetched nudge counts
+        const nudgeCount = nudgeCounts.get(task.id) || 0;
         if (nudgeCount > 0 && policy.intervalMinutes > 0) {
-          const lastNudge = this.database.getNudgeHistory(task.id, 1)[0];
-          if (lastNudge) {
-            const lastNudgeTime = new Date(lastNudge.created_at).getTime();
+          const lastNudgeTime = lastNudgeTimes.get(task.id);
+          if (lastNudgeTime) {
             const minutesSinceNudge = (Date.now() - lastNudgeTime) / 60_000;
             if (minutesSinceNudge < policy.intervalMinutes) continue;
           }
         }
 
-        // Check max nudges
         if (policy.maxNudges > 0 && nudgeCount >= policy.maxNudges) continue;
 
-        // Determine target
+        // Fix #2: Escalation with self-loop protection
         const isEscalation = nudgeCount >= policy.escalateAfterCount && policy.escalateAfterCount > 0;
         const targetType = isEscalation ? policy.escalateTo : policy.target;
-        const targetAgentId = this.resolveTarget(targetType, task);
+        const targetAgentId = this.resolveTargetSafe(targetType, task);
 
-        // Group by target for batching
         const targetKey = targetAgentId || targetType;
         if (!agentTasks.has(targetKey)) agentTasks.set(targetKey, []);
         agentTasks.get(targetKey)!.push({
           task,
           nudgeCount: nudgeCount + 1,
           isEscalation,
-          targetType,
+          targetType: targetAgentId ? targetType : "user",
           targetAgentId,
           minutesInStatus: Math.round(minutesInStatus),
           policy,
         });
       }
 
-      // Send nudges (batch if needed)
       for (const [targetKey, tasks] of agentTasks) {
-        // Rate limit per agent
         if (!this.isWithinRateLimit(targetKey)) continue;
 
         if (tasks.length >= BATCH_THRESHOLD) {
@@ -210,13 +219,68 @@ export class StaleTaskWatchdog extends EventEmitter {
     }
   }
 
-  /** Resolve target to a specific agent ID */
+  /** Backward-compat alias */
+  async checkStaleTasks(): Promise<void> {
+    return this.check();
+  }
+
+  /** Fix #7: Cleanup old nudge records for done tasks (>7 days). */
+  cleanupDoneTaskNudges(): number {
+    try {
+      const cutoff = new Date(Date.now() - NUDGE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
+      const result = this.database.db.prepare(
+        `DELETE FROM task_nudges WHERE created_at < ? AND task_id IN (SELECT id FROM tasks WHERE status = 'done')`
+      ).run(cutoff);
+      if (result.changes > 0) {
+        logger.info({ deleted: result.changes }, "[StaleTaskWatchdog] Cleaned up old done-task nudges");
+      }
+      return result.changes;
+    } catch (err) {
+      logger.warn({ err }, "[StaleTaskWatchdog] Error cleaning up done task nudges");
+      return 0;
+    }
+  }
+
+  // ─── Fix #1: Batch queries ────────────────────────────────────────
+
+  private getBatchNudgeCounts(taskIds: string[]): Map<string, number> {
+    const result = new Map<string, number>();
+    if (taskIds.length === 0) return result;
+    const placeholders = taskIds.map(() => "?").join(", ");
+    const rows = this.database.db.prepare(
+      `SELECT task_id, COUNT(*) as cnt FROM task_nudges WHERE task_id IN (${placeholders}) GROUP BY task_id`
+    ).all(...taskIds) as Array<{ task_id: string; cnt: number }>;
+    for (const row of rows) result.set(row.task_id, row.cnt);
+    return result;
+  }
+
+  private getBatchLastNudgeTimes(taskIds: string[]): Map<string, number> {
+    const result = new Map<string, number>();
+    if (taskIds.length === 0) return result;
+    const placeholders = taskIds.map(() => "?").join(", ");
+    const rows = this.database.db.prepare(
+      `SELECT task_id, MAX(created_at) as last_nudge FROM task_nudges WHERE task_id IN (${placeholders}) GROUP BY task_id`
+    ).all(...taskIds) as Array<{ task_id: string; last_nudge: string }>;
+    for (const row of rows) result.set(row.task_id, new Date(row.last_nudge).getTime());
+    return result;
+  }
+
+  // ─── Fix #2: Escalation self-loop protection ──────────────────────
+
+  private resolveTargetSafe(targetType: string, task: any): string | undefined {
+    const resolved = this.resolveTarget(targetType, task);
+    // If escalation target is the same as assignee, skip to "user"
+    if (targetType !== "assignee" && resolved && resolved === task.assigned_to) {
+      return undefined; // Falls through to "user" (dashboard notification)
+    }
+    return resolved;
+  }
+
   private resolveTarget(targetType: string, task: any): string | undefined {
     switch (targetType) {
       case "assignee":
         return task.assigned_to || undefined;
       case "architect": {
-        // Find master agent in the session
         const agents = this.agentManager.listAgents();
         const master = agents.find(a =>
           a.config.sessionId === this.sessionId && a.config.role === "master" && a.status === "running"
@@ -224,15 +288,29 @@ export class StaleTaskWatchdog extends EventEmitter {
         return master?.id;
       }
       case "user":
-        return undefined; // No agent — user notification only
+        return undefined;
       case "all":
-        return undefined; // Broadcast
+        return undefined;
       default:
         return undefined;
     }
   }
 
-  /** Check rate limit for a target */
+  // ─── Fix #6: Reassignment grace period ────────────────────────────
+
+  private wasRecentlyReassigned(task: any): boolean {
+    if (!task.updated_at) return false;
+    const updatedAt = new Date(task.updated_at).getTime();
+    const statusChangedAt = task.status_changed_at ? new Date(task.status_changed_at).getTime() : 0;
+    if (updatedAt > statusChangedAt) {
+      const minutesSinceUpdate = (Date.now() - updatedAt) / 60_000;
+      if (minutesSinceUpdate < REASSIGNMENT_GRACE_MINUTES) return true;
+    }
+    return false;
+  }
+
+  // ─── Delivery ─────────────────────────────────────────────────────
+
   private isWithinRateLimit(targetKey: string): boolean {
     const now = Date.now();
     const record = this.agentNudgeCounts.get(targetKey);
@@ -245,7 +323,6 @@ export class StaleTaskWatchdog extends EventEmitter {
     return true;
   }
 
-  /** Send a single nudge */
   private async sendNudge(info: {
     task: any;
     nudgeCount: number;
@@ -259,11 +336,10 @@ export class StaleTaskWatchdog extends EventEmitter {
 
     const prefix = isEscalation ? "[ESCALATION]" : "[Stale Task Alert]";
     const message = `${prefix} Task "${task.title}" has been in "${task.status}" for ${minutesInStatus}min. ` +
-      `Nudge #${nudgeCount} of ${policy.maxNudges || "∞"}. ` +
+      `Nudge #${nudgeCount} of ${policy.maxNudges || "\u221e"}. ` +
       `Assigned to: ${task.assigned_to || "(unassigned)"}. ` +
       `Action needed: update status or reassign.`;
 
-    // Record nudge in database
     this.database.insertNudge({
       id: randomUUID(),
       taskId: task.id,
@@ -276,20 +352,15 @@ export class StaleTaskWatchdog extends EventEmitter {
       message,
     });
 
-    // Deliver to agent terminal
     if (targetAgentId) {
       try {
         const agent = this.agentManager.getAgent(targetAgentId);
         if (agent && agent.status === "running") {
-          const coloredMsg = `\x1b[1;33m${message}\x1b[0m`;
-          await this.agentManager.sendMessage(targetAgentId, coloredMsg);
+          await this.agentManager.sendMessage(targetAgentId, `\x1b[1;33m${message}\x1b[0m`);
         }
-      } catch {
-        // Non-fatal
-      }
+      } catch { /* non-fatal */ }
     }
 
-    // Broadcast to all agents if target is "all"
     if (targetType === "all") {
       const agents = this.agentManager.listAgents().filter(a =>
         a.config.sessionId === this.sessionId && a.status === "running"
@@ -301,54 +372,31 @@ export class StaleTaskWatchdog extends EventEmitter {
       }
     }
 
-    // Log timeline event
     await this.eventLog.log({
       sessionId: this.sessionId,
       type: "task-nudge" as any,
       data: {
-        taskId: task.id,
-        taskTitle: task.title,
-        status: task.status,
-        nudgeCount,
-        isEscalation,
-        targetType,
-        targetAgentId,
-        minutesInStatus,
+        taskId: task.id, taskTitle: task.title, status: task.status,
+        nudgeCount, isEscalation, targetType, targetAgentId, minutesInStatus,
       },
     });
 
-    // Emit for dashboard WebSocket
     this.emit("nudge", {
-      taskId: task.id,
-      taskTitle: task.title,
-      status: task.status,
-      nudgeCount,
-      isEscalation,
-      targetType,
-      targetAgentId,
-      minutesInStatus,
-      message,
+      taskId: task.id, taskTitle: task.title, status: task.status,
+      nudgeCount, isEscalation, targetType, targetAgentId, minutesInStatus, message,
     });
 
     logger.info({
-      taskId: task.id,
-      status: task.status,
-      nudgeCount,
-      isEscalation,
-      targetType,
-      minutesInStatus,
+      taskId: task.id, status: task.status, nudgeCount, isEscalation, targetType, minutesInStatus,
     }, `[StaleTaskWatchdog] Sent nudge for "${task.title}"`);
   }
 
-  /** Send a batch summary nudge (5+ stale tasks for same target) */
   private async sendBatchNudge(targetKey: string, tasks: any[]): Promise<void> {
     const taskSummaries = tasks.map(t =>
       `  - "${t.task.title}" (${t.task.status}, ${t.minutesInStatus}min, nudge #${t.nudgeCount})`
     ).join("\n");
-
     const message = `[Stale Task Summary] ${tasks.length} tasks need attention:\n${taskSummaries}`;
 
-    // Record each nudge individually
     for (const t of tasks) {
       this.database.insertNudge({
         id: randomUUID(),
@@ -363,7 +411,6 @@ export class StaleTaskWatchdog extends EventEmitter {
       });
     }
 
-    // Deliver to target
     const targetAgentId = tasks[0]?.targetAgentId;
     if (targetAgentId) {
       try {
@@ -371,15 +418,11 @@ export class StaleTaskWatchdog extends EventEmitter {
       } catch { /* ignore */ }
     }
 
-    // Emit for dashboard
     this.emit("batch-nudge", {
       targetKey,
       targetType: tasks[0]?.targetType,
       tasks: tasks.map(t => ({
-        taskId: t.task.id,
-        title: t.task.title,
-        status: t.task.status,
-        minutesInStatus: t.minutesInStatus,
+        taskId: t.task.id, title: t.task.title, status: t.task.status, minutesInStatus: t.minutesInStatus,
       })),
       message,
     });
