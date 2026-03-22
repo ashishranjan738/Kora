@@ -86,19 +86,24 @@ const activityDotClass: Record<AgentActivity, string> = {
 };
 
 /** Inline sub-component for the Workload tab to keep state isolated */
-function WorkloadTabContent({ sessionId, session, api, tasks, agents }: {
+function WorkloadTabContent({ sessionId, session, api, agents }: {
   sessionId: string; session: any; api: ReturnType<typeof useApi>;
-  tasks?: any[]; agents?: any[];
+  agents?: any[];
 }) {
   const [metrics, setMetrics] = useState<TaskMetricsResponse | null>(null);
+  const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
-  const loadMetrics = useCallback(async () => {
+  const loadData = useCallback(async () => {
     try {
-      const data = await api.getTaskMetrics(sessionId);
-      setMetrics(data as TaskMetricsResponse);
+      const [metricsData, tasksData] = await Promise.all([
+        api.getTaskMetrics(sessionId),
+        api.getTasks(sessionId),
+      ]);
+      setMetrics(metricsData as TaskMetricsResponse);
+      setTasks((tasksData as any).tasks || []);
       setError(null);
     } catch (err: any) {
       if (err.message?.includes("404")) {
@@ -112,10 +117,10 @@ function WorkloadTabContent({ sessionId, session, api, tasks, agents }: {
   }, [sessionId]);
 
   useEffect(() => {
-    loadMetrics();
-    pollRef.current = setInterval(loadMetrics, 10000);
+    loadData();
+    pollRef.current = setInterval(loadData, 10000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [loadMetrics]);
+  }, [loadData]);
 
   const workflowStates = session?.workflowStates ?? session?.config?.workflowStates ?? DEFAULT_WORKFLOW_STATES;
 
