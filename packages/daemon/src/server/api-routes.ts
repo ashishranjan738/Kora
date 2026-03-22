@@ -2202,8 +2202,19 @@ export function createApiRouter(deps: {
         res.status(400).json({ error: `status must be one of: ${validStatuses.join(", ")}` });
         return;
       }
-      // Enforce pipeline transitions if workflow states have transitions defined
-      if (body.status !== undefined && workflowStates) {
+      // Force mode: master agents can bypass pipeline validation (e.g. force-close a task with merged PR)
+      const forceMode = (body as any).force === true;
+      if (forceMode && body.status) {
+        // Add auto-comment documenting the force transition
+        const commentText = `Force-transitioned to "${body.status}" (pipeline bypass)`;
+        try {
+          const { randomUUID } = require("crypto");
+          db.addTaskComment({ id: randomUUID().slice(0, 8), taskId: tid, text: commentText, author: "system", authorName: "system", createdAt: new Date().toISOString() });
+        } catch {}
+      }
+
+      // Enforce pipeline transitions if workflow states have transitions defined (skip if force mode)
+      if (body.status !== undefined && workflowStates && !forceMode) {
         const orch = orchestrators.get(sid);
         const currentTask = orch?.database.getTask(String(tid));
         if (currentTask && currentTask.status !== body.status) {
