@@ -114,7 +114,7 @@ export const IDLE_MESSAGE_KEYWORDS = [
 ];
 
 /** How long to wait at a prompt before considering an agent idle (ms) */
-const IDLE_TIMEOUT_MS = 30_000; // 30 seconds — LLMs need time to think after reading files
+const IDLE_TIMEOUT_MS = 30_000; // 30 seconds — 10s was too aggressive, causing false idle during code reading
 
 /**
  * How long an MCP-reported idle status is protected from terminal override (ms).
@@ -138,9 +138,13 @@ export class AgentHealthMonitor extends EventEmitter {
    */
   private mcpIdleTimestamps = new Map<string, number>();
 
-  /** Track last MCP tool call time per agent — if recent, agent is "working" */
+  /**
+   * Layer 3: MCP tool call activity timestamps.
+   * When an agent makes any MCP call (send_message, list_tasks, etc.),
+   * we record it here. If within IDLE_TIMEOUT_MS, agent is "working"
+   * regardless of terminal output (agent may be reading code silently).
+   */
   private lastMcpCallTimestamps = new Map<string, number>();
-  private static readonly MCP_ACTIVITY_WINDOW_MS = 30_000; // 30 seconds
 
   constructor(
     private tmux: IPtyBackend,
@@ -179,29 +183,6 @@ export class AgentHealthMonitor extends EventEmitter {
   }
 
   /**
-   * Record that an agent made an MCP tool call.
-   * If agent made a tool call within the last 30s, they're "working"
-   * regardless of terminal state (they may be reading files, thinking, etc.)
-   */
-  recordMcpCall(agentId: string): void {
-    this.lastMcpCallTimestamps.set(agentId, Date.now());
-    // Also update the agent state
-    if (this.agents) {
-      const agent = this.agents.get(agentId);
-      if (agent) {
-        agent.lastMcpCallAt = new Date().toISOString();
-      }
-    }
-  }
-
-  /** Check if agent has made an MCP call recently (within 30s) */
-  hasRecentMcpActivity(agentId: string): boolean {
-    const lastCall = this.lastMcpCallTimestamps.get(agentId);
-    if (!lastCall) return false;
-    return Date.now() - lastCall < AgentHealthMonitor.MCP_ACTIVITY_WINDOW_MS;
-  }
-
-  /**
    * Check if a message contains idle/completion keywords.
    * Used to infer idle status from send_message content.
    */
@@ -219,6 +200,33 @@ export class AgentHealthMonitor extends EventEmitter {
     this.mcpIdleTimestamps.delete(agentId);
     // Also reset the output cache so the next poll detects change
     this.lastOutputCache.delete(agentId);
+  }
+
+  /**
+   * Layer 3: Record MCP tool call activity.
+   * Called when an agent makes any MCP call (send_message, list_tasks, check_messages, etc.).
+   * If within IDLE_TIMEOUT_MS, agent is considered "working" even if terminal shows no output
+   * (e.g. agent is reading code via Read tool — no terminal output but definitely working).
+   */
+  recordMcpActivity(agentId: string): void {
+    this.lastMcpCallTimestamps.set(agentId, Date.now());
+    // If agent was idle, flip to working
+    const agent = this.agents?.get(agentId);
+    if (agent && agent.activity === "idle") {
+      agent.activity = "working";
+      agent.lastActivityAt = new Date().toISOString();
+      delete agent.idleSince;
+      this.mcpIdleTimestamps.delete(agentId);
+      this.emit("agent-working", agentId);
+    }
+  }
+
+  /**
+   * Check if agent has recent MCP activity (within IDLE_TIMEOUT_MS).
+   */
+  private hasMcpActivity(agentId: string): boolean {
+    const t = this.lastMcpCallTimestamps.get(agentId);
+    return !!t && (Date.now() - t) < IDLE_TIMEOUT_MS;
   }
 
   /**
@@ -318,6 +326,14 @@ export class AgentHealthMonitor extends EventEmitter {
 
         // If at a prompt/idle indicator, don't mark as working
         if (isAtPrompt) {
+          // Layer 3: Check MCP activity — if agent made an MCP call recently,
+          // it's working (e.g. reading code via Read tool) even though terminal shows prompt
+          if (this.hasMcpActivity(agentId)) {
+            // Agent is actively using MCP tools — not idle
+            this.lastOutputTimestamps.set(agentId, Date.now());
+            return;
+          }
+
           // Strong idle signals → mark idle IMMEDIATELY (no timeout wait)
           if (isStrongIdle && agent.activity !== "idle") {
             agent.activity = "idle";
@@ -326,26 +342,18 @@ export class AgentHealthMonitor extends EventEmitter {
             this.emit("agent-idle", agentId);
           }
           // Weak idle signals → wait for timeout before marking idle
-          // Skip if agent has recent MCP activity (reading files, making tool calls)
           else if (isWeakIdle) {
-            if (this.hasRecentMcpActivity(agentId)) {
-              this.lastOutputTimestamps.set(agentId, Date.now());
-              return; // Agent is actively using MCP tools — not idle
-            }
-            const lastOutputTime = this.lastOutputTimestamps.get(agentId) || Date.now();
-            const timeSinceOutput = Date.now() - lastOutputTime;
+            // Update timestamp when output actually changes (even at prompt)
+            // This prevents stale timestamps from causing premature idle
+            this.lastOutputTimestamps.set(agentId, Date.now());
+            const timeSinceOutput = Date.now() - (this.lastOutputTimestamps.get(agentId) || Date.now());
             if (timeSinceOutput > IDLE_TIMEOUT_MS && agent.activity !== "idle") {
               agent.activity = "idle";
               agent.lastActivityAt = new Date().toISOString();
-              agent.idleSince = new Date(lastOutputTime).toISOString();
+              agent.idleSince = new Date().toISOString();
               this.emit("agent-idle", agentId);
             }
           }
-          // Update timestamp even at prompt — output DID change (agent received
-          // file content, tool results, etc.) and is now thinking. Without this,
-          // the idle timeout starts from the LAST non-prompt output, causing
-          // premature idle detection while the LLM is still processing.
-          this.lastOutputTimestamps.set(agentId, Date.now());
           return;
         }
 
@@ -375,7 +383,12 @@ export class AgentHealthMonitor extends EventEmitter {
         return;
       }
 
-      // Layer 3: No output change — mark idle based on pattern strength
+      // No output change — check MCP activity before marking idle
+      if (this.hasMcpActivity(agentId)) {
+        // Agent is using MCP tools (reading code, checking messages, etc.) — not idle
+        return;
+      }
+
       if (agent.activity !== "idle") {
         if (isStrongIdle) {
           // Strong pattern + no output change → definitely idle
@@ -410,6 +423,7 @@ export class AgentHealthMonitor extends EventEmitter {
     this.lastOutputTimestamps.delete(agentId);
     this.lastOutputCache.delete(agentId);
     this.mcpIdleTimestamps.delete(agentId);
+    this.lastMcpCallTimestamps.delete(agentId);
   }
 
   /** Stop all monitoring */
