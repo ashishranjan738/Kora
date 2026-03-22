@@ -18,6 +18,7 @@ import { formatCost, formatTokens, formatLastSeen } from "../utils/formatters";
 import { showError } from "../utils/notifications";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { AgentLoadBadge } from "../components/AgentLoadBadge";
+import { UnreadMessageBanner } from "../components/UnreadMessageBanner";
 
 const PANEL_BORDER_COLORS = [
   "#58a6ff",
@@ -1471,6 +1472,14 @@ export function MultiAgentView() {
           )}
         </div>
       </div>
+
+      {/* Unread message banner — always visible when agents have unread messages */}
+      <UnreadMessageBanner
+        agents={agents}
+        onNudge={async (agentId) => {
+          try { await api.nudgeAgent(sessionId!, agentId); } catch {}
+        }}
+      />
 
       {/* Mobile: scrollable agent card list */}
       {isMobileView ? (
