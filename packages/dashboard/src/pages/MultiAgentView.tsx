@@ -914,9 +914,9 @@ export function MultiAgentView() {
               </span>
             </Tooltip>
 
-            {/* Nudge button */}
+            {/* Nudge button — hide badge in fullscreen to prevent z-index bleed */}
             <Tooltip label={`${agent.unreadMessages || 0} unread — nudge`}>
-              <Indicator disabled={!agent.unreadMessages} label={agent.unreadMessages || 0} size={12} color="red" offset={2}>
+              <Indicator disabled={!agent.unreadMessages || !!fullscreenAgentId} label={agent.unreadMessages || 0} size={12} color="red" offset={2}>
                 <button
                   className="split-panel-btn"
                   title="Nudge agent"

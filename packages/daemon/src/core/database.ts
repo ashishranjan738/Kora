@@ -313,8 +313,8 @@ export class AppDatabase extends EventEmitter {
     updatedAt: string;
   }): void {
     const stmt = this.db.prepare(
-      `INSERT INTO tasks (id, session_id, title, description, status, assigned_to, created_by, dependencies, priority, labels, due_date, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO tasks (id, session_id, title, description, status, assigned_to, created_by, dependencies, priority, labels, due_date, created_at, updated_at, status_changed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     stmt.run(
       task.id, task.sessionId, task.title, task.description, task.status,
@@ -323,7 +323,8 @@ export class AppDatabase extends EventEmitter {
       task.priority || "P2",
       JSON.stringify(task.labels || []),
       task.dueDate || null,
-      task.createdAt, task.updatedAt
+      task.createdAt, task.updatedAt,
+      task.createdAt, // status_changed_at = createdAt for new tasks (prevents false stale alerts)
     );
   }
 
@@ -691,7 +692,7 @@ export class AppDatabase extends EventEmitter {
     const cutoff = new Date(Date.now() - thresholdMinutes * 60 * 1000).toISOString();
     const placeholders = statuses.map(() => "?").join(", ");
     return this.db.prepare(
-      `SELECT * FROM tasks WHERE session_id = ? AND status IN (${placeholders}) AND status != 'done' AND status != 'pending' AND (status_changed_at IS NULL OR status_changed_at < ?) ORDER BY status_changed_at ASC`
+      `SELECT * FROM tasks WHERE session_id = ? AND status IN (${placeholders}) AND status != 'done' AND status != 'pending' AND COALESCE(status_changed_at, created_at) < ? ORDER BY COALESCE(status_changed_at, created_at) ASC`
     ).all(sessionId, ...statuses, cutoff) as any[];
   }
 
