@@ -45,6 +45,7 @@ import { WebhookNotifier } from "../core/webhook-notifier.js";
 import type { WebhookConfig } from "@kora/shared";
 import { analyzeTerminalOutput } from "../core/terminal-analyzer.js";
 import { computeTaskMetrics, TaskMetricsDebouncer } from "../core/task-metrics.js";
+import * as cronScheduler from "../core/cron-scheduler.js";
 
 // Cache strip-ansi import (ESM module loaded once at startup)
 let stripAnsiFunc: ((text: string) => string) | null = null;
@@ -2983,7 +2984,7 @@ export function createApiRouter(deps: {
 
   // ─── Cron Schedules ──────────────────────────────────────────────
 
-  const cronScheduler = require("../core/cron-scheduler.js") as typeof import("../core/cron-scheduler.js");
+  // cronScheduler imported at top of file
 
   router.get("/schedules", (req: Request, res: Response) => {
     try {
