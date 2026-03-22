@@ -841,121 +841,124 @@ export function MultiAgentView() {
             onDoubleClick={() => toggleFullscreen(agent.id)}
             style={{
               borderLeft: `3px solid ${isFocused ? "#58a6ff" : borderColor}`,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
             }}
           >
+            {/* LEFT: Agent identity — always visible, truncates */}
             <span className={`agent-status-dot ${getStatusDotClass(agent.status)}`} />
-            <span className="mosaic-agent-name">
+            <span className="mosaic-agent-name" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 1, minWidth: 0 }}>
               {agent.config?.name || agent.name || "Agent"}
             </span>
-            <span style={{ color: 'var(--text-muted)', fontSize: 9, fontFamily: 'monospace', opacity: 0.7 }}>{agent.id}</span>
             {agent.role && (
-              <span className={`badge ${getRoleBadgeClass(agent.role)}`} style={{ fontSize: 11, padding: "1px 8px" }}>
+              <span className={`badge ${getRoleBadgeClass(agent.role)}`} style={{ fontSize: 11, padding: "1px 8px", flexShrink: 0 }}>
                 {agent.role}
               </span>
             )}
-            <span className="mosaic-agent-meta">
-              {[agent.provider, agent.model].filter(Boolean).join("/")}
-            </span>
-            <FlagIndicator flags={(agent.config?.extraCliArgs as string[]) || []} />
-            <ChannelIndicator channels={(agent.config?.channels as string[]) || []} />
-            {(() => {
-              const agentTasks = tasks.filter(t =>
-                t.assignedTo === agent.id || t.assignedTo === (agent.config?.name || agent.name)
-              );
-              const activeTasks = agentTasks.filter(t => t.status !== "done").length;
-              const doneTasks = agentTasks.filter(t => t.status === "done").length;
-              // Count tasks with unmet dependencies as blocked
-              const blockedTasks = agentTasks.filter(t =>
-                t.dependencies?.length > 0 &&
-                t.dependencies.some((depId: string) => {
-                  const dep = tasks.find(dt => dt.id === depId);
-                  return dep && dep.status !== "done";
-                })
-              ).length;
-              const capacity = agent.capacity ?? 5;
-              const loadPct = capacity > 0 ? Math.round((activeTasks / capacity) * 100) : 0;
-              return activeTasks > 0 || doneTasks > 0 ? (
-                <span onClick={(e) => { e.stopPropagation(); navigate(`/session/${sessionId}#workload`); }} style={{ cursor: "pointer" }}>
-                  <AgentLoadBadge
-                    activeTasks={activeTasks}
-                    doneTasks={doneTasks}
-                    blockedTasks={blockedTasks}
-                    loadPercentage={loadPct}
-                    compact={false}
-                  />
+
+            {/* MIDDLE: Metadata — overflows/hides when card is narrow */}
+            <span style={{ display: "flex", alignItems: "center", gap: 6, overflow: "hidden", flex: 1, minWidth: 0 }}>
+              <span className="mosaic-agent-meta" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {[agent.provider, agent.model].filter(Boolean).join("/")}
+              </span>
+              <FlagIndicator flags={(agent.config?.extraCliArgs as string[]) || []} />
+              <ChannelIndicator channels={(agent.config?.channels as string[]) || []} />
+              {(() => {
+                const agentTasks = tasks.filter(t =>
+                  t.assignedTo === agent.id || t.assignedTo === (agent.config?.name || agent.name)
+                );
+                const activeTasks = agentTasks.filter(t => t.status !== "done").length;
+                const doneTasks = agentTasks.filter(t => t.status === "done").length;
+                const blockedTasks = agentTasks.filter(t =>
+                  t.dependencies?.length > 0 &&
+                  t.dependencies.some((depId: string) => {
+                    const dep = tasks.find(dt => dt.id === depId);
+                    return dep && dep.status !== "done";
+                  })
+                ).length;
+                const capacity = agent.capacity ?? 5;
+                const loadPct = capacity > 0 ? Math.round((activeTasks / capacity) * 100) : 0;
+                return activeTasks > 0 || doneTasks > 0 ? (
+                  <span onClick={(e) => { e.stopPropagation(); navigate(`/session/${sessionId}#workload`); }} style={{ cursor: "pointer", flexShrink: 0 }}>
+                    <AgentLoadBadge
+                      activeTasks={activeTasks}
+                      doneTasks={doneTasks}
+                      blockedTasks={blockedTasks}
+                      loadPercentage={loadPct}
+                      compact={false}
+                    />
+                  </span>
+                ) : null;
+              })()}
+              <span className="mosaic-token-usage" style={{ overflow: "hidden", whiteSpace: "nowrap" }}>
+                <span>In: {formatTokens(tokenIn)}</span>
+                <span>Out: {formatTokens(tokenOut)}</span>
+                <span className="cost">{formatCost(cost)}</span>
+              </span>
+              {isCrashed && (
+                <span style={{ fontSize: 11, color: "#f85149", fontWeight: 600, flexShrink: 0 }}>
+                  Crashed
                 </span>
-              ) : null;
-            })()}
-            <span className="mosaic-token-usage">
-              <span>In: {formatTokens(tokenIn)}</span>
-              <span>Out: {formatTokens(tokenOut)}</span>
-              <span className="cost">{formatCost(cost)}</span>
+              )}
+              {!isCrashed && (
+                <span style={{ fontSize: 12, color: "var(--text-secondary)", flexShrink: 0, whiteSpace: "nowrap" }}>
+                  {agent.status || "unknown"}
+                </span>
+              )}
+              <Tooltip label={`Last terminal output: ${agent.lastOutputAt ? new Date(agent.lastOutputAt).toLocaleTimeString() : "unknown"}`}>
+                <span style={{
+                  fontSize: 11, flexShrink: 0, whiteSpace: "nowrap",
+                  color: (() => {
+                    if (!agent.lastOutputAt) return "var(--text-muted)";
+                    const ago = Date.now() - new Date(agent.lastOutputAt).getTime();
+                    if (ago < 30000) return "var(--accent-green)";
+                    if (ago < 180000) return "var(--text-secondary)";
+                    return "var(--accent-yellow)";
+                  })(),
+                }}>
+                  {formatLastSeen(agent.lastOutputAt)}
+                </span>
+              </Tooltip>
             </span>
 
-            <span style={{ flex: 1 }} />
-            {isCrashed && (
-              <span style={{ fontSize: 11, color: "#f85149", fontWeight: 600 }}>
-                Crashed
-              </span>
-            )}
-            {!isCrashed && (
-              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                {agent.status || "unknown"}
-              </span>
-            )}
+            {/* RIGHT: Action buttons — ALWAYS visible, never hidden */}
+            <span style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+              {/* Nudge button */}
+              <Tooltip label={`${agent.unreadMessages || 0} unread — nudge`}>
+                <Indicator disabled={!agent.unreadMessages || !!fullscreenAgentId} label={agent.unreadMessages || 0} size={12} color="red" offset={2}>
+                  <button
+                    className="split-panel-btn"
+                    title="Nudge agent"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      try { await api.nudgeAgent(sessionId!, agent.id); } catch {}
+                    }}
+                    style={{ color: agent.unreadMessages ? "var(--accent-yellow)" : undefined }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                    </svg>
+                  </button>
+                </Indicator>
+              </Tooltip>
 
-            {/* Last seen indicator */}
-            <Tooltip label={`Last terminal output: ${agent.lastOutputAt ? new Date(agent.lastOutputAt).toLocaleTimeString() : "unknown"}`}>
-              <span style={{
-                fontSize: 11,
-                color: (() => {
-                  if (!agent.lastOutputAt) return "var(--text-muted)";
-                  const ago = Date.now() - new Date(agent.lastOutputAt).getTime();
-                  if (ago < 30000) return "var(--accent-green)";
-                  if (ago < 180000) return "var(--text-secondary)";
-                  return "var(--accent-yellow)";
-                })(),
-                whiteSpace: "nowrap",
-              }}>
-                {formatLastSeen(agent.lastOutputAt)}
-              </span>
-            </Tooltip>
+              {/* Fullscreen button */}
+              <button
+                className="split-panel-btn"
+                title="Fullscreen"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFullscreen(agent.id);
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" />
+                  <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
+              </button>
 
-            {/* Nudge button — hide badge in fullscreen to prevent z-index bleed */}
-            <Tooltip label={`${agent.unreadMessages || 0} unread — nudge`}>
-              <Indicator disabled={!agent.unreadMessages || !!fullscreenAgentId} label={agent.unreadMessages || 0} size={12} color="red" offset={2}>
-                <button
-                  className="split-panel-btn"
-                  title="Nudge agent"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    try { await api.nudgeAgent(sessionId!, agent.id); } catch {}
-                  }}
-                  style={{ color: agent.unreadMessages ? "var(--accent-yellow)" : undefined }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-                  </svg>
-                </button>
-              </Indicator>
-            </Tooltip>
-
-            {/* Fullscreen button */}
-            <button
-              className="split-panel-btn"
-              title="Fullscreen"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleFullscreen(agent.id);
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" />
-                <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
-              </svg>
-            </button>
-
-            {/* Gear menu */}
+              {/* Gear menu */}
             <div style={{ position: "relative" }}>
               <button
                 className="split-panel-btn"
@@ -1033,6 +1036,7 @@ export function MultiAgentView() {
                 </div>
               )}
             </div>
+            </span>{/* end RIGHT action buttons */}
           </div>
         )}
       >
