@@ -2122,13 +2122,25 @@ export function createApiRouter(deps: {
       };
       db.insertTask(task);
 
+      // Auto-transition: if task is in first workflow state (backlog/pending), move to second state on assignment
+      if (task.assignedTo) {
+        const session_create = sessionManager.getSession(sid);
+        const ws = session_create?.config.workflowStates || DEFAULT_WORKFLOW_STATES;
+        const firstState = ws[0]?.id;
+        const secondState = ws.length > 1 ? ws[1]?.id : undefined;
+        if (task.status === firstState && secondState) {
+          db.updateTask(task.id, { status: secondState });
+          task.status = secondState;
+        }
+      }
+
       // Notify assigned agent via terminal + SQLite (so check_messages finds it)
       if (task.assignedTo) {
         const orch = orchestrators.get(sid);
         if (orch) {
           try {
             const agent = orch.agentManager.getAgent(task.assignedTo);
-            const notifyMsg = `[Task assigned] "${task.title}" (${task.priority}). Use get_task("${task.id}") for details.`;
+            const notifyMsg = `[Task assigned — START NOW] "${task.title}" (${task.priority}). You have been assigned this task. Begin implementation immediately. Use get_task("${task.id}") for details.`;
             if (agent) {
               orch.messageQueue.enqueue(task.assignedTo, agent.config.tmuxSession,
                 `\x1b[1;36m${notifyMsg}\x1b[0m`);
@@ -2246,11 +2258,20 @@ export function createApiRouter(deps: {
 
       // Notify if assignedTo changed — terminal + SQLite (so check_messages finds it)
       if (body.assignedTo && task.assignedTo !== oldTask.assignedTo) {
+        // Auto-transition: if task is in first workflow state, move to second on assignment
+        const session_update = sessionManager.getSession(sid);
+        const ws_update = session_update?.config.workflowStates || DEFAULT_WORKFLOW_STATES;
+        const firstState_u = ws_update[0]?.id;
+        const secondState_u = ws_update.length > 1 ? ws_update[1]?.id : undefined;
+        if (task.status === firstState_u && secondState_u) {
+          db.updateTask(String(tid), { status: secondState_u });
+        }
+
         const orch = orchestrators.get(sid);
         if (orch) {
           try {
             const agent = orch.agentManager.getAgent(task.assignedTo);
-            const notifyMsg = `[Task assigned] "${task.title}" (${task.priority || "P2"}). Use get_task("${tid}") for details.`;
+            const notifyMsg = `[Task assigned — START NOW] "${task.title}" (${task.priority || "P2"}). You have been assigned this task. Begin implementation immediately. Use get_task("${tid}") for details.`;
             if (agent) {
               orch.messageQueue.enqueue(task.assignedTo, agent.config.tmuxSession,
                 `\x1b[1;36m${notifyMsg}\x1b[0m`);
