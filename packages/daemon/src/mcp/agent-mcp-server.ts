@@ -65,7 +65,7 @@ const ROLE_TOOL_ACCESS: Record<string, Set<string>> = {
 /** Check if the current agent role is allowed to use a tool */
 function isToolAllowed(toolName: string): boolean {
   const allowed = ROLE_TOOL_ACCESS[AGENT_ROLE];
-  if (!allowed) return true; // unknown role — allow all (safe default for custom roles)
+  if (!allowed) return ROLE_TOOL_ACCESS.worker.has(toolName); // unknown role — default to worker (most restrictive)
   return allowed.has(toolName);
 }
 
@@ -89,7 +89,8 @@ function getDaemonUrl(): string {
     const port = fs.readFileSync(path.join(getConfigDir(), "daemon.port"), "utf-8").trim();
     return `http://localhost:${port}`;
   } catch {
-    return "http://localhost:7890";
+    const isDev = process.env.KORA_DEV === "1";
+    return `http://localhost:${isDev ? 7891 : 7890}`;
   }
 }
 

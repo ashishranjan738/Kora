@@ -123,6 +123,10 @@ async function handleStart(): Promise<void> {
         worktreeMode: config.worktreeMode,
       });
       await orch.start();
+      // Configure workflow-aware status sets for restored sessions
+      if (config.workflowStates && config.workflowStates.length > 0) {
+        orch.database.setWorkflowStatuses(config.workflowStates);
+      }
       const result = await orch.restore();
       orchestrators.set(config.id, orch);
       if (result.restored > 0 || result.dead > 0) {

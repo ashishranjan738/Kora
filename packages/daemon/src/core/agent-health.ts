@@ -52,6 +52,11 @@ export const STRONG_IDLE_PATTERNS = [
   // Goose
   /goose>\s*$/i,                   // Goose prompt
 
+  // Claude Code session completion patterns
+  /Claude\s*is\s*waiting\s*for\s*your\s*input/i, // "Claude is waiting for your input"
+  /(?:Worked|Cooked|Brewed)\s*for\s*\d+/i, // "Worked for 5m" / "Cooked for 2h30m" — session summary
+  /Total\s*cost/i,                   // Cost summary after completion
+
   // Generic explicit idle (handle stripped whitespace)
   /waiting\s*for\s*your\s*input/i,
   /How\s*can\s*I\s*help/i,
@@ -90,10 +95,15 @@ export const THINKING_PATTERNS = [
   /[✳✶✻✽✢⣾⣽⣻⢿⡿⣟⣯⣷]/,
   // Text-based processing indicators (case insensitive)
   /\b(?:thinking|processing|generating|analyzing|reasoning)\b/i,
-  // Claude Code fun spinners
-  /\b(?:photosynthesizing|hyperspacing|flummoxing|razzmatazzing|brewing|crunching|cooking|baking)\b/i,
+  // Claude Code fun spinners (comprehensive list of known spinner words)
+  /\b(?:photosynthesizing|hyperspacing|flummoxing|razzmatazzing|brewing|crunching|cooking|baking|spelunking|scurrying|percolating|manifesting|synthesizing|conjuring|pondering|cogitating|ruminating|contemplating|deliberating|meditating|musing|noodling|brainstorming|daydreaming|simmering|marinating|fermenting|distilling|crystallizing|composing|crafting|forging|sculpting|weaving|spinning|churning|grinding|polishing)\b/i,
+  // Claude Code time counter in spinner — definitive proof of active processing
+  // Matches: "(2m51s)", "(45s)", "(1m3s)", "(10m0s)"
+  /\(\d+[ms]\d*s?\)/,
   // Generic progress indicators
   /\b(?:loading|compiling|building|running|executing|searching|scanning)\.\.\./i,
+  // Ellipsis after a word (common spinner format: "Brewing…", "Thinking…")
+  /\w+\u2026/,
 ];
 
 /**
@@ -291,8 +301,25 @@ export class AgentHealthMonitor extends EventEmitter {
       // capturePane(escapeSequences=false) strips ANSI in holdpty mode.
       const rawOutput = await this.tmux.capturePane(tmuxSession, 10, false);
       // Normalize output to prevent false "changed" detections from cursor movement,
-      // trailing whitespace variations, and shell status line updates
-      const output = rawOutput.split('\n').map(l => l.trimEnd()).filter(l => l).join('\n');
+      // trailing whitespace variations, shell status line updates, and system-injected
+      // messages (notifications, nudges, broadcasts) that pollute the activity hash.
+      const output = rawOutput.split('\n').map(l => l.trimEnd()).filter(l => {
+        if (!l) return false;
+        // Filter system-injected notification lines from hash computation
+        if (l.includes('[New message from') && l.includes('check_messages')) return false;
+        if (l.includes('[Message from') && l.includes('check_messages')) return false;
+        if (l.includes('[Nudge from')) return false;
+        if (l.includes('[Broadcast]')) return false;
+        if (l.includes('[System]')) return false;
+        if (l.includes('UNREAD MESSAGE')) return false;
+        if (l.includes('check_messages NOW')) return false;
+        if (l.includes('check_messages to read')) return false;
+        if (l.includes('[Task assigned')) return false;
+        if (l.includes('[Auto-assigned')) return false;
+        if (l.includes('[Stale Task Alert]')) return false;
+        if (l.includes('[ESCALATION]')) return false;
+        return true;
+      }).join('\n');
       const lastOutput = this.lastOutputCache.get(agentId) || "";
 
       // Layer 2: Check if current output shows idle or thinking indicators.
@@ -317,6 +344,7 @@ export class AgentHealthMonitor extends EventEmitter {
           this.emit("agent-working", agentId);
         } else {
           agent.lastOutputAt = new Date().toISOString();
+          agent.lastActivityAt = new Date().toISOString();
         }
         this.lastOutputCache.set(agentId, output);
         return;
@@ -389,6 +417,7 @@ export class AgentHealthMonitor extends EventEmitter {
         } else {
           // Still working, just update timestamps
           agent.lastOutputAt = new Date().toISOString();
+          agent.lastActivityAt = new Date().toISOString();
         }
         return;
       }

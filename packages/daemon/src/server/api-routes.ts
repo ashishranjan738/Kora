@@ -27,6 +27,7 @@ import type {
 import type { EventType } from "@kora/shared";
 import type { SessionManager } from "../core/session-manager.js";
 import { Orchestrator } from "../core/orchestrator.js";
+import { AutoAssigner } from "../core/auto-assign.js";
 import type { CLIProviderRegistry } from "../cli-providers/provider-registry.js";
 import type { IPtyBackend } from "../core/pty-backend.js";
 import type { SuggestionsDatabase } from "../core/suggestions-db.js";
@@ -314,6 +315,21 @@ export function createApiRouter(deps: {
         worktreeMode: config.worktreeMode,
       });
       await orch.start();
+      // Configure workflow-aware status sets for task-completed events and stale task detection
+      if (config.workflowStates && config.workflowStates.length > 0) {
+        orch.database.setWorkflowStatuses(config.workflowStates);
+        const firstState = config.workflowStates[0];
+        const secondState = config.workflowStates.length > 1 ? config.workflowStates[1] : undefined;
+        if (firstState) orch.autoAssigner = new AutoAssigner({
+          sessionId: config.id,
+          database: orch.database,
+          agentManager: orch.agentManager,
+          messageQueue: orch.messageQueue,
+          eventLog: orch.eventLog,
+          firstStateId: firstState.id,
+          secondStateId: secondState?.id,
+        });
+      }
       // Wire WebSocket broadcast for message queue events (buffered/expired)
       orch.messageQueue.setBroadcastCallback((event) => {
         broadcastEvent({ ...event, sessionId: config.id });
