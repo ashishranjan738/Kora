@@ -17,6 +17,7 @@ import { TaskBoard } from "../components/TaskBoard";
 import { SessionSummary } from "../components/SessionSummary";
 import { KnowledgeViewer } from "../components/KnowledgeViewer";
 import { WorkloadChart, type TaskMetricsResponse } from "../components/WorkloadChart";
+import { BottleneckAlert } from "../components/BottleneckAlert";
 import { DEFAULT_WORKFLOW_STATES } from "@kora/shared";
 import { TimelineView } from "../components/timeline/TimelineView";
 import { ExecutionTracing } from "../components/ExecutionTracing";
@@ -85,7 +86,10 @@ const activityDotClass: Record<AgentActivity, string> = {
 };
 
 /** Inline sub-component for the Workload tab to keep state isolated */
-function WorkloadTabContent({ sessionId, session, api }: { sessionId: string; session: any; api: ReturnType<typeof useApi> }) {
+function WorkloadTabContent({ sessionId, session, api, tasks, agents }: {
+  sessionId: string; session: any; api: ReturnType<typeof useApi>;
+  tasks?: any[]; agents?: any[];
+}) {
   const [metrics, setMetrics] = useState<TaskMetricsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -116,7 +120,15 @@ function WorkloadTabContent({ sessionId, session, api }: { sessionId: string; se
   const workflowStates = session?.workflowStates ?? session?.config?.workflowStates ?? DEFAULT_WORKFLOW_STATES;
 
   return (
-    <div style={{ padding: "16px 0" }}>
+    <div style={{ padding: "16px 0", display: "flex", flexDirection: "column", gap: 16 }}>
+      {metrics && (
+        <BottleneckAlert
+          metrics={metrics}
+          sessionId={sessionId}
+          tasks={tasks}
+          agents={agents?.map((a: any) => ({ id: a.id, name: a.config?.name || a.name || a.id, status: a.status }))}
+        />
+      )}
       <WorkloadChart
         metrics={metrics}
         workflowStates={workflowStates}
@@ -947,6 +959,7 @@ export function SessionDetail() {
           sessionId={sessionId}
           session={session}
           api={api}
+          agents={agents}
         />
       )}
 
