@@ -224,19 +224,24 @@ export class StaleTaskWatchdog extends EventEmitter {
     return this.check();
   }
 
-  /** Fix #7: Cleanup old nudge records for done tasks (>7 days). */
-  cleanupDoneTaskNudges(): number {
+  /**
+   * Fix #7: Cleanup old nudge records for closed tasks (>7 days).
+   * @param closedStatuses - Closed/done status IDs from workflow states.
+   *   Defaults to ["done"] for standard workflows but accepts custom closed states.
+   */
+  cleanupDoneTaskNudges(closedStatuses: string[] = ["done"]): number {
     try {
       const cutoff = new Date(Date.now() - NUDGE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
+      const placeholders = closedStatuses.map(() => "?").join(", ");
       const result = this.database.db.prepare(
-        `DELETE FROM task_nudges WHERE created_at < ? AND task_id IN (SELECT id FROM tasks WHERE status = 'done')`
-      ).run(cutoff);
+        `DELETE FROM task_nudges WHERE created_at < ? AND task_id IN (SELECT id FROM tasks WHERE status IN (${placeholders}))`
+      ).run(cutoff, ...closedStatuses);
       if (result.changes > 0) {
-        logger.info({ deleted: result.changes }, "[StaleTaskWatchdog] Cleaned up old done-task nudges");
+        logger.info({ deleted: result.changes }, "[StaleTaskWatchdog] Cleaned up old closed-task nudges");
       }
       return result.changes;
     } catch (err) {
-      logger.warn({ err }, "[StaleTaskWatchdog] Error cleaning up done task nudges");
+      logger.warn({ err }, "[StaleTaskWatchdog] Error cleaning up closed task nudges");
       return 0;
     }
   }
@@ -267,11 +272,21 @@ export class StaleTaskWatchdog extends EventEmitter {
 
   // ─── Fix #2: Escalation self-loop protection ──────────────────────
 
+  /**
+   * Resolve escalation target with self-loop protection.
+   *
+   * Self-loop scenario: task assigned to master agent, policy escalates to "architect",
+   * architect resolves to the same master agent → infinite loop.
+   *
+   * Fallback chain: assignee → architect → user (dashboard notification).
+   * If any level resolves to the same agent as the assignee, we skip it and
+   * fall through to "user" (returns undefined = no agent target, emits as
+   * dashboard notification instead).
+   */
   private resolveTargetSafe(targetType: string, task: any): string | undefined {
     const resolved = this.resolveTarget(targetType, task);
-    // If escalation target is the same as assignee, skip to "user"
     if (targetType !== "assignee" && resolved && resolved === task.assigned_to) {
-      return undefined; // Falls through to "user" (dashboard notification)
+      return undefined; // Self-loop detected → fallback to "user" notification
     }
     return resolved;
   }
@@ -298,6 +313,13 @@ export class StaleTaskWatchdog extends EventEmitter {
 
   // ─── Fix #6: Reassignment grace period ────────────────────────────
 
+  /**
+   * Check if task was recently updated (proxy for reassignment).
+   * Note: Uses updated_at > status_changed_at as a heuristic. This may also
+   * trigger on comment additions or label changes, not just reassignment.
+   * Acceptable trade-off: a false positive just delays the nudge by 5 minutes.
+   * TODO: Track assignedTo changes explicitly for precision.
+   */
   private wasRecentlyReassigned(task: any): boolean {
     if (!task.updated_at) return false;
     const updatedAt = new Date(task.updated_at).getTime();
