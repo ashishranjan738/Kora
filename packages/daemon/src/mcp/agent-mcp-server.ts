@@ -1247,7 +1247,11 @@ async function handleToolCall(
                   }
                 }
 
-                if (!effectiveTransitions.has(status)) {
+                // Always allow transition to "closed" category states (e.g. "done")
+                const targetState = workflowStates.find((s: any) => s.id === status);
+                const isClosedCategory = targetState?.category === "closed";
+
+                if (!effectiveTransitions.has(status) && !isClosedCategory) {
                   const validStates = [...effectiveTransitions].map((t: string) => {
                     const s = workflowStates.find((ws: any) => ws.id === t);
                     return s ? `"${s.label}" (${t})` : `"${t}"`;
