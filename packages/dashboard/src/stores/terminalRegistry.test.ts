@@ -169,7 +169,8 @@ describe('terminalRegistry - Notification Preview Extraction', () => {
     const entry = getOrCreateTerminal(sessionId, agentId, theme);
     const mockTerm = entry.term as any;
 
-    // Mock user scrolled up: viewportY behind baseY
+    // Set userScrolledUp flag directly (implementation uses this flag, not viewport comparison)
+    entry.userScrolledUp = true;
     mockTerm.buffer.active.baseY = 50;
     mockTerm.buffer.active.viewportY = 20;
 
@@ -199,7 +200,8 @@ describe('terminalRegistry - Notification Preview Extraction', () => {
     const entry = getOrCreateTerminal(sessionId, agentId, theme);
     const mockTerm = entry.term as any;
 
-    // User scrolled up
+    // User scrolled up — set flag directly
+    entry.userScrolledUp = true;
     mockTerm.buffer.active.baseY = 50;
     mockTerm.buffer.active.viewportY = 10;
 
@@ -208,7 +210,8 @@ describe('terminalRegistry - Notification Preview Extraction', () => {
 
     expect(mockTerm.scrollToBottom).not.toHaveBeenCalled();
 
-    // User scrolls back to bottom
+    // User scrolls back to bottom — clear flag
+    entry.userScrolledUp = false;
     mockTerm.buffer.active.viewportY = 50;
 
     mockWs.onmessage?.({ data: 'line 2\n' });
