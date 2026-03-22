@@ -383,11 +383,17 @@ export class AppDatabase extends EventEmitter {
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const order = params.order === "asc" ? "ASC" : "DESC";
-    const limitClause = params.limit ? `LIMIT ${params.limit}` : "";
-    const offsetClause = params.offset ? `OFFSET ${params.offset}` : "";
+
+    // Use parameterized LIMIT/OFFSET to prevent SQL injection
+    let limitOffsetClause = "";
+    if (params.limit) { limitOffsetClause += " LIMIT ?"; values.push(params.limit); }
+    if (params.offset) {
+      if (!params.limit) { limitOffsetClause += " LIMIT ?"; values.push(999999); }
+      limitOffsetClause += " OFFSET ?"; values.push(params.offset);
+    }
 
     const rows = this.db.prepare(
-      `SELECT id, session_id, type, data, timestamp, agent_id FROM events ${where} ORDER BY timestamp ${order} ${limitClause} ${offsetClause}`
+      `SELECT id, session_id, type, data, timestamp, agent_id FROM events ${where} ORDER BY timestamp ${order}${limitOffsetClause}`
     ).all(...values) as Array<{ id: string; session_id: string; type: string; data: string; timestamp: string; agent_id: string | null }>;
 
     return rows.map(r => ({
