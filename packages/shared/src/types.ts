@@ -31,6 +31,8 @@ export interface SessionConfig {
   workflowStates?: WorkflowState[];
   /** Auto-assign unassigned tasks to idle agents. Default: true */
   autoAssign?: boolean;
+  /** Session-level max budget in USD. When exceeded, all agents are auto-paused. */
+  maxBudget?: number;
 }
 
 export interface WebhookConfig {
