@@ -25,6 +25,8 @@ export interface NudgePolicy {
   escalateAfterCount: number;
   escalateTo: "orchestrator" | "user" | "all";
   maxNudges: number;
+  /** Secondary notification target. Assignee gets action nudge, alsoNotify gets batched summary. Auto-dedup when target === alsoNotify. */
+  alsoNotify?: "orchestrator" | "user" | null;
 }
 
 /** Default nudge policies per task status */
@@ -43,24 +45,27 @@ export const DEFAULT_NUDGE_POLICIES: Record<string, NudgePolicy> = {
     nudgeAfterMinutes: 60,
     intervalMinutes: 30,
     target: "assignee",
+    alsoNotify: "orchestrator",
     escalateAfterCount: 3,
     escalateTo: "orchestrator",
     maxNudges: 8,
   },
   "review": {
     enabled: true,
-    nudgeAfterMinutes: 30,   // Fix #4: adjusted from 15min to 30min
-    intervalMinutes: 20,      // Fix #4: adjusted from 15min to 20min
+    nudgeAfterMinutes: 30,
+    intervalMinutes: 20,
     target: "orchestrator",
+    alsoNotify: null,          // target IS orchestrator, no double-notify
     escalateAfterCount: 3,
     escalateTo: "user",
     maxNudges: 8,
   },
-  "e2e-testing": {            // Fix #5: new default policy for e2e-testing
+  "e2e-testing": {
     enabled: true,
     nudgeAfterMinutes: 30,
     intervalMinutes: 20,
     target: "assignee",
+    alsoNotify: "orchestrator",
     escalateAfterCount: 3,
     escalateTo: "orchestrator",
     maxNudges: 8,
@@ -70,6 +75,7 @@ export const DEFAULT_NUDGE_POLICIES: Record<string, NudgePolicy> = {
     nudgeAfterMinutes: 10,
     intervalMinutes: 20,
     target: "assignee",
+    alsoNotify: "orchestrator",
     escalateAfterCount: 2,
     escalateTo: "user",
     maxNudges: 6,
@@ -87,13 +93,15 @@ export const DEFAULT_NUDGE_POLICIES: Record<string, NudgePolicy> = {
 
 const MAX_NUDGES_PER_AGENT_PER_HOUR = 10;
 const BATCH_THRESHOLD = 5;
-const REASSIGNMENT_GRACE_MINUTES = 5; // Fix #6
-const NUDGE_TTL_DAYS = 7;             // Fix #7
+const REASSIGNMENT_GRACE_MINUTES = 5;
+const NUDGE_TTL_DAYS = 7;
+const ALSO_NOTIFY_RATE_LIMIT_MS = 5 * 60 * 1000; // 1 batch per 5 minutes to orchestrator
 
 export class StaleTaskWatchdog extends EventEmitter {
   private checkInterval?: NodeJS.Timeout;
   private nudgePolicies: Record<string, NudgePolicy>;
   private agentNudgeCounts = new Map<string, { count: number; windowStart: number }>();
+  private lastAlsoNotifyTime = 0; // Rate limit for orchestrator batch summaries
 
   constructor(
     private sessionId: string,
@@ -203,6 +211,9 @@ export class StaleTaskWatchdog extends EventEmitter {
         });
       }
 
+      // Collect all nudged tasks for alsoNotify batch summary
+      const alsoNotifyItems: Array<{ title: string; assignee: string; status: string; minutes: number; nudgeCount: number }> = [];
+
       for (const [targetKey, tasks] of agentTasks) {
         if (!this.isWithinRateLimit(targetKey)) continue;
 
@@ -213,6 +224,26 @@ export class StaleTaskWatchdog extends EventEmitter {
             await this.sendNudge(t);
           }
         }
+
+        // Collect for alsoNotify batch
+        for (const t of tasks) {
+          const policy = t.policy as NudgePolicy;
+          if (policy.alsoNotify && policy.alsoNotify !== t.targetType) {
+            alsoNotifyItems.push({
+              title: t.task.title,
+              assignee: t.task.assigned_to || "(unassigned)",
+              status: t.task.status,
+              minutes: t.minutesInStatus,
+              nudgeCount: t.nudgeCount,
+            });
+          }
+        }
+      }
+
+      // Send batched alsoNotify summary to orchestrator (rate-limited)
+      if (alsoNotifyItems.length > 0 && Date.now() - this.lastAlsoNotifyTime >= ALSO_NOTIFY_RATE_LIMIT_MS) {
+        await this.sendAlsoNotifyBatch(alsoNotifyItems);
+        this.lastAlsoNotifyTime = Date.now();
       }
     } catch (err) {
       logger.warn({ err }, "[StaleTaskWatchdog] Error during check cycle");
@@ -449,5 +480,31 @@ export class StaleTaskWatchdog extends EventEmitter {
       })),
       message,
     });
+  }
+
+  /** Send batched alsoNotify summary to orchestrator (master agent) */
+  private async sendAlsoNotifyBatch(items: Array<{ title: string; assignee: string; status: string; minutes: number; nudgeCount: number }>): Promise<void> {
+    const lines = items.map(i =>
+      `  \u2022 "${i.title}" \u2192 ${i.assignee} \u2014 in "${i.status}" for ${i.minutes}min (nudge #${i.nudgeCount})`
+    ).join("\n");
+    const message = `[Task Watch] ${items.length} task${items.length > 1 ? "s" : ""} need attention:\n${lines}`;
+
+    // Find orchestrator (master agent)
+    const agents = this.agentManager.listAgents();
+    const master = agents.find(a =>
+      a.config.sessionId === this.sessionId && a.config.role === "master" && a.status === "running"
+    );
+
+    if (master) {
+      try {
+        await this.agentManager.sendMessage(master.id, `\x1b[1;36m${message}\x1b[0m`);
+      } catch { /* non-fatal */ }
+    }
+
+    // Always emit for dashboard WebSocket (fallback when no master)
+    this.emit("also-notify", { message, items, targetType: master ? "orchestrator" : "user" });
+
+    logger.info({ count: items.length, target: master ? master.id : "dashboard" },
+      `[StaleTaskWatchdog] Sent alsoNotify batch summary`);
   }
 }
