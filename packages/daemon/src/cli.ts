@@ -54,6 +54,16 @@ async function handleStart(): Promise<void> {
     const holdptyDir = path.join(require("os").homedir(), isDev ? ".kora-dev" : ".kora", "holdpty");
     fs.mkdirSync(holdptyDir, { recursive: true, mode: 0o700 });
     process.env.HOLDPTY_DIR = holdptyDir;
+
+    // Ensure holdpty's spawn-helper binary has execute permissions.
+    // npm install sometimes strips +x on macOS, causing "posix_spawnp failed".
+    try {
+      const spawnHelper = path.join(require.resolve("holdpty/package.json"), "..", "node_modules", "node-pty", "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper");
+      if (fs.existsSync(spawnHelper)) {
+        fs.chmodSync(spawnHelper, 0o755);
+      }
+    } catch { /* non-fatal — only needed on macOS/Linux */ }
+
     ptyBackend = new HoldptyController();
     logger.info(`  [pty backend] holdpty (sessions: ${holdptyDir})`);
   } else {
@@ -390,6 +400,10 @@ async function handleRun(): Promise<void> {
     const holdptyDir = path.join(require("os").homedir(), isDev ? ".kora-dev" : ".kora", "holdpty");
     fs.mkdirSync(holdptyDir, { recursive: true, mode: 0o700 });
     process.env.HOLDPTY_DIR = holdptyDir;
+    try {
+      const spawnHelper = path.join(require.resolve("holdpty/package.json"), "..", "node_modules", "node-pty", "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper");
+      if (fs.existsSync(spawnHelper)) fs.chmodSync(spawnHelper, 0o755);
+    } catch { /* non-fatal */ }
     ptyBackend = new HoldptyController();
   } else {
     ptyBackend = tmuxDefault;
