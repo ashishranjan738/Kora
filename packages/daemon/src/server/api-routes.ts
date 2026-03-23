@@ -4770,7 +4770,7 @@ export function createApiRouter(deps: {
       // 2. Read from knowledge.md using readKnowledgeEntries (reuse existing parser)
       try {
         const { readKnowledgeEntries } = await import("../core/context-discovery.js");
-        const rawEntries = readKnowledgeEntries(session.config.projectPath, 200);
+        const rawEntries = readKnowledgeEntries(session.runtimeDir, 200);
         for (const line of rawEntries) {
           // Format: "- [ISO_TIMESTAMP] [agent-name] entry text"
           const match = line.match(/^-?\s*\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.+)$/);
