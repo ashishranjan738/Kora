@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Modal,
   Stack,
@@ -86,13 +86,39 @@ export function DirectoryBrowser({ opened, onClose, onSelect, initialPath }: Dir
       setCurrentPath(initialPath || "");
       loadRecentPaths();
     }
-  }, [opened]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [opened, initialPath]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch directories whenever currentPath changes (and modal is open)
   useEffect(() => {
-    if (opened) {
-      fetchDirectories(currentPath);
+    if (!opened) return;
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError("");
+      try {
+        const data: BrowseResponse = await api.browseDirectories(currentPath);
+        if (cancelled) return;
+        setDirectories(data.directories || []);
+        setParentPath(data.parent);
+        setCurrentPath(data.path);
+        if (data.homeDir) setHomeDir(data.homeDir);
+      } catch (err: any) {
+        if (cancelled) return;
+        const msg = err?.message || "Failed to browse directory";
+        if (msg.includes("ENOENT") || msg.includes("not found")) {
+          setError("Directory not found. Check the path and try again.");
+        } else if (msg.includes("EACCES") || msg.includes("permission")) {
+          setError("Permission denied. Cannot access this directory.");
+        } else {
+          setError(msg);
+        }
+        setDirectories([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
+    load();
+    return () => { cancelled = true; };
   }, [currentPath, opened]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadRecentPaths() {
@@ -106,31 +132,6 @@ export function DirectoryBrowser({ opened, onClose, onSelect, initialPath }: Dir
       setLoadingRecent(false);
     }
   }
-
-  const fetchDirectories = useCallback(async (dirPath: string) => {
-    setLoading(true);
-    setError("");
-    try {
-      const data: BrowseResponse = await (api as any).browseDirectories(dirPath);
-      setDirectories(data.directories || []);
-      setParentPath(data.parent);
-      setCurrentPath(data.path);
-      if (data.homeDir) setHomeDir(data.homeDir);
-    } catch (err: any) {
-      const msg = err?.message || "Failed to browse directory";
-      // Extract meaningful message from API error
-      if (msg.includes("ENOENT") || msg.includes("not found")) {
-        setError("Directory not found. Check the path and try again.");
-      } else if (msg.includes("EACCES") || msg.includes("permission")) {
-        setError("Permission denied. Cannot access this directory.");
-      } else {
-        setError(msg);
-      }
-      setDirectories([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [api]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Filter directories by typed text
   const filteredDirs = useMemo(() => {
@@ -187,8 +188,9 @@ export function DirectoryBrowser({ opened, onClose, onSelect, initialPath }: Dir
   }
 
   function handleSelectRecent(path: string) {
-    onSelect(path);
-    onClose();
+    // Drill into the recent path so user can verify before selecting
+    setFilter("");
+    setCurrentPath(path);
   }
 
   function handleBreadcrumbClick(path: string) {
