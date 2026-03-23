@@ -327,5 +327,8 @@ export function useApi() {
         method: "POST",
         body: JSON.stringify({ agentIds }),
       }),
+    // Directory browsing
+    browseDirectories: (dirPath?: string) =>
+      apiFetch<{ path: string; parent: string | null; directories: Array<{ name: string; path: string; isGitRepo?: boolean }>; homeDir: string }>(`/browse/directories${dirPath ? `?path=${encodeURIComponent(dirPath)}` : ""}`),
   };
 }

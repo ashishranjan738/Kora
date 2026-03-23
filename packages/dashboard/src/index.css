@@ -4064,5 +4064,10 @@ textarea:focus {
 
 /* ---- Drag-and-drop reorder styles (handled by react-mosaic) ---- */
 
+/* ── Directory Browser ── */
+.directory-browser-item:hover {
+  background-color: var(--bg-tertiary);
+}
+
 /* Mobile Responsive Fixes - Additional Improvements */
 @import './mobile-responsive-fixes.css';
