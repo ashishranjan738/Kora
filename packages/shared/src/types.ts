@@ -66,6 +66,7 @@ export interface AgentConfig {
   persona: string;
   model: string;
   workingDirectory: string;
+  projectPath?: string;          // Original project root where .kora/ lives
   allowedTools?: string[];
   extraCliArgs?: string[];
   envVars?: Record<string, string>;

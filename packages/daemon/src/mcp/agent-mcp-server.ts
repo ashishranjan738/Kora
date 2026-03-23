@@ -40,8 +40,21 @@ function getArg(name: string): string {
 
 const AGENT_ID = getArg("agent-id");
 const SESSION_ID = getArg("session-id");
-const PROJECT_PATH = getArg("project-path");
-const AGENT_ROLE = getArg("agent-role") || "worker"; // default to worker (most restrictive)
+let PROJECT_PATH = getArg("project-path");
+let AGENT_ROLE = getArg("agent-role") || "worker";
+
+// Self-bootstrap: fetch role and projectPath from daemon API if not in CLI args
+async function selfBootstrap(): Promise<void> {
+  if (getArg("agent-role") && PROJECT_PATH) return;
+  try {
+    const resp = await apiCallOnce("GET", `/api/v1/sessions/${SESSION_ID}/agents/${AGENT_ID}`) as any;
+    if (resp?.config) {
+      if (!getArg("agent-role")) AGENT_ROLE = resp.config.role || "worker";
+      if (!getArg("project-path")) PROJECT_PATH = resp.config.projectPath || resp.config.workingDirectory || "";
+    }
+  } catch { /* Non-fatal: use CLI args/defaults */ }
+}
+const bootstrapPromise = (AGENT_ID && SESSION_ID) ? selfBootstrap() : Promise.resolve(); // default to worker (most restrictive)
 
 // ---------------------------------------------------------------------------
 // Tool access control — restrict which MCP tools each role can use.
@@ -2194,6 +2207,7 @@ rl.on("line", async (line: string) => {
         break;
 
       case "tools/call": {
+        await bootstrapPromise;
         const toolName = msg.params?.name as string;
         const toolArgs = (msg.params?.arguments || {}) as Record<string, string>;
 
