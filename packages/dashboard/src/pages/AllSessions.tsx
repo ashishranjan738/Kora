@@ -7,6 +7,7 @@ import { PlaybookGrid, PlaybookPreview, PlaybookUploadModal, VariableForm } from
 import { WorkflowStateEditor } from "../components/WorkflowStateEditor";
 import { autoGenerateTransitions, getPipelineTemplate } from "@kora/shared";
 import { PersonaLibrary } from "../components/PersonaLibrary";
+import { DirectoryBrowser } from "../components/DirectoryBrowser";
 import { showError } from "../utils/notifications";
 import { ScheduleManager } from "../components/ScheduleManager";
 import { SessionHealthBadge } from "../components/SessionHealthBadge";
@@ -37,7 +38,21 @@ interface Playbook {
   source?: "builtin" | "global" | "project";
 }
 
+import { ActionIcon, Tooltip } from "@mantine/core";
 import { PROVIDER_IDS as KNOWN_PROVIDERS, PROVIDER_MODEL_HINTS } from "../constants/providers";
+
+/** Reusable folder-browse button for path inputs */
+function BrowseButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Tooltip label="Browse directories" position="top" withArrow>
+      <ActionIcon variant="default" size={36} onClick={onClick} aria-label="Browse directories">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+        </svg>
+      </ActionIcon>
+    </Tooltip>
+  );
+}
 
 const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "#bc8cff",
@@ -104,6 +119,8 @@ export function AllSessions() {
   const [playbookVariables, setPlaybookVariables] = useState<Record<string, string>>({});
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showPersonaLibrary, setShowPersonaLibrary] = useState(false);
+  const [showBrowseForCreate, setShowBrowseForCreate] = useState(false);
+  const [showBrowseForPlaybook, setShowBrowseForPlaybook] = useState(false);
 
   // Daemon status
   const [daemonStatus, setDaemonStatus] = useState<{
@@ -896,17 +913,27 @@ export function AllSessions() {
             </div>
             <div className="form-group">
               <label>Project Path</label>
-              <input
-                value={newPath}
-                onChange={(e) => setNewPath(e.target.value)}
-                placeholder="/path/to/project"
-                list="recent-paths-datalist"
-              />
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <input
+                  value={newPath}
+                  onChange={(e) => setNewPath(e.target.value)}
+                  placeholder="/path/to/project"
+                  list="recent-paths-datalist"
+                  style={{ flex: 1 }}
+                />
+                <BrowseButton onClick={() => setShowBrowseForCreate(true)} />
+              </div>
               <datalist id="recent-paths-datalist">
                 {recentPaths.map((path, i) => (
                   <option key={i} value={path} />
                 ))}
               </datalist>
+              <DirectoryBrowser
+                opened={showBrowseForCreate}
+                onClose={() => setShowBrowseForCreate(false)}
+                onSelect={(path) => setNewPath(path)}
+                initialPath={newPath}
+              />
             </div>
             <div className="form-group">
               <label>Messaging Mode</label>
@@ -1143,12 +1170,21 @@ export function AllSessions() {
                       />
 
                       <label className="playbook-grid-label">Project Path</label>
-                      <input
-                        className="playbook-grid-input"
-                        value={playbookPath}
-                        onChange={(e) => setPlaybookPath(e.target.value)}
-                        placeholder="/path/to/project"
-                        autoFocus
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <input
+                          className="playbook-grid-input"
+                          value={playbookPath}
+                          onChange={(e) => setPlaybookPath(e.target.value)}
+                          placeholder="/path/to/project"
+                          style={{ flex: 1 }}
+                        />
+                        <BrowseButton onClick={() => setShowBrowseForPlaybook(true)} />
+                      </div>
+                      <DirectoryBrowser
+                        opened={showBrowseForPlaybook}
+                        onClose={() => setShowBrowseForPlaybook(false)}
+                        onSelect={(path) => setPlaybookPath(path)}
+                        initialPath={playbookPath}
                       />
 
                       <label className="playbook-grid-label">Messaging</label>
