@@ -326,7 +326,8 @@ export class Orchestrator extends EventEmitter {
       // Notify all existing agents about the new peer
       const existingAgents = this.agentManager.listAgents().filter(a => a.id !== agent.id && a.status === 'running');
       for (const existing of existingAgents) {
-        const msg = `\x1b[1;32m[System]\x1b[0m New agent joined the team: "${agent.config.name}" (${agent.id}), role: ${agent.config.role}`;
+        const refreshHint = this.config.messagingMode === "terminal" ? "" : this.config.messagingMode === "cli" ? " Run kora-cli context team to update your team roster." : " Call get_context(\"team\") to update your team roster.";
+        const msg = `\x1b[1;32m[System]\x1b[0m New agent joined the team: "${agent.config.name}" (${agent.id}), role: ${agent.config.role}${refreshHint}`;
         await this.messageBus.deliverToInbox(existing.id, {
           id: crypto.randomUUID(),
           from: 'system',
@@ -373,7 +374,8 @@ export class Orchestrator extends EventEmitter {
       // Notify remaining agents about the departure
       const remainingAgents = this.agentManager.listAgents().filter(a => a.id !== agentId && a.status === 'running');
       for (const remaining of remainingAgents) {
-        const msg = `\x1b[1;32m[System]\x1b[0m Agent "${agentId}" has been removed from the team. Reason: ${reason}`;
+        const leaveHint = this.config.messagingMode === "terminal" ? "" : this.config.messagingMode === "cli" ? " Run kora-cli context team to update your team roster." : " Call get_context(\"team\") to update your team roster.";
+        const msg = `\x1b[1;32m[System]\x1b[0m Agent "${agentId}" has been removed from the team. Reason: ${reason}${leaveHint}`;
         await this.messageBus.deliverToInbox(remaining.id, {
           id: crypto.randomUUID(),
           from: 'system',
