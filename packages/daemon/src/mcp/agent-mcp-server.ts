@@ -57,7 +57,7 @@ const ALL_TOOLS = [
   "prepare_pr", "report_idle", "request_task",
   "list_personas", "save_persona", "get_workflow_states",
   "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
-  "verify_work", "create_pr",
+  "verify_work", "create_pr", "whoami", "get_context", "delete_task",
 ] as const;
 
 /** Tools allowed per role. Master gets everything, workers get subsets. */
@@ -69,9 +69,9 @@ const ROLE_TOOL_ACCESS: Record<string, Set<string>> = {
     "prepare_pr", "report_idle", "request_task",
     "list_personas", "save_persona", "get_workflow_states",
     "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
-    "verify_work", "create_pr",
+    "verify_work", "create_pr", "whoami", "get_context",
   ]),
-  // Deny: spawn_agent, remove_agent, peek_agent, nudge_agent (master-only)
+  // Deny: spawn_agent, remove_agent, peek_agent, nudge_agent, delete_task (master-only)
 };
 
 /** Check if the current agent role is allowed to use a tool */
