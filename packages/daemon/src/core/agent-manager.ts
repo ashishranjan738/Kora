@@ -367,7 +367,7 @@ export class AgentManager extends EventEmitter {
     if (process.env.KORA_CONFIG_DIR) {
       envEntries.push(["KORA_CONFIG_DIR", process.env.KORA_CONFIG_DIR]);
     }
-    // Add daemon's bin dir to PATH so `kora-agent` CLI is accessible from agent terminals
+    // Add daemon's bin dir to PATH so `kora-cli` CLI is accessible from agent terminals
     // PATH is handled separately since $PATH must expand in the shell (can't use single quotes)
     const daemonBinDir = path.resolve(__dirname, "../../node_modules/.bin");
 

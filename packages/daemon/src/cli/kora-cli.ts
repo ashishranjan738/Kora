@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * kora-agent — CLI for Kora multi-agent orchestration platform.
+ * kora-cli — CLI for Kora multi-agent orchestration platform.
  *
  * Config resolution (priority order):
  * 1. CLI flags: --session, --agent
@@ -115,7 +115,7 @@ function rA(c: Cfg): string { if (!c.agentId) { process.stderr.write("Error: No 
 // ---------------------------------------------------------------------------
 let cfg: Cfg;
 const prog = new Command();
-prog.name("kora-agent").version(VERSION).description("CLI for Kora multi-agent orchestration platform")
+prog.name("kora-cli").version(VERSION).description("CLI for Kora multi-agent orchestration platform")
   .option("--json", "JSON output").option("--session <id>", "Session ID").option("--agent <id>", "Agent ID")
   .hook("preAction", () => { const o = prog.opts(); cfg = resolve({ session: o.session, agent: o.agent }); });
 const J = () => prog.opts().json as boolean | undefined;
