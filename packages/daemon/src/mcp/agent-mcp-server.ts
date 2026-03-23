@@ -18,6 +18,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { getPromptDefinition, getPromptsForRole } from "../tools/prompt-registry.js";
 import { RESOURCE_DEFINITIONS, getResourceDefinition } from "../tools/resource-registry.js";
+import { TOOL_HANDLER_MAP } from "../tools/tool-handlers.js";
 
 // Track resource subscriptions for live update notifications
 const resourceSubscriptions = new Set<string>();
@@ -2084,8 +2085,15 @@ async function handleToolCall(
       return { success: true, sentTo: targetImg.config?.name || targetImg.id, url: uploadResult.url, filename: uploadResult.filename };
     }
 
-    default:
+    default: {
+      // Fallback: delegate to shared TOOL_HANDLER_MAP for tools not in the switch
+      const sharedHandler = TOOL_HANDLER_MAP[toolName];
+      if (sharedHandler) {
+        const ctx = { agentId: AGENT_ID, sessionId: SESSION_ID, agentRole: AGENT_ROLE, projectPath: PROJECT_PATH, apiCall };
+        return await sharedHandler(ctx, toolArgs);
+      }
       return { error: `Unknown tool: ${toolName}` };
+    }
   }
 }
 
