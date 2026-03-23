@@ -30,6 +30,8 @@ export interface PersonaBuildOptions {
   contextFiles?: Array<{ name: string; content: string }>;
   /** Workflow states configured for the session (injected into persona so agents know the pipeline) */
   workflowStates?: import("@kora/shared").WorkflowState[];
+  /** Whether the agent's CLI provider supports MCP. If false, inject CLI tool instructions instead. */
+  supportsMcp?: boolean;
 }
 
 /**
@@ -91,11 +93,19 @@ export function buildPersona(options: PersonaBuildOptions): string {
 
   // Team awareness (peer agents)
   if (options.peers?.length) {
-    sections.push(buildTeamSection(options.peers, options.agentId));
+    if (options.supportsMcp === false) {
+      sections.push(buildTeamSectionCli(options.peers, options.agentId));
+    } else {
+      sections.push(buildTeamSection(options.peers, options.agentId));
+    }
   }
 
   // Communication protocol (all agents)
-  sections.push(buildCommunicationProtocol(options.agentId));
+  if (options.supportsMcp === false) {
+    sections.push(buildCliToolInstructions(options.agentId));
+  } else {
+    sections.push(buildCommunicationProtocol(options.agentId));
+  }
 
   // Control plane instructions (master or agents with spawn permissions)
   if (options.permissions.canSpawnAgents || options.permissions.canRemoveAgents) {
@@ -247,6 +257,118 @@ You can also communicate via message files:
   After reading, move to the \`processed/\` subdirectory.
 - **Send outgoing**: Write a JSON file to \`.kora/messages/outbox-${agentId}/\`:
   \`{"from":"${agentId}","to":"TARGET_AGENT_ID","type":"question","content":"Your message","timestamp":"..."}\`
+
+Messages from other agents will appear in your terminal as: [Message from AgentName]: their message`;
+}
+
+/**
+ * Team section for non-MCP agents — references the `kora-agent` CLI instead of MCP tools.
+ */
+function buildTeamSectionCli(
+  peers: Array<{ id: string; name: string; role: string; provider: string; model: string }>,
+  selfId: string,
+): string {
+  const rows = peers
+    .map((p) => `| ${p.name} | ${p.role} | ${p.id} | ${p.provider}/${p.model} |`)
+    .join("\n");
+
+  return `## Your Team
+
+You are part of a team of AI agents working on this project. Your ID is \`${selfId}\`. Here are your teammates:
+
+| Name | Role | ID | Provider/Model |
+|------|------|----|----------------|
+${rows}
+
+### Communicating with teammates
+Use the \`kora\` CLI tool for team communication:
+- \`kora-agent send <agent-name> "message"\` -- Send a message to a specific agent
+- \`kora-agent messages\` -- Check for new messages from other agents
+- \`kora-agent agents\` -- See all agents and their current status
+- \`kora-agent broadcast "message"\` -- Send a message to all agents
+
+### Task management
+Use the \`kora\` CLI for task management:
+- \`kora-agent tasks\` -- See YOUR active tasks
+- \`kora-agent task <taskId>\` -- Get full details of a specific task
+- \`kora-agent task update <taskId> --status in-progress\` -- Update task status
+- \`kora-agent task update <taskId> --comment "progress note"\` -- Add a comment
+- \`kora-agent task create "title" --description "desc"\` -- Create a new task
+
+When you're assigned a task, use \`kora-agent task update\` to:
+- Set status to "in-progress" when you start working
+- Add comments to report progress
+- Set status to "review" when done and need review
+- Set status to "done" when complete
+
+**MANDATORY**: After your PR is merged, immediately mark your task as "done".
+
+### Communication
+- Use \`kora-agent send\` to ask a teammate a question or delegate a task
+- Use \`kora-agent messages\` periodically to see if anyone has sent you updates
+- Use \`kora-agent agents\` to see who is available and what they are working on
+
+Messages from other agents will also appear in your terminal as: \`[Message from AgentName]: their message\`
+
+**Fallback -- @mention messaging:**
+You can also send a message by including an @mention in your output:
+${peers.map(p => `  @${p.name}: your message here`).join("\n")}
+  @all: broadcast to everyone
+
+The system automatically detects @mentions and delivers them to the target agent's terminal.`;
+}
+
+/**
+ * CLI tool instructions for non-MCP agents — replaces MCP communication protocol.
+ */
+function buildCliToolInstructions(agentId: string): string {
+  return `## Communication Protocol
+
+### Primary method: kora-agent CLI (recommended)
+The \`kora\` command is available in your terminal. Use it for all team communication:
+
+**Messaging:**
+- \`kora-agent send <agent-name> "message"\` -- Send a message to a specific agent
+- \`kora-agent messages\` -- Check for new messages
+- \`kora-agent agents\` -- List all agents with status
+- \`kora-agent broadcast "message"\` -- Message all agents
+
+**Tasks:**
+- \`kora-agent tasks\` -- List your active tasks
+- \`kora-agent task <id>\` -- Get task details
+- \`kora-agent task update <id> --status <status>\` -- Update task status
+- \`kora-agent task update <id> --comment "note"\` -- Add progress comment
+- \`kora-agent task create "title"\` -- Create a new task
+
+**Workflow:**
+- \`kora-agent workflow\` -- Show workflow states and valid transitions
+
+**PR & Verification:**
+- \`kora-agent pr prepare\` -- Rebase and prepare branch for PR
+- \`kora-agent verify\` -- Run build + tests, check for unintended changes
+- \`kora-agent pr create --title "..." --body "..."\` -- Create GitHub PR
+
+**Knowledge:**
+- \`kora-agent knowledge save "entry" --key "key"\` -- Save knowledge
+- \`kora-agent knowledge get "key"\` -- Retrieve knowledge
+- \`kora-agent knowledge search "query"\` -- Search knowledge
+
+**Other:**
+- \`kora-agent idle\` -- Report you're available for new work
+- \`kora-agent task request\` -- Request a task from the board
+
+### Fallback: @mentions
+Include @TheirName in your output to send a message:
+  @Worker-A: please implement the login page
+  @Orchestrator: I have finished the task
+  @all: status update - my part is done
+
+The system detects @mentions and delivers them to the target agent's terminal.
+
+### Fallback: file-based messaging
+You can also communicate via message files:
+- **Read incoming**: Check \`.kora/messages/inbox-${agentId}/\` for JSON files.
+- **Send outgoing**: Write a JSON file to \`.kora/messages/outbox-${agentId}/\`
 
 Messages from other agents will appear in your terminal as: [Message from AgentName]: their message`;
 }

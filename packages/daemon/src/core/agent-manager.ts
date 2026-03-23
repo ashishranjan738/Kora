@@ -351,12 +351,25 @@ export class AgentManager extends EventEmitter {
     if (options.envVars) {
       envEntries.push(...Object.entries(options.envVars));
     }
+    // Always set KORA_* env vars so agents (MCP and non-MCP) can access daemon
+    envEntries.push(["KORA_AGENT_ID", agentId]);
+    envEntries.push(["KORA_SESSION_ID", options.sessionId]);
+    try {
+      const os = await import("os");
+      const isDev = process.env.KORA_DEV === "1";
+      const cfgDir = process.env.KORA_CONFIG_DIR || path.join(os.default.homedir(), isDev ? ".kora-dev" : ".kora");
+      try { const port = (await fs.readFile(path.join(cfgDir, "daemon.port"), "utf-8")).trim(); envEntries.push(["KORA_DAEMON_URL", `http://localhost:${port}`]); } catch { envEntries.push(["KORA_DAEMON_URL", `http://localhost:${isDev ? 7891 : 7890}`]); }
+      try { const token = (await fs.readFile(path.join(cfgDir, "daemon.token"), "utf-8")).trim(); envEntries.push(["KORA_TOKEN", token]); } catch { /* no token */ }
+    } catch { /* non-fatal */ }
     if (process.env.KORA_DEV === "1") {
       envEntries.push(["KORA_DEV", "1"]);
     }
     if (process.env.KORA_CONFIG_DIR) {
       envEntries.push(["KORA_CONFIG_DIR", process.env.KORA_CONFIG_DIR]);
     }
+    // Add daemon's bin dir to PATH so `kora-agent` CLI is accessible from agent terminals
+    // PATH is handled separately since $PATH must expand in the shell (can't use single quotes)
+    const daemonBinDir = path.resolve(__dirname, "../../node_modules/.bin");
 
     // Batch as single export command to minimize delays
     if (envEntries.length > 0) {
@@ -366,6 +379,9 @@ export class AgentManager extends EventEmitter {
       await this.tmux.sendKeys(tmuxSession, `export ${exportCmd}`, { literal: false });
       await new Promise(r => setTimeout(r, 200)); // brief pause for shell to process
     }
+    // PATH uses double quotes so $PATH expands in the shell
+    await this.tmux.sendKeys(tmuxSession, `export PATH="${daemonBinDir}:$PATH"`, { literal: false });
+    await new Promise(r => setTimeout(r, 100));
 
     // 7. cd to workingDirectory (use worktree if available)
     // For Kiro: cd to the Kiro workspace root so it loads the per-agent .kiro/settings/mcp.json
