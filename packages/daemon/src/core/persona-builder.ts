@@ -282,20 +282,20 @@ ${rows}
 
 ### Communicating with teammates
 Use the \`kora\` CLI tool for team communication:
-- \`kora send <agent-name> "message"\` -- Send a message to a specific agent
-- \`kora messages\` -- Check for new messages from other agents
-- \`kora agents\` -- See all agents and their current status
-- \`kora broadcast "message"\` -- Send a message to all agents
+- \`kora-agent send <agent-name> "message"\` -- Send a message to a specific agent
+- \`kora-agent messages\` -- Check for new messages from other agents
+- \`kora-agent agents\` -- See all agents and their current status
+- \`kora-agent broadcast "message"\` -- Send a message to all agents
 
 ### Task management
 Use the \`kora\` CLI for task management:
-- \`kora tasks\` -- See YOUR active tasks
-- \`kora task <taskId>\` -- Get full details of a specific task
-- \`kora task-update <taskId> --status in-progress\` -- Update task status
-- \`kora task-update <taskId> --comment "progress note"\` -- Add a comment
-- \`kora task-create "title" --description "desc"\` -- Create a new task
+- \`kora-agent tasks\` -- See YOUR active tasks
+- \`kora-agent task <taskId>\` -- Get full details of a specific task
+- \`kora-agent task-update <taskId> --status in-progress\` -- Update task status
+- \`kora-agent task-update <taskId> --comment "progress note"\` -- Add a comment
+- \`kora-agent task-create "title" --description "desc"\` -- Create a new task
 
-When you're assigned a task, use \`kora task-update\` to:
+When you're assigned a task, use \`kora-agent task-update\` to:
 - Set status to "in-progress" when you start working
 - Add comments to report progress
 - Set status to "review" when done and need review
@@ -304,9 +304,9 @@ When you're assigned a task, use \`kora task-update\` to:
 **MANDATORY**: After your PR is merged, immediately mark your task as "done".
 
 ### Communication
-- Use \`kora send\` to ask a teammate a question or delegate a task
-- Use \`kora messages\` periodically to see if anyone has sent you updates
-- Use \`kora agents\` to see who is available and what they are working on
+- Use \`kora-agent send\` to ask a teammate a question or delegate a task
+- Use \`kora-agent messages\` periodically to see if anyone has sent you updates
+- Use \`kora-agent agents\` to see who is available and what they are working on
 
 Messages from other agents will also appear in your terminal as: \`[Message from AgentName]: their message\`
 
@@ -324,38 +324,38 @@ The system automatically detects @mentions and delivers them to the target agent
 function buildCliToolInstructions(agentId: string): string {
   return `## Communication Protocol
 
-### Primary method: kora CLI (recommended)
+### Primary method: kora-agent CLI (recommended)
 The \`kora\` command is available in your terminal. Use it for all team communication:
 
 **Messaging:**
-- \`kora send <agent-name> "message"\` -- Send a message to a specific agent
-- \`kora messages\` -- Check for new messages
-- \`kora agents\` -- List all agents with status
-- \`kora broadcast "message"\` -- Message all agents
+- \`kora-agent send <agent-name> "message"\` -- Send a message to a specific agent
+- \`kora-agent messages\` -- Check for new messages
+- \`kora-agent agents\` -- List all agents with status
+- \`kora-agent broadcast "message"\` -- Message all agents
 
 **Tasks:**
-- \`kora tasks\` -- List your active tasks
-- \`kora task <id>\` -- Get task details
-- \`kora task-update <id> --status <status>\` -- Update task status
-- \`kora task-update <id> --comment "note"\` -- Add progress comment
-- \`kora task-create "title"\` -- Create a new task
+- \`kora-agent tasks\` -- List your active tasks
+- \`kora-agent task <id>\` -- Get task details
+- \`kora-agent task-update <id> --status <status>\` -- Update task status
+- \`kora-agent task-update <id> --comment "note"\` -- Add progress comment
+- \`kora-agent task-create "title"\` -- Create a new task
 
 **Workflow:**
-- \`kora workflow\` -- Show workflow states and valid transitions
+- \`kora-agent workflow\` -- Show workflow states and valid transitions
 
 **PR & Verification:**
-- \`kora prepare-pr\` -- Rebase and prepare branch for PR
-- \`kora verify\` -- Run build + tests, check for unintended changes
-- \`kora create-pr --title "..." --body "..."\` -- Create GitHub PR
+- \`kora-agent prepare-pr\` -- Rebase and prepare branch for PR
+- \`kora-agent verify\` -- Run build + tests, check for unintended changes
+- \`kora-agent create-pr --title "..." --body "..."\` -- Create GitHub PR
 
 **Knowledge:**
-- \`kora save-knowledge "entry" --key "key"\` -- Save knowledge
-- \`kora get-knowledge "key"\` -- Retrieve knowledge
-- \`kora search-knowledge "query"\` -- Search knowledge
+- \`kora-agent save-knowledge "entry" --key "key"\` -- Save knowledge
+- \`kora-agent get-knowledge "key"\` -- Retrieve knowledge
+- \`kora-agent search-knowledge "query"\` -- Search knowledge
 
 **Other:**
-- \`kora report-idle\` -- Report you're available for new work
-- \`kora request-task\` -- Request a task from the board
+- \`kora-agent report-idle\` -- Report you're available for new work
+- \`kora-agent request-task\` -- Request a task from the board
 
 ### Fallback: @mentions
 Include @TheirName in your output to send a message:

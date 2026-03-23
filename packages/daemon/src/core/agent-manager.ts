@@ -367,9 +367,9 @@ export class AgentManager extends EventEmitter {
     if (process.env.KORA_CONFIG_DIR) {
       envEntries.push(["KORA_CONFIG_DIR", process.env.KORA_CONFIG_DIR]);
     }
-    // Add daemon's bin dir to PATH so `kora` CLI is accessible from agent terminals
+    // Add daemon's bin dir to PATH so `kora-agent` CLI is accessible from agent terminals
+    // PATH is handled separately since $PATH must expand in the shell (can't use single quotes)
     const daemonBinDir = path.resolve(__dirname, "../../node_modules/.bin");
-    envEntries.push(["PATH", `${daemonBinDir}:$PATH`]);
 
     // Batch as single export command to minimize delays
     if (envEntries.length > 0) {
@@ -379,6 +379,9 @@ export class AgentManager extends EventEmitter {
       await this.tmux.sendKeys(tmuxSession, `export ${exportCmd}`, { literal: false });
       await new Promise(r => setTimeout(r, 200)); // brief pause for shell to process
     }
+    // PATH uses double quotes so $PATH expands in the shell
+    await this.tmux.sendKeys(tmuxSession, `export PATH="${daemonBinDir}:$PATH"`, { literal: false });
+    await new Promise(r => setTimeout(r, 100));
 
     // 7. cd to workingDirectory (use worktree if available)
     // For Kiro: cd to the Kiro workspace root so it loads the per-agent .kiro/settings/mcp.json
