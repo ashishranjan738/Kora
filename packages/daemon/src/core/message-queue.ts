@@ -510,8 +510,8 @@ export class MessageQueue {
       if (this.mcpAgents.has(msg.agentId)) {
         // MCP agent: write to pending store + send tmux notification as fallback
         await this.deliverViaMcpPending(msg);
-      } else if (this.messagingMode === "mcp") {
-        // Legacy MCP mode (non-MCP agent in MCP session): inbox file + notification
+      } else if (this.messagingMode === "mcp" || this.messagingMode === "cli") {
+        // MCP/CLI mode: inbox file + tmux notification (CLI agents read via kora-agent messages)
         await this.deliverViaMcp(msg);
       } else if (this.messagingMode === "terminal") {
         // Terminal mode: send directly via tmux (500 char limit)
@@ -577,7 +577,7 @@ export class MessageQueue {
 
         if (this.mcpAgents.has(agentId)) {
           await this.deliverViaMcpPending(msg);
-        } else if (this.messagingMode === "mcp") {
+        } else if (this.messagingMode === "mcp" || this.messagingMode === "cli") {
           await this.deliverViaMcp(msg);
         } else if (this.messagingMode === "terminal") {
           await this.deliverViaTerminal(msg);
