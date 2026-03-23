@@ -18,6 +18,7 @@ import {
   TOOL_DEFINITIONS,
   ROLE_TOOL_ACCESS,
 } from "../../tools/tool-registry.js";
+import { TOOL_HANDLER_MAP } from "../../tools/tool-handlers.js";
 
 // ---------------------------------------------------------------------------
 // Read source files for static analysis
@@ -124,6 +125,9 @@ const TOOL_TO_CLI_MAP: Record<string, string[]> = {
   save_knowledge: ["knowledge", "save"],
   get_knowledge: ["knowledge", "get"],
   search_knowledge: ["knowledge", "search"],
+  whoami: ["whoami"],
+  get_context: ["context"],
+  delete_task: ["task", "delete"],
 };
 
 // ---------------------------------------------------------------------------
@@ -134,8 +138,8 @@ describe("Tool Registry Sync Validation", () => {
   // ── Registry integrity ──────────────────────────────────────────────────
 
   describe("Registry integrity", () => {
-    it("ALL_TOOL_NAMES has 24 tools", () => {
-      expect(ALL_TOOL_NAMES.length).toBe(24);
+    it("ALL_TOOL_NAMES has 27 tools", () => {
+      expect(ALL_TOOL_NAMES.length).toBe(27);
     });
 
     it("TOOL_DEFINITIONS matches ALL_TOOL_NAMES", () => {
@@ -168,7 +172,7 @@ describe("Tool Registry Sync Validation", () => {
 
     it("worker role excludes master-only tools (spawn, remove, peek, nudge)", () => {
       const worker = ROLE_TOOL_ACCESS.worker;
-      const masterOnly = ["spawn_agent", "remove_agent", "peek_agent", "nudge_agent"];
+      const masterOnly = ["spawn_agent", "remove_agent", "peek_agent", "nudge_agent", "delete_task"];
       for (const tool of masterOnly) {
         expect(worker.has(tool), `Worker should NOT have access to: ${tool}`).toBe(false);
       }
@@ -197,9 +201,12 @@ describe("Tool Registry Sync Validation", () => {
       }
     });
 
-    it("every registry tool has a case handler in MCP server", () => {
+    it("every registry tool has a case handler in MCP server OR shared TOOL_HANDLER_MAP", () => {
+      const sharedHandlers = new Set(Object.keys(TOOL_HANDLER_MAP));
       for (const name of ALL_TOOL_NAMES) {
-        expect(mcpCases.has(name), `Missing MCP handler case for: ${name}`).toBe(true);
+        const hasMcpCase = mcpCases.has(name);
+        const hasSharedHandler = sharedHandlers.has(name);
+        expect(hasMcpCase || hasSharedHandler, `Missing handler for: ${name} (not in MCP switch or TOOL_HANDLER_MAP)`).toBe(true);
       }
     });
 
