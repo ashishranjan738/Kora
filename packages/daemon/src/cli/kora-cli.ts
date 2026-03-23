@@ -15,6 +15,7 @@ import * as https from "https";
 import * as os from "os";
 import * as fs from "fs";
 import * as path from "path";
+import { RESOURCE_DEFINITIONS } from "../tools/resource-registry.js";
 
 const VERSION = "0.1.0";
 
@@ -350,6 +351,97 @@ prog.command("share-image <to>").description("Share image").option("--file <f>")
     if (o.caption) b.caption = o.caption;
     await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/attachments`, b);
     out(J() ? { success: true } : "Image shared.", J());
+  });
+
+// Run
+// context — auto-registered from resource registry
+const ctxCmd = prog.command("context").description("Read session context (from MCP resource registry)");
+
+// Auto-register subcommands for each resource definition
+for (const res of RESOURCE_DEFINITIONS) {
+  const name = res.uri.replace("kora://", "");
+  ctxCmd.command(name).description(res.description)
+    .action(async () => {
+      const sid = rS(cfg); const aid = rA(cfg);
+      const result = (await api(cfg, "GET", `/api/v1/sessions/${sid}/agents/${aid}/context`)) as Record<string, unknown>;
+      if (J()) {
+        // Return just this resource's data
+        const key = name === "workflow" ? "workflow" : name;
+        out({ uri: res.uri, data: result[key] }, true);
+      } else {
+        // Use the resource's markdown formatter via the context endpoint data
+        switch (name) {
+          case "team": {
+            const agents = (result.team || []) as Array<Record<string, unknown>>;
+            out(agents.length ? agents.map((a) => {
+              const self = a.isSelf ? " (you)" : "";
+              return `  ${a.name || a.id}${self} (${a.role || "?"}) — ${a.status || "?"}`;
+            }).join("\n") : "No agents.", false);
+            break;
+          }
+          case "workflow": {
+            const states = (result.workflow || []) as Array<Record<string, unknown>>;
+            out(states.length ? states.map((s) => `  ${s.label || s.name || s.id}${(s.transitions as string[] || []).length ? ` -> ${(s.transitions as string[]).join(", ")}` : ""}`).join("\n") : "No workflow configured.", false);
+            break;
+          }
+          case "knowledge": {
+            const entries = (result.knowledge || []) as Array<Record<string, unknown>>;
+            out(entries.length ? entries.map((e) => `  [${e.key || "—"}] ${e.entry || e.value}`).join("\n") : "No knowledge entries.", false);
+            break;
+          }
+          case "rules": {
+            const rules = (result.rules || []) as string[];
+            out(rules.length ? rules.map((r) => `  - ${r}`).join("\n") : "No project rules.", false);
+            break;
+          }
+          case "tasks": {
+            // Fetch tasks directly for the active agent
+            const tasksResp = (await api(cfg, "GET", `/api/v1/sessions/${sid}/tasks?assignedTo=${aid}&status=active`)) as Record<string, unknown>;
+            const tasks = (tasksResp.tasks || []) as Array<Record<string, unknown>>;
+            out(tasks.length ? fmtTasks(tasks) : "No active tasks.", false);
+            break;
+          }
+          default:
+            out(JSON.stringify(result[name], null, 2), false);
+        }
+      }
+    });
+}
+
+// context all — dump everything
+ctxCmd.command("all").description("Show all context (persona, team, workflow, knowledge, rules)")
+  .action(async () => {
+    const sid = rS(cfg); const aid = rA(cfg);
+    const result = (await api(cfg, "GET", `/api/v1/sessions/${sid}/agents/${aid}/context`)) as Record<string, unknown>;
+    if (J()) { out(result, true); } else {
+      const sections: string[] = [];
+      // Team
+      const agents = (result.team || []) as Array<Record<string, unknown>>;
+      if (agents.length) {
+        sections.push("=== Team ===\n" + agents.map((a) => `  ${a.name || a.id}${a.isSelf ? " (you)" : ""} (${a.role}) — ${a.status}`).join("\n"));
+      }
+      // Workflow
+      const states = (result.workflow || []) as Array<Record<string, unknown>>;
+      if (states.length) {
+        sections.push("=== Workflow ===\n" + states.map((s) => s.label || s.name || s.id).join(" → "));
+      }
+      // Knowledge
+      const entries = (result.knowledge || []) as Array<Record<string, unknown>>;
+      if (entries.length) {
+        sections.push("=== Knowledge ===\n" + entries.map((e) => `  [${e.key || "—"}] ${e.entry || e.value}`).join("\n"));
+      }
+      // Rules
+      const rules = (result.rules || []) as string[];
+      if (rules.length) {
+        sections.push("=== Rules ===\n" + rules.map((r) => `  - ${r}`).join("\n"));
+      }
+      // Persona (truncated)
+      const persona = (result.persona || "") as string;
+      if (persona) {
+        sections.push("=== Persona ===\n" + (persona.length > 300 ? persona.slice(0, 300) + "\n  ... (use 'kora-cli whoami --full' for complete persona)" : persona));
+      }
+      out(sections.join("\n\n"), false);
+    }
   });
 
 // Run
