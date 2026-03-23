@@ -88,6 +88,21 @@ export function SessionSettingsDialog({
   const [savingInstructions, setSavingInstructions] = useState(false);
   const [instructionsSaved, setInstructionsSaved] = useState(false);
 
+  // Watchdog delivery config
+  type DeliveryMode = "immediate" | "idle-only" | "custom";
+  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("custom");
+  const [staleTaskMode, setStaleTaskMode] = useState<DeliveryMode>("immediate");
+  const [contextRefreshMode, setContextRefreshMode] = useState<DeliveryMode>("idle-only");
+  const [contextEventOverrides, setContextEventOverrides] = useState<Record<string, DeliveryMode>>({
+    taskAssignment: "immediate",
+    personaUpdate: "immediate",
+    instructionsUpdate: "immediate",
+    teamChange: "idle-only",
+    knowledgeUpdate: "idle-only",
+  });
+  const [savingDelivery, setSavingDelivery] = useState(false);
+  const [deliverySaved, setDeliverySaved] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -125,8 +140,25 @@ export function SessionSettingsDialog({
         // Endpoint may not exist yet
       }
     }
+    async function loadDeliveryConfig() {
+      try {
+        const data: any = await api.getSession(sessionId);
+        if (!cancelled && data?.watchdogDelivery) {
+          const cfg = data.watchdogDelivery;
+          if (cfg.mode) setDeliveryMode(cfg.mode);
+          if (cfg.overrides?.staleTask?.mode) setStaleTaskMode(cfg.overrides.staleTask.mode);
+          if (cfg.overrides?.contextRefresh?.mode) setContextRefreshMode(cfg.overrides.contextRefresh.mode);
+          if (cfg.overrides?.contextRefresh?.perEvent) {
+            setContextEventOverrides((prev) => ({ ...prev, ...cfg.overrides.contextRefresh.perEvent }));
+          }
+        }
+      } catch {
+        // Config may not exist yet
+      }
+    }
     load();
     loadInstructions();
+    loadDeliveryConfig();
     return () => {
       cancelled = true;
     };
@@ -618,6 +650,141 @@ export function SessionSettingsDialog({
             size="md"
           />
         </Group>
+
+        {/* Notification Delivery */}
+        <Divider my="md" />
+        <Stack gap="xs">
+          <Text size="sm" fw={600} c="var(--text-primary)">Notification Delivery</Text>
+          <Text size="xs" c="dimmed">
+            Control when watchdog notifications (stale tasks, context updates) are delivered to agents.
+          </Text>
+
+          {/* Top-level mode */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+            {(["immediate", "idle-only", "custom"] as DeliveryMode[]).map((mode) => (
+              <label key={mode} style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  name="delivery-mode"
+                  checked={deliveryMode === mode}
+                  onChange={() => { setDeliveryMode(mode); setDeliverySaved(false); }}
+                  style={{ marginTop: 3 }}
+                />
+                <span>
+                  <strong style={{ color: "var(--text-primary)", fontSize: 13 }}>
+                    {mode === "immediate" ? "Immediate" : mode === "idle-only" ? "When Agents Are Idle" : "Custom"}
+                  </strong>
+                  <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>
+                    {mode === "immediate"
+                      ? "All notifications delivered instantly, even if agent is working."
+                      : mode === "idle-only"
+                      ? "Queue notifications and deliver when agent becomes idle."
+                      : "Configure per-watchdog delivery rules."}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          {/* Custom per-watchdog overrides */}
+          {deliveryMode === "custom" && (
+            <Card withBorder padding="sm" radius="md" mt={4} style={{ backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)" }}>
+              <Stack gap="sm">
+                <Group justify="space-between" align="center">
+                  <Text size="xs" fw={600} c="var(--text-primary)">Stale Task Nudges</Text>
+                  <select
+                    value={staleTaskMode}
+                    onChange={(e) => { setStaleTaskMode(e.target.value as DeliveryMode); setDeliverySaved(false); }}
+                    style={{ fontSize: 12, padding: "3px 8px", borderRadius: 4, border: "1px solid var(--border-color)", backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}
+                  >
+                    <option value="immediate">Immediate</option>
+                    <option value="idle-only">When Idle</option>
+                  </select>
+                </Group>
+
+                <Divider color="var(--border-color)" />
+
+                <div>
+                  <Group justify="space-between" align="center" mb={6}>
+                    <Text size="xs" fw={600} c="var(--text-primary)">Context Refresh</Text>
+                    <select
+                      value={contextRefreshMode}
+                      onChange={(e) => { setContextRefreshMode(e.target.value as DeliveryMode); setDeliverySaved(false); }}
+                      style={{ fontSize: 12, padding: "3px 8px", borderRadius: 4, border: "1px solid var(--border-color)", backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}
+                    >
+                      <option value="immediate">Immediate</option>
+                      <option value="idle-only">When Idle</option>
+                    </select>
+                  </Group>
+
+                  {/* Per-event toggles */}
+                  <Stack gap={4} pl={12}>
+                    {[
+                      { key: "taskAssignment", label: "Task assignment" },
+                      { key: "personaUpdate", label: "Persona update" },
+                      { key: "instructionsUpdate", label: "Instructions update" },
+                      { key: "teamChange", label: "Team change" },
+                      { key: "knowledgeUpdate", label: "Knowledge update" },
+                    ].map(({ key, label }) => (
+                      <Group key={key} justify="space-between" align="center">
+                        <Text size="xs" c="var(--text-secondary)">{label}</Text>
+                        <select
+                          value={contextEventOverrides[key] || contextRefreshMode}
+                          onChange={(e) => {
+                            setContextEventOverrides((prev) => ({ ...prev, [key]: e.target.value as DeliveryMode }));
+                            setDeliverySaved(false);
+                          }}
+                          style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, border: "1px solid var(--border-color)", backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}
+                        >
+                          <option value="immediate">Immediate</option>
+                          <option value="idle-only">When Idle</option>
+                        </select>
+                      </Group>
+                    ))}
+                  </Stack>
+                </div>
+              </Stack>
+            </Card>
+          )}
+
+          <Group justify="space-between">
+            <div>
+              {deliverySaved && <Text size="xs" c="green">Saved. Takes effect immediately.</Text>}
+            </div>
+            <Button
+              size="xs"
+              variant="light"
+              color="blue"
+              loading={savingDelivery}
+              onClick={async () => {
+                setSavingDelivery(true);
+                try {
+                  const config = deliveryMode === "custom"
+                    ? {
+                        mode: "custom" as const,
+                        overrides: {
+                          staleTask: { mode: staleTaskMode },
+                          contextRefresh: { mode: contextRefreshMode, perEvent: contextEventOverrides },
+                        },
+                      }
+                    : { mode: deliveryMode };
+                  await fetch(`/api/v1/sessions/${sessionId}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${(window as any).__KORA_TOKEN__ || ""}` },
+                    body: JSON.stringify({ watchdogDelivery: config }),
+                  });
+                  setDeliverySaved(true);
+                } catch {
+                  // silently fail
+                } finally {
+                  setSavingDelivery(false);
+                }
+              }}
+            >
+              Save Delivery Config
+            </Button>
+          </Group>
+        </Stack>
 
         {/* Session Instructions */}
         <Divider my="md" />
