@@ -3,6 +3,13 @@ import { DiffEditor } from "@monaco-editor/react";
 import { useApi } from "../hooks/useApi";
 import { useThemeStore } from "../stores/themeStore";
 
+interface AgentOption {
+  id: string;
+  name: string;
+  branch?: string;
+  changeCount?: number;
+}
+
 interface GitChangesProps {
   sessionId: string;
 }
@@ -55,12 +62,31 @@ export function GitChanges({ sessionId }: GitChangesProps) {
   const [loading, setLoading] = useState(true);
   const [collapsedRepos, setCollapsedRepos] = useState<Set<string>>(new Set());
 
+  // Agent selector state
+  const [agents, setAgents] = useState<AgentOption[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>("");
+
   const totalChanges = repos.reduce((sum, r) => sum + r.changes.length, 0);
   const isMultiRepo = repos.length > 1;
 
+  // Fetch agents for the selector
+  useEffect(() => {
+    async function fetchAgents() {
+      try {
+        const data = await api.getAgents(sessionId);
+        const agentList: AgentOption[] = (data.agents || []).map((a: any) => ({
+          id: a.id,
+          name: a.config?.name || a.name || a.id,
+        }));
+        setAgents(agentList);
+      } catch { /* ignore */ }
+    }
+    fetchAgents();
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const loadStatus = useCallback(async () => {
     try {
-      const data = await api.getGitStatus(sessionId);
+      const data = await api.getGitStatus(sessionId, selectedAgentId || undefined);
       if (data.repos && data.repos.length > 0) {
         setRepos(data.repos);
       } else {
@@ -72,7 +98,7 @@ export function GitChanges({ sessionId }: GitChangesProps) {
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, selectedAgentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     loadStatus();
@@ -87,13 +113,22 @@ export function GitChanges({ sessionId }: GitChangesProps) {
     setSelectedFile(filePath);
     setSelectedRepo(repo);
     try {
-      const data = await api.getGitDiff(sessionId, filePath, repo);
+      const data = await api.getGitDiff(sessionId, filePath, repo, selectedAgentId || undefined);
       setOriginalContent(data.original || "");
       setModifiedContent(data.modified || "");
     } catch {
       setOriginalContent("");
       setModifiedContent("Could not load file content");
     }
+  }
+
+  // Reset selection when agent changes
+  function handleAgentChange(agentId: string) {
+    setSelectedAgentId(agentId);
+    setSelectedFile(null);
+    setOriginalContent("");
+    setModifiedContent("");
+    setLoading(true);
   }
 
   function toggleRepoCollapse(repoName: string) {
@@ -155,6 +190,33 @@ export function GitChanges({ sessionId }: GitChangesProps) {
     <div style={{ display: "flex", height: "100%", background: "var(--bg-primary)" }}>
       {/* Changed files sidebar */}
       <div style={{ width: 280, borderRight: "1px solid var(--border-color)", overflowY: "auto" }}>
+        {/* Agent selector */}
+        {agents.length > 0 && (
+          <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border-color)" }}>
+            <select
+              value={selectedAgentId}
+              onChange={(e) => handleAgentChange(e.target.value)}
+              style={{
+                width: "100%",
+                fontSize: 12,
+                padding: "5px 8px",
+                background: "var(--bg-tertiary)",
+                border: "1px solid var(--border-color)",
+                borderRadius: 4,
+                color: "var(--text-primary)",
+                cursor: "pointer",
+              }}
+            >
+              <option value="">All agents (project root)</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Summary header */}
         <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border-color)", fontSize: 12 }}>
           <span style={{ color: "var(--text-secondary)" }}>
@@ -164,6 +226,11 @@ export function GitChanges({ sessionId }: GitChangesProps) {
             <span style={{ color: "var(--accent-blue)", fontWeight: 600 }}>{repos[0].branch || "unknown"}</span>
           )}
           <span style={{ color: "var(--text-secondary)", marginLeft: 8 }}>{totalChanges} changes</span>
+          {selectedAgentId && (
+            <span style={{ color: "var(--accent-purple)", marginLeft: 4, fontSize: 11 }}>
+              ({agents.find(a => a.id === selectedAgentId)?.name})
+            </span>
+          )}
         </div>
 
         {loading ? (
