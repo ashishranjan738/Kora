@@ -4,6 +4,7 @@ import {
   Modal,
   Button,
   TextInput,
+  Textarea,
   Select,
   Stack,
   Group,
@@ -81,6 +82,12 @@ export function SessionSettingsDialog({
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
 
+  // Session instructions
+  const [sessionInstructions, setSessionInstructions] = useState("");
+  const [instructionsLastUpdated, setInstructionsLastUpdated] = useState<string | null>(null);
+  const [savingInstructions, setSavingInstructions] = useState(false);
+  const [instructionsSaved, setInstructionsSaved] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -107,7 +114,19 @@ export function SessionSettingsDialog({
         if (!cancelled) setLoadingProviders(false);
       }
     }
+    async function loadInstructions() {
+      try {
+        const data = await api.getSessionInstructions(sessionId);
+        if (!cancelled) {
+          setSessionInstructions(data.instructions || "");
+          if (data.lastUpdated) setInstructionsLastUpdated(data.lastUpdated);
+        }
+      } catch {
+        // Endpoint may not exist yet
+      }
+    }
     load();
+    loadInstructions();
     return () => {
       cancelled = true;
     };
@@ -599,6 +618,54 @@ export function SessionSettingsDialog({
             size="md"
           />
         </Group>
+
+        {/* Session Instructions */}
+        <Divider my="md" />
+        <Stack gap="xs">
+          <Text size="sm" fw={600} c="var(--text-primary)">Session Instructions</Text>
+          <Text size="xs" c="dimmed">
+            These instructions are appended to every agent's persona. All agents will be notified on save.
+          </Text>
+          <Textarea
+            value={sessionInstructions}
+            onChange={(e) => { setSessionInstructions(e.currentTarget.value); setInstructionsSaved(false); }}
+            placeholder="e.g., Use TypeScript strict mode. All PRs must have tests. Prefix commits with feat:/fix:."
+            autosize
+            minRows={3}
+            maxRows={8}
+            styles={{
+              input: { backgroundColor: "var(--bg-primary)", borderColor: "var(--border-color)", color: "var(--text-primary)", borderRadius: 8, fontSize: 13 },
+            }}
+          />
+          <Group justify="space-between">
+            <div>
+              {instructionsSaved && <Text size="xs" c="green">Saved. All agents notified.</Text>}
+              {instructionsLastUpdated && !instructionsSaved && (
+                <Text size="xs" c="var(--text-muted)">Last updated: {new Date(instructionsLastUpdated).toLocaleString()}</Text>
+              )}
+            </div>
+            <Button
+              size="xs"
+              variant="light"
+              color="blue"
+              loading={savingInstructions}
+              onClick={async () => {
+                setSavingInstructions(true);
+                try {
+                  await api.updateSessionInstructions(sessionId, sessionInstructions);
+                  setInstructionsSaved(true);
+                  setInstructionsLastUpdated(new Date().toISOString());
+                } catch {
+                  // silently fail
+                } finally {
+                  setSavingInstructions(false);
+                }
+              }}
+            >
+              Save Instructions
+            </Button>
+          </Group>
+        </Stack>
 
         {/* Board Cleanup */}
         <Divider my="md" />

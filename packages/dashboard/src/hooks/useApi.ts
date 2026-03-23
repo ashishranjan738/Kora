@@ -330,5 +330,21 @@ export function useApi() {
     // Directory browsing
     browseDirectories: (dirPath?: string) =>
       apiFetch<{ path: string; parent: string | null; directories: Array<{ name: string; path: string; isGitRepo?: boolean }>; homeDir: string; isGitRepo?: boolean }>(`/browse/directories${dirPath ? `?path=${encodeURIComponent(dirPath)}` : ""}`),
+    // Per-agent persona editing
+    getAgentPersona: (sid: string, aid: string) =>
+      apiFetch<{ basePersona?: string; personaOverride?: string; lastUpdated?: string }>(`/sessions/${sid}/agents/${aid}/persona`),
+    updateAgentPersona: (sid: string, aid: string, personaOverride: string) =>
+      apiFetch<{ updated: boolean }>(`/sessions/${sid}/agents/${aid}/persona`, {
+        method: "PUT",
+        body: JSON.stringify({ persona: personaOverride }),
+      }),
+    // Session-level instructions
+    getSessionInstructions: (sid: string) =>
+      apiFetch<{ instructions: string; lastUpdated?: string }>(`/sessions/${sid}/instructions`),
+    updateSessionInstructions: (sid: string, instructions: string) =>
+      apiFetch<{ updated: boolean }>(`/sessions/${sid}/instructions`, {
+        method: "PUT",
+        body: JSON.stringify({ instructions }),
+      }),
   };
 }
