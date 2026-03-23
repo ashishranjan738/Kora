@@ -83,13 +83,20 @@ export class ClaudeSessionReader {
         } catch { return { file: f, mtime: 0 }; }
       }).sort((a, b) => b.mtime - a.mtime);
 
+      // Resolve symlinks for comparison (macOS: /tmp → /private/tmp)
+      let resolvedWorkDir = workingDirectory;
+      try { resolvedWorkDir = fs.realpathSync(workingDirectory); } catch { /* use original */ }
+
       for (const { file } of filesWithMtime) {
         try {
           const data = JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, file), "utf-8"));
+          // Resolve session cwd symlinks too
+          let sessionCwd = data.cwd || "";
+          try { sessionCwd = fs.realpathSync(sessionCwd); } catch { /* use original */ }
           // Match if cwd equals or is a parent of the agent's working directory
-          if (data.sessionId && data.cwd && (
-            workingDirectory === data.cwd ||
-            workingDirectory.startsWith(data.cwd + "/")
+          if (data.sessionId && sessionCwd && (
+            resolvedWorkDir === sessionCwd ||
+            resolvedWorkDir.startsWith(sessionCwd + "/")
           )) {
             sessionId = data.sessionId;
             break;
