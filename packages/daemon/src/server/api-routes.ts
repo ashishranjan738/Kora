@@ -5058,15 +5058,32 @@ export function createApiRouter(deps: {
         const pathKb = await import("path");
         const knowledgePath = pathKb.join(session.runtimeDir, "knowledge.md");
         const content = await fsKb.readFile(knowledgePath, "utf-8");
-        const lines = content.split("\n").filter(l => l.trim() && !l.startsWith("#"));
-        for (const line of lines) {
-          // Format: "- [ISO_TIMESTAMP] [agent-name] entry text"
-          const match = line.match(/^-?\s*\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.+)$/);
+        // Group lines by entry markers: "- [timestamp] [agent] ..." starts a new entry
+        const rawLines = content.split("\n");
+        const entryMarker = /^-?\s*\[[\d\-T:.Z]+\]\s*\[/;
+        const grouped: string[] = [];
+        let currentEntry = "";
+        for (const line of rawLines) {
+          if (entryMarker.test(line)) {
+            if (currentEntry.trim()) grouped.push(currentEntry.trim());
+            currentEntry = line;
+          } else if (line.trim() && !line.startsWith("#")) {
+            currentEntry += "\n" + line;
+          }
+        }
+        if (currentEntry.trim()) grouped.push(currentEntry.trim());
+
+        for (const entry of grouped) {
+          // Parse header line: "- [ISO_TIMESTAMP] [agent-name] first line of entry"
+          const firstLine = entry.split("\n")[0];
+          const match = firstLine.match(/^-?\s*\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.*)$/);
           if (match) {
-            entries.push({ text: match[3].trim(), source: match[2], timestamp: match[1] });
+            // Combine first line content with continuation lines
+            const rest = entry.split("\n").slice(1).join("\n").trim();
+            const text = rest ? `${match[3].trim()}\n${rest}` : match[3].trim();
+            entries.push({ text, source: match[2], timestamp: match[1] });
           } else {
-            // Plain entry without timestamp/source
-            const text = line.startsWith("- ") ? line.slice(2).trim() : line.trim();
+            const text = entry.startsWith("- ") ? entry.slice(2).trim() : entry.trim();
             if (text) entries.push({ text, source: "knowledge.md" });
           }
         }
