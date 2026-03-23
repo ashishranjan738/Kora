@@ -961,6 +961,11 @@ export function createApiRouter(deps: {
       const agent = orch.agentManager.getAgent(aid);
       if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
 
+      // Path traversal guard
+      if (aid.includes("/") || aid.includes("..") || aid.includes("\0")) {
+        res.status(400).json({ error: "Invalid agent ID" }); return;
+      }
+
       const { persona } = req.body;
       if (typeof persona !== "string") { res.status(400).json({ error: "persona field (string) is required" }); return; }
 
@@ -976,7 +981,7 @@ export function createApiRouter(deps: {
           from: "system",
           to: aid,
           type: "status",
-          content: "\x1b[1;33m[System]\x1b[0m Your persona has been updated. Run get_context(\"persona\") to refresh.",
+          content: `\x1b[1;33m[System]\x1b[0m Your persona has been updated. ${session.config.messagingMode === "cli" ? "Run \`kora-cli context persona\` to refresh." : 'Run get_context("persona") to refresh.'}`,
           timestamp: new Date().toISOString(),
         });
       } catch { /* non-fatal */ }
@@ -1014,7 +1019,7 @@ export function createApiRouter(deps: {
             from: "system",
             to: agent.id,
             type: "status",
-            content: "\x1b[1;33m[System]\x1b[0m Session instructions updated. Run get_context(\"all\") to refresh.",
+            content: `\x1b[1;33m[System]\x1b[0m Session instructions updated. ${session.config.messagingMode === "cli" ? "Run \`kora-cli context all\` to refresh." : 'Run get_context("all") to refresh.'}`,
             timestamp: new Date().toISOString(),
           });
         } catch { /* non-fatal */ }
