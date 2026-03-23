@@ -543,13 +543,16 @@ export function EditorTile({ sessionId }: EditorTileProps) {
                       contextMenuGroupId: "navigation",
                       contextMenuOrder: 0,
                       run: (ed: any) => {
-                        const selection = ed.getSelection();
                         const model = ed.getModel();
-                        if (!selection || !model) return;
+                        if (!model) return;
 
-                        const selectedText = model.getValueInRange(selection);
-                        const startLine = selection.startLineNumber;
-                        const endLine = selection.endLineNumber;
+                        // Merge all selections (handles multi-cursor) into one range
+                        const selections = ed.getSelections() || [];
+                        if (selections.length === 0) return;
+                        const startLine = Math.min(...selections.map((s: any) => s.startLineNumber));
+                        const endLine = Math.max(...selections.map((s: any) => s.endLineNumber));
+                        const mergedRange = { startLineNumber: startLine, startColumn: 1, endLineNumber: endLine, endColumn: model.getLineMaxColumn(endLine) };
+                        const selectedText = model.getValueInRange(mergedRange);
                         const filePath = activeTabPathRef.current || "";
                         const fileName = filePath.split("/").pop() || filePath;
 
