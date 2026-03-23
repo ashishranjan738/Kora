@@ -1000,10 +1000,11 @@ export function createApiRouter(deps: {
         if (config?.rules) rules = config.rules;
       } catch { /* ignore */ }
 
-      // 6. Communication mode
+      // 6. Communication mode — use provider registry for supportsMcp
+      const provider = providerRegistry.get(agent.config.cliProvider);
       const communication = {
         messagingMode: session.config.messagingMode || "mcp",
-        supportsMcp: agent.config.cliProvider === "claude-code" || agent.config.cliProvider === "kiro",
+        supportsMcp: provider?.supportsMcp ?? false,
       };
 
       res.json({
@@ -1022,7 +1023,8 @@ export function createApiRouter(deps: {
         communication,
       });
     } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+      logger.error({ err }, "Failed to get agent context");
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
