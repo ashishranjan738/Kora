@@ -68,10 +68,19 @@ export async function handleBroadcast(
   ctx: ToolContext,
   args: Record<string, string>,
 ): Promise<unknown> {
+  // Rate limiting (if limiter provided by transport)
+  if (ctx.sendRateLimiter?.isLimited()) {
+    return {
+      success: false,
+      error: "Rate limited: you have sent too many messages. Focus on completing your task instead of messaging.",
+    };
+  }
+
   await ctx.apiCall("POST", `/api/v1/sessions/${ctx.sessionId}/broadcast`, {
     message: `[From ${ctx.agentId}]: ${args.message}`,
     from: ctx.agentId,
   });
+  ctx.sendRateLimiter?.record();
   return { success: true, broadcast: true };
 }
 
@@ -319,6 +328,14 @@ export async function handleSendMessage(
     return { success: false, error: "Either 'to' or 'channel' must be provided" };
   }
 
+  // Rate limiting (if limiter provided by transport)
+  if (ctx.sendRateLimiter?.isLimited()) {
+    return {
+      success: false,
+      error: "Rate limited: you have sent too many messages. Focus on completing your task instead of messaging.",
+    };
+  }
+
   const agents = (await ctx.apiCall(
     "GET",
     `/api/v1/sessions/${ctx.sessionId}/agents`,
@@ -344,6 +361,7 @@ export async function handleSendMessage(
       });
     }
 
+    ctx.sendRateLimiter?.record();
     return { success: true, sentTo: subscribers.map(s => s.config?.name || s.id), channel: args.channel };
   }
 
@@ -374,6 +392,7 @@ export async function handleSendMessage(
     message: args.message,
     messageType: isCompletion ? "completion" : messageType,
   });
+  ctx.sendRateLimiter?.record();
 
   // If this looks like a completion, check for stale in-progress tasks
   if (isCompletion) {
@@ -707,12 +726,22 @@ export async function handleNudgeAgent(
   const self = (agents.agents || []).find(a => a.id === ctx.agentId);
   const selfName = self?.config?.name || ctx.agentId;
 
+  // Nudge rate limiting (if limiter provided by transport)
+  if (ctx.nudgeRateLimiter?.isLimited(target.id)) {
+    return {
+      success: false,
+      error: `Rate limited: too many nudges to ${target.config?.name || target.id}. Wait before nudging again.`,
+    };
+  }
+
   const nudgeMessage = args.message || "You have pending messages. Run check_messages now.";
 
-  return await ctx.apiCall("POST", `/api/v1/sessions/${ctx.sessionId}/agents/${target.id}/nudge`, {
+  const result = await ctx.apiCall("POST", `/api/v1/sessions/${ctx.sessionId}/agents/${target.id}/nudge`, {
     message: nudgeMessage,
     from: selfName,
   });
+  ctx.nudgeRateLimiter?.record(target.id);
+  return result;
 }
 
 export async function handleShareImage(
