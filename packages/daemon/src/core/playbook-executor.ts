@@ -246,6 +246,7 @@ export class PlaybookExecutor extends EventEmitter {
         workflowStates: this.session.workflowStates,
         supportsMcp: provider.supportsMcp,
         messagingMode: this.session.messagingMode,
+        worktreeMode: this.session.worktreeMode,
       });
 
       // Use the task param as initialTask for the master agent only
