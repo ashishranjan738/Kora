@@ -88,6 +88,7 @@ export function AllSessions() {
   const [creating, setCreating] = useState(false);
   const [newMessagingMode, setNewMessagingMode] = useState<"mcp" | "terminal" | "manual">("mcp");
   const [newWorktreeMode, setNewWorktreeMode] = useState<"isolated" | "shared">("isolated");
+  const [newPathIsGitRepo, setNewPathIsGitRepo] = useState<boolean | null>(null);
   const [newWorkflowStates, setNewWorkflowStates] = useState(getPipelineTemplate("standard").states);
   const [taskCarryOver, setTaskCarryOver] = useState<"clean" | "active" | "all">("clean");
   const [carryOverSource, setCarryOverSource] = useState<string>("");
@@ -111,6 +112,7 @@ export function AllSessions() {
   const [agentCliArgsOverrides, setAgentCliArgsOverrides] = useState<Record<number, string>>({});
   const [playbookMessagingMode, setPlaybookMessagingMode] = useState<"mcp" | "terminal" | "manual">("mcp");
   const [playbookWorktreeMode, setPlaybookWorktreeMode] = useState<"isolated" | "shared">("isolated");
+  const [playbookPathIsGitRepo, setPlaybookPathIsGitRepo] = useState<boolean | null>(null);
   const [playbookWorkflowStates, setPlaybookWorkflowStates] = useState(getPipelineTemplate("standard").states);
   const [topologyExpanded, setTopologyExpanded] = useState(false);
   const [expandedCliFlags, setExpandedCliFlags] = useState<Record<number, boolean>>({});
@@ -170,6 +172,7 @@ export function AllSessions() {
     setNewPath("");
     setNewMessagingMode("mcp");
     setNewWorktreeMode("isolated");
+    setNewPathIsGitRepo(null);
     setNewWorkflowStates(getPipelineTemplate("standard").states);
     setShowCreateDialog(true);
     try {
@@ -178,6 +181,31 @@ export function AllSessions() {
     } catch {
       // Non-fatal: suggestions are optional
     }
+  }
+
+  // Check if a path is a git repo via browse API
+  async function checkPathIsGitRepo(dirPath: string, setIsGitRepo: (v: boolean | null) => void, setWorktreeMode: (v: "isolated" | "shared") => void) {
+    if (!dirPath.trim()) { setIsGitRepo(null); return; }
+    try {
+      const data = await api.browseDirectories(dirPath.trim());
+      const isGit = data.isGitRepo ?? null;
+      setIsGitRepo(isGit);
+      if (isGit === false) setWorktreeMode("shared");
+    } catch {
+      setIsGitRepo(null);
+    }
+  }
+
+  // Wrapper for Create Session path changes
+  function handleNewPathChange(path: string) {
+    setNewPath(path);
+    checkPathIsGitRepo(path, setNewPathIsGitRepo, setNewWorktreeMode);
+  }
+
+  // Wrapper for Playbook path changes
+  function handlePlaybookPathChange(path: string) {
+    setPlaybookPath(path);
+    checkPathIsGitRepo(path, setPlaybookPathIsGitRepo, setPlaybookWorktreeMode);
   }
 
   // Create session from scratch
@@ -245,6 +273,7 @@ export function AllSessions() {
     // Reset all playbook form state to defaults
     setSelectedPlaybook(null);
     setPlaybookPath("");
+    setPlaybookPathIsGitRepo(null);
     setPlaybookSessionName("");
     setAgentModelOverrides({});
     setAgentProviderOverrides({});
@@ -917,12 +946,18 @@ export function AllSessions() {
                 <input
                   value={newPath}
                   onChange={(e) => setNewPath(e.target.value)}
+                  onBlur={(e) => checkPathIsGitRepo(e.target.value, setNewPathIsGitRepo, setNewWorktreeMode)}
                   placeholder="/path/to/project"
                   list="recent-paths-datalist"
                   style={{ flex: 1 }}
                 />
                 <BrowseButton onClick={() => setShowBrowseForCreate(true)} />
               </div>
+              {newPathIsGitRepo === false && (
+                <div style={{ fontSize: 11, color: "var(--accent-yellow)", marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
+                  <span>&#9888;&#65039;</span> Not a git repository — agents will share the working directory
+                </div>
+              )}
               <datalist id="recent-paths-datalist">
                 {recentPaths.map((path, i) => (
                   <option key={i} value={path} />
@@ -931,7 +966,7 @@ export function AllSessions() {
               <DirectoryBrowser
                 opened={showBrowseForCreate}
                 onClose={() => setShowBrowseForCreate(false)}
-                onSelect={(path) => setNewPath(path)}
+                onSelect={(path) => handleNewPathChange(path)}
                 initialPath={newPath}
               />
             </div>
@@ -993,7 +1028,9 @@ export function AllSessions() {
               <div style={{ display: "flex", gap: 0, marginTop: 4, borderRadius: 6, overflow: "hidden", border: "1px solid var(--border-color)" }}>
                 <button
                   type="button"
-                  onClick={() => setNewWorktreeMode("isolated")}
+                  onClick={() => { if (newPathIsGitRepo !== false) setNewWorktreeMode("isolated"); }}
+                  disabled={newPathIsGitRepo === false}
+                  title={newPathIsGitRepo === false ? "Isolated worktrees require a git repository" : undefined}
                   style={{
                     flex: 1,
                     padding: "8px 12px",
@@ -1001,10 +1038,11 @@ export function AllSessions() {
                     fontSize: 13,
                     fontWeight: 500,
                     border: "none",
-                    cursor: "pointer",
+                    cursor: newPathIsGitRepo === false ? "not-allowed" : "pointer",
+                    opacity: newPathIsGitRepo === false ? 0.4 : 1,
                     backgroundColor: newWorktreeMode === "isolated" ? "var(--accent-blue)" : "var(--bg-tertiary)",
                     color: newWorktreeMode === "isolated" ? "#fff" : "var(--text-secondary)",
-                    transition: "background-color 0.15s, color 0.15s",
+                    transition: "background-color 0.15s, color 0.15s, opacity 0.15s",
                   }}
                 >
                   Isolated
@@ -1175,15 +1213,21 @@ export function AllSessions() {
                           className="playbook-grid-input"
                           value={playbookPath}
                           onChange={(e) => setPlaybookPath(e.target.value)}
+                          onBlur={(e) => checkPathIsGitRepo(e.target.value, setPlaybookPathIsGitRepo, setPlaybookWorktreeMode)}
                           placeholder="/path/to/project"
                           style={{ flex: 1 }}
                         />
                         <BrowseButton onClick={() => setShowBrowseForPlaybook(true)} />
                       </div>
+                      {playbookPathIsGitRepo === false && (
+                        <div style={{ fontSize: 11, color: "var(--accent-yellow)", marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
+                          <span>&#9888;&#65039;</span> Not a git repository — agents will share the working directory
+                        </div>
+                      )}
                       <DirectoryBrowser
                         opened={showBrowseForPlaybook}
                         onClose={() => setShowBrowseForPlaybook(false)}
-                        onSelect={(path) => setPlaybookPath(path)}
+                        onSelect={(path) => handlePlaybookPathChange(path)}
                         initialPath={playbookPath}
                       />
 
@@ -1213,7 +1257,10 @@ export function AllSessions() {
                           <button
                             type="button"
                             className={`playbook-worktree-btn ${playbookWorktreeMode === "isolated" ? "active" : ""}`}
-                            onClick={() => setPlaybookWorktreeMode("isolated")}
+                            onClick={() => { if (playbookPathIsGitRepo !== false) setPlaybookWorktreeMode("isolated"); }}
+                            disabled={playbookPathIsGitRepo === false}
+                            title={playbookPathIsGitRepo === false ? "Isolated worktrees require a git repository" : undefined}
+                            style={playbookPathIsGitRepo === false ? { opacity: 0.4, cursor: "not-allowed" } : undefined}
                           >
                             Isolated
                           </button>
