@@ -196,12 +196,13 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
                 onClick={() => setExpandedIndex(isExpanded ? null : i)}
               >
                 <Group gap={8} mb={4} wrap="wrap">
-                  <Badge variant="light" color={getSourceColor(entry.source)} size="xs">
-                    {entry.source}
-                  </Badge>
-                  {authorLabel && (
-                    <Badge variant="dot" color="orange" size="xs">
+                  {authorLabel ? (
+                    <Badge variant="light" color={getSourceColor(entry.source)} size="xs">
                       {authorLabel}
+                    </Badge>
+                  ) : (
+                    <Badge variant="light" color={getSourceColor(entry.source)} size="xs">
+                      {entry.source}
                     </Badge>
                   )}
                   {entry.timestamp && (
