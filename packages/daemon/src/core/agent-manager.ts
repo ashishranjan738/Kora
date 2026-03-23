@@ -351,12 +351,25 @@ export class AgentManager extends EventEmitter {
     if (options.envVars) {
       envEntries.push(...Object.entries(options.envVars));
     }
+    // Always set KORA_* env vars so agents (MCP and non-MCP) can access daemon
+    envEntries.push(["KORA_AGENT_ID", agentId]);
+    envEntries.push(["KORA_SESSION_ID", options.sessionId]);
+    try {
+      const os = await import("os");
+      const isDev = process.env.KORA_DEV === "1";
+      const cfgDir = process.env.KORA_CONFIG_DIR || path.join(os.default.homedir(), isDev ? ".kora-dev" : ".kora");
+      try { const port = (await fs.readFile(path.join(cfgDir, "daemon.port"), "utf-8")).trim(); envEntries.push(["KORA_DAEMON_URL", `http://localhost:${port}`]); } catch { envEntries.push(["KORA_DAEMON_URL", `http://localhost:${isDev ? 7891 : 7890}`]); }
+      try { const token = (await fs.readFile(path.join(cfgDir, "daemon.token"), "utf-8")).trim(); envEntries.push(["KORA_TOKEN", token]); } catch { /* no token */ }
+    } catch { /* non-fatal */ }
     if (process.env.KORA_DEV === "1") {
       envEntries.push(["KORA_DEV", "1"]);
     }
     if (process.env.KORA_CONFIG_DIR) {
       envEntries.push(["KORA_CONFIG_DIR", process.env.KORA_CONFIG_DIR]);
     }
+    // Add daemon's bin dir to PATH so `kora` CLI is accessible from agent terminals
+    const daemonBinDir = path.resolve(__dirname, "../../node_modules/.bin");
+    envEntries.push(["PATH", `${daemonBinDir}:$PATH`]);
 
     // Batch as single export command to minimize delays
     if (envEntries.length > 0) {

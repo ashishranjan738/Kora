@@ -803,6 +803,7 @@ export function createApiRouter(deps: {
         peers,
         projectPath: session.config.projectPath,
         workflowStates: session.config.workflowStates,
+        supportsMcp: provider.supportsMcp,
       });
 
       const agentState = await am.spawnAgent({
@@ -4058,6 +4059,7 @@ export function createApiRouter(deps: {
           peers,
           projectPath: session.config.projectPath,
           workflowStates: session.config.workflowStates,
+          supportsMcp: provider.supportsMcp,
         });
 
         // Use the task param as initialTask for the master agent only
