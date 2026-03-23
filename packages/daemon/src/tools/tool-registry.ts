@@ -21,7 +21,7 @@ export const ALL_TOOL_NAMES = [
   "prepare_pr", "report_idle", "request_task",
   "list_personas", "save_persona", "get_workflow_states",
   "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
-  "verify_work", "create_pr", "whoami", "get_context",
+  "verify_work", "create_pr", "whoami", "get_context", "delete_task",
 ] as const;
 
 export type ToolName = (typeof ALL_TOOL_NAMES)[number];
@@ -362,6 +362,18 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       properties: {
         resource: { type: "string", description: 'Which context to fetch: "team", "workflow", "knowledge", "rules", "tasks", or "all" (default: "all")' },
       },
+    },
+  },
+  {
+    name: "delete_task",
+    description: "Delete a task from the board. Use for duplicate, invalid, or cancelled tasks. Master agents only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskId: { type: "string", description: "The task ID to delete" },
+        reason: { type: "string", description: "Optional reason for deletion" },
+      },
+      required: ["taskId"],
     },
   },
 ];

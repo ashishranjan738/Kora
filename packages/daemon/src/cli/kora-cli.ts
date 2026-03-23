@@ -240,6 +240,12 @@ tCmd.command("create <title>").description("Create task")
     const t = (r.task || r) as Record<string, unknown>;
     out(J() ? r : `Task created: ${t.id} — ${t.title}`, J());
   });
+tCmd.command("delete <id>").description("Delete task (master only)")
+  .option("--reason <r>", "Reason for deletion")
+  .action(async (id: string, o: { reason?: string }) => {
+    const r = (await api(cfg, "DELETE", `/api/v1/sessions/${rS(cfg)}/tasks/${id}`)) as Record<string, unknown>;
+    out(J() ? { success: true, deleted: id, ...r, ...(o.reason ? { reason: o.reason } : {}) } : `Task ${id} deleted.`, J());
+  });
 
 // workflow
 prog.command("workflow").description("Show workflow states").action(async () => {
