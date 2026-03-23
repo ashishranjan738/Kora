@@ -16,8 +16,16 @@ import * as fs from "fs";
 import * as nodePath from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { getPromptDefinition, getPromptsForRole } from "../tools/prompt-registry.js";
+import { RESOURCE_DEFINITIONS, getResourceDefinition } from "../tools/resource-registry.js";
+
+// Track resource subscriptions for live update notifications
+const resourceSubscriptions = new Set<string>();
 
 const execFileAsync = promisify(execFile);
+
+// Import registries for MCP prompts + resources
+import { PROMPT_DEFINITIONS } from "../tools/prompt-registry.js";
 
 // ---------------------------------------------------------------------------
 // Parse CLI args
@@ -114,6 +122,23 @@ function getToken(): string {
 function getRuntimeDir(): string {
   const isDev = process.env.KORA_DEV === "1";
   return isDev ? ".kora-dev" : ".kora";
+}
+
+// ---------------------------------------------------------------------------
+// Resource subscriptions — track which resources this agent subscribes to
+// ---------------------------------------------------------------------------
+
+
+/** Send MCP notification for a subscribed resource change */
+function notifyResourceChanged(uri: string): void {
+  if (resourceSubscriptions.has(uri)) {
+    const notification = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "notifications/resources/updated",
+      params: { uri },
+    });
+    process.stdout.write(notification + "\n");
+  }
 }
 
 // If called with no args, print usage and exit (serves as a --help check)
@@ -2077,7 +2102,11 @@ rl.on("line", async (line: string) => {
       case "initialize":
         sendResponse(id, {
           protocolVersion: "2024-11-05",
-          capabilities: { tools: {} },
+          capabilities: {
+            tools: {},
+            prompts: { listChanged: true },
+            resources: { subscribe: true, listChanged: true },
+          },
           serverInfo: {
             name: "kora-mcp",
             version: "0.1.0",
@@ -2088,6 +2117,76 @@ rl.on("line", async (line: string) => {
       case "notifications/initialized":
         // Client acknowledged initialization — no response needed
         break;
+
+      // ── Prompts ─────────────────────────────────────────────
+      case "prompts/list":
+        sendResponse(id, {
+          prompts: PROMPT_DEFINITIONS
+            .filter(p => AGENT_ROLE === "master" || !p.name.startsWith("master"))
+            .map(p => ({ name: p.name, description: p.description, arguments: p.arguments })),
+        });
+        break;
+
+      case "prompts/get": {
+        const promptName = msg.params?.name as string;
+        const promptDef = PROMPT_DEFINITIONS.find(p => p.name === promptName);
+        if (!promptDef) {
+          sendError(id, -32602, `Prompt not found: ${promptName}`);
+          break;
+        }
+        const promptCtx = { agentId: AGENT_ID, sessionId: SESSION_ID, agentRole: AGENT_ROLE, projectPath: PROJECT_PATH, apiCall };
+        const promptContent = await promptDef.fetchContent(promptCtx);
+        // Apply section filter if argument provided
+        const sectionArg = (msg.params?.arguments as Record<string, unknown>)?.section as string | undefined;
+        let finalContent = promptContent;
+        if (sectionArg && promptContent) {
+          const regex = new RegExp(`## ${sectionArg}[\\s\\S]*?(?=\\n## |$)`, "i");
+          const match = promptContent.match(regex);
+          finalContent = match ? match[0].trim() : `Section "${sectionArg}" not found.`;
+        }
+        sendResponse(id, {
+          messages: [{ role: "user", content: { type: "text", text: finalContent } }],
+        });
+        break;
+      }
+
+      // ── Resources ───────────────────────────────────────────
+      case "resources/list":
+        sendResponse(id, {
+          resources: RESOURCE_DEFINITIONS.map(r => ({
+            uri: r.uri, name: r.name, description: r.description, mimeType: r.mimeType,
+          })),
+        });
+        break;
+
+      case "resources/read": {
+        const uri = msg.params?.uri as string;
+        const resDef = getResourceDefinition(uri);
+        if (!resDef) {
+          sendError(id, -32602, `Resource not found: ${uri}`);
+          break;
+        }
+        const resCtx = { agentId: AGENT_ID, sessionId: SESSION_ID, agentRole: AGENT_ROLE, projectPath: PROJECT_PATH, apiCall };
+        const resContent = await resDef.fetchContent(resCtx);
+        sendResponse(id, {
+          contents: [{ uri, mimeType: resDef.mimeType, text: resContent }],
+        });
+        break;
+      }
+
+      case "resources/subscribe": {
+        const subUri = msg.params?.uri as string;
+        resourceSubscriptions.add(subUri);
+        sendResponse(id, {});
+        break;
+      }
+
+      case "resources/unsubscribe": {
+        const unsubUri = msg.params?.uri as string;
+        resourceSubscriptions.delete(unsubUri);
+        sendResponse(id, {});
+        break;
+      }
 
       case "tools/list":
         // Filter tools based on agent role permissions
