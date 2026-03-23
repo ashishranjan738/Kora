@@ -336,6 +336,30 @@ export const DEFAULT_WORKFLOW_STATES: WorkflowState[] = [
   { id: "done",        label: "Done",        color: "#22c55e", category: "closed" },
 ];
 
+// --- Code Comments ---
+
+export interface CodeComment {
+  id: string;
+  sessionId: string;
+  /** File path relative to project root */
+  filePath: string;
+  /** Line number (1-based) */
+  line: number;
+  /** End line for multi-line comments (optional) */
+  endLine?: number;
+  /** Comment text (supports markdown) */
+  text: string;
+  /** Who created the comment — agent ID, "user", or agent name */
+  author: string;
+  authorName?: string;
+  /** Whether this comment has been resolved */
+  resolved: boolean;
+  resolvedBy?: string;
+  resolvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // --- Events ---
 
 export interface OrchestratorEvent {
@@ -368,4 +392,6 @@ export type EventType =
   | "session-resumed"
   | "session-stopped"
   | "cost-threshold-reached"
-  | "message-escalation";
+  | "message-escalation"
+  | "code-comment-added"
+  | "code-comment-resolved";
