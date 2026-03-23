@@ -947,6 +947,86 @@ export function createApiRouter(deps: {
     }
   });
 
+  // Update individual agent's persona
+  router.put("/sessions/:sid/agents/:aid/persona", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const aid = String(req.params.aid);
+      const session = sessionManager.getSession(sid);
+      if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const orch = orchestrators.get(sid);
+      if (!orch) { res.status(404).json({ error: "Session not running" }); return; }
+
+      const agent = orch.agentManager.getAgent(aid);
+      if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+
+      const { persona } = req.body;
+      if (typeof persona !== "string") { res.status(400).json({ error: "persona field (string) is required" }); return; }
+
+      // Write updated persona to file
+      const personaPath = path.join(session.runtimeDir, "personas", `${aid}-prompt.md`);
+      await fsPromises.mkdir(path.dirname(personaPath), { recursive: true });
+      await fsPromises.writeFile(personaPath, persona, "utf-8");
+
+      // Notify agent that their context has been updated
+      try {
+        await orch.messageBus.deliverToInbox(aid, {
+          id: randomUUID(),
+          from: "system",
+          to: aid,
+          type: "status",
+          content: "\x1b[1;33m[System]\x1b[0m Your persona has been updated. Run get_context(\"persona\") to refresh.",
+          timestamp: new Date().toISOString(),
+        });
+      } catch { /* non-fatal */ }
+
+      broadcastEvent({ event: "agent-persona-updated", sessionId: sid, agentId: aid });
+      res.json({ success: true, agentId: aid });
+    } catch (err) {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update session-wide instructions for all agents
+  router.put("/sessions/:sid/instructions", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const session = sessionManager.getSession(sid);
+      if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const orch = orchestrators.get(sid);
+      if (!orch) { res.status(404).json({ error: "Session not running" }); return; }
+
+      const { instructions } = req.body;
+      if (typeof instructions !== "string") { res.status(400).json({ error: "instructions field (string) is required" }); return; }
+
+      // Write session instructions file
+      const instructionsPath = path.join(session.runtimeDir, "session-instructions.md");
+      await fsPromises.writeFile(instructionsPath, instructions, "utf-8");
+
+      // Notify all running agents
+      const agents = orch.agentManager.listAgents().filter(a => a.status === "running");
+      for (const agent of agents) {
+        try {
+          await orch.messageBus.deliverToInbox(agent.id, {
+            id: randomUUID(),
+            from: "system",
+            to: agent.id,
+            type: "status",
+            content: "\x1b[1;33m[System]\x1b[0m Session instructions updated. Run get_context(\"all\") to refresh.",
+            timestamp: new Date().toISOString(),
+          });
+        } catch { /* non-fatal */ }
+      }
+
+      broadcastEvent({ event: "session-instructions-updated", sessionId: sid });
+      res.json({ success: true, agentsNotified: agents.length });
+    } catch (err) {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   /** Get all agent context sections — single endpoint for MCP resources + CLI */
   router.get("/sessions/:sid/agents/:aid/context", async (req: Request, res: Response) => {
     try {
