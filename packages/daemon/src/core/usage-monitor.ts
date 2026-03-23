@@ -184,7 +184,10 @@ export class UsageMonitor {
         input: usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens,
         output: usage.outputTokens,
       },
-      costUsd: undefined, // Let cost-tracker estimate from tokens
+      costUsd: estimateCost(
+        usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens,
+        usage.outputTokens,
+      ),
     };
   }
 
