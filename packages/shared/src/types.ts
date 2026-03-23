@@ -5,7 +5,7 @@
 // --- Session ---
 
 /** How agents communicate within a session */
-export type MessagingMode = "mcp" | "terminal" | "manual";
+export type MessagingMode = "mcp" | "cli" | "terminal" | "manual";
 
 /** Whether agents get isolated git worktrees or share the project directory */
 export type WorktreeMode = "isolated" | "shared";

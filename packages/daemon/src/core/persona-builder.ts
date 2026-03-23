@@ -32,6 +32,8 @@ export interface PersonaBuildOptions {
   workflowStates?: import("@kora/shared").WorkflowState[];
   /** Whether the agent's CLI provider supports MCP. If false, inject CLI tool instructions instead. */
   supportsMcp?: boolean;
+  /** Session messaging mode. "cli" mode forces CLI instructions even if provider supports MCP. */
+  messagingMode?: import("@kora/shared").MessagingMode;
 }
 
 /**
@@ -91,9 +93,12 @@ export function buildPersona(options: PersonaBuildOptions): string {
     ].join("\n"));
   }
 
+  // Determine if this agent should use CLI instructions (non-MCP provider OR cli messaging mode)
+  const useCliInstructions = options.supportsMcp === false || options.messagingMode === "cli";
+
   // Team awareness (peer agents)
   if (options.peers?.length) {
-    if (options.supportsMcp === false) {
+    if (useCliInstructions) {
       sections.push(buildTeamSectionCli(options.peers, options.agentId));
     } else {
       sections.push(buildTeamSection(options.peers, options.agentId));
@@ -101,7 +106,7 @@ export function buildPersona(options: PersonaBuildOptions): string {
   }
 
   // Communication protocol (all agents)
-  if (options.supportsMcp === false) {
+  if (useCliInstructions) {
     sections.push(buildCliToolInstructions(options.agentId));
   } else {
     sections.push(buildCommunicationProtocol(options.agentId));
