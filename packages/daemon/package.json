@@ -4,8 +4,8 @@
   "description": "Multi-agent orchestration platform for AI coding CLI agents (Claude Code, Aider, Codex, Kiro, Goose)",
   "bin": {
     "kora": "dist/cli.js",
-    "kora-cli": "dist/cli.js",
-    "kora-agent": "dist/cli/kora-cli.js"
+    "kora-daemon": "dist/cli.js",
+    "kora-cli": "dist/cli/kora-cli.js"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
