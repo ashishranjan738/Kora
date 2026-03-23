@@ -920,6 +920,32 @@ export function createApiRouter(deps: {
     }
   });
 
+  // Get agent's persona (system prompt) file contents
+  router.get("/sessions/:sid/agents/:aid/persona", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const aid = String(req.params.aid);
+      const session = sessionManager.getSession(sid);
+      if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const orch = orchestrators.get(sid);
+      if (!orch) { res.status(404).json({ error: "Session not running" }); return; }
+
+      const agent = orch.agentManager.getAgent(aid);
+      if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+
+      const personaPath = path.join(session.runtimeDir, "personas", `${aid}-prompt.md`);
+      try {
+        const content = await fsPromises.readFile(personaPath, "utf-8");
+        res.json({ agentId: aid, persona: content });
+      } catch {
+        res.json({ agentId: aid, persona: null });
+      }
+    } catch (err) {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   router.delete("/sessions/:sid/agents/:aid", async (req: Request, res: Response) => {
     try {
       const { sid, aid } = req.params;
