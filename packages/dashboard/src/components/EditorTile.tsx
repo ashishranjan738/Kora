@@ -5,6 +5,7 @@ import { useApi } from "../hooks/useApi";
 import { useThemeStore } from "../stores/themeStore";
 import { showError, showSuccess } from "../utils/notifications";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { Modal, TextInput, Textarea, Select, SegmentedControl, Button, Group, Stack, Text, Code } from "@mantine/core";
 
 interface EditorTileProps {
   sessionId: string;
@@ -41,6 +42,32 @@ export function EditorTile({ sessionId }: EditorTileProps) {
   const reviewManagerRef = useRef<ReturnType<typeof createReviewManager> | null>(null);
   const editorInstanceRef = useRef<any>(null);
   const [commentEvents, setCommentEvents] = useState<any[]>([]);
+
+  // Create Task from Selection dialog state
+  const [taskDialog, setTaskDialog] = useState<{
+    open: boolean;
+    filePath: string;
+    startLine: number;
+    endLine: number;
+    selectedText: string;
+    title: string;
+    description: string;
+  }>({ open: false, filePath: "", startLine: 0, endLine: 0, selectedText: "", title: "", description: "" });
+  const [taskAssignee, setTaskAssignee] = useState("");
+  const [taskPriority, setTaskPriority] = useState("P2");
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [agents, setAgents] = useState<Array<{ id: string; name: string }>>([]);
+
+  // Fetch agents for assignment dropdown
+  useEffect(() => {
+    async function loadAgents() {
+      try {
+        const data = await api.getAgents(sessionId);
+        setAgents((data.agents || []).map((a: any) => ({ id: a.id, name: a.config?.name || a.name || a.id })));
+      } catch { /* ignore */ }
+    }
+    loadAgents();
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Quick-open state
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
@@ -500,7 +527,7 @@ export function EditorTile({ sessionId }: EditorTileProps) {
                       label: "\uD83D\uDCCB Create Task from Selection",
                       contextMenuGroupId: "navigation",
                       contextMenuOrder: 0,
-                      run: async (ed: any) => {
+                      run: (ed: any) => {
                         const selection = ed.getSelection();
                         const model = ed.getModel();
                         if (!selection || !model) return;
@@ -516,27 +543,19 @@ export function EditorTile({ sessionId }: EditorTileProps) {
                           return;
                         }
 
-                        try {
-                          const result = await api.createCodeComment(sessionId, {
-                            filePath,
-                            startLine,
-                            endLine,
-                            selectedText: selectedText.slice(0, 500),
-                            comment: `Review ${fileName}:${startLine}-${endLine}`,
-                            createTask: true,
-                          });
-                          if (result.task) {
-                            showSuccess(`Task created: ${result.task.title || `Review ${fileName}:${startLine}-${endLine}`}`);
-                          } else {
-                            showSuccess("Comment saved");
-                          }
-                        } catch (err: any) {
-                          if (err.message?.includes("404")) {
-                            showSuccess(`Task queued: Review ${fileName}:${startLine}-${endLine} (backend API not yet available)`);
-                          } else {
-                            showError(err.message || "Failed to create task", "Task Error");
-                          }
-                        }
+                        // Open dialog with pre-filled context
+                        const lineRange = startLine === endLine ? `L${startLine}` : `L${startLine}-${endLine}`;
+                        setTaskDialog({
+                          open: true,
+                          filePath,
+                          startLine,
+                          endLine,
+                          selectedText: selectedText.slice(0, 1000),
+                          title: `Review ${fileName}:${lineRange}`,
+                          description: `**File:** \`${filePath}\`\n**Lines:** ${lineRange}\n\n\`\`\`\n${selectedText.slice(0, 500)}\n\`\`\`\n\n`,
+                        });
+                        setTaskAssignee("");
+                        setTaskPriority("P2");
                       },
                     });
                   }}
@@ -576,6 +595,139 @@ export function EditorTile({ sessionId }: EditorTileProps) {
         confirmColor="blue"
         cancelLabel="Discard"
       />
+
+      {/* Create Task from Selection dialog */}
+      <Modal
+        opened={taskDialog.open}
+        onClose={() => setTaskDialog(prev => ({ ...prev, open: false }))}
+        title="Create Task from Code"
+        size="lg"
+        centered
+        styles={{
+          header: { backgroundColor: "var(--bg-secondary)", borderBottom: "1px solid var(--border-color)" },
+          body: { backgroundColor: "var(--bg-secondary)" },
+          content: { backgroundColor: "var(--bg-secondary)" },
+          title: { color: "var(--text-primary)", fontWeight: 600, fontSize: 16 },
+          close: { color: "var(--text-secondary)" },
+        }}
+      >
+        <Stack gap="sm">
+          {/* Code context preview */}
+          <div style={{ backgroundColor: "var(--bg-tertiary)", borderRadius: 6, padding: "8px 12px", border: "1px solid var(--border-color)" }}>
+            <Text size="xs" c="dimmed" mb={4}>
+              {taskDialog.filePath} : {taskDialog.startLine === taskDialog.endLine ? `Line ${taskDialog.startLine}` : `Lines ${taskDialog.startLine}-${taskDialog.endLine}`}
+            </Text>
+            <Code block style={{ maxHeight: 120, overflow: "auto", fontSize: 11 }}>
+              {taskDialog.selectedText}
+            </Code>
+          </div>
+
+          <TextInput
+            label="Task Title"
+            value={taskDialog.title}
+            onChange={(e) => setTaskDialog(prev => ({ ...prev, title: e.currentTarget.value }))}
+            styles={{ input: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" }, label: { color: "var(--text-secondary)", fontSize: 13 } }}
+          />
+
+          <Textarea
+            label="Description"
+            value={taskDialog.description}
+            onChange={(e) => setTaskDialog(prev => ({ ...prev, description: e.currentTarget.value }))}
+            autosize
+            minRows={3}
+            maxRows={8}
+            styles={{ input: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)", fontSize: 13 }, label: { color: "var(--text-secondary)", fontSize: 13 } }}
+          />
+
+          <Select
+            label="Assign to"
+            placeholder="Unassigned (auto-assign)"
+            data={agents.map(a => ({ value: a.id, label: a.name }))}
+            value={taskAssignee || null}
+            onChange={(v) => setTaskAssignee(v || "")}
+            clearable
+            styles={{ input: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" }, label: { color: "var(--text-secondary)", fontSize: 13 }, dropdown: { backgroundColor: "var(--bg-secondary)", borderColor: "var(--border-color)" }, option: { color: "var(--text-primary)" } }}
+          />
+
+          <div>
+            <Text size="xs" c="var(--text-secondary)" mb={6}>Priority</Text>
+            <SegmentedControl
+              value={taskPriority}
+              onChange={setTaskPriority}
+              data={[
+                { value: "P0", label: "P0 Critical" },
+                { value: "P1", label: "P1 High" },
+                { value: "P2", label: "P2 Medium" },
+                { value: "P3", label: "P3 Low" },
+              ]}
+              size="xs"
+              fullWidth
+              styles={{
+                root: { backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border-color)" },
+                label: { color: "var(--text-primary)", fontWeight: 500, fontSize: 12, padding: "6px 12px" },
+              }}
+            />
+          </div>
+
+          <Group justify="flex-end" mt="md">
+            <Button
+              variant="default"
+              onClick={() => setTaskDialog(prev => ({ ...prev, open: false }))}
+              styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" } }}
+            >
+              Cancel
+            </Button>
+            <Button
+              loading={creatingTask}
+              disabled={!taskDialog.title.trim()}
+              onClick={async () => {
+                setCreatingTask(true);
+                try {
+                  const result = await api.createCodeComment(sessionId, {
+                    filePath: taskDialog.filePath,
+                    startLine: taskDialog.startLine,
+                    endLine: taskDialog.endLine,
+                    selectedText: taskDialog.selectedText,
+                    comment: taskDialog.description,
+                    assignedTo: taskAssignee || undefined,
+                    createTask: true,
+                  });
+                  if (result.task) {
+                    showSuccess(`Task created: ${result.task.title || taskDialog.title}`);
+                  } else {
+                    showSuccess("Comment saved");
+                  }
+                  setTaskDialog(prev => ({ ...prev, open: false }));
+                } catch (err: any) {
+                  if (err.message?.includes("404")) {
+                    // Fallback: create task directly via task API
+                    try {
+                      await api.createTask(sessionId, {
+                        title: taskDialog.title,
+                        description: taskDialog.description,
+                        assignedTo: taskAssignee || undefined,
+                        priority: taskPriority,
+                        labels: ["code-review"],
+                      });
+                      showSuccess(`Task created: ${taskDialog.title}`);
+                      setTaskDialog(prev => ({ ...prev, open: false }));
+                    } catch (fallbackErr: any) {
+                      showError(fallbackErr.message || "Failed to create task", "Task Error");
+                    }
+                  } else {
+                    showError(err.message || "Failed to create task", "Task Error");
+                  }
+                } finally {
+                  setCreatingTask(false);
+                }
+              }}
+              styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)" } }}
+            >
+              Create Task
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </div>
   );
 }
