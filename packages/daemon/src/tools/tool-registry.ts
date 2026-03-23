@@ -21,7 +21,7 @@ export const ALL_TOOL_NAMES = [
   "prepare_pr", "report_idle", "request_task",
   "list_personas", "save_persona", "get_workflow_states",
   "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
-  "verify_work", "create_pr", "whoami", "get_context",
+  "verify_work", "create_pr", "whoami", "get_context", "delete_task",
 ] as const;
 
 export type ToolName = (typeof ALL_TOOL_NAMES)[number];

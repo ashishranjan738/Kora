@@ -839,7 +839,8 @@ export async function handleDeleteTask(
 ): Promise<unknown> {
   const taskId = args.taskId;
   if (!taskId) return { error: "taskId is required" };
-  const result = await ctx.apiCall("DELETE", `/api/v1/sessions/${ctx.sessionId}/tasks/${taskId}`);
+  const body = args.reason ? { reason: args.reason } : undefined;
+  const result = await ctx.apiCall("DELETE", `/api/v1/sessions/${ctx.sessionId}/tasks/${taskId}`, body);
   return { success: true, deleted: taskId, ...(args.reason ? { reason: args.reason } : {}), ...(result as Record<string, unknown>) };
 }
 
