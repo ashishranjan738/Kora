@@ -814,7 +814,7 @@ export async function handleGetContext(
   args: Record<string, string>,
 ): Promise<unknown> {
   const resource = args.resource || "all";
-  const validResources = ["team", "workflow", "knowledge", "rules", "tasks", "all"];
+  const validResources = ["team", "workflow", "knowledge", "rules", "tasks", "persona", "communication", "workspace", "all"];
   if (!validResources.includes(resource)) {
     return { error: `Invalid resource "${resource}". Valid: ${validResources.join(", ")}` };
   }
