@@ -337,6 +337,21 @@ export class Orchestrator extends EventEmitter {
         });
       }
 
+      // Send welcome notification to the newly spawned agent itself
+      const welcomeMsg = this.buildStartupNotification(agent);
+      setTimeout(async () => {
+        try {
+          await this.messageBus.deliverToInbox(agent.id, {
+            id: crypto.randomUUID(),
+            from: 'system',
+            to: agent.id,
+            type: 'status',
+            content: welcomeMsg,
+            timestamp: new Date().toISOString(),
+          });
+        } catch { /* non-fatal */ }
+      }, 500); // Small delay to ensure agent's CLI/MCP has initialized
+
       this.emit("agent-update", agent);
       await this.persistState();
     });
@@ -913,6 +928,50 @@ export class Orchestrator extends EventEmitter {
     if (buffer.length < 100) {
       buffer.push({ from, to, message, messageType, timestamp: new Date().toISOString() });
     }
+  }
+
+  /** Build mode-appropriate welcome notification for a newly spawned agent */
+  private buildStartupNotification(agent: AgentState): string {
+    const mode = this.config.messagingMode || "mcp";
+    const name = agent.config.name;
+    const role = agent.config.role;
+    const sid = this.config.sessionId;
+
+    const header = `\x1b[1;32m[System]\x1b[0m Welcome, ${name}. You are a ${role} agent in session "${sid}".
+Your persona and instructions are loaded via system prompt.`;
+
+    let body: string;
+    if (mode === "cli") {
+      body = `Use kora-cli to communicate and stay current:
+  • kora-cli whoami — see your role and instructions
+  • kora-cli context all — full context (team, tasks, workflow)
+  • kora-cli messages — check for messages from teammates
+  • kora-cli tasks — see your task assignments
+Run \`kora-cli tasks\` to see if you have any assigned tasks.`;
+    } else if (mode === "terminal") {
+      body = `Communicate with teammates using @mentions:
+  • @AgentName: your message — send to a specific agent
+  • @all: your message — broadcast to everyone
+Check your system prompt for your full role and team details.`;
+    } else if (mode === "manual") {
+      body = `Messaging is in manual mode. Check .kora/messages/inbox-${agent.id}/ for messages.`;
+    } else {
+      // MCP mode (default)
+      body = `Use these MCP tools to stay current:
+  • get_context("team") — live teammate roster
+  • get_context("tasks") — your task assignments
+  • get_context("all") — full context refresh
+  • check_messages() — read messages from teammates
+Run list_tasks() to see if you have any assigned tasks.`;
+    }
+
+    let msg = `${header}\n${body}`;
+
+    if (this.config.worktreeMode === "shared") {
+      msg += `\n\n⚠️ SHARED WORKSPACE: All agents share the same directory. Only edit files assigned to you.`;
+    }
+
+    return msg;
   }
 
   /** Persist current agent state to disk */
