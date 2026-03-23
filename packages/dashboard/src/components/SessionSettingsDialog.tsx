@@ -609,11 +609,7 @@ export function SessionSettingsDialog({
                   const val = parseFloat(raw);
                   if (!isNaN(val) && val > 0) {
                     try {
-                      await fetch(`/api/v1/sessions/${sessionId}`, {
-                        method: "PATCH",
-                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${(window as any).__KORA_TOKEN__ || ""}` },
-                        body: JSON.stringify({ budgetLimit: val }),
-                      });
+                      await api.updateSessionConfig(sessionId, { budgetLimit: val });
                     } catch {}
                   }
                 }, 800);
@@ -636,12 +632,7 @@ export function SessionSettingsDialog({
               const newVal = e.currentTarget.checked;
               setAutoAssign(newVal);
               try {
-                await (api as any).updateSession?.(sessionId, { autoAssign: newVal })
-                  || await fetch(`/api/v1/sessions/${sessionId}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${(window as any).__KORA_TOKEN__ || ""}` },
-                    body: JSON.stringify({ autoAssign: newVal }),
-                  });
+                await api.updateSessionConfig(sessionId, { autoAssign: newVal });
               } catch {
                 // Revert on failure
                 setAutoAssign(!newVal);
@@ -768,14 +759,10 @@ export function SessionSettingsDialog({
                         },
                       }
                     : { mode: deliveryMode };
-                  await fetch(`/api/v1/sessions/${sessionId}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${(window as any).__KORA_TOKEN__ || ""}` },
-                    body: JSON.stringify({ watchdogDelivery: config }),
-                  });
+                  await api.updateSessionConfig(sessionId, { watchdogDelivery: config });
                   setDeliverySaved(true);
-                } catch {
-                  // silently fail
+                } catch (err: any) {
+                  setError(err.message || "Failed to save delivery config");
                 } finally {
                   setSavingDelivery(false);
                 }

@@ -346,5 +346,11 @@ export function useApi() {
         method: "PUT",
         body: JSON.stringify({ instructions }),
       }),
+    // Session config (generic PATCH for settings like budget, autoAssign, watchdogDelivery)
+    updateSessionConfig: (sid: string, config: Record<string, unknown>) =>
+      apiFetch<any>(`/sessions/${sid}`, {
+        method: "PATCH",
+        body: JSON.stringify(config),
+      }),
   };
 }
