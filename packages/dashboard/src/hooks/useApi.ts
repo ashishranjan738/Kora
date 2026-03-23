@@ -194,10 +194,10 @@ export function useApi() {
       apiFetch<{ content: string; path: string; language: string }>(`/sessions/${sid}/files/read?path=${encodeURIComponent(filePath)}`),
     writeFile: (sid: string, filePath: string, content: string) =>
       apiFetch<{ saved: boolean }>(`/sessions/${sid}/files/write`, { method: "PUT", body: JSON.stringify({ path: filePath, content }) }),
-    getGitStatus: (sid: string) =>
-      apiFetch<{ branch: string; changes: any[]; repos?: any[] }>(`/sessions/${sid}/git/status`),
-    getGitDiff: (sid: string, filePath: string, repo?: string) =>
-      apiFetch<{ diff: string; original: string; modified: string; path: string }>(`/sessions/${sid}/git/diff?path=${encodeURIComponent(filePath)}&repo=${encodeURIComponent(repo || ".")}`),
+    getGitStatus: (sid: string, agentId?: string) =>
+      apiFetch<{ branch: string; changes: any[]; repos?: any[] }>(`/sessions/${sid}/git/status${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ""}`),
+    getGitDiff: (sid: string, filePath: string, repo?: string, agentId?: string) =>
+      apiFetch<{ diff: string; original: string; modified: string; path: string }>(`/sessions/${sid}/git/diff?path=${encodeURIComponent(filePath)}&repo=${encodeURIComponent(repo || ".")}${agentId ? `&agentId=${encodeURIComponent(agentId)}` : ""}`),
     nudgeAgent: (sid: string, aid: string) =>
       apiFetch<{ nudged: boolean; unreadCount: number }>(`/sessions/${sid}/agents/${aid}/nudge`, { method: "POST" }),
     getAgentOutput: (sid: string, aid: string, lines?: number) =>
