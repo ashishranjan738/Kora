@@ -4912,6 +4912,107 @@ export function createApiRouter(deps: {
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
 
+  // ─── Code Comments ──────────────────────────────────────────────
+
+  router.post("/sessions/:sid/code-comments", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const { filePath, startLine, endLine, selectedText, commitHash, comment, createdBy, taskId, createTask } = req.body;
+      if (!filePath || startLine === undefined || !comment) {
+        res.status(400).json({ error: "filePath, startLine, and comment are required" });
+        return;
+      }
+
+      const { randomUUID } = require("crypto");
+      const id = randomUUID().slice(0, 12);
+      const now = new Date().toISOString();
+
+      // Optionally create a linked task
+      let linkedTaskId = taskId;
+      if (createTask && !taskId) {
+        const taskIdGen = randomUUID().slice(0, 8);
+        db.insertTask({
+          id: taskIdGen, sessionId: sid,
+          title: `Code review: ${filePath}:${startLine}`,
+          description: `${comment}\n\nFile: ${filePath}, lines ${startLine}${endLine ? `-${endLine}` : ""}`,
+          status: "pending", createdBy: createdBy || "user",
+          createdAt: now, updatedAt: now,
+        });
+        linkedTaskId = taskIdGen;
+        broadcastEvent({ event: "task-created", sessionId: sid, taskId: taskIdGen });
+      }
+
+      db.insertCodeComment({
+        id, sessionId: sid, filePath, startLine, endLine, selectedText,
+        commitHash, comment, createdBy: createdBy || "user", createdAt: now,
+        taskId: linkedTaskId,
+      });
+
+      broadcastEvent({ event: "code-comment-created", sessionId: sid, commentId: id, filePath });
+      res.status(201).json(db.getCodeComments(sid, { filePath })[0] || { id });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.get("/sessions/:sid/code-comments", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const filePath = req.query.file as string | undefined;
+      const resolved = req.query.resolved === "true" ? true : req.query.resolved === "false" ? false : undefined;
+      const taskId = req.query.taskId as string | undefined;
+
+      const comments = db.getCodeComments(sid, { filePath, resolved, taskId });
+      res.json({ comments, count: comments.length });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.get("/sessions/:sid/code-comments/files", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const resolved = req.query.resolved === "true" ? true : req.query.resolved === "false" ? false : undefined;
+      const fileCounts = db.getCodeCommentFileCounts(sid, resolved);
+      res.json({ files: fileCounts });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.put("/sessions/:sid/code-comments/:cid", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const cid = String(req.params.cid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const updated = db.updateCodeComment(cid, req.body);
+      if (!updated) { res.status(404).json({ error: "Comment not found" }); return; }
+
+      broadcastEvent({ event: "code-comment-updated", sessionId: sid, commentId: cid });
+      res.json({ updated: true });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.delete("/sessions/:sid/code-comments/:cid", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const cid = String(req.params.cid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const deleted = db.deleteCodeComment(cid);
+      if (!deleted) { res.status(404).json({ error: "Comment not found" }); return; }
+
+      broadcastEvent({ event: "code-comment-deleted", sessionId: sid, commentId: cid });
+      res.json({ deleted: true });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
   return router;
 }
 

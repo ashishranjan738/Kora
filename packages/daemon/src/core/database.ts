@@ -358,6 +358,33 @@ export class AppDatabase extends EventEmitter {
         PRAGMA user_version = 14;
       `);
     }
+
+    if (version < 15) {
+      this.db.exec(`
+        -- Inline code comments (linked to files, lines, and optionally tasks)
+        CREATE TABLE IF NOT EXISTS code_comments (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          file_path TEXT NOT NULL,
+          start_line INTEGER NOT NULL,
+          end_line INTEGER,
+          selected_text TEXT,
+          commit_hash TEXT,
+          comment TEXT NOT NULL,
+          created_by TEXT NOT NULL DEFAULT 'user',
+          created_at TEXT NOT NULL,
+          task_id TEXT,
+          resolved INTEGER NOT NULL DEFAULT 0,
+          resolved_at TEXT,
+          resolved_by TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_code_comments_session ON code_comments(session_id);
+        CREATE INDEX IF NOT EXISTS idx_code_comments_file ON code_comments(session_id, file_path);
+        CREATE INDEX IF NOT EXISTS idx_code_comments_task ON code_comments(task_id);
+        CREATE INDEX IF NOT EXISTS idx_code_comments_resolved ON code_comments(session_id, resolved);
+        PRAGMA user_version = 15;
+      `);
+    }
   }
 
   // ─── Events ──────────────────────────────────────────────
@@ -1460,6 +1487,72 @@ export class AppDatabase extends EventEmitter {
     `).run(thirtyDaysAgo, sevenDaysAgo);
 
     return result1.changes;
+  }
+
+  // ─── Code Comments ──────────────────────────────────────────
+
+  insertCodeComment(comment: {
+    id: string; sessionId: string; filePath: string; startLine: number;
+    endLine?: number; selectedText?: string; commitHash?: string;
+    comment: string; createdBy: string; createdAt: string; taskId?: string;
+  }): void {
+    this.db.prepare(
+      `INSERT INTO code_comments (id, session_id, file_path, start_line, end_line, selected_text, commit_hash, comment, created_by, created_at, task_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      comment.id, comment.sessionId, comment.filePath, comment.startLine,
+      comment.endLine || null, comment.selectedText || null, comment.commitHash || null,
+      comment.comment, comment.createdBy, comment.createdAt, comment.taskId || null,
+    );
+  }
+
+  getCodeComments(sessionId: string, filters?: {
+    filePath?: string; resolved?: boolean; taskId?: string; limit?: number;
+  }): any[] {
+    const conditions = ["session_id = ?"];
+    const values: any[] = [sessionId];
+    if (filters?.filePath) { conditions.push("file_path = ?"); values.push(filters.filePath); }
+    if (filters?.resolved !== undefined) { conditions.push("resolved = ?"); values.push(filters.resolved ? 1 : 0); }
+    if (filters?.taskId) { conditions.push("task_id = ?"); values.push(filters.taskId); }
+    const limit = filters?.limit || 200;
+    const rows = this.db.prepare(
+      `SELECT * FROM code_comments WHERE ${conditions.join(" AND ")} ORDER BY created_at DESC LIMIT ?`
+    ).all(...values, limit) as any[];
+    return rows.map(r => ({
+      id: r.id, sessionId: r.session_id, filePath: r.file_path,
+      startLine: r.start_line, endLine: r.end_line, selectedText: r.selected_text,
+      commitHash: r.commit_hash, comment: r.comment, createdBy: r.created_by,
+      createdAt: r.created_at, taskId: r.task_id, resolved: !!r.resolved,
+      resolvedAt: r.resolved_at, resolvedBy: r.resolved_by,
+    }));
+  }
+
+  getCodeCommentFileCounts(sessionId: string, resolved?: boolean): Array<{ filePath: string; count: number }> {
+    const conditions = ["session_id = ?"];
+    const values: any[] = [sessionId];
+    if (resolved !== undefined) { conditions.push("resolved = ?"); values.push(resolved ? 1 : 0); }
+    return this.db.prepare(
+      `SELECT file_path, COUNT(*) as count FROM code_comments WHERE ${conditions.join(" AND ")} GROUP BY file_path ORDER BY count DESC`
+    ).all(...values) as Array<{ file_path: string; count: number }> as any;
+  }
+
+  updateCodeComment(id: string, updates: { comment?: string; resolved?: boolean; resolvedBy?: string }): boolean {
+    const comment = this.db.prepare(`SELECT * FROM code_comments WHERE id = ?`).get(id) as any;
+    if (!comment) return false;
+    const now = new Date().toISOString();
+    this.db.prepare(
+      `UPDATE code_comments SET comment = ?, resolved = ?, resolved_at = ?, resolved_by = ? WHERE id = ?`
+    ).run(
+      updates.comment ?? comment.comment,
+      updates.resolved !== undefined ? (updates.resolved ? 1 : 0) : comment.resolved,
+      updates.resolved ? now : comment.resolved_at,
+      updates.resolvedBy ?? comment.resolved_by,
+      id,
+    );
+    return true;
+  }
+
+  deleteCodeComment(id: string): boolean {
+    return this.db.prepare(`DELETE FROM code_comments WHERE id = ?`).run(id).changes > 0;
   }
 
   close(): void {
