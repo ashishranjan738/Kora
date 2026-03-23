@@ -101,7 +101,7 @@ function fmtMsgs(m: Array<Record<string, unknown>>): string {
 function fmtWf(d: Record<string, unknown>): string {
   const s = (d.states || d.workflowStates) as Array<Record<string, unknown>> | undefined;
   if (!s?.length) return "No workflow states.";
-  return ["Workflow:", ...s.map((x) => `  ${x.name} (${x.id})${x.category ? ` [${x.category}]` : ""}${(x.transitions as string[] || []).length ? ` -> ${(x.transitions as string[]).join(", ")}` : ""}`)].join("\n");
+  return ["Workflow:", ...s.map((x) => `  ${x.label || x.name} (${x.id})${x.category ? ` [${x.category}]` : ""}${(x.transitions as string[] || []).length ? ` -> ${(x.transitions as string[]).join(", ")}` : ""}`)].join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ const J = () => prog.opts().json as boolean | undefined;
 prog.command("send <to> <message>").description("Send a message to another agent")
   .option("--type <type>", "Message type", "text").option("--channel <ch>", "Channel")
   .action(async (to: string, msg: string, o: { type?: string; channel?: string }) => {
-    const r = await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/relay`, { from: cfg.agentId, to, content: msg, messageType: o.type, channel: o.channel });
+    const r = await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/relay`, { from: cfg.agentId, to, message: msg, messageType: o.type, channel: o.channel });
     out(J() ? r : "Message sent.", J());
   });
 
@@ -145,7 +145,7 @@ prog.command("agents").alias("list-agents").description("List agents").action(as
 
 // broadcast
 prog.command("broadcast <message>").description("Broadcast to all agents").action(async (msg: string) => {
-  await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/broadcast`, { from: cfg.agentId, content: msg });
+  await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/broadcast`, { from: cfg.agentId, message: msg });
   out(J() ? { success: true } : "Broadcast sent.", J());
 });
 
