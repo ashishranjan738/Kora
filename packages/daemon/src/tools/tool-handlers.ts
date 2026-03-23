@@ -6,6 +6,7 @@
 
 import type { ToolContext, AgentsResponse } from "./tool-context.js";
 import { findAgentByNameOrId } from "./tool-context.js";
+import { RESOURCE_DEFINITIONS, getResourceDefinition } from "./resource-registry.js";
 
 // ── Simple Proxies ──────────────────────────────────────────
 
@@ -808,6 +809,30 @@ export async function handleWhoami(
   };
 }
 
+export async function handleGetContext(
+  ctx: ToolContext,
+  args: Record<string, string>,
+): Promise<unknown> {
+  const resource = args.resource || "all";
+  const validResources = ["team", "workflow", "knowledge", "rules", "tasks", "all"];
+  if (!validResources.includes(resource)) {
+    return { error: `Invalid resource "${resource}". Valid: ${validResources.join(", ")}` };
+  }
+
+  if (resource === "all") {
+    const results: Record<string, unknown> = {};
+    for (const res of RESOURCE_DEFINITIONS) {
+      const name = res.uri.replace("kora://", "");
+      try { results[name] = await res.fetchData(ctx); } catch { results[name] = { error: "Failed to fetch" }; }
+    }
+    return results;
+  }
+
+  const resDef = getResourceDefinition(`kora://${resource}`);
+  if (!resDef) return { error: `Resource "${resource}" not found` };
+  return await resDef.fetchData(ctx);
+}
+
 // ── Dispatcher ──────────────────────────────────────────
 
 /** Map of tool name → handler function for all extracted tools */
@@ -833,6 +858,7 @@ export const TOOL_HANDLER_MAP: Record<string, (ctx: ToolContext, args: Record<st
   nudge_agent: handleNudgeAgent,
   share_image: handleShareImage,
   whoami: handleWhoami,
+  get_context: handleGetContext,
 };
 
 /**

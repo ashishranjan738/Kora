@@ -21,7 +21,7 @@ export const ALL_TOOL_NAMES = [
   "prepare_pr", "report_idle", "request_task",
   "list_personas", "save_persona", "get_workflow_states",
   "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
-  "verify_work", "create_pr", "whoami",
+  "verify_work", "create_pr", "whoami", "get_context",
 ] as const;
 
 export type ToolName = (typeof ALL_TOOL_NAMES)[number];
@@ -35,7 +35,7 @@ export const ROLE_TOOL_ACCESS: Record<string, Set<string>> = {
     "prepare_pr", "report_idle", "request_task",
     "list_personas", "save_persona", "get_workflow_states",
     "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
-    "verify_work", "create_pr", "whoami",
+    "verify_work", "create_pr", "whoami", "get_context",
   ]),
 };
 
@@ -351,6 +351,16 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       type: "object",
       properties: {
         full: { type: "boolean", description: "If true, include full persona text (default: truncated to 500 chars)" },
+      },
+    },
+  },
+  {
+    name: "get_context",
+    description: "Get live session context — team, workflow, knowledge, rules, or tasks. Use this to refresh your understanding of the current session state.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        resource: { type: "string", description: 'Which context to fetch: "team", "workflow", "knowledge", "rules", "tasks", or "all" (default: "all")' },
       },
     },
   },
