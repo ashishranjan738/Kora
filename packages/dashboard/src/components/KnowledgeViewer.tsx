@@ -176,6 +176,11 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
             const displayText = isLong && !isExpanded
               ? entry.text.slice(0, PREVIEW_LENGTH) + "..."
               : entry.text;
+            // Author comes from either savedBy field or source field (API stores agent name in source)
+            const rawAuthor = entry.savedBy || (entry.source !== ".kora.yml" && entry.source !== "knowledge.md" ? entry.source : null);
+            const authorLabel = rawAuthor
+              ? (rawAuthor.toLowerCase() === "unknown" || rawAuthor.toLowerCase() === "dashboard" ? "User" : rawAuthor)
+              : null;
 
             return (
               <Paper
@@ -183,20 +188,20 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
                 p="sm"
                 withBorder
                 style={{
-                  backgroundColor: "var(--bg-secondary)",
-                  borderColor: expandedIndex === i ? "var(--accent-blue)" : "var(--border-color)",
-                  cursor: isLong ? "pointer" : "default",
-                  transition: "border-color 0.2s",
+                  backgroundColor: isExpanded ? "var(--bg-tertiary)" : "var(--bg-secondary)",
+                  borderColor: isExpanded ? "var(--accent-blue)" : "var(--border-color)",
+                  cursor: "pointer",
+                  transition: "border-color 0.2s, background-color 0.2s",
                 }}
-                onClick={() => isLong && setExpandedIndex(isExpanded ? null : i)}
+                onClick={() => setExpandedIndex(isExpanded ? null : i)}
               >
                 <Group gap={8} mb={4} wrap="wrap">
                   <Badge variant="light" color={getSourceColor(entry.source)} size="xs">
                     {entry.source}
                   </Badge>
-                  {entry.savedBy && (
+                  {authorLabel && (
                     <Badge variant="dot" color="orange" size="xs">
-                      {entry.savedBy}
+                      {authorLabel}
                     </Badge>
                   )}
                   {entry.timestamp && (
@@ -206,19 +211,31 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
                       </Text>
                     </Tooltip>
                   )}
-                  {isLong && (
-                    <Text size="xs" c="blue" style={{ marginLeft: "auto" }}>
-                      {isExpanded ? "collapse" : "expand"}
-                    </Text>
-                  )}
+                  <Text size="xs" c="blue" style={{ marginLeft: "auto" }}>
+                    {isExpanded ? "\u25BC collapse" : "\u25B6 expand"}
+                  </Text>
                 </Group>
-                <Text
-                  size="sm"
-                  c="var(--text-primary)"
-                  style={{ lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-                >
-                  {displayText}
-                </Text>
+                {/* Always show preview */}
+                {!isExpanded && (
+                  <Text
+                    size="sm"
+                    c="var(--text-primary)"
+                    lineClamp={3}
+                    style={{ lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                  >
+                    {entry.text}
+                  </Text>
+                )}
+                {/* Expanded: show full content */}
+                <Collapse in={isExpanded}>
+                  <Text
+                    size="sm"
+                    c="var(--text-primary)"
+                    style={{ lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word", marginTop: isExpanded ? 0 : undefined }}
+                  >
+                    {entry.text}
+                  </Text>
+                </Collapse>
               </Paper>
             );
           })}
