@@ -87,18 +87,25 @@ export class AgentManager extends EventEmitter {
     const isDev = process.env.KORA_DEV === "1";
     const tmuxSession = `${getRuntimeTmuxPrefix(isDev)}${options.sessionId}-${agentId}`;
 
-    // 2. Write persona to file: {runtimeDir}/personas/{agentId}-prompt.md
-    //    Replace placeholder "pending" agent ID with the real one
+    // 2. Write persona files
     const personasDir = path.join(options.runtimeDir, PERSONAS_DIR);
     await fs.mkdir(personasDir, { recursive: true });
-    const systemPromptFile = path.join(personasDir, `${agentId}-prompt.md`);
+
+    // 2a. Write full persona to {agentId}-prompt.md (for get_context("persona") API to serve)
+    const personaFile = path.join(personasDir, `${agentId}-prompt.md`);
     if (options.persona) {
       const personaWithId = options.persona.replace(/inbox-pending\//g, `inbox-${agentId}/`)
         .replace(/outbox-pending\//g, `outbox-${agentId}/`)
         .replace(/commands-pending\//g, `commands-${agentId}/`)
         .replace(/responses-pending\//g, `responses-${agentId}/`);
-      await fs.writeFile(systemPromptFile, personaWithId, "utf-8");
+      await fs.writeFile(personaFile, personaWithId, "utf-8");
     }
+
+    // 2b. Write tiny boot prompt as system prompt file (instructs agent to call get_context)
+    const { buildBootPrompt } = await import("./boot-prompt-builder.js");
+    const bootPrompt = buildBootPrompt(options.messagingMode);
+    const systemPromptFile = path.join(personasDir, `${agentId}-boot.md`);
+    await fs.writeFile(systemPromptFile, bootPrompt, "utf-8");
 
     // Create git worktree for agent isolation (if in a git repo and not shared mode)
     let agentWorkDir = options.workingDirectory;
