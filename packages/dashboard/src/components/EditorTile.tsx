@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Editor from "@monaco-editor/react";
-import { createReviewManager } from "monaco-review";
 import { useApi } from "../hooks/useApi";
 import { useThemeStore } from "../stores/themeStore";
 import { showError, showSuccess } from "../utils/notifications";
@@ -38,10 +37,8 @@ export function EditorTile({ sessionId }: EditorTileProps) {
   // Unsaved changes close confirmation state
   const [pendingCloseTab, setPendingCloseTab] = useState<string | null>(null);
 
-  // Code review / inline comments
-  const reviewManagerRef = useRef<ReturnType<typeof createReviewManager> | null>(null);
+  // Editor instance ref for addAction
   const editorInstanceRef = useRef<any>(null);
-  const [commentEvents, setCommentEvents] = useState<any[]>([]);
 
   // Create Task from Selection dialog state
   const [taskDialog, setTaskDialog] = useState<{
@@ -508,18 +505,6 @@ export function EditorTile({ sessionId }: EditorTileProps) {
                   }}
                   onMount={(editor) => {
                     editorInstanceRef.current = editor;
-
-                    // Keep monaco-review for inline comment display
-                    try {
-                      const rm = createReviewManager(
-                        editor, "User", commentEvents,
-                        (newEvents: any[]) => setCommentEvents(newEvents),
-                        { showInRuler: true, enableMarkdown: true, editButtonAddText: "Comment", editButtonEnableRemove: true },
-                      );
-                      reviewManagerRef.current = rm;
-                    } catch (err) {
-                      console.debug("[editor] monaco-review init failed:", err);
-                    }
 
                     // Add "Create Task from Selection" to right-click context menu
                     editor.addAction({
