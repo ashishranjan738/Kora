@@ -482,7 +482,8 @@ export function EditorTile({ sessionId }: EditorTileProps) {
                     cursorBlinking: "smooth",
                     cursorSmoothCaretAnimation: "on",
                     cursorStyle: "line",
-                    columnSelection: true,                // Shift+Alt+drag for box/column select
+                    columnSelection: false,               // Disable — was causing gapped selections on line number clicks
+                    selectOnLineNumbers: true,            // Click line number selects whole line as range
                     // Scrolling
                     smoothScrolling: true,
                     mouseWheelZoom: true,                  // Ctrl+scroll to zoom
