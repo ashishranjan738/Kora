@@ -176,6 +176,9 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
             const displayText = isLong && !isExpanded
               ? entry.text.slice(0, PREVIEW_LENGTH) + "..."
               : entry.text;
+            const authorLabel = entry.savedBy
+              ? (entry.savedBy.toLowerCase() === "unknown" ? "User" : entry.savedBy)
+              : null;
 
             return (
               <Paper
@@ -183,20 +186,20 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
                 p="sm"
                 withBorder
                 style={{
-                  backgroundColor: "var(--bg-secondary)",
-                  borderColor: expandedIndex === i ? "var(--accent-blue)" : "var(--border-color)",
-                  cursor: isLong ? "pointer" : "default",
-                  transition: "border-color 0.2s",
+                  backgroundColor: isExpanded ? "var(--bg-tertiary)" : "var(--bg-secondary)",
+                  borderColor: isExpanded ? "var(--accent-blue)" : "var(--border-color)",
+                  cursor: "pointer",
+                  transition: "border-color 0.2s, background-color 0.2s",
                 }}
-                onClick={() => isLong && setExpandedIndex(isExpanded ? null : i)}
+                onClick={() => setExpandedIndex(isExpanded ? null : i)}
               >
                 <Group gap={8} mb={4} wrap="wrap">
                   <Badge variant="light" color={getSourceColor(entry.source)} size="xs">
                     {entry.source}
                   </Badge>
-                  {entry.savedBy && (
+                  {authorLabel && (
                     <Badge variant="dot" color="orange" size="xs">
-                      {entry.savedBy}
+                      {authorLabel}
                     </Badge>
                   )}
                   {entry.timestamp && (
@@ -206,11 +209,9 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
                       </Text>
                     </Tooltip>
                   )}
-                  {isLong && (
-                    <Text size="xs" c="blue" style={{ marginLeft: "auto" }}>
-                      {isExpanded ? "collapse" : "expand"}
-                    </Text>
-                  )}
+                  <Text size="xs" c="blue" style={{ marginLeft: "auto" }}>
+                    {isExpanded ? "\u25BC collapse" : "\u25B6 expand"}
+                  </Text>
                 </Group>
                 <Text
                   size="sm"

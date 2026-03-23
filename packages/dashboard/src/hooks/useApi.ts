@@ -259,7 +259,7 @@ export function useApi() {
     addKnowledge: (sid: string, entry: string) =>
       apiFetch<{ saved: boolean }>(`/sessions/${sid}/knowledge`, {
         method: "POST",
-        body: JSON.stringify({ entry, agentName: "dashboard" }),
+        body: JSON.stringify({ entry, agentName: "User" }),
       }),
     clearKnowledge: (sid: string) =>
       apiFetch<{ cleared: boolean }>(`/sessions/${sid}/knowledge`, { method: "DELETE" }),
