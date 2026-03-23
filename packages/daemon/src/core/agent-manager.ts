@@ -94,10 +94,13 @@ export class AgentManager extends EventEmitter {
     // 2a. Write full persona to {agentId}-prompt.md (for get_context("persona") API to serve)
     const personaFile = path.join(personasDir, `${agentId}-prompt.md`);
     if (options.persona) {
-      const personaWithId = options.persona.replace(/inbox-pending\//g, `inbox-${agentId}/`)
+      const personaWithId = options.persona
+        .replace(/inbox-pending\//g, `inbox-${agentId}/`)
         .replace(/outbox-pending\//g, `outbox-${agentId}/`)
         .replace(/commands-pending\//g, `commands-${agentId}/`)
-        .replace(/responses-pending\//g, `responses-${agentId}/`);
+        .replace(/responses-pending\//g, `responses-${agentId}/`)
+        .replace(/"from":"pending"/g, `"from":"${agentId}"`)           // Fix outbox JSON example
+        .replace(/Your ID is `pending`/g, `Your ID is \`${agentId}\``); // Fix team section self-ID
       await fs.writeFile(personaFile, personaWithId, "utf-8");
     }
 
@@ -133,7 +136,9 @@ export class AgentManager extends EventEmitter {
         .replace(/inbox-pending\//g, `inbox-${agentId}/`)
         .replace(/outbox-pending\//g, `outbox-${agentId}/`)
         .replace(/commands-pending\//g, `commands-${agentId}/`)
-        .replace(/responses-pending\//g, `responses-${agentId}/`);
+        .replace(/responses-pending\//g, `responses-${agentId}/`)
+        .replace(/"from":"pending"/g, `"from":"${agentId}"`)
+        .replace(/Your ID is `pending`/g, `Your ID is \`${agentId}\``);
 
       const kiroSteeringDir = path.join(agentWorkDir, ".kiro", "steering");
       await fs.mkdir(kiroSteeringDir, { recursive: true });
