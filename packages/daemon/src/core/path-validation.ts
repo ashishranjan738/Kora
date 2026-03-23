@@ -3,6 +3,7 @@
  * Provides consistent path validation across all API endpoints.
  */
 import fs from "fs";
+import os from "os";
 import path from "path";
 
 export interface PathValidationResult {
@@ -12,24 +13,37 @@ export interface PathValidationResult {
   error?: string;
 }
 
+export interface ValidatePathOptions {
+  /** If true, enforce that the path is within the user's home directory. Default: false */
+  enforceBoundary?: boolean;
+}
+
 /**
- * Validates a project path: resolves to absolute, checks existence,
- * confirms it's a directory, and detects git repos.
+ * Validates a project path: resolves to absolute (with symlink resolution),
+ * checks existence, confirms it's a directory, and detects git repos.
  */
-export function validateProjectPath(inputPath: string): PathValidationResult {
+export function validateProjectPath(inputPath: string, options: ValidatePathOptions = {}): PathValidationResult {
   if (!inputPath || !inputPath.trim()) {
     return { valid: false, resolved: "", isGitRepo: false, error: "Path is required" };
   }
 
-  const resolved = path.resolve(inputPath.trim());
+  const initial = path.resolve(inputPath.trim());
 
   // Block null bytes
-  if (resolved.includes("\0")) {
-    return { valid: false, resolved, isGitRepo: false, error: "Invalid path" };
+  if (initial.includes("\0")) {
+    return { valid: false, resolved: initial, isGitRepo: false, error: "Invalid path" };
   }
 
-  if (!fs.existsSync(resolved)) {
-    return { valid: false, resolved, isGitRepo: false, error: "Path does not exist" };
+  if (!fs.existsSync(initial)) {
+    return { valid: false, resolved: initial, isGitRepo: false, error: "Path does not exist" };
+  }
+
+  // Resolve symlinks to get the real path — prevents symlink escape attacks
+  let resolved: string;
+  try {
+    resolved = fs.realpathSync(initial);
+  } catch {
+    return { valid: false, resolved: initial, isGitRepo: false, error: "Cannot resolve path" };
   }
 
   let stat: fs.Stats;
@@ -41,6 +55,14 @@ export function validateProjectPath(inputPath: string): PathValidationResult {
 
   if (!stat.isDirectory()) {
     return { valid: false, resolved, isGitRepo: false, error: "Path is not a directory" };
+  }
+
+  // Upper boundary check — prevent browsing sensitive system directories
+  if (options.enforceBoundary) {
+    const homeDir = os.homedir();
+    if (!resolved.startsWith(homeDir) && resolved !== "/") {
+      return { valid: false, resolved, isGitRepo: false, error: "Access denied: path outside home directory" };
+    }
   }
 
   // Check if it's a git repo (.git can be a directory or file for worktrees)

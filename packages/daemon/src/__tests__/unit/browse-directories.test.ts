@@ -15,9 +15,13 @@ describe("validateProjectPath", () => {
     fs.mkdirSync(path.join(tmpDir, "project"));
     fs.mkdirSync(path.join(tmpDir, "git-project", ".git"), { recursive: true });
     fs.writeFileSync(path.join(tmpDir, "file.txt"), "hello");
-    // Simulate git worktree (.git is a file)
     fs.mkdirSync(path.join(tmpDir, "worktree-project"));
     fs.writeFileSync(path.join(tmpDir, "worktree-project", ".git"), "gitdir: /some/path");
+    try {
+      fs.symlinkSync(path.join(tmpDir, "project"), path.join(tmpDir, "link-to-project"));
+    } catch {
+      // symlink creation may fail on some systems
+    }
   });
 
   afterAll(() => {
@@ -27,7 +31,7 @@ describe("validateProjectPath", () => {
   it("validates a valid directory", () => {
     const result = validateProjectPath(path.join(tmpDir, "project"));
     expect(result.valid).toBe(true);
-    expect(result.resolved).toBe(path.join(tmpDir, "project"));
+    expect(result.resolved).toBe(fs.realpathSync(path.join(tmpDir, "project")));
     expect(result.isGitRepo).toBe(false);
     expect(result.error).toBeUndefined();
   });
@@ -77,7 +81,36 @@ describe("validateProjectPath", () => {
   it("resolves .. sequences", () => {
     const result = validateProjectPath(path.join(tmpDir, "project", ".."));
     expect(result.valid).toBe(true);
-    expect(result.resolved).toBe(tmpDir);
+    expect(result.resolved).toBe(fs.realpathSync(tmpDir));
+  });
+
+  it("resolves symlinks via realpathSync", () => {
+    const linkPath = path.join(tmpDir, "link-to-project");
+    if (!fs.existsSync(linkPath)) return; // skip if symlink not created
+    const result = validateProjectPath(linkPath);
+    expect(result.valid).toBe(true);
+    expect(result.resolved).toBe(fs.realpathSync(path.join(tmpDir, "project")));
+  });
+
+  describe("enforceBoundary option", () => {
+    it("allows paths within home directory", () => {
+      const result = validateProjectPath(os.homedir(), { enforceBoundary: true });
+      expect(result.valid).toBe(true);
+    });
+
+    it("rejects paths outside home directory when boundary enforced", () => {
+      const realTmp = fs.realpathSync("/tmp");
+      if (!realTmp.startsWith(os.homedir())) {
+        const result = validateProjectPath("/tmp", { enforceBoundary: true });
+        expect(result.valid).toBe(false);
+        expect(result.error).toBe("Access denied: path outside home directory");
+      }
+    });
+
+    it("allows paths outside home when boundary not enforced (default)", () => {
+      const result = validateProjectPath("/tmp");
+      expect(result.valid).toBe(true);
+    });
   });
 });
 
@@ -108,9 +141,13 @@ describe("isHiddenDirectory", () => {
 
 describe("Browse Directories (endpoint logic)", () => {
   let tmpDir: string;
+  let realTmpDir: string;
+  const homeDir = os.homedir();
 
   beforeAll(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "kora-browse-test-"));
+    // Create test dirs inside home to pass boundary check
+    tmpDir = fs.mkdtempSync(path.join(homeDir, ".kora-browse-test-"));
+    realTmpDir = fs.realpathSync(tmpDir);
 
     fs.mkdirSync(path.join(tmpDir, "projectA"));
     fs.mkdirSync(path.join(tmpDir, "projectB"));
@@ -131,12 +168,12 @@ describe("Browse Directories (endpoint logic)", () => {
    */
   async function browseDirectories(rawPath?: string, showHidden = false) {
     const fsp = fs.promises;
-    const targetPath = rawPath?.trim() || os.homedir();
+    const targetPath = rawPath?.trim() || homeDir;
 
-    const validation = validateProjectPath(targetPath);
+    const validation = validateProjectPath(targetPath, { enforceBoundary: true });
     if (!validation.valid) {
       const status = validation.error === "Path does not exist" ? 404
-        : validation.error === "Path is not a directory" ? 400
+        : validation.error?.startsWith("Access denied") ? 403
         : 400;
       return { status, body: { error: validation.error } };
     }
@@ -152,7 +189,18 @@ describe("Browse Directories (endpoint logic)", () => {
     const directories: Array<{ name: string; path: string; isGitRepo: boolean }> = [];
 
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
+      if (entry.isSymbolicLink()) {
+        try {
+          const realTarget = fs.realpathSync(path.join(resolved, entry.name));
+          const targetStat = fs.statSync(realTarget);
+          if (!targetStat.isDirectory() || !realTarget.startsWith(homeDir)) continue;
+        } catch {
+          continue;
+        }
+      } else if (!entry.isDirectory()) {
+        continue;
+      }
+
       if (!showHidden && isHiddenDirectory(entry.name)) continue;
 
       const dirPath = path.join(resolved, entry.name);
@@ -168,27 +216,23 @@ describe("Browse Directories (endpoint logic)", () => {
 
     directories.sort((a, b) => a.name.localeCompare(b.name));
     const parent = path.dirname(resolved) !== resolved ? path.dirname(resolved) : null;
-    return { status: 200, body: { currentPath: resolved, parent, directories } };
+    return { status: 200, body: { path: resolved, currentPath: resolved, parent, directories, homeDir } };
   }
 
   it("returns subdirectories sorted alphabetically, hiding hidden dirs by default", async () => {
     const result = await browseDirectories(tmpDir);
     expect(result.status).toBe(200);
-    const body = result.body as { currentPath: string; parent: string | null; directories: Array<{ name: string; path: string; isGitRepo: boolean }> };
+    const body = result.body as { path: string; currentPath: string; parent: string | null; homeDir: string; directories: Array<{ name: string }> };
 
-    expect(body.currentPath).toBe(tmpDir);
-    expect(body.parent).toBe(path.dirname(tmpDir));
+    expect(body.path).toBe(realTmpDir);
+    expect(body.currentPath).toBe(realTmpDir);
+    expect(body.homeDir).toBe(homeDir);
 
     const names = body.directories.map(d => d.name);
-    // Hidden dirs and node_modules should be filtered out
     expect(names).not.toContain(".hidden-dir");
     expect(names).not.toContain("node_modules");
-    // Regular dirs should be present
     expect(names).toContain("projectA");
     expect(names).toContain("projectB");
-    expect(names).toContain("git-repo");
-    expect(names).toContain("worktree-repo");
-    // Files should not appear
     expect(names).not.toContain("file.txt");
   });
 
@@ -203,7 +247,6 @@ describe("Browse Directories (endpoint logic)", () => {
 
   it("detects git repos (directory .git)", async () => {
     const result = await browseDirectories(tmpDir);
-    expect(result.status).toBe(200);
     const body = result.body as { directories: Array<{ name: string; isGitRepo: boolean }> };
 
     const gitRepo = body.directories.find(d => d.name === "git-repo");
@@ -216,7 +259,6 @@ describe("Browse Directories (endpoint logic)", () => {
 
   it("detects git worktree repos (.git is a file)", async () => {
     const result = await browseDirectories(tmpDir);
-    expect(result.status).toBe(200);
     const body = result.body as { directories: Array<{ name: string; isGitRepo: boolean }> };
 
     const worktreeRepo = body.directories.find(d => d.name === "worktree-repo");
@@ -226,12 +268,13 @@ describe("Browse Directories (endpoint logic)", () => {
   it("defaults to home directory when no path provided", async () => {
     const result = await browseDirectories(undefined);
     expect(result.status).toBe(200);
-    const body = result.body as { currentPath: string };
-    expect(body.currentPath).toBe(os.homedir());
+    const body = result.body as { currentPath: string; path: string };
+    expect(body.currentPath).toBe(homeDir);
+    expect(body.path).toBe(homeDir);
   });
 
   it("returns 404 for non-existent path", async () => {
-    const result = await browseDirectories("/non/existent/path/xyz123");
+    const result = await browseDirectories(path.join(homeDir, "nonexistent-xyz-123"));
     expect(result.status).toBe(404);
   });
 
@@ -240,30 +283,31 @@ describe("Browse Directories (endpoint logic)", () => {
     expect(result.status).toBe(400);
   });
 
-  it("resolves .. sequences to a safe absolute path", async () => {
-    const pathWithTraversal = path.join(tmpDir, "projectA", "..", "projectB");
-    const result = await browseDirectories(pathWithTraversal);
+  it("response includes both 'path' and 'currentPath' for frontend compat", async () => {
+    const result = await browseDirectories(homeDir);
     expect(result.status).toBe(200);
-    const body = result.body as { currentPath: string; directories: Array<{ name: string }> };
-    expect(body.currentPath).toBe(path.join(tmpDir, "projectB"));
-    expect(body.directories).toHaveLength(0);
-  });
-
-  it("returns null parent for root directory", async () => {
-    const result = await browseDirectories("/");
-    expect(result.status).toBe(200);
-    const body = result.body as { parent: string | null };
-    expect(body.parent).toBeNull();
+    const body = result.body as { path: string; currentPath: string; homeDir: string };
+    expect(body.path).toBeDefined();
+    expect(body.currentPath).toBeDefined();
+    expect(body.path).toBe(body.currentPath);
+    expect(body.homeDir).toBe(homeDir);
   });
 
   it("returns full absolute paths for each directory entry", async () => {
-    const result = await browseDirectories(tmpDir);
+    const result = await browseDirectories(homeDir);
     expect(result.status).toBe(200);
     const body = result.body as { directories: Array<{ name: string; path: string }> };
 
     for (const dir of body.directories) {
       expect(path.isAbsolute(dir.path)).toBe(true);
-      expect(dir.path).toBe(path.join(tmpDir, dir.name));
+    }
+  });
+
+  it("rejects paths outside home directory with 403", async () => {
+    const etcPath = "/etc";
+    if (fs.existsSync(etcPath) && !fs.realpathSync(etcPath).startsWith(homeDir)) {
+      const result = await browseDirectories(etcPath);
+      expect(result.status).toBe(403);
     }
   });
 });

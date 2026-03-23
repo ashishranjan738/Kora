@@ -1,4 +1,7 @@
 import { randomUUID } from "crypto";
+import fs from "fs";
+import fsPromises from "fs/promises";
+import os from "os";
 import path from "path";
 import { Router } from "express";
 import type { Request, Response } from "express";
@@ -4637,19 +4640,17 @@ export function createApiRouter(deps: {
 
   router.get("/browse/directories", async (req: Request, res: Response) => {
     try {
-      const os = await import("os");
-      const fs = await import("fs/promises");
-
+      const homeDir = os.homedir();
       const rawPath = typeof req.query.path === "string" && req.query.path.trim()
         ? req.query.path.trim()
-        : os.homedir();
+        : homeDir;
       const showHidden = req.query.showHidden === "true";
 
-      // Validate the target path using shared utility
-      const validation = validateProjectPath(rawPath);
+      // Validate the target path with symlink resolution and boundary enforcement
+      const validation = validateProjectPath(rawPath, { enforceBoundary: true });
       if (!validation.valid) {
         const status = validation.error === "Path does not exist" ? 404
-          : validation.error === "Path is not a directory" ? 400
+          : validation.error?.startsWith("Access denied") ? 403
           : 400;
         res.status(status).json({ error: validation.error });
         return;
@@ -4658,7 +4659,7 @@ export function createApiRouter(deps: {
 
       let entries;
       try {
-        entries = await fs.readdir(resolved, { withFileTypes: true });
+        entries = await fsPromises.readdir(resolved, { withFileTypes: true });
       } catch {
         res.status(403).json({ error: "Cannot read directory" });
         return;
@@ -4667,7 +4668,18 @@ export function createApiRouter(deps: {
       const directories: Array<{ name: string; path: string; isGitRepo: boolean }> = [];
 
       for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
+        // Handle symlinks: resolve target and validate it's within boundary
+        if (entry.isSymbolicLink()) {
+          try {
+            const realTarget = fs.realpathSync(path.join(resolved, entry.name));
+            const targetStat = fs.statSync(realTarget);
+            if (!targetStat.isDirectory() || !realTarget.startsWith(homeDir)) continue;
+          } catch {
+            continue; // broken symlink — skip
+          }
+        } else if (!entry.isDirectory()) {
+          continue;
+        }
 
         // Filter hidden directories unless showHidden is true
         if (!showHidden && isHiddenDirectory(entry.name)) continue;
@@ -4677,7 +4689,7 @@ export function createApiRouter(deps: {
         // Check if it's a git repo (has .git inside)
         let isGitRepo = false;
         try {
-          const gitStat = await fs.stat(path.join(dirPath, ".git"));
+          const gitStat = await fsPromises.stat(path.join(dirPath, ".git"));
           isGitRepo = gitStat.isDirectory() || gitStat.isFile(); // .git can be a file (worktree)
         } catch {
           // not a git repo — that's fine
@@ -4691,10 +4703,11 @@ export function createApiRouter(deps: {
 
       const parent = path.dirname(resolved) !== resolved ? path.dirname(resolved) : null;
 
-      res.json({ currentPath: resolved, parent, directories });
+      // Response includes both "path" (frontend compat) and "currentPath" (original)
+      res.json({ path: resolved, currentPath: resolved, parent, directories, homeDir });
     } catch (err) {
       logger.error({ err }, "[api] GET /browse/directories error");
-      res.status(500).json({ error: String(err) });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
