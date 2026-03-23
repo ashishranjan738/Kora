@@ -21,7 +21,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { mkdirSync, writeFileSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { homedir } from "os";
 import { setupTestApp, type TestContext } from "./test-setup.js";
 
@@ -147,7 +147,7 @@ describe("GET /api/v1/browse/directories", () => {
       .set(auth());
 
     expect(res.status).toBe(200);
-    expect(res.body.parent).toBe(join(testRoot, ".."));
+    expect(res.body.parent).toBe(dirname(testRoot));
   });
 
   // ── Default Path ──────────────────────────────────────────────────────
@@ -339,8 +339,8 @@ describe("GET /api/v1/browse/directories", () => {
       .query({ path: join(homedir(), "\0malicious") })
       .set(auth());
 
-    // Should be rejected — either 400 or 404
-    expect([400, 404, 500]).toContain(res.status);
+    // Should be rejected with 400
+    expect(res.status).toBe(400);
   });
 
   // ── Auth ──────────────────────────────────────────────────────────────

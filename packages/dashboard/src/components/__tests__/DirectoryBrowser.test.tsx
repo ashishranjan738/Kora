@@ -1,471 +1,446 @@
 // @vitest-environment happy-dom
 /**
- * Tests for DirectoryBrowser component.
+ * Tests for DirectoryBrowser component — real RTL rendering with mocked API.
  *
  * Coverage:
- * - Rendering: shows directories from API response
- * - Navigation: drill into folder, back/up button, breadcrumbs
- * - Selection: onSelect callback with correct path
- * - Git repo indicator: icon shown for git repos
- * - Loading state: spinner during API fetch
- * - Error state: shows error message on API failure
- * - Recent paths: displayed when available
- * - Empty directory: shows empty state message
- * - Default path: starts at home directory or initialPath
- * - Sort order: hidden dirs last, alphabetical
+ * - Renders modal with title when opened
+ * - Does not fetch when opened=false
+ * - Shows loading state during fetch
+ * - Displays directory entries from API response
+ * - Clicking a directory drills in (triggers new fetch)
+ * - Go Up button navigates to parent
+ * - Go Up button disabled when parent is null (root)
+ * - Go Home button navigates to home directory
+ * - Select button calls onSelect with current path
+ * - Cancel button calls onClose
+ * - Error state renders alert (permission denied, not found)
+ * - Empty directory shows "No subdirectories"
+ * - Filter input filters visible directories
+ * - Git repo badge shown for git directories
+ * - Breadcrumbs rendered from current path
+ * - Recent paths displayed when available
+ * - Selected path shown in footer
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
 expect.extend(matchers);
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { MantineProvider } from "@mantine/core";
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Mock types matching the expected API response
-// ──────────────────────────────────────────────────────────────────────────────
+// ── Mock useApi ──────────────────────────────────────────────────────────
 
-interface DirectoryEntry {
-  name: string;
-  path: string;
-  isGitRepo: boolean;
+const mockBrowseDirectories = vi.fn();
+const mockGetRecentPaths = vi.fn();
+
+vi.mock("../../hooks/useApi", () => ({
+  useApi: () => ({
+    browseDirectories: mockBrowseDirectories,
+    getRecentPaths: mockGetRecentPaths,
+  }),
+}));
+
+// ── Mock useMediaQuery (always desktop) ──────────────────────────────────
+
+vi.mock("@mantine/hooks", async () => {
+  const actual = await vi.importActual("@mantine/hooks");
+  return {
+    ...actual,
+    useMediaQuery: () => false,
+  };
+});
+
+// ── Import component after mocks ─────────────────────────────────────────
+
+import { DirectoryBrowser } from "../DirectoryBrowser";
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+function renderBrowser(props: Partial<Parameters<typeof DirectoryBrowser>[0]> = {}) {
+  const defaultProps = {
+    opened: true,
+    onClose: vi.fn(),
+    onSelect: vi.fn(),
+    ...props,
+  };
+  return {
+    ...render(
+      <MantineProvider>
+        <DirectoryBrowser {...defaultProps} />
+      </MantineProvider>
+    ),
+    props: defaultProps,
+  };
 }
 
-interface BrowseResponse {
-  currentPath: string;
-  parent: string | null;
-  directories: DirectoryEntry[];
-}
+const defaultResponse = {
+  path: "/home/user/Projects",
+  parent: "/home/user",
+  directories: [
+    { name: "Kora", path: "/home/user/Projects/Kora", isGitRepo: true },
+    { name: "notes", path: "/home/user/Projects/notes", isGitRepo: false },
+    { name: "tools", path: "/home/user/Projects/tools", isGitRepo: false },
+  ],
+  homeDir: "/home/user",
+};
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Unit tests for DirectoryBrowser logic (pure functions)
-// ──────────────────────────────────────────────────────────────────────────────
+// ── Tests ────────────────────────────────────────────────────────────────
 
 describe("DirectoryBrowser", () => {
-  // ── Breadcrumb Path Splitting ───────────────────────────────────────────
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockBrowseDirectories.mockResolvedValue(defaultResponse);
+    mockGetRecentPaths.mockResolvedValue({ paths: [] });
+  });
 
-  describe("breadcrumb path splitting", () => {
-    // Utility that the component would use to build breadcrumbs
-    function splitPathToBreadcrumbs(
-      fullPath: string
-    ): Array<{ label: string; path: string }> {
-      const parts = fullPath.split("/").filter(Boolean);
-      const crumbs: Array<{ label: string; path: string }> = [];
+  // ── Rendering ─────────────────────────────────────────────────────────
 
-      // Add root
-      crumbs.push({ label: "/", path: "/" });
+  it("renders modal with title when opened", async () => {
+    renderBrowser();
 
-      let accumulated = "";
-      for (const part of parts) {
-        accumulated += "/" + part;
-        crumbs.push({ label: part, path: accumulated });
-      }
+    expect(screen.getByText("Browse Directory")).toBeInTheDocument();
+  });
 
-      return crumbs;
-    }
+  it("does not call browseDirectories when opened=false", () => {
+    renderBrowser({ opened: false });
 
-    it("splits absolute path into breadcrumbs", () => {
-      const crumbs = splitPathToBreadcrumbs("/Users/dev/Projects/Kora");
-      expect(crumbs).toEqual([
-        { label: "/", path: "/" },
-        { label: "Users", path: "/Users" },
-        { label: "dev", path: "/Users/dev" },
-        { label: "Projects", path: "/Users/dev/Projects" },
-        { label: "Kora", path: "/Users/dev/Projects/Kora" },
-      ]);
+    expect(mockBrowseDirectories).not.toHaveBeenCalled();
+  });
+
+  it("displays directory entries after loading", async () => {
+    renderBrowser();
+
+    await waitFor(() => {
+      expect(screen.getByText("Kora")).toBeInTheDocument();
     });
+    expect(screen.getByText("notes")).toBeInTheDocument();
+    expect(screen.getByText("tools")).toBeInTheDocument();
+  });
 
-    it("handles root path", () => {
-      const crumbs = splitPathToBreadcrumbs("/");
-      expect(crumbs).toEqual([{ label: "/", path: "/" }]);
-    });
+  it("calls browseDirectories on mount", async () => {
+    renderBrowser();
 
-    it("handles single-level path", () => {
-      const crumbs = splitPathToBreadcrumbs("/tmp");
-      expect(crumbs).toEqual([
-        { label: "/", path: "/" },
-        { label: "tmp", path: "/tmp" },
-      ]);
-    });
-
-    it("handles home directory path with tilde expansion", () => {
-      // After resolution, tilde would be expanded to absolute path
-      const crumbs = splitPathToBreadcrumbs("/home/user");
-      expect(crumbs).toHaveLength(3);
-      expect(crumbs[2]).toEqual({ label: "user", path: "/home/user" });
+    await waitFor(() => {
+      expect(mockBrowseDirectories).toHaveBeenCalled();
     });
   });
 
-  // ── Directory Sorting ─────────────────────────────────────────────────
+  it("calls browseDirectories with initialPath when provided", async () => {
+    renderBrowser({ initialPath: "/home/user/Projects" });
 
-  describe("directory sorting", () => {
-    function sortDirectories(dirs: DirectoryEntry[]): DirectoryEntry[] {
-      return [...dirs].sort((a, b) => {
-        const aHidden = a.name.startsWith(".");
-        const bHidden = b.name.startsWith(".");
-        if (aHidden !== bHidden) return aHidden ? 1 : -1;
-        return a.name.localeCompare(b.name);
-      });
-    }
-
-    it("sorts alphabetically", () => {
-      const dirs: DirectoryEntry[] = [
-        { name: "gamma", path: "/gamma", isGitRepo: false },
-        { name: "alpha", path: "/alpha", isGitRepo: false },
-        { name: "beta", path: "/beta", isGitRepo: false },
-      ];
-      const sorted = sortDirectories(dirs);
-      expect(sorted.map((d) => d.name)).toEqual(["alpha", "beta", "gamma"]);
-    });
-
-    it("places hidden directories last", () => {
-      const dirs: DirectoryEntry[] = [
-        { name: ".hidden", path: "/.hidden", isGitRepo: false },
-        { name: "visible", path: "/visible", isGitRepo: false },
-        { name: ".config", path: "/.config", isGitRepo: false },
-        { name: "alpha", path: "/alpha", isGitRepo: false },
-      ];
-      const sorted = sortDirectories(dirs);
-      expect(sorted.map((d) => d.name)).toEqual([
-        "alpha",
-        "visible",
-        ".config",
-        ".hidden",
-      ]);
-    });
-
-    it("handles all hidden directories", () => {
-      const dirs: DirectoryEntry[] = [
-        { name: ".git", path: "/.git", isGitRepo: false },
-        { name: ".config", path: "/.config", isGitRepo: false },
-        { name: ".cache", path: "/.cache", isGitRepo: false },
-      ];
-      const sorted = sortDirectories(dirs);
-      expect(sorted.map((d) => d.name)).toEqual([
-        ".cache",
-        ".config",
-        ".git",
-      ]);
-    });
-
-    it("handles empty array", () => {
-      const sorted = sortDirectories([]);
-      expect(sorted).toEqual([]);
+    await waitFor(() => {
+      expect(mockBrowseDirectories).toHaveBeenCalledWith("/home/user/Projects");
     });
   });
 
-  // ── Directory Filtering ───────────────────────────────────────────────
+  // ── Loading State ─────────────────────────────────────────────────────
 
-  describe("directory filtering (type-to-filter)", () => {
-    function filterDirectories(
-      dirs: DirectoryEntry[],
-      query: string
-    ): DirectoryEntry[] {
-      if (!query.trim()) return dirs;
-      const lower = query.toLowerCase();
-      return dirs.filter((d) => d.name.toLowerCase().includes(lower));
-    }
+  it("shows loading text during fetch", async () => {
+    mockBrowseDirectories.mockReturnValue(new Promise(() => {}));
 
-    it("filters directories by name substring", () => {
-      const dirs: DirectoryEntry[] = [
-        { name: "node_modules", path: "/node_modules", isGitRepo: false },
-        { name: "src", path: "/src", isGitRepo: false },
-        { name: "scripts", path: "/scripts", isGitRepo: false },
-      ];
-      const filtered = filterDirectories(dirs, "src");
-      expect(filtered.map((d) => d.name)).toEqual(["src"]);
+    renderBrowser();
+
+    expect(screen.getByText("Loading directories...")).toBeInTheDocument();
+  });
+
+  // ── Directory Navigation ──────────────────────────────────────────────
+
+  it("drills into directory on click", async () => {
+    const drillResponse = {
+      path: "/home/user/Projects/Kora",
+      parent: "/home/user/Projects",
+      directories: [
+        { name: "packages", path: "/home/user/Projects/Kora/packages", isGitRepo: false },
+      ],
+      homeDir: "/home/user",
+    };
+
+    // Component does double fetch: "" -> sets currentPath -> second fetch with real path
+    mockBrowseDirectories
+      .mockResolvedValueOnce(defaultResponse)  // fetch 1: initial ""
+      .mockResolvedValueOnce(defaultResponse)  // fetch 2: currentPath updated
+      .mockResolvedValueOnce(drillResponse);   // fetch 3: after click
+
+    renderBrowser();
+
+    await waitFor(() => {
+      expect(screen.getByText("Kora")).toBeInTheDocument();
     });
 
-    it("is case-insensitive", () => {
-      const dirs: DirectoryEntry[] = [
-        { name: "Documents", path: "/Documents", isGitRepo: false },
-        { name: "downloads", path: "/downloads", isGitRepo: false },
-      ];
-      const filtered = filterDirectories(dirs, "DOC");
-      expect(filtered.map((d) => d.name)).toEqual(["Documents"]);
+    fireEvent.click(screen.getByText("Kora"));
+
+    await waitFor(() => {
+      expect(screen.getByText("packages")).toBeInTheDocument();
     });
 
-    it("returns all directories for empty filter", () => {
-      const dirs: DirectoryEntry[] = [
-        { name: "a", path: "/a", isGitRepo: false },
-        { name: "b", path: "/b", isGitRepo: false },
-      ];
-      const filtered = filterDirectories(dirs, "");
-      expect(filtered).toHaveLength(2);
+    expect(mockBrowseDirectories).toHaveBeenCalledWith("/home/user/Projects/Kora");
+  });
+
+  it("Go Up button navigates to parent", async () => {
+    const parentResponse = {
+      path: "/home/user",
+      parent: "/home",
+      directories: [
+        { name: "Projects", path: "/home/user/Projects", isGitRepo: false },
+        { name: "Documents", path: "/home/user/Documents", isGitRepo: false },
+      ],
+      homeDir: "/home/user",
+    };
+
+    mockBrowseDirectories
+      .mockResolvedValueOnce(defaultResponse)  // fetch 1: initial ""
+      .mockResolvedValueOnce(defaultResponse)  // fetch 2: currentPath updated
+      .mockResolvedValueOnce(parentResponse);  // fetch 3: after Go Up click
+
+    renderBrowser();
+
+    await waitFor(() => {
+      expect(screen.getByText("Kora")).toBeInTheDocument();
     });
 
-    it("returns all directories for whitespace-only filter", () => {
-      const dirs: DirectoryEntry[] = [
-        { name: "a", path: "/a", isGitRepo: false },
-      ];
-      const filtered = filterDirectories(dirs, "   ");
-      expect(filtered).toHaveLength(1);
+    const upButton = screen.getByLabelText("Go up");
+    fireEvent.click(upButton);
+
+    await waitFor(() => {
+      expect(screen.getByText("Documents")).toBeInTheDocument();
     });
 
-    it("returns empty for no match", () => {
-      const dirs: DirectoryEntry[] = [
-        { name: "src", path: "/src", isGitRepo: false },
-      ];
-      const filtered = filterDirectories(dirs, "zzz");
-      expect(filtered).toHaveLength(0);
+    expect(mockBrowseDirectories).toHaveBeenCalledWith("/home/user");
+  });
+
+  it("Go Up button is disabled at root (parent is null)", async () => {
+    mockBrowseDirectories.mockResolvedValue({
+      path: "/",
+      parent: null,
+      directories: [{ name: "home", path: "/home", isGitRepo: false }],
+      homeDir: "/home/user",
+    });
+
+    renderBrowser({ initialPath: "/" });
+
+    await waitFor(() => {
+      expect(screen.getByText("home")).toBeInTheDocument();
+    });
+
+    const upButton = screen.getByLabelText("Go up");
+    expect(upButton).toBeDisabled();
+  });
+
+  it("Go Home button navigates to home directory", async () => {
+    const homeResponse = {
+      path: "/home/user",
+      parent: "/home",
+      directories: [{ name: "Projects", path: "/home/user/Projects", isGitRepo: false }],
+      homeDir: "/home/user",
+    };
+
+    mockBrowseDirectories
+      .mockResolvedValueOnce(defaultResponse)  // fetch 1: initial ""
+      .mockResolvedValueOnce(defaultResponse)  // fetch 2: currentPath updated
+      .mockResolvedValueOnce(homeResponse);    // fetch 3: after Go Home click
+
+    renderBrowser();
+
+    await waitFor(() => {
+      expect(screen.getByText("Kora")).toBeInTheDocument();
+    });
+
+    const homeButton = screen.getByLabelText("Go home");
+    fireEvent.click(homeButton);
+
+    await waitFor(() => {
+      expect(mockBrowseDirectories).toHaveBeenCalledWith("/home/user");
     });
   });
 
-  // ── Navigation Logic ──────────────────────────────────────────────────
+  // ── Selection ─────────────────────────────────────────────────────────
 
-  describe("navigation state", () => {
-    it("navigating into folder updates current path", () => {
-      const response: BrowseResponse = {
-        currentPath: "/home/user",
-        parent: "/home",
-        directories: [
-          { name: "Projects", path: "/home/user/Projects", isGitRepo: false },
-        ],
-      };
+  it("Select button calls onSelect with current path", async () => {
+    const { props } = renderBrowser();
 
-      // Simulating: user clicks "Projects" → new path should be the clicked dir's path
-      const clickedDir = response.directories[0];
-      const nextPath = clickedDir.path;
-      expect(nextPath).toBe("/home/user/Projects");
+    await waitFor(() => {
+      expect(screen.getByText("Kora")).toBeInTheDocument();
     });
 
-    it("back/up button navigates to parent", () => {
-      const response: BrowseResponse = {
-        currentPath: "/home/user/Projects",
-        parent: "/home/user",
-        directories: [],
-      };
+    const selectBtn = screen.getByText("Select This Directory");
+    fireEvent.click(selectBtn);
 
-      const parentPath = response.parent;
-      expect(parentPath).toBe("/home/user");
+    expect(props.onSelect).toHaveBeenCalledWith("/home/user/Projects");
+    expect(props.onClose).toHaveBeenCalled();
+  });
+
+  it("Cancel button calls onClose", async () => {
+    const { props } = renderBrowser();
+
+    await waitFor(() => {
+      expect(screen.getByText("Kora")).toBeInTheDocument();
     });
 
-    it("back/up button is disabled at root (parent is null)", () => {
-      const response: BrowseResponse = {
-        currentPath: "/",
-        parent: null,
-        directories: [],
-      };
+    fireEvent.click(screen.getByText("Cancel"));
 
-      const canGoUp = response.parent !== null;
-      expect(canGoUp).toBe(false);
-    });
+    expect(props.onClose).toHaveBeenCalled();
+  });
 
-    it("uses initialPath when provided", () => {
-      const initialPath = "/home/user/Projects/Kora";
-      // The component should use initialPath as the starting fetch path
-      expect(initialPath).toBe("/home/user/Projects/Kora");
-    });
+  // ── Error State ───────────────────────────────────────────────────────
 
-    it("defaults to home directory when no initialPath", () => {
-      const initialPath = undefined;
-      const startPath = initialPath ?? "~";
-      expect(startPath).toBe("~");
+  it("shows error alert on permission denied", async () => {
+    mockBrowseDirectories.mockRejectedValue(new Error("API 403: permission denied"));
+
+    renderBrowser();
+
+    await waitFor(() => {
+      expect(screen.getByText(/permission denied/i)).toBeInTheDocument();
     });
   });
 
-  // ── Selection Logic ───────────────────────────────────────────────────
+  it("shows not found error message", async () => {
+    mockBrowseDirectories.mockRejectedValue(new Error("ENOENT: not found"));
 
-  describe("selection callback", () => {
-    it("calls onSelect with the current path on confirm", () => {
-      const onSelect = vi.fn();
-      const currentPath = "/home/user/Projects/Kora";
+    renderBrowser();
 
-      // Simulate "Select" button click
-      onSelect(currentPath);
-
-      expect(onSelect).toHaveBeenCalledTimes(1);
-      expect(onSelect).toHaveBeenCalledWith("/home/user/Projects/Kora");
-    });
-
-    it("calls onSelect with directory path on double-click", () => {
-      const onSelect = vi.fn();
-      const dir: DirectoryEntry = {
-        name: "Kora",
-        path: "/home/user/Projects/Kora",
-        isGitRepo: true,
-      };
-
-      // Simulate double-click on a directory
-      onSelect(dir.path);
-
-      expect(onSelect).toHaveBeenCalledWith("/home/user/Projects/Kora");
+    await waitFor(() => {
+      expect(screen.getByText(/not found/i)).toBeInTheDocument();
     });
   });
 
-  // ── API Response Handling ─────────────────────────────────────────────
+  // ── Empty Directory ───────────────────────────────────────────────────
 
-  describe("API response handling", () => {
-    it("handles successful response with directories", () => {
-      const response: BrowseResponse = {
-        currentPath: "/home/user",
-        parent: "/home",
-        directories: [
-          { name: "Projects", path: "/home/user/Projects", isGitRepo: true },
-          { name: "Documents", path: "/home/user/Documents", isGitRepo: false },
-        ],
-      };
-
-      expect(response.directories).toHaveLength(2);
-      expect(response.currentPath).toBe("/home/user");
-      expect(response.parent).toBe("/home");
+  it("shows 'No subdirectories' for empty directory", async () => {
+    mockBrowseDirectories.mockResolvedValue({
+      path: "/home/user/empty",
+      parent: "/home/user",
+      directories: [],
+      homeDir: "/home/user",
     });
 
-    it("handles empty directory response", () => {
-      const response: BrowseResponse = {
-        currentPath: "/home/user/empty",
-        parent: "/home/user",
-        directories: [],
-      };
+    renderBrowser({ initialPath: "/home/user/empty" });
 
-      expect(response.directories).toHaveLength(0);
-    });
-
-    it("handles error response (path not found)", () => {
-      const errorResponse = { error: "Path not found" };
-      expect(errorResponse.error).toBe("Path not found");
-    });
-
-    it("handles error response (permission denied)", () => {
-      const errorResponse = { error: "Cannot read directory" };
-      expect(errorResponse.error).toBe("Cannot read directory");
-    });
-
-    it("handles error response (not a directory)", () => {
-      const errorResponse = { error: "Path is not a directory" };
-      expect(errorResponse.error).toBe("Path is not a directory");
+    await waitFor(() => {
+      expect(screen.getByText("No subdirectories")).toBeInTheDocument();
     });
   });
 
-  // ── Git Repo Indicator ────────────────────────────────────────────────
+  // ── Filter ────────────────────────────────────────────────────────────
 
-  describe("git repo indicator", () => {
-    it("identifies git repos from API response", () => {
-      const dirs: DirectoryEntry[] = [
-        { name: "Kora", path: "/Projects/Kora", isGitRepo: true },
-        { name: "notes", path: "/Projects/notes", isGitRepo: false },
-        { name: "dotfiles", path: "/Projects/dotfiles", isGitRepo: true },
-      ];
+  it("filters directories by typed text", async () => {
+    renderBrowser();
 
-      const gitRepos = dirs.filter((d) => d.isGitRepo);
-      expect(gitRepos).toHaveLength(2);
-      expect(gitRepos.map((d) => d.name)).toEqual(["Kora", "dotfiles"]);
+    await waitFor(() => {
+      expect(screen.getByText("Kora")).toBeInTheDocument();
+    });
+
+    const filterInput = screen.getByPlaceholderText("Type to filter...");
+    fireEvent.change(filterInput, { target: { value: "kor" } });
+
+    expect(screen.getByText("Kora")).toBeInTheDocument();
+    expect(screen.queryByText("notes")).not.toBeInTheDocument();
+    expect(screen.queryByText("tools")).not.toBeInTheDocument();
+  });
+
+  it("shows 'No matching directories' when filter matches nothing", async () => {
+    renderBrowser();
+
+    await waitFor(() => {
+      expect(screen.getByText("Kora")).toBeInTheDocument();
+    });
+
+    const filterInput = screen.getByPlaceholderText("Type to filter...");
+    fireEvent.change(filterInput, { target: { value: "zzzzz" } });
+
+    expect(screen.getByText("No matching directories")).toBeInTheDocument();
+  });
+
+  // ── Git Repo Badge ────────────────────────────────────────────────────
+
+  it("shows git badge for git repo directories", async () => {
+    renderBrowser();
+
+    await waitFor(() => {
+      expect(screen.getByText("Kora")).toBeInTheDocument();
+    });
+
+    const gitBadges = screen.getAllByText("git");
+    expect(gitBadges.length).toBeGreaterThanOrEqual(1);
+  });
+
+  // ── Breadcrumbs ───────────────────────────────────────────────────────
+
+  it("renders breadcrumbs from current path", async () => {
+    renderBrowser();
+
+    await waitFor(() => {
+      expect(screen.getByText("Kora")).toBeInTheDocument();
+    });
+
+    // Path is /home/user/Projects, homeDir is /home/user
+    // Breadcrumbs should be: ~ / Projects
+    expect(screen.getByText("~")).toBeInTheDocument();
+    expect(screen.getByText("Projects")).toBeInTheDocument();
+  });
+
+  it("clicking breadcrumb navigates to that path", async () => {
+    const homeResponse = {
+      path: "/home/user",
+      parent: "/home",
+      directories: [{ name: "Projects", path: "/home/user/Projects", isGitRepo: false }],
+      homeDir: "/home/user",
+    };
+
+    mockBrowseDirectories
+      .mockResolvedValueOnce(defaultResponse)  // fetch 1: initial ""
+      .mockResolvedValueOnce(defaultResponse)  // fetch 2: currentPath updated
+      .mockResolvedValueOnce(homeResponse);    // fetch 3: after breadcrumb click
+
+    renderBrowser();
+
+    await waitFor(() => {
+      expect(screen.getByText("Kora")).toBeInTheDocument();
+    });
+
+    // Click the ~ breadcrumb to go to home
+    fireEvent.click(screen.getByText("~"));
+
+    await waitFor(() => {
+      expect(mockBrowseDirectories).toHaveBeenCalledWith("/home/user");
     });
   });
 
   // ── Recent Paths ──────────────────────────────────────────────────────
 
-  describe("recent paths section", () => {
-    it("renders recent paths when available", () => {
-      const recentPaths = [
-        "/home/user/Projects/Kora",
-        "/home/user/Projects/other-project",
-        "/tmp/test",
-      ];
-
-      expect(recentPaths).toHaveLength(3);
-      expect(recentPaths[0]).toBe("/home/user/Projects/Kora");
+  it("displays recent paths when available", async () => {
+    mockGetRecentPaths.mockResolvedValue({
+      paths: ["/home/user/Projects/Kora", "/home/user/other"],
     });
 
-    it("clicking a recent path navigates directly", () => {
-      const onNavigate = vi.fn();
-      const recentPath = "/home/user/Projects/Kora";
+    renderBrowser();
 
-      // Simulate clicking a recent path
-      onNavigate(recentPath);
-
-      expect(onNavigate).toHaveBeenCalledWith("/home/user/Projects/Kora");
-    });
-
-    it("handles empty recent paths gracefully", () => {
-      const recentPaths: string[] = [];
-      expect(recentPaths).toHaveLength(0);
-      // Component should hide the "Recent" section when empty
+    await waitFor(() => {
+      expect(screen.getByText("Recent:")).toBeInTheDocument();
     });
   });
 
-  // ── Props Validation ──────────────────────────────────────────────────
+  it("hides recent paths section when none available", async () => {
+    mockGetRecentPaths.mockResolvedValue({ paths: [] });
 
-  describe("component props contract", () => {
-    it("requires opened, onClose, onSelect props", () => {
-      // Type-level contract validation
-      interface DirectoryBrowserProps {
-        opened: boolean;
-        onClose: () => void;
-        onSelect: (path: string) => void;
-        initialPath?: string;
-      }
+    renderBrowser();
 
-      const props: DirectoryBrowserProps = {
-        opened: true,
-        onClose: vi.fn(),
-        onSelect: vi.fn(),
-        initialPath: "/home/user",
-      };
-
-      expect(props.opened).toBe(true);
-      expect(typeof props.onClose).toBe("function");
-      expect(typeof props.onSelect).toBe("function");
-      expect(props.initialPath).toBe("/home/user");
+    await waitFor(() => {
+      expect(screen.getByText("Kora")).toBeInTheDocument();
     });
 
-    it("initialPath is optional and defaults correctly", () => {
-      interface DirectoryBrowserProps {
-        opened: boolean;
-        onClose: () => void;
-        onSelect: (path: string) => void;
-        initialPath?: string;
-      }
-
-      const props: DirectoryBrowserProps = {
-        opened: false,
-        onClose: vi.fn(),
-        onSelect: vi.fn(),
-      };
-
-      expect(props.initialPath).toBeUndefined();
-    });
+    expect(screen.queryByText("Recent:")).not.toBeInTheDocument();
   });
 
-  // ── Dialog Integration ────────────────────────────────────────────────
+  // ── Selected path display ─────────────────────────────────────────────
 
-  describe("dialog integration logic", () => {
-    it("Browse button click opens the DirectoryBrowser", () => {
-      let browserOpened = false;
-      const openBrowser = () => {
-        browserOpened = true;
-      };
+  it("shows current path in the footer", async () => {
+    renderBrowser();
 
-      openBrowser();
-      expect(browserOpened).toBe(true);
+    await waitFor(() => {
+      expect(screen.getByText("Kora")).toBeInTheDocument();
     });
 
-    it("selection populates the project path input", () => {
-      let projectPath = "";
-      const onSelect = (path: string) => {
-        projectPath = path;
-      };
-
-      onSelect("/home/user/Projects/Kora");
-      expect(projectPath).toBe("/home/user/Projects/Kora");
-    });
-
-    it("closing browser without selection preserves existing path", () => {
-      let projectPath = "/existing/path";
-      const onClose = () => {
-        // Should NOT change projectPath
-      };
-
-      onClose();
-      expect(projectPath).toBe("/existing/path");
-    });
-
-    it("selection from DirectoryBrowser overwrites manual input", () => {
-      let projectPath = "/manually/typed/path";
-      const onSelect = (path: string) => {
-        projectPath = path;
-      };
-
-      onSelect("/browsed/path");
-      expect(projectPath).toBe("/browsed/path");
-    });
+    expect(screen.getByText("Selected:")).toBeInTheDocument();
+    expect(screen.getByText("/home/user/Projects")).toBeInTheDocument();
   });
 });
