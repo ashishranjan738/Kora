@@ -77,13 +77,17 @@ export function DirectoryBrowser({ opened, onClose, onSelect, initialPath }: Dir
   const [filter, setFilter] = useState("");
   const [recentPaths, setRecentPaths] = useState<string[]>([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
+  const [pathInput, setPathInput] = useState("");
+  const [editingPath, setEditingPath] = useState(false);
 
   // Reset state when modal opens
   useEffect(() => {
     if (opened) {
       setFilter("");
       setError("");
+      setEditingPath(false);
       setCurrentPath(initialPath || "");
+      setPathInput(initialPath || "");
       loadRecentPaths();
     }
   }, [opened, initialPath]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -101,6 +105,8 @@ export function DirectoryBrowser({ opened, onClose, onSelect, initialPath }: Dir
         setDirectories(data.directories || []);
         setParentPath(data.parent);
         setCurrentPath(data.path);
+        setPathInput(data.path);
+        setEditingPath(false);
         if (data.homeDir) setHomeDir(data.homeDir);
       } catch (err: any) {
         if (cancelled) return;
@@ -198,6 +204,15 @@ export function DirectoryBrowser({ opened, onClose, onSelect, initialPath }: Dir
     setCurrentPath(path);
   }
 
+  function handlePathInputSubmit() {
+    const trimmed = pathInput.trim();
+    if (trimmed && trimmed !== currentPath) {
+      setFilter("");
+      setCurrentPath(trimmed);
+    }
+    setEditingPath(false);
+  }
+
   const showRecentPaths = recentPaths.length > 0 && !loading;
 
   return (
@@ -240,36 +255,60 @@ export function DirectoryBrowser({ opened, onClose, onSelect, initialPath }: Dir
 
           <Divider orientation="vertical" color="var(--border-color)" />
 
-          {/* ── Breadcrumbs ── */}
-          <div style={{ flex: 1, overflow: "hidden" }}>
-            <Breadcrumbs
-              separator="/"
-              separatorMargin={4}
-              styles={{
-                root: { flexWrap: "nowrap", overflow: "hidden" },
-                separator: { color: "var(--text-muted)", fontSize: 12 },
-                breadcrumb: { fontSize: 13, whiteSpace: "nowrap" },
+          {/* ── Address bar: editable path input / breadcrumbs ── */}
+          {editingPath ? (
+            <TextInput
+              value={pathInput}
+              onChange={(e) => setPathInput(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handlePathInputSubmit();
+                if (e.key === "Escape") { setPathInput(currentPath); setEditingPath(false); }
               }}
+              onBlur={handlePathInputSubmit}
+              size="xs"
+              autoFocus
+              styles={{
+                root: { flex: 1 },
+                input: { backgroundColor: "var(--bg-primary)", borderColor: "var(--accent-blue)", color: "var(--text-primary)", borderRadius: 6, height: 32, fontSize: 13, fontFamily: "var(--font-mono)" },
+              }}
+              placeholder="/path/to/directory"
+            />
+          ) : (
+            <div
+              style={{ flex: 1, overflow: "hidden", cursor: "pointer", padding: "4px 8px", borderRadius: 6, border: "1px solid transparent" }}
+              onClick={() => { setPathInput(currentPath); setEditingPath(true); }}
+              title="Click to type a path"
+              className="directory-browser-address-bar"
             >
-              {breadcrumbs.map((seg, i) => (
-                i === breadcrumbs.length - 1 ? (
-                  <Text key={seg.path} size="sm" fw={600} c="var(--text-primary)" style={{ whiteSpace: "nowrap" }}>
-                    {seg.label}
-                  </Text>
-                ) : (
-                  <Anchor
-                    key={seg.path}
-                    size="sm"
-                    c="var(--accent-blue)"
-                    onClick={() => handleBreadcrumbClick(seg.path)}
-                    style={{ cursor: "pointer", whiteSpace: "nowrap" }}
-                  >
-                    {seg.label}
-                  </Anchor>
-                )
-              ))}
-            </Breadcrumbs>
-          </div>
+              <Breadcrumbs
+                separator="/"
+                separatorMargin={4}
+                styles={{
+                  root: { flexWrap: "nowrap", overflow: "hidden" },
+                  separator: { color: "var(--text-muted)", fontSize: 12 },
+                  breadcrumb: { fontSize: 13, whiteSpace: "nowrap" },
+                }}
+              >
+                {breadcrumbs.map((seg, i) => (
+                  i === breadcrumbs.length - 1 ? (
+                    <Text key={seg.path} size="sm" fw={600} c="var(--text-primary)" style={{ whiteSpace: "nowrap" }}>
+                      {seg.label}
+                    </Text>
+                  ) : (
+                    <Anchor
+                      key={seg.path}
+                      size="sm"
+                      c="var(--accent-blue)"
+                      onClick={(e) => { e.stopPropagation(); handleBreadcrumbClick(seg.path); }}
+                      style={{ cursor: "pointer", whiteSpace: "nowrap" }}
+                    >
+                      {seg.label}
+                    </Anchor>
+                  )
+                ))}
+              </Breadcrumbs>
+            </div>
+          )}
         </Group>
 
         {/* ── Recent paths section ── */}
@@ -309,7 +348,8 @@ export function DirectoryBrowser({ opened, onClose, onSelect, initialPath }: Dir
             onChange={(e) => setFilter(e.currentTarget.value)}
             size="xs"
             styles={fieldStyles}
-            leftSection={<span style={{ fontSize: 13, color: "var(--text-muted)" }}>&#128269;</span>}
+            leftSectionWidth={32}
+            leftSection={<Text size="xs" c="var(--text-muted)" style={{ lineHeight: 1 }}>&#x2315;</Text>}
           />
         </div>
 

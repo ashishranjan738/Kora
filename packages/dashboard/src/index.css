@@ -4068,6 +4068,10 @@ textarea:focus {
 .directory-browser-item:hover {
   background-color: var(--bg-tertiary);
 }
+.directory-browser-address-bar:hover {
+  background-color: var(--bg-primary);
+  border-color: var(--border-color) !important;
+}
 
 /* Mobile Responsive Fixes - Additional Improvements */
 @import './mobile-responsive-fixes.css';
