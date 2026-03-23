@@ -48,6 +48,7 @@ import type { WebhookConfig } from "@kora/shared";
 import { analyzeTerminalOutput } from "../core/terminal-analyzer.js";
 import { computeTaskMetrics, TaskMetricsDebouncer } from "../core/task-metrics.js";
 import * as cronScheduler from "../core/cron-scheduler.js";
+import { validateProjectPath, isHiddenDirectory } from "../core/path-validation.js";
 
 // Cache strip-ansi import (ESM module loaded once at startup)
 let stripAnsiFunc: ((text: string) => string) | null = null;
@@ -291,9 +292,16 @@ export function createApiRouter(deps: {
         return;
       }
 
+      // Validate project path — resolve, check existence, confirm directory
+      const pathValidation = validateProjectPath(body.projectPath);
+      if (!pathValidation.valid) {
+        res.status(400).json({ error: `Invalid projectPath: ${pathValidation.error}` });
+        return;
+      }
+
       const config = await sessionManager.createSession({
         name: body.name,
-        projectPath: body.projectPath,
+        projectPath: pathValidation.resolved,
         defaultProvider: body.defaultProvider,
         messagingMode: body.messagingMode,
         worktreeMode: body.worktreeMode,
@@ -4621,6 +4629,71 @@ export function createApiRouter(deps: {
       res.json({ configs });
     } catch (err) {
       logger.error({ err: err }, "[api] GET /suggestions/agent-configs error");
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // ── Browse Directories ──────────────────────────────────
+
+  router.get("/browse/directories", async (req: Request, res: Response) => {
+    try {
+      const os = await import("os");
+      const fs = await import("fs/promises");
+
+      const rawPath = typeof req.query.path === "string" && req.query.path.trim()
+        ? req.query.path.trim()
+        : os.homedir();
+      const showHidden = req.query.showHidden === "true";
+
+      // Validate the target path using shared utility
+      const validation = validateProjectPath(rawPath);
+      if (!validation.valid) {
+        const status = validation.error === "Path does not exist" ? 404
+          : validation.error === "Path is not a directory" ? 400
+          : 400;
+        res.status(status).json({ error: validation.error });
+        return;
+      }
+      const resolved = validation.resolved;
+
+      let entries;
+      try {
+        entries = await fs.readdir(resolved, { withFileTypes: true });
+      } catch {
+        res.status(403).json({ error: "Cannot read directory" });
+        return;
+      }
+
+      const directories: Array<{ name: string; path: string; isGitRepo: boolean }> = [];
+
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+
+        // Filter hidden directories unless showHidden is true
+        if (!showHidden && isHiddenDirectory(entry.name)) continue;
+
+        const dirPath = path.join(resolved, entry.name);
+
+        // Check if it's a git repo (has .git inside)
+        let isGitRepo = false;
+        try {
+          const gitStat = await fs.stat(path.join(dirPath, ".git"));
+          isGitRepo = gitStat.isDirectory() || gitStat.isFile(); // .git can be a file (worktree)
+        } catch {
+          // not a git repo — that's fine
+        }
+
+        directories.push({ name: entry.name, path: dirPath, isGitRepo });
+      }
+
+      // Sort alphabetically
+      directories.sort((a, b) => a.name.localeCompare(b.name));
+
+      const parent = path.dirname(resolved) !== resolved ? path.dirname(resolved) : null;
+
+      res.json({ currentPath: resolved, parent, directories });
+    } catch (err) {
+      logger.error({ err }, "[api] GET /browse/directories error");
       res.status(500).json({ error: String(err) });
     }
   });
