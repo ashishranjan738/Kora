@@ -176,8 +176,10 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
             const displayText = isLong && !isExpanded
               ? entry.text.slice(0, PREVIEW_LENGTH) + "..."
               : entry.text;
-            const authorLabel = entry.savedBy
-              ? (entry.savedBy.toLowerCase() === "unknown" ? "User" : entry.savedBy)
+            // Author from savedBy or source (API stores agent name in source for knowledge.md entries)
+            const rawAuthor = entry.savedBy || (entry.source !== ".kora.yml" && entry.source !== "knowledge.md" ? entry.source : null);
+            const authorLabel = rawAuthor
+              ? (rawAuthor.toLowerCase() === "unknown" || rawAuthor.toLowerCase() === "dashboard" ? "User" : rawAuthor)
               : null;
 
             return (
@@ -213,13 +215,27 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
                     {isExpanded ? "\u25BC collapse" : "\u25B6 expand"}
                   </Text>
                 </Group>
-                <Text
-                  size="sm"
-                  c="var(--text-primary)"
-                  style={{ lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-                >
-                  {displayText}
-                </Text>
+                {/* Collapsed: truncated preview */}
+                {!isExpanded && (
+                  <Text
+                    size="sm"
+                    c="var(--text-primary)"
+                    lineClamp={3}
+                    style={{ lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                  >
+                    {entry.text}
+                  </Text>
+                )}
+                {/* Expanded: full content with Collapse animation */}
+                <Collapse in={isExpanded}>
+                  <Text
+                    size="sm"
+                    c="var(--text-primary)"
+                    style={{ lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                  >
+                    {entry.text}
+                  </Text>
+                </Collapse>
               </Paper>
             );
           })}
