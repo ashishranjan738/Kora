@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Editor from "@monaco-editor/react";
+import { createReviewManager } from "monaco-review";
 import { useApi } from "../hooks/useApi";
 import { useThemeStore } from "../stores/themeStore";
-import { showError } from "../utils/notifications";
+import { showError, showSuccess } from "../utils/notifications";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 interface EditorTileProps {
@@ -35,6 +36,11 @@ export function EditorTile({ sessionId }: EditorTileProps) {
 
   // Unsaved changes close confirmation state
   const [pendingCloseTab, setPendingCloseTab] = useState<string | null>(null);
+
+  // Code review / inline comments
+  const reviewManagerRef = useRef<ReturnType<typeof createReviewManager> | null>(null);
+  const editorInstanceRef = useRef<any>(null);
+  const [commentEvents, setCommentEvents] = useState<any[]>([]);
 
   // Quick-open state
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
@@ -472,6 +478,31 @@ export function EditorTile({ sessionId }: EditorTileProps) {
                     // F1: Command palette | Ctrl+/: Toggle comment
                     // Ctrl+Shift+K: Delete line | Alt+Up/Down: Move line
                     // Ctrl+Shift+[/]: Fold/unfold | Ctrl+Z/Y: Undo/Redo
+                  }}
+                  onMount={(editor) => {
+                    editorInstanceRef.current = editor;
+                    // Initialize inline comment review manager
+                    try {
+                      const rm = createReviewManager(
+                        editor,
+                        "User",
+                        commentEvents,
+                        (newEvents: any[]) => {
+                          setCommentEvents(newEvents);
+                          showSuccess(`Comment saved (${newEvents.length} total)`);
+                        },
+                        {
+                          editButtonAddText: "Comment",
+                          editButtonEnableRemove: true,
+                          editButtonRemoveText: "Delete",
+                          showInRuler: true,
+                          enableMarkdown: true,
+                        },
+                      );
+                      reviewManagerRef.current = rm;
+                    } catch (err) {
+                      console.debug("[editor] monaco-review init failed:", err);
+                    }
                   }}
                 />
               ) : (
