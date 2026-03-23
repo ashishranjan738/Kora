@@ -86,7 +86,7 @@ export function AllSessions() {
   const [newName, setNewName] = useState("");
   const [newPath, setNewPath] = useState("");
   const [creating, setCreating] = useState(false);
-  const [newMessagingMode, setNewMessagingMode] = useState<"mcp" | "terminal" | "manual">("mcp");
+  const [newMessagingMode, setNewMessagingMode] = useState<"mcp" | "cli" | "terminal" | "manual">("mcp");
   const [newWorktreeMode, setNewWorktreeMode] = useState<"isolated" | "shared">("isolated");
   const [newPathIsGitRepo, setNewPathIsGitRepo] = useState<boolean | null>(null);
   const [newWorkflowStates, setNewWorkflowStates] = useState(getPipelineTemplate("standard").states);
@@ -110,7 +110,7 @@ export function AllSessions() {
   const [defaultModelForAll, setDefaultModelForAll] = useState("");
   const [defaultCliFlagsForAll, setDefaultCliFlagsForAll] = useState("");
   const [agentCliArgsOverrides, setAgentCliArgsOverrides] = useState<Record<number, string>>({});
-  const [playbookMessagingMode, setPlaybookMessagingMode] = useState<"mcp" | "terminal" | "manual">("mcp");
+  const [playbookMessagingMode, setPlaybookMessagingMode] = useState<"mcp" | "cli" | "terminal" | "manual">("mcp");
   const [playbookWorktreeMode, setPlaybookWorktreeMode] = useState<"isolated" | "shared">("isolated");
   const [playbookPathIsGitRepo, setPlaybookPathIsGitRepo] = useState<boolean | null>(null);
   const [playbookWorkflowStates, setPlaybookWorkflowStates] = useState(getPipelineTemplate("standard").states);
@@ -993,6 +993,22 @@ export function AllSessions() {
                   <input
                     type="radio"
                     name="create-messaging-mode"
+                    value="cli"
+                    checked={newMessagingMode === "cli"}
+                    onChange={() => setNewMessagingMode("cli")}
+                    style={{ marginTop: 2 }}
+                  />
+                  <span>
+                    <strong>CLI Commands</strong>
+                    <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>
+                      Agents use kora-cli shell commands for messaging and tasks.
+                    </span>
+                  </span>
+                </label>
+                <label className="radio-option">
+                  <input
+                    type="radio"
+                    name="create-messaging-mode"
                     value="terminal"
                     checked={newMessagingMode === "terminal"}
                     onChange={() => setNewMessagingMode("terminal")}
@@ -1236,15 +1252,18 @@ export function AllSessions() {
                         <select
                           className="playbook-grid-input"
                           value={playbookMessagingMode}
-                          onChange={(e) => setPlaybookMessagingMode(e.target.value as "mcp" | "terminal" | "manual")}
+                          onChange={(e) => setPlaybookMessagingMode(e.target.value as "mcp" | "cli" | "terminal" | "manual")}
                         >
                           <option value="mcp">MCP Tools (recommended)</option>
+                          <option value="cli">CLI Commands</option>
                           <option value="terminal">Terminal (@mentions)</option>
                           <option value="manual">Manual</option>
                         </select>
                         <div className="playbook-setting-hint">
                           {playbookMessagingMode === "mcp"
                             ? "Agents use send_message/check_messages. Supports long messages."
+                            : playbookMessagingMode === "cli"
+                            ? "Agents use kora-cli shell commands for messaging and tasks."
                             : playbookMessagingMode === "terminal"
                             ? "Agents use @Name: in terminal output. 500 char limit."
                             : "User relays all messages via dashboard. No auto-messaging."}
