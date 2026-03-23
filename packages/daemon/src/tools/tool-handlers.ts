@@ -785,6 +785,29 @@ export async function handleShareImage(
   return { success: true, sentTo: target.config?.name || target.id, url: attachmentResult.url };
 }
 
+export async function handleWhoami(
+  ctx: ToolContext,
+  args: Record<string, string>,
+): Promise<unknown> {
+  const full = args.full === "true" || args.full === true as unknown as string;
+  const [agentsResp, wfResp, personaResp] = await Promise.all([
+    ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/agents`) as Promise<AgentsResponse>,
+    ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/workflow-states`) as Promise<Record<string, unknown>>,
+    ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/agents/${ctx.agentId}/persona`) as Promise<Record<string, unknown>>,
+  ]);
+  const agents = agentsResp.agents || [];
+  const self = agents.find(a => a.id === ctx.agentId);
+  const persona = (personaResp.persona || "") as string;
+  const displayPersona = full ? persona : (persona.length > 500 ? persona.slice(0, 500) + "\n... (use full: true to see complete persona)" : persona);
+  return {
+    agentId: ctx.agentId, name: self?.config?.name || ctx.agentId, role: self?.config?.role || ctx.agentRole,
+    provider: self?.config?.cliProvider, model: self?.config?.model, sessionId: ctx.sessionId,
+    team: agents.map(a => ({ id: a.id, name: a.config?.name, role: a.config?.role, status: a.status, isMe: a.id === ctx.agentId })),
+    workflow: wfResp.states || [],
+    persona: displayPersona || null,
+  };
+}
+
 // ── Dispatcher ──────────────────────────────────────────
 
 /** Map of tool name → handler function for all extracted tools */
@@ -809,6 +832,7 @@ export const TOOL_HANDLER_MAP: Record<string, (ctx: ToolContext, args: Record<st
   peek_agent: handlePeekAgent,
   nudge_agent: handleNudgeAgent,
   share_image: handleShareImage,
+  whoami: handleWhoami,
 };
 
 /**

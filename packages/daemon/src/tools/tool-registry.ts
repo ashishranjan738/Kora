@@ -21,7 +21,7 @@ export const ALL_TOOL_NAMES = [
   "prepare_pr", "report_idle", "request_task",
   "list_personas", "save_persona", "get_workflow_states",
   "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
-  "verify_work", "create_pr",
+  "verify_work", "create_pr", "whoami",
 ] as const;
 
 export type ToolName = (typeof ALL_TOOL_NAMES)[number];
@@ -35,7 +35,7 @@ export const ROLE_TOOL_ACCESS: Record<string, Set<string>> = {
     "prepare_pr", "report_idle", "request_task",
     "list_personas", "save_persona", "get_workflow_states",
     "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
-    "verify_work", "create_pr",
+    "verify_work", "create_pr", "whoami",
   ]),
 };
 
@@ -47,7 +47,7 @@ export function isToolAllowed(role: string, toolName: string): boolean {
 }
 
 /**
- * All 25 tool definitions with MCP-compatible inputSchema.
+ * All tool definitions with MCP-compatible inputSchema.
  * These can be used directly by MCP tools/list or transformed for CLI arg parsing.
  */
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -342,6 +342,16 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         limit: { type: "number", description: "Max results (default 20)" },
       },
       required: ["query"],
+    },
+  },
+  {
+    name: "whoami",
+    description: "Show your agent identity, team, workflow pipeline, and persona. Use this to understand who you are, what team you're on, and what workflow to follow.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        full: { type: "boolean", description: "If true, include full persona text (default: truncated to 500 chars)" },
+      },
     },
   },
 ];
