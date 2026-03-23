@@ -135,6 +135,64 @@ export const RESOURCE_DEFINITIONS: ResourceDefinition[] = [
     },
     cli: { command: "tasks", description: "List your tasks" },
   },
+  {
+    uri: "kora://persona",
+    name: "Persona",
+    description: "Your custom role definition, instructions, and project context",
+    mimeType: "text/markdown",
+    subscribable: false,
+    fetchContent: async (ctx) => {
+      const resp = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/agents/${ctx.agentId}/persona`)) as { persona?: string };
+      return resp.persona || "No persona configured.";
+    },
+    fetchData: async (ctx) => {
+      return await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/agents/${ctx.agentId}/persona`);
+    },
+    cli: { command: "whoami --full", description: "Show your persona" },
+  },
+  {
+    uri: "kora://communication",
+    name: "Communication Protocol",
+    description: "How to communicate with teammates — tools, @mentions, file-based messaging",
+    mimeType: "text/markdown",
+    subscribable: false,
+    fetchContent: async (ctx) => {
+      const resp = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/agents/${ctx.agentId}/persona`)) as { persona?: string };
+      const persona = resp.persona || "";
+      const match = persona.match(/## Communication Protocol[\s\S]*?(?=\n## |$)/i);
+      return match ? match[0].trim() : "Use send_message() or @mentions to communicate with teammates.";
+    },
+    fetchData: async (ctx) => {
+      const resp = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/agents/${ctx.agentId}/persona`)) as { persona?: string };
+      const persona = resp.persona || "";
+      const match = persona.match(/## Communication Protocol[\s\S]*?(?=\n## |$)/i);
+      return { protocol: match ? match[0].trim() : null };
+    },
+    cli: { command: "whoami --section communication", description: "Show communication protocol" },
+  },
+  {
+    uri: "kora://workspace",
+    name: "Workspace",
+    description: "Workspace mode, working directory, and conflict prevention rules",
+    mimeType: "text/markdown",
+    subscribable: false,
+    fetchContent: async (ctx) => {
+      const session = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}`)) as { config?: { worktreeMode?: string; projectPath?: string } };
+      const agent = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/agents/${ctx.agentId}`)) as { config?: { workingDirectory?: string; projectPath?: string } };
+      const mode = session.config?.worktreeMode || "isolated";
+      const lines = [`Workspace mode: **${mode}**`, `Project root: ${session.config?.projectPath || "unknown"}`, `Working directory: ${agent.config?.workingDirectory || "unknown"}`];
+      if (mode === "shared") {
+        lines.push("", "⚠️ **SHARED WORKSPACE** — All agents share the same directory.", "- Only edit files explicitly assigned to you", "- Check with teammates before modifying shared files", "- Use git branches to isolate your changes");
+      }
+      return lines.join("\n");
+    },
+    fetchData: async (ctx) => {
+      const session = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}`)) as { config?: { worktreeMode?: string; projectPath?: string } };
+      const agent = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/agents/${ctx.agentId}`)) as { config?: { workingDirectory?: string; projectPath?: string } };
+      return { worktreeMode: session.config?.worktreeMode || "isolated", projectPath: session.config?.projectPath, workingDirectory: agent.config?.workingDirectory, isShared: session.config?.worktreeMode === "shared" };
+    },
+    cli: { command: "context workspace", description: "Show workspace info" },
+  },
 ];
 
 /** Get a resource definition by URI */

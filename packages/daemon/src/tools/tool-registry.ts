@@ -356,11 +356,11 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "get_context",
-    description: "Get live session context — team, workflow, knowledge, rules, or tasks. Use this to refresh your understanding of the current session state.",
+    description: "Get live session context — team, workflow, knowledge, rules, tasks, persona, communication, or workspace. Use this to refresh your understanding of the current session state.",
     inputSchema: {
       type: "object",
       properties: {
-        resource: { type: "string", description: 'Which context to fetch: "team", "workflow", "knowledge", "rules", "tasks", or "all" (default: "all")' },
+        resource: { type: "string", description: 'Which context to fetch: "team", "workflow", "knowledge", "rules", "tasks", "persona", "communication", "workspace", or "all" (default: "all")' },
       },
     },
   },
