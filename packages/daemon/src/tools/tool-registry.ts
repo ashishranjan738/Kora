@@ -1,5 +1,5 @@
 /**
- * Shared tool definitions — single source of truth for all 25 Kora tools.
+ * Shared tool definitions — single source of truth for all 24 Kora tools.
  * Used by MCP server (JSON-RPC), CLI, and any future transport.
  */
 
