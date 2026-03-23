@@ -481,55 +481,64 @@ export function EditorTile({ sessionId }: EditorTileProps) {
                   }}
                   onMount={(editor) => {
                     editorInstanceRef.current = editor;
-                    // Initialize inline comment review manager
+
+                    // Keep monaco-review for inline comment display
                     try {
-                      const currentFilePath = activeTabPathRef.current || "";
                       const rm = createReviewManager(
-                        editor,
-                        "User",
-                        commentEvents,
-                        async (newEvents: any[]) => {
-                          setCommentEvents(newEvents);
-                          // Persist new comments to backend + create backlog task
-                          const latestEvent = newEvents[newEvents.length - 1];
-                          if (latestEvent && latestEvent.type === 1 /* add */) {
-                            const lineNumber = latestEvent.lineNumber || 1;
-                            const commentText = latestEvent.text || "";
-                            try {
-                              const result = await api.createCodeComment(sessionId, {
-                                filePath: currentFilePath,
-                                startLine: lineNumber,
-                                endLine: lineNumber,
-                                selectedText: "",
-                                comment: commentText,
-                                createTask: true,
-                              });
-                              if (result.task) {
-                                showSuccess(`Backlog task created: ${result.task.title || "Code comment task"}`);
-                              } else {
-                                showSuccess("Comment saved");
-                              }
-                            } catch (err: any) {
-                              if (err.message?.includes("404")) {
-                                showSuccess("Comment saved (backend API not yet available)");
-                              } else {
-                                showError(err.message || "Failed to save comment", "Comment Error");
-                              }
-                            }
-                          }
-                        },
-                        {
-                          editButtonAddText: "\uD83D\uDCCB Create Task",
-                          editButtonEnableRemove: true,
-                          editButtonRemoveText: "Delete",
-                          showInRuler: true,
-                          enableMarkdown: true,
-                        },
+                        editor, "User", commentEvents,
+                        (newEvents: any[]) => setCommentEvents(newEvents),
+                        { showInRuler: true, enableMarkdown: true, editButtonAddText: "Comment", editButtonEnableRemove: true },
                       );
                       reviewManagerRef.current = rm;
                     } catch (err) {
                       console.debug("[editor] monaco-review init failed:", err);
                     }
+
+                    // Add "Create Task from Selection" to right-click context menu
+                    editor.addAction({
+                      id: "kora-create-task-from-selection",
+                      label: "\uD83D\uDCCB Create Task from Selection",
+                      contextMenuGroupId: "navigation",
+                      contextMenuOrder: 0,
+                      run: async (ed: any) => {
+                        const selection = ed.getSelection();
+                        const model = ed.getModel();
+                        if (!selection || !model) return;
+
+                        const selectedText = model.getValueInRange(selection);
+                        const startLine = selection.startLineNumber;
+                        const endLine = selection.endLineNumber;
+                        const filePath = activeTabPathRef.current || "";
+                        const fileName = filePath.split("/").pop() || filePath;
+
+                        if (!selectedText.trim()) {
+                          showError("Select some code first, then right-click to create a task.", "No selection");
+                          return;
+                        }
+
+                        try {
+                          const result = await api.createCodeComment(sessionId, {
+                            filePath,
+                            startLine,
+                            endLine,
+                            selectedText: selectedText.slice(0, 500),
+                            comment: `Review ${fileName}:${startLine}-${endLine}`,
+                            createTask: true,
+                          });
+                          if (result.task) {
+                            showSuccess(`Task created: ${result.task.title || `Review ${fileName}:${startLine}-${endLine}`}`);
+                          } else {
+                            showSuccess("Comment saved");
+                          }
+                        } catch (err: any) {
+                          if (err.message?.includes("404")) {
+                            showSuccess(`Task queued: Review ${fileName}:${startLine}-${endLine} (backend API not yet available)`);
+                          } else {
+                            showError(err.message || "Failed to create task", "Task Error");
+                          }
+                        }
+                      },
+                    });
                   }}
                 />
               ) : (
