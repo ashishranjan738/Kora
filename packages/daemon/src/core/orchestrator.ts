@@ -29,6 +29,7 @@ import fs from "fs";
 import { HoldptyController } from "./holdpty-controller.js";
 import { logger } from "./logger.js";
 import { StaleTaskWatchdog } from "./stale-task-watchdog.js";
+import { WatchdogDeliveryManager } from "./watchdog-delivery.js";
 import { AutoAssigner } from "./auto-assign.js";
 import { PatternDetector } from "./orchestrator-blocking/detection/pattern-detector.js";
 import { OrchestratorStateMachine } from "./orchestrator-blocking/state-machine.js";
@@ -73,6 +74,9 @@ export class Orchestrator extends EventEmitter {
   // Stale task watchdog
   public staleTaskWatchdog: StaleTaskWatchdog;
 
+  // Unified watchdog delivery manager
+  public watchdogDelivery: WatchdogDeliveryManager;
+
   // Auto-assigner (Phase 0 autonomous orchestrator)
   public autoAssigner: AutoAssigner;
 
@@ -103,6 +107,7 @@ export class Orchestrator extends EventEmitter {
       const agent = this.agentManager.getAgent(agentId);
       return agent?.activity === "idle" && agent?.status === "running";
     });
+    this.watchdogDelivery = new WatchdogDeliveryManager(this.messageBus, config.messagingMode || "mcp");
     this.autoRelay = new AutoRelay(config.tmux, this.agentManager, this.eventLog, config.sessionId, config.messagingMode);
     this.messageQueue = new MessageQueue(config.tmux, config.runtimeDir, config.messagingMode || "mcp");
     this.autoRelay.setMessageQueue(this.messageQueue);
@@ -362,6 +367,7 @@ export class Orchestrator extends EventEmitter {
       this.usageMonitor.stopMonitoring(agentId);
       this.autoRelay.stopMonitoring(agentId);
       this.messageQueue.removeAgent(agentId);
+      this.watchdogDelivery.removeAgent(agentId);
       await this.messageBus.teardownAgent(agentId);
       this.costTracker.removeAgent(agentId);
 
@@ -471,8 +477,14 @@ export class Orchestrator extends EventEmitter {
       }, ACTIVITY_DEBOUNCE_MS));
     };
 
-    this.agentManager.on("agent-idle", (agentId: string) => emitActivityChange(agentId, "idle", "working"));
-    this.agentManager.on("agent-working", (agentId: string) => emitActivityChange(agentId, "working", "idle"));
+    this.agentManager.on("agent-idle", (agentId: string) => {
+      emitActivityChange(agentId, "idle", "working");
+      this.watchdogDelivery.onAgentIdle(agentId).catch(() => {}); // flush queued notifications
+    });
+    this.agentManager.on("agent-working", (agentId: string) => {
+      emitActivityChange(agentId, "working", "idle");
+      this.watchdogDelivery.onAgentBusy(agentId); // hold new notifications
+    });
 
     // When a message is detected in an agent's outbox, route it
     this.messageBus.on("message", async (message, _fromAgentId, _filename) => {
