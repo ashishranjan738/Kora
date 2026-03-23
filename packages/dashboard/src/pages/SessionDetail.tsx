@@ -64,6 +64,7 @@ import {
 import { useMediaQuery } from "@mantine/hooks";
 import type { AgentResponse, SessionResponse, TaskResponse } from "../types/api";
 import type { WorkflowState, OrchestratorEvent } from "@kora/shared";
+import { PROVIDER_IDS } from "../constants/providers";
 
 type TabId = "editor" | "agents" | "tasks" | "execution" | "timeline" | "changes" | "knowledge" | "workload";
 
@@ -1321,7 +1322,7 @@ export function SessionDetail() {
                                     border: "1px solid var(--border-color)", borderRadius: 4, color: "var(--text-primary)",
                                   }}
                                 >
-                                  {["claude-code", "codex", "gemini-cli", "aider", "goose", "kiro"].map(p => (
+                                  {PROVIDER_IDS.map(p => (
                                     <option key={p} value={p}>{p}</option>
                                   ))}
                                 </select>

@@ -37,16 +37,7 @@ interface Playbook {
   source?: "builtin" | "global" | "project";
 }
 
-const KNOWN_PROVIDERS = ["claude-code", "codex", "gemini-cli", "aider", "goose", "custom"] as const;
-
-const PROVIDER_MODEL_HINTS: Record<string, string[]> = {
-  "claude-code": ["claude-opus-4-6", "claude-sonnet-4-6", "claude-sonnet-4-5-20250514", "claude-haiku-3-5"],
-  codex: ["o4-mini", "o3", "gpt-4.1"],
-  "gemini-cli": ["gemini-2.5-pro", "gemini-2.5-flash"],
-  aider: ["claude-sonnet-4-6", "gpt-4.1", "deepseek-chat"],
-  goose: ["claude-sonnet-4-6", "gpt-4.1"],
-  custom: [],
-};
+import { PROVIDER_IDS as KNOWN_PROVIDERS, PROVIDER_MODEL_HINTS } from "../constants/providers";
 
 const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "#bc8cff",
