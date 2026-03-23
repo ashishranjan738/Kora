@@ -4170,6 +4170,7 @@ export function createApiRouter(deps: {
           workflowStates: session.config.workflowStates,
           supportsMcp: provider.supportsMcp,
           messagingMode: session.config.messagingMode || "mcp",
+          worktreeMode: session.config.worktreeMode,
         });
 
         // Use the task param as initialTask for the master agent only

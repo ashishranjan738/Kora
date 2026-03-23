@@ -558,6 +558,7 @@ async function handleRun(): Promise<void> {
       supportsMcp: provider.supportsMcp,
       messagingMode: session.messagingMode,
       workflowStates: session.workflowStates,
+      worktreeMode: session.worktreeMode,
     });
 
     // Use the task param as initialTask for the master agent only

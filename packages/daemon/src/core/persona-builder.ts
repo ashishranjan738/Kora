@@ -34,6 +34,8 @@ export interface PersonaBuildOptions {
   supportsMcp?: boolean;
   /** Session messaging mode. "cli" mode forces CLI instructions even if provider supports MCP. */
   messagingMode?: import("@kora/shared").MessagingMode;
+  /** Worktree mode: "isolated" (each agent gets own worktree) or "shared" (all share same directory). */
+  worktreeMode?: "isolated" | "shared";
 }
 
 /**
@@ -129,7 +131,66 @@ export function buildPersona(options: PersonaBuildOptions): string {
     sections.push(buildWorkflowPipelineInstructions(options.workflowStates));
   }
 
+  // Workspace conflict awareness (shared vs isolated worktrees)
+  if (options.worktreeMode) {
+    sections.push(buildWorkspaceInstructions(options.worktreeMode, options.role));
+  }
+
   return sections.join("\n\n---\n\n");
+}
+
+/**
+ * Workspace instructions based on worktree mode.
+ * Shared mode needs explicit conflict avoidance rules.
+ */
+function buildWorkspaceInstructions(worktreeMode: "isolated" | "shared", role: AgentRole): string {
+  if (worktreeMode === "isolated") {
+    return [
+      "## Workspace",
+      "",
+      "You are working in an **isolated git worktree**. Each agent has its own branch and working directory.",
+      "- No risk of file conflicts with other agents",
+      "- Commit and push freely to your branch",
+      "- Create PRs when your work is ready for review",
+    ].join("\n");
+  }
+
+  if (role === "master") {
+    return [
+      "## Workspace — SHARED MODE (Conflict Prevention)",
+      "",
+      "All agents share the **same working directory**. As the orchestrator, you MUST prevent conflicts:",
+      "",
+      "### Rules for task assignment",
+      "- **Assign explicit file boundaries** when delegating tasks (e.g. 'Edit only src/components/Navbar.tsx')",
+      "- **Never assign two workers to the same file** — if two tasks touch the same file, serialize them",
+      "- **Coordinate commits** — tell agents to commit before starting new work",
+      "- **Check git status** before assigning new tasks to verify no uncommitted changes",
+      "",
+      "### If a conflict occurs",
+      "- Stop the conflicting agents immediately",
+      "- Have one agent commit their changes first",
+      "- Then have the other agent pull and continue",
+    ].join("\n");
+  }
+
+  return [
+    "## Workspace — SHARED MODE (Conflict Prevention)",
+    "",
+    "All agents share the **same working directory**. Follow these rules to avoid conflicts:",
+    "",
+    "### MANDATORY rules",
+    "- **Only edit files you were explicitly assigned** — do not modify files outside your task scope",
+    "- **Commit frequently** — small, focused commits reduce conflict risk",
+    "- **Pull before starting work** — run `git pull` or check `git status` before editing",
+    "- **Report conflicts immediately** — if you see uncommitted changes from another agent, STOP and notify the orchestrator",
+    "- **Never force-push** in shared mode — it will destroy other agents' work",
+    "",
+    "### If you encounter a conflict",
+    "1. STOP working immediately",
+    "2. Report the conflict to the orchestrator with details (which files, what changes)",
+    "3. Wait for instructions before continuing",
+  ].join("\n");
 }
 
 function buildWorkflowPipelineInstructions(states: import("@kora/shared").WorkflowState[]): string {
