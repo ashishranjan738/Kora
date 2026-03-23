@@ -4767,11 +4767,15 @@ export function createApiRouter(deps: {
         }
       } catch { /* ignore */ }
 
-      // 2. Read from knowledge.md using readKnowledgeEntries (reuse existing parser)
+      // 2. Read from knowledge.md directly at {runtimeDir}/knowledge.md
+      // (readKnowledgeEntries constructs its own path which mismatches the write path)
       try {
-        const { readKnowledgeEntries } = await import("../core/context-discovery.js");
-        const rawEntries = readKnowledgeEntries(session.runtimeDir, 200);
-        for (const line of rawEntries) {
+        const fsKb = await import("fs/promises");
+        const pathKb = await import("path");
+        const knowledgePath = pathKb.join(session.runtimeDir, "knowledge.md");
+        const content = await fsKb.readFile(knowledgePath, "utf-8");
+        const lines = content.split("\n").filter(l => l.trim() && !l.startsWith("#"));
+        for (const line of lines) {
           // Format: "- [ISO_TIMESTAMP] [agent-name] entry text"
           const match = line.match(/^-?\s*\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.+)$/);
           if (match) {
@@ -4782,7 +4786,7 @@ export function createApiRouter(deps: {
             if (text) entries.push({ text, source: "knowledge.md" });
           }
         }
-      } catch { /* ignore */ }
+      } catch { /* file may not exist */ }
 
       res.json({ entries });
     } catch (err) {
