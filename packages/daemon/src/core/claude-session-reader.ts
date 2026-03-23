@@ -56,52 +56,57 @@ export class ClaudeSessionReader {
   private readers = new Map<string, ReaderState>(); // agentId → ReaderState
 
   /**
-   * Initialize reader for an agent by finding its Claude session via PID.
+   * Initialize reader for an agent by finding its Claude session via cwd matching.
+   * Scans ~/.claude/sessions/*.json to find a session whose cwd matches the agent's
+   * working directory. This is more robust than PID lookup since holdpty's PID differs
+   * from the actual Claude Code child process PID.
+   *
    * @param agentId - Kora agent ID
-   * @param pid - The agent's process ID (from tmux/holdpty)
-   * @param projectPath - The project working directory
+   * @param workingDirectory - The agent's working directory
    */
-  initAgent(agentId: string, pid: number, projectPath: string): boolean {
+  initAgent(agentId: string, _pidOrUnused: number, workingDirectory: string): boolean {
     try {
-      // Step 1: Read PID session file → get sessionId
-      const pidFile = path.join(SESSIONS_DIR, `${pid}.json`);
-      if (!fs.existsSync(pidFile)) {
-        logger.debug({ agentId, pid }, "[ClaudeSessionReader] PID session file not found");
+      // Step 1: Scan all session files, find one matching agent's cwd
+      if (!fs.existsSync(SESSIONS_DIR)) {
+        logger.debug({ agentId }, "[ClaudeSessionReader] Sessions directory not found");
         return false;
       }
 
-      const pidData = JSON.parse(fs.readFileSync(pidFile, "utf-8"));
-      const sessionId = pidData.sessionId;
+      const sessionFiles = fs.readdirSync(SESSIONS_DIR).filter(f => f.endsWith(".json"));
+      let sessionId: string | null = null;
+
+      // Sort by mtime descending — prefer most recent session for this cwd
+      const filesWithMtime = sessionFiles.map(f => {
+        const fullPath = path.join(SESSIONS_DIR, f);
+        try {
+          return { file: f, mtime: fs.statSync(fullPath).mtimeMs };
+        } catch { return { file: f, mtime: 0 }; }
+      }).sort((a, b) => b.mtime - a.mtime);
+
+      for (const { file } of filesWithMtime) {
+        try {
+          const data = JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, file), "utf-8"));
+          // Match if cwd equals or is a parent of the agent's working directory
+          if (data.sessionId && data.cwd && (
+            workingDirectory === data.cwd ||
+            workingDirectory.startsWith(data.cwd + "/")
+          )) {
+            sessionId = data.sessionId;
+            break;
+          }
+        } catch { /* skip malformed */ }
+      }
+
       if (!sessionId) {
-        logger.debug({ agentId, pid }, "[ClaudeSessionReader] No sessionId in PID file");
+        logger.debug({ agentId, workingDirectory }, "[ClaudeSessionReader] No session found matching cwd");
         return false;
       }
 
-      // Step 2: Resolve JSONL path from project path
-      // Claude stores projects under ~/.claude/projects/{encoded-path}/
-      const encodedPath = projectPath.replace(/\//g, "-").replace(/^-/, "");
-      const projectDir = path.join(PROJECTS_DIR, encodedPath);
-      const jsonlPath = path.join(projectDir, `${sessionId}.jsonl`);
-
-      if (!fs.existsSync(jsonlPath)) {
-        // Try alternative encoding (just the project path hash)
-        const altPaths = this.findJsonlPath(sessionId);
-        if (!altPaths) {
-          logger.debug({ agentId, sessionId, jsonlPath }, "[ClaudeSessionReader] JSONL file not found");
-          return false;
-        }
-        this.readers.set(agentId, {
-          sessionId,
-          jsonlPath: altPaths,
-          fileOffset: 0,
-          usage: { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, totalTokens: 0 },
-          toolCalls: [],
-          filesModified: new Set(),
-          turnCount: 0,
-          lastActivity: null,
-          lastModel: null,
-        });
-        return true;
+      // Step 2: Find the JSONL file for this session
+      const jsonlPath = this.findJsonlPath(sessionId);
+      if (!jsonlPath) {
+        logger.debug({ agentId, sessionId }, "[ClaudeSessionReader] JSONL file not found");
+        return false;
       }
 
       this.readers.set(agentId, {
@@ -119,7 +124,7 @@ export class ClaudeSessionReader {
       logger.info({ agentId, sessionId, jsonlPath }, "[ClaudeSessionReader] Initialized agent reader");
       return true;
     } catch (err) {
-      logger.debug({ err, agentId, pid }, "[ClaudeSessionReader] Init failed");
+      logger.debug({ err, agentId, workingDirectory }, "[ClaudeSessionReader] Init failed");
       return false;
     }
   }

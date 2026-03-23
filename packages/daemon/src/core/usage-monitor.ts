@@ -161,32 +161,17 @@ export class UsageMonitor {
   private readJsonlUsage(agent: AgentState): ParsedOutput | null {
     const agentId = agent.id;
 
-    // Lazy init: try to find JSONL session on first call
+    // Lazy init: initAgent scans ~/.claude/sessions/ to find matching cwd
     if (!this.jsonlReader.hasAgent(agentId) && !this.jsonlInitAttempted.has(agentId)) {
       this.jsonlInitAttempted.add(agentId);
-      // We need the PID — try to get it from the tmux session
-      // For now, scan ~/.claude/sessions/ for a session matching the agent's cwd
-      try {
-        const fs = require("fs");
-        const path = require("path");
-        const os = require("os");
-        const sessionsDir = path.join(os.homedir(), ".claude", "sessions");
-        if (fs.existsSync(sessionsDir)) {
-          const files = fs.readdirSync(sessionsDir).filter((f: string) => f.endsWith(".json"));
-          for (const f of files) {
-            try {
-              const data = JSON.parse(fs.readFileSync(path.join(sessionsDir, f), "utf-8"));
-              const pid = parseInt(f.replace(".json", ""), 10);
-              if (data.cwd && agent.config.workingDirectory?.includes(data.cwd)) {
-                if (this.jsonlReader.initAgent(agentId, pid, data.cwd)) {
-                  logger.info({ agentId, pid }, "[UsageMonitor] JSONL reader initialized");
-                  break;
-                }
-              }
-            } catch { /* skip malformed */ }
+      const workDir = agent.config.workingDirectory;
+      if (workDir) {
+        try {
+          if (this.jsonlReader.initAgent(agentId, 0, workDir)) {
+            logger.info({ agentId, workDir }, "[UsageMonitor] JSONL reader initialized via cwd match");
           }
-        }
-      } catch { /* non-fatal */ }
+        } catch { /* non-fatal */ }
+      }
     }
 
     if (!this.jsonlReader.hasAgent(agentId)) return null;
