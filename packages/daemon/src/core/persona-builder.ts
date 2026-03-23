@@ -116,7 +116,7 @@ export function buildPersona(options: PersonaBuildOptions): string {
 
   // Control plane instructions (master or agents with spawn permissions)
   if (options.permissions.canSpawnAgents || options.permissions.canRemoveAgents) {
-    sections.push(buildControlPlaneInstructions(options.agentId, options.permissions, options.runtimeDir));
+    sections.push(buildControlPlaneInstructions(options.agentId, options.permissions, options.runtimeDir, useCliInstructions));
   }
 
   // Role-specific protocol instructions
@@ -439,17 +439,23 @@ You can also communicate via message files:
 Messages from other agents will appear in your terminal as: [Message from AgentName]: their message`;
 }
 
-function buildControlPlaneInstructions(agentId: string, permissions: AgentPermissions, runtimeDir: string): string {
+function buildControlPlaneInstructions(agentId: string, permissions: AgentPermissions, runtimeDir: string, useCli = false): string {
   const controlDir = `${runtimeDir}/control`;
-  const sections = [`## Agent Management (Control Plane)
-
-### Primary method: MCP tools (recommended)
+  const primaryMethod = useCli
+    ? `### Primary method: kora-cli (recommended)
+Use kora-cli for agent management:
+- \`kora-cli agent spawn --name "Name" --model "model"\` -- Spawn a new worker agent
+- \`kora-cli agent remove <agentId> --reason "reason"\` -- Remove an agent`
+    : `### Primary method: MCP tools (recommended)
 Use MCP tools for agent management — they work reliably in all modes:
 - \`spawn_agent(name, role, persona, model, task?)\` -- Spawn a new worker agent
-- \`remove_agent(agentId, reason)\` -- Remove an agent
+- \`remove_agent(agentId, reason)\` -- Remove an agent`;
+  const sections = [`## Agent Management (Control Plane)
+
+${primaryMethod}
 
 ### Fallback: file-based commands
-If MCP tools are unavailable, you can write command files. IMPORTANT: Use the absolute path shown below, not a relative path.`];
+If the above is unavailable, you can write command files. IMPORTANT: Use the absolute path shown below, not a relative path.`];
 
   if (permissions.canSpawnAgents) {
     sections.push(`### To spawn a new agent:
