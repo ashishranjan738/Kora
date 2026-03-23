@@ -947,6 +947,85 @@ export function createApiRouter(deps: {
     }
   });
 
+  /** Get all agent context sections — single endpoint for MCP resources + CLI */
+  router.get("/sessions/:sid/agents/:aid/context", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const aid = String(req.params.aid);
+      const session = sessionManager.getSession(sid);
+      if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const orch = orchestrators.get(sid);
+      if (!orch) { res.status(404).json({ error: "Session not running" }); return; }
+
+      const agent = orch.agentManager.getAgent(aid);
+      if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+
+      // 1. Persona — read from file
+      let persona: string | null = null;
+      try {
+        const personaPath = path.join(session.runtimeDir, "personas", `${aid}-prompt.md`);
+        persona = await fsPromises.readFile(personaPath, "utf-8");
+      } catch { /* may not exist */ }
+
+      // 2. Team — list all agents
+      const allAgents = orch.agentManager.listAgents();
+      const team = allAgents.map((a) => ({
+        id: a.id,
+        name: a.config.name,
+        role: a.config.role,
+        status: a.status,
+        provider: a.config.cliProvider,
+        model: a.config.model,
+        isSelf: a.id === aid,
+      }));
+
+      // 3. Workflow states
+      const workflowStates = session.config.workflowStates || [];
+
+      // 4. Knowledge entries (from knowledge-db)
+      let knowledge: Array<Record<string, unknown>> = [];
+      try {
+        const db = getDb(sid);
+        if (db) {
+          knowledge = db.listKnowledge(sid, 50);
+        }
+      } catch { /* ignore */ }
+
+      // 5. Rules (from .kora.yml)
+      let rules: string[] = [];
+      try {
+        const { loadProjectConfig } = await import("../core/project-config.js");
+        const config = await loadProjectConfig(session.config.projectPath);
+        if (config?.rules) rules = config.rules;
+      } catch { /* ignore */ }
+
+      // 6. Communication mode
+      const communication = {
+        messagingMode: session.config.messagingMode || "mcp",
+        supportsMcp: agent.config.cliProvider === "claude-code" || agent.config.cliProvider === "kiro",
+      };
+
+      res.json({
+        agentId: aid,
+        name: agent.config.name,
+        role: agent.config.role,
+        provider: agent.config.cliProvider,
+        model: agent.config.model,
+        sessionId: sid,
+        projectPath: session.config.projectPath,
+        persona,
+        team,
+        workflow: workflowStates,
+        knowledge,
+        rules,
+        communication,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   router.delete("/sessions/:sid/agents/:aid", async (req: Request, res: Response) => {
     try {
       const { sid, aid } = req.params;
