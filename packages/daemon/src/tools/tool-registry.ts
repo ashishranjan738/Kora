@@ -364,6 +364,18 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       },
     },
   },
+  {
+    name: "delete_task",
+    description: "Delete a task from the board. Use for duplicate, invalid, or cancelled tasks. Master agents only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskId: { type: "string", description: "The task ID to delete" },
+        reason: { type: "string", description: "Optional reason for deletion" },
+      },
+      required: ["taskId"],
+    },
+  },
 ];
 
 /** Look up a tool definition by name */

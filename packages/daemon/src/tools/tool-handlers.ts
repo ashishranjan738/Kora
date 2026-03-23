@@ -833,6 +833,16 @@ export async function handleGetContext(
   return await resDef.fetchData(ctx);
 }
 
+export async function handleDeleteTask(
+  ctx: ToolContext,
+  args: Record<string, string>,
+): Promise<unknown> {
+  const taskId = args.taskId;
+  if (!taskId) return { error: "taskId is required" };
+  const result = await ctx.apiCall("DELETE", `/api/v1/sessions/${ctx.sessionId}/tasks/${taskId}`);
+  return { success: true, deleted: taskId, ...(args.reason ? { reason: args.reason } : {}), ...(result as Record<string, unknown>) };
+}
+
 // ── Dispatcher ──────────────────────────────────────────
 
 /** Map of tool name → handler function for all extracted tools */
@@ -859,6 +869,7 @@ export const TOOL_HANDLER_MAP: Record<string, (ctx: ToolContext, args: Record<st
   share_image: handleShareImage,
   whoami: handleWhoami,
   get_context: handleGetContext,
+  delete_task: handleDeleteTask,
 };
 
 /**
