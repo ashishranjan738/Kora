@@ -20,6 +20,7 @@ import {
 import { useMediaQuery } from "@mantine/hooks";
 import { AutonomyLevel } from "@kora/shared";
 import { PersonaLibrary } from "./PersonaLibrary";
+import { DirectoryBrowser } from "./DirectoryBrowser";
 import type { Persona } from "../hooks/usePersonas";
 
 const AUTONOMY_LABELS: Record<AutonomyLevel, string> = {
@@ -104,6 +105,8 @@ export function SpawnAgentDialog({ sessionId, onClose, onSpawned }: SpawnAgentDi
   const [error, setError] = useState("");
   const [recentFlags, setRecentFlags] = useState<string[]>([]);
   const [autonomyLevel, setAutonomyLevel] = useState<AutonomyLevel>(AutonomyLevel.AutoRead);
+  const [workingDirectory, setWorkingDirectory] = useState("");
+  const [directoryBrowserOpen, setDirectoryBrowserOpen] = useState(false);
   const [personaLibraryOpen, setPersonaLibraryOpen] = useState(false);
 
   const handlePersonaSelect = (selectedPersona: Persona) => { setPersona(selectedPersona.fullText); };
@@ -167,6 +170,7 @@ export function SpawnAgentDialog({ sessionId, onClose, onSpawned }: SpawnAgentDi
         persona: persona.trim() || undefined, initialTask: initialTask.trim() || undefined,
         extraCliArgs: extraCliArgs.trim() ? extraCliArgs.trim().split(/\s+/) : undefined,
         autonomyLevel,
+        workingDirectory: workingDirectory.trim() || undefined,
       };
       const result = await api.spawnAgent(sessionId, payload);
       onSpawned(result);
@@ -251,6 +255,28 @@ export function SpawnAgentDialog({ sessionId, onClose, onSpawned }: SpawnAgentDi
           styles={monoFieldStyles}
         />
 
+        <div>
+          <Text size="sm" fw={500} c="var(--text-primary)" mb={6}>Working Directory</Text>
+          <Group gap={8}>
+            <TextInput
+              value={workingDirectory}
+              onChange={(e) => setWorkingDirectory(e.currentTarget.value)}
+              placeholder="Default: session project path"
+              description="Optional. Override the agent's working directory."
+              styles={{ ...monoFieldStyles, root: { flex: 1 } }}
+            />
+            <Button
+              variant="light"
+              color="blue"
+              size="sm"
+              onClick={() => setDirectoryBrowserOpen(true)}
+              styles={{ root: { flexShrink: 0, alignSelf: "flex-start", marginTop: 1 } }}
+            >
+              Browse
+            </Button>
+          </Group>
+        </div>
+
         <Stack gap={6}>
           <Group justify="space-between" align="center">
             <Text size="sm" fw={500} c="var(--text-primary)">Persona</Text>
@@ -321,6 +347,12 @@ export function SpawnAgentDialog({ sessionId, onClose, onSpawned }: SpawnAgentDi
       </Stack>
 
       <PersonaLibrary opened={personaLibraryOpen} onClose={() => setPersonaLibraryOpen(false)} onSelect={handlePersonaSelect} />
+      <DirectoryBrowser
+        opened={directoryBrowserOpen}
+        onClose={() => setDirectoryBrowserOpen(false)}
+        onSelect={(path) => setWorkingDirectory(path)}
+        initialPath={workingDirectory}
+      />
     </Modal>
   );
 }
