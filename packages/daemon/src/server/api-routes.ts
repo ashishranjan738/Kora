@@ -2749,9 +2749,10 @@ export function createApiRouter(deps: {
 
   router.delete("/sessions/:sid/tasks/:tid", (req: Request, res: Response) => {
     try {
-      // Master-only: workers cannot delete tasks
+      // Master-only: agents must be master role to delete tasks
+      // Dashboard users (no X-Agent-Role header) are allowed
       const agentRole = req.headers["x-agent-role"] as string | undefined;
-      if (agentRole === "worker") {
+      if (agentRole && agentRole !== "master") {
         res.status(403).json({ error: "Task deletion requires master role" });
         return;
       }
