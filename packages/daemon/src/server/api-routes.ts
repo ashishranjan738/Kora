@@ -806,6 +806,7 @@ export function createApiRouter(deps: {
         workflowStates: session.config.workflowStates,
         supportsMcp: provider.supportsMcp,
         messagingMode: session.config.messagingMode || "mcp",
+        worktreeMode: session.config.worktreeMode,
       });
 
       const agentState = await am.spawnAgent({
