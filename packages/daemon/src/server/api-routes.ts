@@ -354,7 +354,7 @@ export function createApiRouter(deps: {
 
       const agents = orch.agentManager.listAgents();
 
-      const response: SessionResponse = {
+      const response: SessionResponse & { isGitRepo?: boolean } = {
         ...config,
         agentCount: agents.length,
         activeAgentCount: 0,
@@ -362,6 +362,7 @@ export function createApiRouter(deps: {
         stoppedAgentCount: 0,
         totalCostUsd: 0,
         agentSummaries: [],
+        isGitRepo: pathValidation.isGitRepo,
       };
       res.status(201).json(response);
     } catch (err) {
@@ -4706,7 +4707,7 @@ export function createApiRouter(deps: {
       const parent = path.dirname(resolved) !== resolved ? path.dirname(resolved) : null;
 
       // Response includes both "path" (frontend compat) and "currentPath" (original)
-      res.json({ path: resolved, currentPath: resolved, parent, directories, homeDir });
+      res.json({ path: resolved, currentPath: resolved, parent, directories, homeDir, isGitRepo: validation.isGitRepo });
     } catch (err) {
       logger.error({ err }, "[api] GET /browse/directories error");
       res.status(500).json({ error: "Internal server error" });
