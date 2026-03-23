@@ -70,7 +70,7 @@ describe("Prompt Registry", () => {
 
 describe("Resource Registry", () => {
   it("has exactly 5 resource definitions", () => {
-    expect(RESOURCE_DEFINITIONS).toHaveLength(5);
+    expect(RESOURCE_DEFINITIONS).toHaveLength(8);
   });
 
   it("every resource has uri, name, description, mimeType, fetchContent, fetchData", () => {
@@ -133,6 +133,9 @@ describe("Resource Registry", () => {
     const uris = nonSubs.map(r => r.uri);
     expect(uris).toContain("kora://workflow");
     expect(uris).toContain("kora://rules");
-    expect(nonSubs).toHaveLength(2);
+    expect(uris).toContain("kora://persona");
+    expect(uris).toContain("kora://communication");
+    expect(uris).toContain("kora://workspace");
+    expect(nonSubs).toHaveLength(5);
   });
 });
