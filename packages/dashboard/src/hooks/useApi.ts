@@ -298,6 +298,27 @@ export function useApi() {
     updateSchedule: (id: string, data: any) => apiFetch(`/schedules/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     deleteSchedule: (id: string) => apiFetch(`/schedules/${id}`, { method: "DELETE" }),
     triggerSchedule: (id: string) => apiFetch(`/schedules/${id}/trigger`, { method: "POST" }),
+    // Code comments
+    getCodeComments: (sid: string, file?: string, resolved?: boolean) => {
+      const params = new URLSearchParams();
+      if (file) params.set("file", file);
+      if (resolved !== undefined) params.set("resolved", String(resolved));
+      return apiFetch<{ comments: any[] }>(`/sessions/${sid}/code-comments?${params.toString()}`);
+    },
+    createCodeComment: (sid: string, data: { filePath: string; startLine: number; endLine: number; selectedText: string; comment: string; assignedTo?: string; createTask?: boolean }) =>
+      apiFetch<{ comment: any; task?: any }>(`/sessions/${sid}/code-comments`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    resolveCodeComment: (sid: string, commentId: string) =>
+      apiFetch<{ resolved: boolean }>(`/sessions/${sid}/code-comments/${commentId}`, {
+        method: "PUT",
+        body: JSON.stringify({ resolved: true }),
+      }),
+    deleteCodeComment: (sid: string, commentId: string) =>
+      apiFetch<{ deleted: boolean }>(`/sessions/${sid}/code-comments/${commentId}`, { method: "DELETE" }),
+    getCodeCommentFiles: (sid: string) =>
+      apiFetch<{ files: Array<{ path: string; count: number }> }>(`/sessions/${sid}/code-comments/files`),
     // Stale resource cleanup
     getOrphanedResources: (sid: string) =>
       apiFetch<{ resources: Array<{ agentId: string; name: string; worktreePath?: string; branchName?: string; logSize?: number; createdAt?: string }> }>(`/sessions/${sid}/orphaned-resources`),
