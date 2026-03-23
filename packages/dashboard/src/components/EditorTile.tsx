@@ -483,16 +483,43 @@ export function EditorTile({ sessionId }: EditorTileProps) {
                     editorInstanceRef.current = editor;
                     // Initialize inline comment review manager
                     try {
+                      const currentFilePath = activeTabPathRef.current || "";
                       const rm = createReviewManager(
                         editor,
                         "User",
                         commentEvents,
-                        (newEvents: any[]) => {
+                        async (newEvents: any[]) => {
                           setCommentEvents(newEvents);
-                          showSuccess(`Comment saved (${newEvents.length} total)`);
+                          // Persist new comments to backend + create backlog task
+                          const latestEvent = newEvents[newEvents.length - 1];
+                          if (latestEvent && latestEvent.type === 1 /* add */) {
+                            const lineNumber = latestEvent.lineNumber || 1;
+                            const commentText = latestEvent.text || "";
+                            try {
+                              const result = await api.createCodeComment(sessionId, {
+                                filePath: currentFilePath,
+                                startLine: lineNumber,
+                                endLine: lineNumber,
+                                selectedText: "",
+                                comment: commentText,
+                                createTask: true,
+                              });
+                              if (result.task) {
+                                showSuccess(`Backlog task created: ${result.task.title || "Code comment task"}`);
+                              } else {
+                                showSuccess("Comment saved");
+                              }
+                            } catch (err: any) {
+                              if (err.message?.includes("404")) {
+                                showSuccess("Comment saved (backend API not yet available)");
+                              } else {
+                                showError(err.message || "Failed to save comment", "Comment Error");
+                              }
+                            }
+                          }
                         },
                         {
-                          editButtonAddText: "Comment",
+                          editButtonAddText: "\uD83D\uDCCB Create Task",
                           editButtonEnableRemove: true,
                           editButtonRemoveText: "Delete",
                           showInRuler: true,
