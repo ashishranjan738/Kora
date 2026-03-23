@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useApi } from "../hooks/useApi";
+import { PROVIDERS } from "../constants/providers";
 import {
   Modal,
   Button,
@@ -86,14 +87,6 @@ const primaryBtnBase = {
   borderRadius: 8,
   fontWeight: 600 as const,
 };
-
-const PROVIDERS = [
-  { label: "Claude Code", value: "claude-code" },
-  { label: "Codex", value: "codex" },
-  { label: "Aider", value: "aider" },
-  { label: "Kiro", value: "kiro" },
-  { label: "Goose", value: "goose" },
-];
 
 const radioStyles = {
   label: { color: "var(--text-primary)", fontSize: 14, fontWeight: 500 as const },
