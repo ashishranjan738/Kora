@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useApi } from "../hooks/useApi";
 import { Modal, Button, TextInput, Stack, Group, Text, Badge, Paper, ActionIcon, Switch, Tooltip, Box } from "@mantine/core";
+import { DirectoryBrowser } from "./DirectoryBrowser";
 
 interface Schedule {
   id: string;
@@ -56,6 +57,8 @@ export function ScheduleManager() {
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
   const [cronExpr, setCronExpr] = useState("0 */6 * * *");
+  const [projectPath, setProjectPath] = useState("");
+  const [browserOpen, setBrowserOpen] = useState(false);
   const [creating, setCreating] = useState(false);
 
   const fetchSchedules = useCallback(async () => {
@@ -68,11 +71,11 @@ export function ScheduleManager() {
   useEffect(() => { fetchSchedules(); const i = setInterval(fetchSchedules, 30000); return () => clearInterval(i); }, [fetchSchedules]);
 
   const handleCreate = async () => {
-    if (!name.trim() || !cronExpr.trim()) return;
+    if (!name.trim() || !cronExpr.trim() || !projectPath.trim()) return;
     setCreating(true);
     try {
-      await api.createSchedule({ name: name.trim(), cronExpression: cronExpr.trim(), sessionConfig: { name: name.trim(), projectPath: "." } });
-      setName(""); setCronExpr("0 */6 * * *"); setShowCreate(false); fetchSchedules();
+      await api.createSchedule({ name: name.trim(), cronExpression: cronExpr.trim(), sessionConfig: { name: name.trim(), projectPath: projectPath.trim() } });
+      setName(""); setCronExpr("0 */6 * * *"); setProjectPath(""); setShowCreate(false); fetchSchedules();
     } catch {} finally { setCreating(false); }
   };
 
@@ -140,14 +143,41 @@ export function ScheduleManager() {
       <Modal opened={showCreate} onClose={() => setShowCreate(false)} title="New Schedule" centered styles={modalStyles}>
         <Stack gap="sm">
           <TextInput label="Schedule Name" value={name} onChange={(e) => setName(e.currentTarget.value)} placeholder="Nightly build" autoFocus styles={inputStyles} />
+          <div>
+            <Text size="sm" fw={500} c="var(--text-secondary)" mb={6}>Project Path</Text>
+            <Group gap={8}>
+              <TextInput
+                value={projectPath}
+                onChange={(e) => setProjectPath(e.currentTarget.value)}
+                placeholder="/path/to/project"
+                styles={{ ...inputStyles, root: { flex: 1 } }}
+              />
+              <Button
+                variant="light"
+                color="blue"
+                size="sm"
+                onClick={() => setBrowserOpen(true)}
+                style={{ flexShrink: 0 }}
+              >
+                Browse
+              </Button>
+            </Group>
+          </div>
           <TextInput label="Cron Expression" value={cronExpr} onChange={(e) => setCronExpr(e.currentTarget.value)} placeholder="0 */6 * * *" styles={inputStyles} description={describeCron(cronExpr)} />
           <Text size="xs" c="dimmed">Common: "0 * * * *" (hourly), "0 */6 * * *" (every 6h), "0 9 * * 1-5" (weekdays 9am)</Text>
           <Group justify="flex-end" mt="md">
             <Button variant="default" onClick={() => setShowCreate(false)} styles={{ root: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" } }}>Cancel</Button>
-            <Button onClick={handleCreate} loading={creating} disabled={!name.trim() || !cronExpr.trim()} styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)" } }}>Create</Button>
+            <Button onClick={handleCreate} loading={creating} disabled={!name.trim() || !cronExpr.trim() || !projectPath.trim()} styles={{ root: { backgroundColor: "var(--accent-blue)", borderColor: "var(--accent-blue)" } }}>Create</Button>
           </Group>
         </Stack>
       </Modal>
+
+      <DirectoryBrowser
+        opened={browserOpen}
+        onClose={() => setBrowserOpen(false)}
+        onSelect={(path) => setProjectPath(path)}
+        initialPath={projectPath}
+      />
     </Box>
   );
 }
