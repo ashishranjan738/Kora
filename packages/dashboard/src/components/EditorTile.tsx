@@ -26,13 +26,43 @@ interface OpenTab {
 export function EditorTile({ sessionId }: EditorTileProps) {
   const api = useApi();
   const { resolvedEditorTheme } = useThemeStore();
+  const STORAGE_KEY = `kora-editor-tabs-${sessionId}`;
+
+  // Restore persisted tabs on mount
   const [files, setFiles] = useState<FileItem[]>([]);
   const [currentDir, setCurrentDir] = useState("");
-  const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
-  const [activeTabPath, setActiveTabPath] = useState<string | null>(null);
+  const [openTabs, setOpenTabs] = useState<OpenTab[]>(() => {
+    try {
+      const saved = sessionStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.tabs || [];
+      }
+    } catch { /* ignore corrupt data */ }
+    return [];
+  });
+  const [activeTabPath, setActiveTabPath] = useState<string | null>(() => {
+    try {
+      const saved = sessionStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.activeTab || null;
+      }
+    } catch { /* ignore */ }
+    return null;
+  });
   const [saving, setSaving] = useState(false);
   const openTabsRef = useRef(openTabs);
   const activeTabPathRef = useRef(activeTabPath);
+
+  // Persist open tabs + active tab to sessionStorage on change
+  useEffect(() => {
+    try {
+      // Only save path + language (not content — re-fetch on restore)
+      const tabsMeta = openTabs.map(t => ({ path: t.path, language: t.language, content: t.content, modified: t.modified }));
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ tabs: tabsMeta, activeTab: activeTabPath }));
+    } catch { /* storage full — ignore */ }
+  }, [openTabs, activeTabPath, STORAGE_KEY]);
 
   // Unsaved changes close confirmation state
   const [pendingCloseTab, setPendingCloseTab] = useState<string | null>(null);
