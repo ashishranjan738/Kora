@@ -329,6 +329,6 @@ export function useApi() {
       }),
     // Directory browsing
     browseDirectories: (dirPath?: string) =>
-      apiFetch<{ path: string; parent: string | null; directories: Array<{ name: string; path: string; isGitRepo?: boolean }>; homeDir: string }>(`/browse/directories${dirPath ? `?path=${encodeURIComponent(dirPath)}` : ""}`),
+      apiFetch<{ path: string; parent: string | null; directories: Array<{ name: string; path: string; isGitRepo?: boolean }>; homeDir: string; isGitRepo?: boolean }>(`/browse/directories${dirPath ? `?path=${encodeURIComponent(dirPath)}` : ""}`),
   };
 }
