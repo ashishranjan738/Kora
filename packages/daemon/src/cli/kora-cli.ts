@@ -120,6 +120,55 @@ prog.name("kora-cli").version(VERSION).description("CLI for Kora multi-agent orc
   .hook("preAction", () => { const o = prog.opts(); cfg = resolve({ session: o.session, agent: o.agent }); });
 const J = () => prog.opts().json as boolean | undefined;
 
+// whoami
+prog.command("whoami").description("Show current agent identity, persona, and session context")
+  .option("--full", "Show full persona text (default: truncated to 500 chars)")
+  .action(async (o: { full?: boolean }) => {
+    const sid = rS(cfg); const aid = rA(cfg);
+    const [personaResp, agentsResp, wfResp] = await Promise.all([
+      api(cfg, "GET", `/api/v1/sessions/${sid}/agents/${aid}/persona`) as Promise<Record<string, unknown>>,
+      api(cfg, "GET", `/api/v1/sessions/${sid}/agents`) as Promise<Record<string, unknown>>,
+      api(cfg, "GET", `/api/v1/sessions/${sid}/workflow-states`) as Promise<Record<string, unknown>>,
+    ]);
+    // Extract self info from agents list (persona endpoint may only return { agentId, persona })
+    const agents = (agentsResp.agents || []) as Array<Record<string, unknown>>;
+    const self = agents.find((a) => a.id === aid);
+    const sc = self?.config as Record<string, unknown> | undefined;
+    if (J()) {
+      out({ agentId: aid, name: sc?.name || aid, role: sc?.role || "worker", provider: sc?.cliProvider, model: sc?.model, sessionId: sid, persona: personaResp.persona, team: agents, workflow: (wfResp.states || []) }, true);
+    } else {
+      const lines: string[] = [
+        `Agent:       ${sc?.name || aid} (${sc?.role || "worker"})`,
+        `ID:          ${aid}`,
+        `Provider:    ${sc?.cliProvider || "?"}${sc?.model ? `:${sc.model}` : ""}`,
+        `Session:     ${sid}`,
+        `Project:     ${personaResp.projectPath || "?"}`,
+        `Messaging:   ${personaResp.messagingMode || "mcp"}`,
+      ];
+      // Team
+      if (agents.length) {
+        lines.push("", "Team:");
+        for (const a of agents) {
+          const c = a.config as Record<string, unknown> | undefined;
+          const marker = (a.id === aid) ? " (you)" : "";
+          lines.push(`  ${c?.name || a.id} (${c?.role || "?"}) — ${a.status || "?"}${marker}`);
+        }
+      }
+      // Workflow
+      const states = (wfResp.states || []) as Array<Record<string, unknown>>;
+      if (states.length) {
+        lines.push("", "Workflow: " + states.map((s) => s.label || s.name || s.id).join(" → "));
+      }
+      // Persona
+      const persona = (personaResp.persona || "") as string;
+      if (persona) {
+        const display = o.full ? persona : (persona.length > 500 ? persona.slice(0, 500) + "\n  ... (use --full to see complete persona)" : persona);
+        lines.push("", "Persona:", display);
+      }
+      out(lines.join("\n"), false);
+    }
+  });
+
 // send
 prog.command("send <to> <message>").description("Send a message to another agent")
   .option("--type <type>", "Message type", "text").option("--channel <ch>", "Channel")
