@@ -341,6 +341,10 @@ export class Orchestrator extends EventEmitter {
           content: msg,
           timestamp: new Date().toISOString(),
         });
+        // Also send terminal notification so agent sees it immediately
+        try {
+          await this.agentManager.sendMessage(existing.id, `[New message from system. Use check_messages tool to read it.]`);
+        } catch { /* non-fatal — agent may not be ready */ }
       }
 
       // Send welcome notification to the newly spawned agent itself
@@ -390,6 +394,10 @@ export class Orchestrator extends EventEmitter {
           content: msg,
           timestamp: new Date().toISOString(),
         });
+        // Also send terminal notification so agent sees it immediately
+        try {
+          await this.agentManager.sendMessage(remaining.id, `[New message from system. Use check_messages tool to read it.]`);
+        } catch { /* non-fatal */ }
       }
 
       this.emit("agent-removed", agentId, reason);
