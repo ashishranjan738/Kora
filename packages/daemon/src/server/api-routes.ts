@@ -4272,7 +4272,7 @@ export function createApiRouter(deps: {
             const entries = await nodeFs.readdir(dir, { withFileTypes: true });
             const skipDirs = new Set(["node_modules", ".git", "dist", "build", ".next", "target", "__pycache__", ".venv", "vendor"]);
             for (const entry of entries) {
-              if (entry.isDirectory() && !skipDirs.has(entry.name) && !entry.name.startsWith(".")) {
+              if (entry.isDirectory() && !skipDirs.has(entry.name) && (!entry.name.startsWith(".") || entry.name === ".kora")) {
                 await findGitRepos(nodePath.join(dir, entry.name), depth + 1);
               }
             }
