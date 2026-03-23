@@ -4248,6 +4248,69 @@ export function createApiRouter(deps: {
       const exec = promisify(execFile);
       const projectRoot = session.config.projectPath;
 
+      // Per-agent git: if agentId provided, show committed diffs vs main in agent's worktree
+      const agentId = req.query.agentId as string | undefined;
+      if (agentId) {
+        const orch = orchestrators.get(sid);
+        const agent = orch?.agentManager.getAgent(agentId);
+        if (!agent) {
+          res.status(404).json({ error: `Agent "${agentId}" not found` });
+          return;
+        }
+        const workDir = agent.config.workingDirectory;
+        try {
+          let branch = "";
+          try {
+            const { stdout } = await exec("git", ["branch", "--show-current"], { cwd: workDir });
+            branch = stdout.trim();
+          } catch {}
+
+          // Get committed changes vs main (shows what the agent's branch added)
+          let committedChanges: Array<{ status: string; file: string; statusLabel: string }> = [];
+          try {
+            const { stdout } = await exec("git", ["diff", "--name-status", "origin/main...HEAD"], { cwd: workDir });
+            const statusMap: Record<string, string> = { M: "Modified", A: "Added", D: "Deleted", R: "Renamed" };
+            committedChanges = stdout.trim().split("\n").filter(Boolean).map(line => {
+              const [status, ...fileParts] = line.split("\t");
+              const file = fileParts.join("\t");
+              return { status: status.charAt(0), file, statusLabel: statusMap[status.charAt(0)] || status };
+            });
+          } catch {}
+
+          // Also get uncommitted changes
+          let uncommittedChanges: Array<{ status: string; file: string; statusLabel: string }> = [];
+          try {
+            const { stdout } = await exec("git", ["status", "--porcelain"], { cwd: workDir });
+            const statusMap: Record<string, string> = { M: "Modified", A: "Added", D: "Deleted", "??": "Untracked", R: "Renamed" };
+            uncommittedChanges = stdout.trim().split("\n").filter(Boolean).map(line => {
+              const status = line.substring(0, 2).trim();
+              const file = line.substring(3);
+              return { status, file, statusLabel: statusMap[status] || status };
+            });
+          } catch {}
+
+          // Count commits ahead of main
+          let commitsAhead = 0;
+          try {
+            const { stdout } = await exec("git", ["rev-list", "--count", "origin/main..HEAD"], { cwd: workDir });
+            commitsAhead = parseInt(stdout.trim(), 10) || 0;
+          } catch {}
+
+          res.json({
+            agentId,
+            branch,
+            workingDirectory: workDir,
+            commitsAhead,
+            committedChanges,
+            uncommittedChanges,
+            totalChanges: committedChanges.length + uncommittedChanges.length,
+          });
+        } catch (err) {
+          res.status(500).json({ error: String(err) });
+        }
+        return;
+      }
+
       const statusMap: Record<string, string> = { M: "Modified", A: "Added", D: "Deleted", "??": "Untracked", R: "Renamed" };
 
       // Discover all git repos: root + nested (max 3 levels deep)
@@ -4340,6 +4403,7 @@ export function createApiRouter(deps: {
       const sid = String(req.params.sid);
       const filePath = String(req.query.path || "");
       const repo = String(req.query.repo || ".");
+      const agentIdDiff = req.query.agentId as string | undefined;
       const session = sessionManager.getSession(sid);
       if (!session) { res.status(404).json({ error: "Session not found" }); return; }
 
@@ -4347,6 +4411,42 @@ export function createApiRouter(deps: {
       const { promisify } = await import("util");
       const nodePath = await import("path");
       const exec = promisify(execFile);
+
+      // Per-agent diff: show committed diff vs main for a specific file
+      if (agentIdDiff) {
+        const orch = orchestrators.get(sid);
+        const agent = orch?.agentManager.getAgent(agentIdDiff);
+        if (!agent) { res.status(404).json({ error: `Agent "${agentIdDiff}" not found` }); return; }
+        const workDir = agent.config.workingDirectory;
+
+        try {
+          // Get original from main
+          let original = "";
+          try {
+            const { stdout } = await exec("git", ["show", `origin/main:${filePath}`], { cwd: workDir });
+            original = stdout;
+          } catch { /* new file */ }
+
+          // Get current from agent branch
+          let modified = "";
+          try {
+            const fullPath = nodePath.resolve(workDir, filePath);
+            const fsP = await import("fs/promises");
+            modified = await fsP.readFile(fullPath, "utf-8");
+          } catch { /* deleted */ }
+
+          let diff = "";
+          try {
+            const { stdout } = await exec("git", ["diff", "origin/main...HEAD", "--", filePath], { cwd: workDir });
+            diff = stdout;
+          } catch {}
+
+          res.json({ original, modified, diff, path: filePath, agentId: agentIdDiff });
+        } catch (err) {
+          res.json({ original: "", modified: "", diff: "", path: filePath, agentId: agentIdDiff, error: String(err) });
+        }
+        return;
+      }
 
       // Resolve the repo directory
       const repoDir = repo === "." ? session.config.projectPath : nodePath.resolve(session.config.projectPath, repo);
