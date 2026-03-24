@@ -3,6 +3,14 @@
  * Used by MCP server (JSON-RPC), CLI, and any future transport.
  */
 
+/** CLI metadata for auto-generating CLI commands from tool definitions */
+export interface ToolCliMeta {
+  positionalArgs?: string[];
+  aliases?: string[];
+  group?: string;
+  subcommand?: string;
+}
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -11,6 +19,7 @@ export interface ToolDefinition {
     properties: Record<string, unknown>;
     required?: string[];
   };
+  cliMeta?: ToolCliMeta;
 }
 
 /** All available tool names */
@@ -416,4 +425,43 @@ export function getToolDefinition(name: string): ToolDefinition | undefined {
 /** Get tool definitions filtered by role */
 export function getToolsForRole(role: string): ToolDefinition[] {
   return TOOL_DEFINITIONS.filter(t => isToolAllowed(role, t.name));
+}
+
+/** CLI metadata map — merged with TOOL_DEFINITIONS for auto-CLI generation */
+export const CLI_META: Record<string, ToolCliMeta> = {
+  send_message: { positionalArgs: ["to", "message"], aliases: ["send"] },
+  check_messages: { aliases: ["messages", "check"] },
+  list_agents: { aliases: ["agents", "list-agents"] },
+  broadcast: { positionalArgs: ["message"] },
+  list_tasks: { aliases: ["tasks"] },
+  get_workflow_states: { aliases: ["workflow"] },
+  list_personas: { aliases: ["personas"] },
+  verify_work: { aliases: ["verify"] },
+  report_idle: { aliases: ["idle"] },
+  request_task: { aliases: ["request-task"] },
+  whoami: {},
+  share_image: { positionalArgs: ["to"], aliases: ["share-image"] },
+  get_task: { group: "task", subcommand: "get", positionalArgs: ["taskId"], aliases: ["show"] },
+  update_task: { group: "task", subcommand: "update", positionalArgs: ["taskId"] },
+  create_task: { group: "task", subcommand: "create", positionalArgs: ["title"] },
+  delete_task: { group: "task", subcommand: "delete", positionalArgs: ["taskId"] },
+  spawn_agent: { group: "agent", subcommand: "spawn", positionalArgs: ["name"] },
+  remove_agent: { group: "agent", subcommand: "remove", positionalArgs: ["agentId"], aliases: ["stop"] },
+  peek_agent: { group: "agent", subcommand: "peek", positionalArgs: ["agentId"] },
+  nudge_agent: { group: "agent", subcommand: "nudge", positionalArgs: ["agentId"] },
+  prepare_pr: { group: "pr", subcommand: "prepare" },
+  create_pr: { group: "pr", subcommand: "create" },
+  save_knowledge: { group: "knowledge", subcommand: "save", positionalArgs: ["entry"] },
+  get_knowledge: { group: "knowledge", subcommand: "get", positionalArgs: ["key"] },
+  search_knowledge: { group: "knowledge", subcommand: "search", positionalArgs: ["query"] },
+  save_persona: { group: "persona", subcommand: "save" },
+  channel_list: { group: "channel", subcommand: "list" },
+  channel_join: { group: "channel", subcommand: "join", positionalArgs: ["channel"] },
+  channel_history: { group: "channel", subcommand: "history", positionalArgs: ["channel"] },
+  get_context: { aliases: ["context"] },
+};
+
+/** Get tool definitions enriched with CLI metadata */
+export function getToolDefinitionsWithCliMeta(): ToolDefinition[] {
+  return TOOL_DEFINITIONS.map(t => ({ ...t, cliMeta: CLI_META[t.name] || t.cliMeta }));
 }
