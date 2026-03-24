@@ -420,8 +420,8 @@ export class AppDatabase extends EventEmitter {
     return result.changes > 0;
   }
 
-  getChannelMessages(channel: string, limit = 50, before?: string): Array<{ id: string; from: string; fromName: string | null; content: string; timestamp: string; channel: string }> {
-    let sql = `SELECT id, from_agent_id as "from", from_name as fromName, content, created_at as timestamp, channel FROM messages WHERE channel = ?`;
+  getChannelMessages(channel: string, limit = 50, before?: string): Array<{ id: string; from: string; content: string; timestamp: string; channel: string }> {
+    let sql = `SELECT id, from_agent_id as "from", content, created_at as timestamp, channel FROM messages WHERE channel = ?`;
     const params: unknown[] = [channel];
     if (before) { sql += ` AND created_at < ?`; params.push(before); }
     sql += ` ORDER BY created_at DESC LIMIT ?`;

@@ -4900,10 +4900,14 @@ export function createApiRouter(deps: {
     } catch (err) { res.status(500).json({ error: "Internal server error" }); }
   });
 
+  // NOTE: join/leave modify in-memory agent config only. Channel memberships
+  // are not persisted to DB — they reset on daemon restart. Agents are re-assigned
+  // default channels (#all, #orchestration) on spawn/restore.
   router.post("/sessions/:sid/channels/:channelId/join", (req: Request, res: Response) => {
     try {
       const sid = String(req.params.sid);
       const channelId = String(req.params.channelId);
+      if (!channelId.startsWith("#") || /\s/.test(channelId)) { res.status(400).json({ error: "Invalid channel ID" }); return; }
       const orch = orchestrators.get(sid);
       if (!orch) { res.status(404).json({ error: "Session not running" }); return; }
       const agentId = req.body.agentId || req.headers["x-agent-id"] as string;
@@ -4921,6 +4925,7 @@ export function createApiRouter(deps: {
     try {
       const sid = String(req.params.sid);
       const channelId = String(req.params.channelId);
+      if (!channelId.startsWith("#") || /\s/.test(channelId)) { res.status(400).json({ error: "Invalid channel ID" }); return; }
       if (channelId === "#all") { res.status(400).json({ error: "Cannot leave #all channel" }); return; }
       const orch = orchestrators.get(sid);
       if (!orch) { res.status(404).json({ error: "Session not running" }); return; }
