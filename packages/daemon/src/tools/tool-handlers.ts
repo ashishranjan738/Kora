@@ -845,6 +845,33 @@ export async function handleDeleteTask(
   return { success: true, deleted: taskId, ...(args.reason ? { reason: args.reason } : {}), ...(result as Record<string, unknown>) };
 }
 
+// ── Channel tools ───────────────────────────────────────
+
+async function handleChannelList(ctx: ToolContext, _args: Record<string, string>): Promise<unknown> {
+  return await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/channels`);
+}
+
+async function handleChannelJoin(ctx: ToolContext, args: Record<string, string>): Promise<unknown> {
+  if (!args.channel) return { error: "channel is required" };
+  return await ctx.apiCall("POST", `/api/v1/sessions/${ctx.sessionId}/channels/${encodeURIComponent(args.channel)}/join`, { agentId: ctx.agentId });
+}
+
+async function handleChannelHistory(ctx: ToolContext, args: Record<string, string>): Promise<unknown> {
+  if (!args.channel) return { error: "channel is required" };
+  const limit = Math.min(parseInt(args.limit) || 20, 100);
+  const resp = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/channels/${encodeURIComponent(args.channel)}/messages?limit=${limit}`)) as Record<string, unknown>;
+  const messages = (resp.messages || []) as Array<Record<string, unknown>>;
+  return {
+    channel: args.channel,
+    count: messages.length,
+    messages: messages.map((m) => ({
+      from: m.fromName || m.fromAgentId || m.from_agent_id || "?",
+      content: m.content,
+      timestamp: m.createdAt ? new Date(m.createdAt as number).toISOString() : m.timestamp,
+    })),
+  };
+}
+
 // ── Dispatcher ──────────────────────────────────────────
 
 /** Map of tool name → handler function for all extracted tools */
@@ -872,6 +899,9 @@ export const TOOL_HANDLER_MAP: Record<string, (ctx: ToolContext, args: Record<st
   whoami: handleWhoami,
   get_context: handleGetContext,
   delete_task: handleDeleteTask,
+  channel_list: handleChannelList,
+  channel_join: handleChannelJoin,
+  channel_history: handleChannelHistory,
 };
 
 /**

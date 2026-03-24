@@ -401,7 +401,29 @@ prog.command("share-image <to>").description("Share image").option("--file <f>")
     out(J() ? { success: true } : "Image shared.", J());
   });
 
-// Run
+// channel list/join/history
+const chCmd = prog.command("channel").description("Channel ops");
+chCmd.command("list").description("List channels").action(async () => {
+  const r = (await apiRetry(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/channels`)) as Record<string, unknown>;
+  if (J()) { out(r, true); } else {
+    const channels = (r.channels || []) as Array<Record<string, unknown>>;
+    out(channels.length ? channels.map((c) => `  ${c.id} — ${c.name}${c.description ? ` (${c.description})` : ""}${c.isDefault ? " [default]" : ""} [${c.memberCount || 0} members]`).join("\n") : "No channels.", false);
+  }
+});
+chCmd.command("join <channel>").description("Join a channel").action(async (channel: string) => {
+  await apiRetry(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/channels/${encodeURIComponent(channel)}/join`, { agentId: rA(cfg) });
+  out(J() ? { success: true, channel } : `Joined ${channel}.`, J());
+});
+chCmd.command("history <channel>").description("Read channel message history").option("--limit <n>", "", "20")
+  .action(async (channel: string, o: { limit?: string }) => {
+    const limit = Math.min(parseInt(o.limit || "20", 10), 100);
+    const r = (await apiRetry(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/channels/${encodeURIComponent(channel)}/messages?limit=${limit}`)) as Record<string, unknown>;
+    if (J()) { out(r, true); } else {
+      const msgs = (r.messages || []) as Array<Record<string, unknown>>;
+      out(msgs.length ? msgs.map((m) => `  [${(m.createdAt ? new Date(m.createdAt as number).toISOString() : "").slice(11, 19)}] ${m.fromName || m.from_agent_id || "?"}: ${m.content}`).join("\n") : `No messages in ${channel}.`, false);
+    }
+  });
+
 // context — auto-registered from resource registry
 const ctxCmd = prog.command("context").description("Read session context (from MCP resource registry)");
 

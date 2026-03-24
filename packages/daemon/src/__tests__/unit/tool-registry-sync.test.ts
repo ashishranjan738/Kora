@@ -128,6 +128,9 @@ const TOOL_TO_CLI_MAP: Record<string, string[]> = {
   whoami: ["whoami"],
   get_context: ["context"],
   delete_task: ["task", "delete"],
+  channel_list: ["channel", "list"],
+  channel_join: ["channel", "join"],
+  channel_history: ["channel", "history"],
 };
 
 // ---------------------------------------------------------------------------
@@ -139,7 +142,7 @@ describe("Tool Registry Sync Validation", () => {
 
   describe("Registry integrity", () => {
     it("ALL_TOOL_NAMES has 27 tools", () => {
-      expect(ALL_TOOL_NAMES.length).toBe(27);
+      expect(ALL_TOOL_NAMES.length).toBe(30);
     });
 
     it("TOOL_DEFINITIONS matches ALL_TOOL_NAMES", () => {
