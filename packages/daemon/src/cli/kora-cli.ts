@@ -68,6 +68,20 @@ function api(c: Cfg, method: string, urlPath: string, body?: unknown): Promise<u
   });
 }
 
+/** Retry wrapper — retries on connection failure with exponential backoff */
+async function apiRetry(c: Cfg, method: string, urlPath: string, body?: unknown, maxRetries = 2): Promise<unknown> {
+  for (let i = 0; i <= maxRetries; i++) {
+    try { return await api(c, method, urlPath, body); }
+    catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (i === maxRetries || !msg.includes("Cannot connect")) throw err;
+      process.stderr.write(`Connection failed (attempt ${i + 1}/${maxRetries + 1}), retrying in ${i + 1}s...\n`);
+      await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+    }
+  }
+  throw new Error("Unreachable");
+}
+
 // ---------------------------------------------------------------------------
 // Output
 // ---------------------------------------------------------------------------
@@ -141,9 +155,9 @@ prog.command("whoami").description("Show current agent identity, persona, and se
   .action(async (o: { full?: boolean }) => {
     const sid = rS(cfg); const aid = rA(cfg);
     const [personaResp, agentsResp, wfResp] = await Promise.all([
-      api(cfg, "GET", `/api/v1/sessions/${sid}/agents/${aid}/persona`) as Promise<Record<string, unknown>>,
-      api(cfg, "GET", `/api/v1/sessions/${sid}/agents`) as Promise<Record<string, unknown>>,
-      api(cfg, "GET", `/api/v1/sessions/${sid}/workflow-states`) as Promise<Record<string, unknown>>,
+      apiRetry(cfg, "GET", `/api/v1/sessions/${sid}/agents/${aid}/persona`) as Promise<Record<string, unknown>>,
+      apiRetry(cfg, "GET", `/api/v1/sessions/${sid}/agents`) as Promise<Record<string, unknown>>,
+      apiRetry(cfg, "GET", `/api/v1/sessions/${sid}/workflow-states`) as Promise<Record<string, unknown>>,
     ]);
     // Extract self info from agents list (persona endpoint may only return { agentId, persona })
     const agents = (agentsResp.agents || []) as Array<Record<string, unknown>>;
@@ -188,28 +202,28 @@ prog.command("whoami").description("Show current agent identity, persona, and se
 prog.command("send <to> <message>").description("Send a message to another agent")
   .option("--type <type>", "Message type", "text").option("--channel <ch>", "Channel")
   .action(async (to: string, msg: string, o: { type?: string; channel?: string }) => {
-    const r = await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/relay`, { from: cfg.agentId, to, message: msg, messageType: o.type, channel: o.channel });
+    const r = await apiRetry(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/relay`, { from: cfg.agentId, to, message: msg, messageType: o.type, channel: o.channel });
     out(J() ? r : "Message sent.", J());
   });
 
 // messages
 prog.command("messages").alias("check").description("Check for new messages").action(async () => {
   const sid = rS(cfg), aid = rA(cfg);
-  const r = (await api(cfg, "GET", `/api/v1/sessions/${sid}/agents/${aid}/messages?status=pending&status=delivered`)) as Record<string, unknown>;
+  const r = (await apiRetry(cfg, "GET", `/api/v1/sessions/${sid}/agents/${aid}/messages?status=pending&status=delivered`)) as Record<string, unknown>;
   const m = (r.messages || []) as Array<Record<string, unknown>>;
-  if (m.length) await api(cfg, "POST", `/api/v1/sessions/${sid}/agents/${aid}/messages/mark-read`, { messageIds: m.map((x) => x.id) });
+  if (m.length) await apiRetry(cfg, "POST", `/api/v1/sessions/${sid}/agents/${aid}/messages/mark-read`, { messageIds: m.map((x) => x.id) });
   out(J() ? r : fmtMsgs(m), J());
 });
 
 // agents
 prog.command("agents").alias("list-agents").description("List agents").action(async () => {
-  const r = (await api(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/agents`)) as Record<string, unknown>;
+  const r = (await apiRetry(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/agents`)) as Record<string, unknown>;
   out(J() ? r : fmtAgents((r.agents || []) as Array<Record<string, unknown>>), J());
 });
 
 // broadcast
 prog.command("broadcast <message>").description("Broadcast to all agents").action(async (msg: string) => {
-  await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/broadcast`, { from: cfg.agentId, message: msg });
+  await apiRetry(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/broadcast`, { from: cfg.agentId, message: msg });
   out(J() ? { success: true } : "Broadcast sent.", J());
 });
 
@@ -217,30 +231,37 @@ prog.command("broadcast <message>").description("Broadcast to all agents").actio
 prog.command("tasks").description("List tasks")
   .option("--assignee <a>", "Filter assignee (me/all/name)", "me").option("--status <s>", "Filter status", "active")
   .option("--label <l>", "Filter label").option("--sort <s>", "Sort: created/due/priority", "created")
-  .action(async (o: { assignee?: string; status?: string; label?: string; sort?: string }) => {
+  .option("--due <d>", "Filter by due date: overdue, today, week, or YYYY-MM-DD")
+  .option("--no-summary", "Show full task details instead of compact summary")
+  .option("--max-tasks <n>", "Limit number of results")
+  .action(async (o: { assignee?: string; status?: string; label?: string; sort?: string; due?: string; summary?: boolean; maxTasks?: string }) => {
     const p = new URLSearchParams();
     if (o.assignee) p.set("assignedTo", o.assignee === "me" ? cfg.agentId : o.assignee);
     if (o.status) p.set("status", o.status); if (o.label) p.set("label", o.label); if (o.sort) p.set("sortBy", o.sort);
-    const r = (await api(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/tasks?${p}`)) as Record<string, unknown>;
+    if (o.due) p.set("due", o.due);
+    if (o.summary === false) p.set("summary", "false");
+    if (o.maxTasks) p.set("maxTasks", o.maxTasks);
+    const r = (await apiRetry(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/tasks?${p}`)) as Record<string, unknown>;
     out(J() ? r : fmtTasks((r.tasks || []) as Array<Record<string, unknown>>), J());
   });
 
 // task get/update/create
 const tCmd = prog.command("task").description("Task ops");
 tCmd.command("get <id>").alias("show").description("Get task details").action(async (id: string) => {
-  const r = (await api(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/tasks/${id}`)) as Record<string, unknown>;
+  const r = (await apiRetry(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/tasks/${id}`)) as Record<string, unknown>;
   out(J() ? r : fmtTask((r.task || r) as Record<string, unknown>), J());
 });
 tCmd.command("update <id>").description("Update task")
   .option("--status <s>").option("--comment <c>").option("--priority <p>").option("--assign <a>")
-  .option("--title <t>").option("--labels <l>").option("--due <d>").option("--force")
+  .option("--title <t>").option("--description <d>", "Update description").option("--labels <l>").option("--due <d>").option("--force")
   .action(async (id: string, o: Record<string, string | boolean | undefined>) => {
     const b: Record<string, unknown> = {};
     if (o.status) b.status = o.status; if (o.comment) b.comment = o.comment;
     if (o.priority) b.priority = o.priority; if (o.assign) b.assignedTo = o.assign;
-    if (o.title) b.title = o.title; if (o.labels) b.labels = (o.labels as string).split(",").map((x: string) => x.trim());
+    if (o.title) b.title = o.title; if (o.description) b.description = o.description;
+    if (o.labels) b.labels = (o.labels as string).split(",").map((x: string) => x.trim());
     if (o.due) b.dueDate = o.due; if (o.force) b.force = true;
-    const r = await api(cfg, "PUT", `/api/v1/sessions/${rS(cfg)}/tasks/${id}`, b);
+    const r = await apiRetry(cfg, "PUT", `/api/v1/sessions/${rS(cfg)}/tasks/${id}`, b);
     out(J() ? r : "Task updated.", J());
   });
 tCmd.command("create <title>").description("Create task")
@@ -250,7 +271,7 @@ tCmd.command("create <title>").description("Create task")
     if (o.desc) b.description = o.desc; if (o.assign) b.assignedTo = o.assign;
     if (o.priority) b.priority = o.priority; if (o.labels) b.labels = (o.labels as string).split(",").map((x: string) => x.trim());
     if (o.due) b.dueDate = o.due;
-    const r = (await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/tasks`, b)) as Record<string, unknown>;
+    const r = (await apiRetry(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/tasks`, b)) as Record<string, unknown>;
     const t = (r.task || r) as Record<string, unknown>;
     out(J() ? r : `Task created: ${t.id} — ${t.title}`, J());
   });
@@ -258,13 +279,13 @@ tCmd.command("delete <id>").description("Delete task (master only)")
   .option("--reason <r>", "Reason for deletion")
   .action(async (id: string, o: { reason?: string }) => {
     requireMaster(cfg, "delete_task");
-    const r = (await api(cfg, "DELETE", `/api/v1/sessions/${rS(cfg)}/tasks/${id}`)) as Record<string, unknown>;
+    const r = (await apiRetry(cfg, "DELETE", `/api/v1/sessions/${rS(cfg)}/tasks/${id}`)) as Record<string, unknown>;
     out(J() ? { success: true, deleted: id, ...r, ...(o.reason ? { reason: o.reason } : {}) } : `Task ${id} deleted.`, J());
   });
 
 // workflow
 prog.command("workflow").description("Show workflow states").action(async () => {
-  const r = (await api(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/workflow-states`)) as Record<string, unknown>;
+  const r = (await apiRetry(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/workflow-states`)) as Record<string, unknown>;
   out(J() ? r : fmtWf(r), J());
 });
 
@@ -273,58 +294,60 @@ const aCmd = prog.command("agent").description("Agent ops");
 aCmd.command("spawn <name>").description("Spawn agent (master only)")
   .requiredOption("--model <m>").option("--role <r>", "", "worker").option("--persona <p>")
   .option("--persona-id <id>").option("--task <t>").option("--provider <p>")
+  .option("--extra-cli-args <args>", "Extra CLI arguments (comma-separated)")
   .action(async (name: string, o: Record<string, string | undefined>) => {
     requireMaster(cfg, "spawn_agent");
     const b: Record<string, unknown> = { name, model: o.model };
     if (o.role) b.role = o.role; if (o.persona) b.persona = o.persona;
     if (o.personaId) b.personaId = o.personaId; if (o.task) b.task = o.task; if (o.provider) b.cliProvider = o.provider;
-    const r = (await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/agents`, b)) as Record<string, unknown>;
+    if (o.extraCliArgs) b.extraCliArgs = (o.extraCliArgs as string).split(",").map((x: string) => x.trim());
+    const r = (await apiRetry(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/agents`, b)) as Record<string, unknown>;
     out(J() ? r : `Agent spawned: ${(r.agent as Record<string, unknown>)?.id || name}`, J());
   });
 aCmd.command("remove <id>").alias("stop").description("Remove agent (master only)").option("--reason <r>")
   .action(async (id: string, o: { reason?: string }) => {
     requireMaster(cfg, "remove_agent");
-    await api(cfg, "DELETE", `/api/v1/sessions/${rS(cfg)}/agents/${id}${o.reason ? `?reason=${encodeURIComponent(o.reason)}` : ""}`);
+    await apiRetry(cfg, "DELETE", `/api/v1/sessions/${rS(cfg)}/agents/${id}${o.reason ? `?reason=${encodeURIComponent(o.reason)}` : ""}`);
     out(J() ? { success: true } : `Agent ${id} removed.`, J());
   });
 aCmd.command("peek <id>").description("View agent terminal (master only)").option("--lines <n>", "", "15")
   .action(async (id: string, o: { lines?: string }) => {
     requireMaster(cfg, "peek_agent");
     const n = Math.min(parseInt(o.lines || "15", 10), 50);
-    const r = (await api(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/agents/${id}/output?lines=${n}`)) as Record<string, unknown>;
+    const r = (await apiRetry(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/agents/${id}/output?lines=${n}`)) as Record<string, unknown>;
     if (J()) { out(r, true); } else { const t = r.output; out(Array.isArray(t) ? t.join("\n") : (t || r.text || "") as string, false); }
   });
 aCmd.command("nudge <id>").description("Nudge agent (master only)").option("--message <m>")
   .action(async (id: string, o: { message?: string }) => {
     requireMaster(cfg, "nudge_agent");
     const b: Record<string, unknown> = {}; if (o.message) b.message = o.message;
-    await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/agents/${id}/nudge`, b);
+    await apiRetry(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/agents/${id}/nudge`, b);
     out(J() ? { success: true } : `Agent ${id} nudged.`, J());
   });
 
 // pr prepare/create (delegate to agent)
 const pCmd = prog.command("pr").description("PR ops");
 pCmd.command("prepare").description("Rebase + push (via agent)").action(async () => {
-  await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/agents/${rA(cfg)}/message`, { content: "Please run prepare_pr." });
+  await apiRetry(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/agents/${rA(cfg)}/message`, { content: "Please run prepare_pr." });
   out(J() ? { success: true } : "Prepare-PR request sent.", J());
 });
 pCmd.command("create").description("Create PR (via agent)").requiredOption("--title <t>").requiredOption("--body <b>").option("--base <br>", "", "main")
   .action(async (o: { title: string; body: string; base?: string }) => {
-    await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/agents/${rA(cfg)}/message`, { content: `Create PR: title="${o.title}", body="${o.body}", base="${o.base}"` });
+    await apiRetry(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/agents/${rA(cfg)}/message`, { content: `Create PR: title="${o.title}", body="${o.body}", base="${o.base}"` });
     out(J() ? { success: true } : "Create-PR request sent.", J());
   });
 
 // verify (delegate to agent)
 prog.command("verify").description("Verify work (via agent)").option("--skip-tests")
   .action(async (o: { skipTests?: boolean }) => {
-    await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/agents/${rA(cfg)}/message`, { content: o.skipTests ? "Run verify_work skipTests=true." : "Run verify_work." });
+    await apiRetry(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/agents/${rA(cfg)}/message`, { content: o.skipTests ? "Run verify_work skipTests=true." : "Run verify_work." });
     out(J() ? { success: true } : "Verify request sent.", J());
   });
 
 // idle
 prog.command("idle").description("Report idle").option("--reason <r>").action(async (o: { reason?: string }) => {
   const b: Record<string, unknown> = {}; if (o.reason) b.reason = o.reason;
-  await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/agents/${rA(cfg)}/report-idle`, b);
+  await apiRetry(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/agents/${rA(cfg)}/report-idle`, b);
   out(J() ? { success: true } : "Reported idle.", J());
 });
 
@@ -333,7 +356,7 @@ prog.command("request-task").description("Request next task").option("--skills <
   .action(async (o: { skills?: string; priority?: string }) => {
     const b: Record<string, unknown> = {};
     if (o.skills) b.skills = o.skills.split(",").map((x: string) => x.trim()); if (o.priority) b.priority = o.priority;
-    const r = (await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/agents/${rA(cfg)}/request-task`, b)) as Record<string, unknown>;
+    const r = (await apiRetry(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/agents/${rA(cfg)}/request-task`, b)) as Record<string, unknown>;
     const t = (r.task || r) as Record<string, unknown>;
     out(J() ? r : (t.id ? `Assigned: [${(t.id as string).slice(0, 8)}] ${t.title}` : "No tasks available."), J());
   });
@@ -342,29 +365,29 @@ prog.command("request-task").description("Request next task").option("--skills <
 const kCmd = prog.command("knowledge").alias("kb").description("Knowledge ops");
 kCmd.command("save <entry>").description("Save knowledge").option("--key <k>").action(async (entry: string, o: { key?: string }) => {
   const sid = rS(cfg);
-  if (o.key) await api(cfg, "POST", `/api/v1/sessions/${sid}/knowledge-db`, { key: o.key, value: entry });
-  else await api(cfg, "POST", `/api/v1/sessions/${sid}/knowledge`, { entry });
+  if (o.key) await apiRetry(cfg, "POST", `/api/v1/sessions/${sid}/knowledge-db`, { key: o.key, value: entry });
+  else await apiRetry(cfg, "POST", `/api/v1/sessions/${sid}/knowledge`, { entry });
   out(J() ? { success: true } : "Saved.", J());
 });
 kCmd.command("get <key>").description("Get by key").action(async (key: string) => {
-  const r = (await api(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/knowledge-db/${encodeURIComponent(key)}`)) as Record<string, unknown>;
+  const r = (await apiRetry(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/knowledge-db/${encodeURIComponent(key)}`)) as Record<string, unknown>;
   out(J() ? r : (r.entry || r.value || "Not found.") as string, J());
 });
 kCmd.command("search <query>").description("Search knowledge").option("--limit <n>", "", "20").action(async (q: string, o: { limit?: string }) => {
-  const r = (await api(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/knowledge-db?q=${encodeURIComponent(q)}&limit=${parseInt(o.limit || "20", 10)}`)) as Record<string, unknown>;
+  const r = (await apiRetry(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/knowledge-db?q=${encodeURIComponent(q)}&limit=${parseInt(o.limit || "20", 10)}`)) as Record<string, unknown>;
   if (J()) { out(r, true); } else { const e = (r.entries || []) as Array<Record<string, unknown>>; out(e.length ? e.map((x) => `  [${x.key || "—"}] ${x.entry || x.value}`).join("\n") : "No results.", false); }
 });
 
 // personas
 prog.command("personas").description("List personas").option("--full").action(async (o: { full?: boolean }) => {
-  const r = (await api(cfg, "GET", `/api/v1/personas${o.full ? "?includeFullText=true" : ""}`)) as Record<string, unknown>;
+  const r = (await apiRetry(cfg, "GET", `/api/v1/personas${o.full ? "?includeFullText=true" : ""}`)) as Record<string, unknown>;
   if (J()) { out(r, true); } else { const p = (r.personas || []) as Array<Record<string, unknown>>; out(p.length ? p.map((x) => `  ${x.id} — ${x.name}${x.description ? `: ${x.description}` : ""}`).join("\n") : "No personas.", false); }
 });
 const psCmd = prog.command("persona").description("Persona ops");
 psCmd.command("save").description("Save persona").requiredOption("--name <n>").requiredOption("--text <t>").option("--desc <d>")
   .action(async (o: { name: string; text: string; desc?: string }) => {
     const b: Record<string, unknown> = { name: o.name, fullText: o.text }; if (o.desc) b.description = o.desc;
-    await api(cfg, "POST", `/api/v1/personas`, b);
+    await apiRetry(cfg, "POST", `/api/v1/personas`, b);
     out(J() ? { success: true } : `Persona saved: ${o.name}`, J());
   });
 
@@ -374,7 +397,7 @@ prog.command("share-image <to>").description("Share image").option("--file <f>")
     const b: Record<string, unknown> = { toAgentId: to };
     if (o.file) { const f = path.resolve(o.file); b.base64Data = fs.readFileSync(f).toString("base64"); b.filename = path.basename(f); }
     if (o.caption) b.caption = o.caption;
-    await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/attachments`, b);
+    await apiRetry(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/attachments`, b);
     out(J() ? { success: true } : "Image shared.", J());
   });
 
@@ -388,7 +411,7 @@ for (const res of RESOURCE_DEFINITIONS) {
   ctxCmd.command(name).description(res.description)
     .action(async () => {
       const sid = rS(cfg); const aid = rA(cfg);
-      const result = (await api(cfg, "GET", `/api/v1/sessions/${sid}/agents/${aid}/context`)) as Record<string, unknown>;
+      const result = (await apiRetry(cfg, "GET", `/api/v1/sessions/${sid}/agents/${aid}/context`)) as Record<string, unknown>;
       if (J()) {
         // Return just this resource's data
         const key = name === "workflow" ? "workflow" : name;
@@ -421,7 +444,7 @@ for (const res of RESOURCE_DEFINITIONS) {
           }
           case "tasks": {
             // Fetch tasks directly for the active agent
-            const tasksResp = (await api(cfg, "GET", `/api/v1/sessions/${sid}/tasks?assignedTo=${aid}&status=active`)) as Record<string, unknown>;
+            const tasksResp = (await apiRetry(cfg, "GET", `/api/v1/sessions/${sid}/tasks?assignedTo=${aid}&status=active`)) as Record<string, unknown>;
             const tasks = (tasksResp.tasks || []) as Array<Record<string, unknown>>;
             out(tasks.length ? fmtTasks(tasks) : "No active tasks.", false);
             break;
@@ -437,7 +460,7 @@ for (const res of RESOURCE_DEFINITIONS) {
 ctxCmd.command("all").description("Show all context (persona, team, workflow, knowledge, rules)")
   .action(async () => {
     const sid = rS(cfg); const aid = rA(cfg);
-    const result = (await api(cfg, "GET", `/api/v1/sessions/${sid}/agents/${aid}/context`)) as Record<string, unknown>;
+    const result = (await apiRetry(cfg, "GET", `/api/v1/sessions/${sid}/agents/${aid}/context`)) as Record<string, unknown>;
     if (J()) { out(result, true); } else {
       const sections: string[] = [];
       // Team
