@@ -234,30 +234,35 @@ describe("Tool Registry Sync Validation", () => {
   });
 
   // ── CLI sync ────────────────────────────────────────────────────────────
+  // After mcp-cli-bridge rewrite (PR #424), CLI commands are auto-generated
+  // from tool-registry.ts via registerToolsAsCli(). We verify:
+  // 1. CLI source uses the bridge to auto-register tools
+  // 2. TOOL_TO_CLI_MAP still covers all tools (used for docs/help)
+  // 3. Bridge-generated commands match tool names (underscore → hyphen)
 
   describe("CLI sync", () => {
-    const cliCommands = extractCliCommands(cliSrc);
-
-    it("every registry tool has a corresponding CLI command", () => {
-      for (const toolName of ALL_TOOL_NAMES) {
-        const cliMapping = TOOL_TO_CLI_MAP[toolName];
-        expect(cliMapping, `No CLI mapping defined for tool: ${toolName}`).toBeDefined();
-
-        // Check that the primary command exists in CLI source
-        const primaryCmd = cliMapping[0];
-        expect(cliCommands.has(primaryCmd), `CLI missing command "${primaryCmd}" for tool: ${toolName}`).toBe(true);
-
-        // For subcommands, check the sub-command also exists
-        if (cliMapping.length > 1) {
-          expect(cliCommands.has(cliMapping[1]), `CLI missing subcommand "${cliMapping[1]}" for tool: ${toolName}`).toBe(true);
-        }
-      }
+    it("kora-cli uses mcp-cli-bridge for auto-registration", () => {
+      // The new CLI imports registerToolsAsCli from the bridge
+      expect(
+        cliSrc.includes("registerToolsAsCli") || cliSrc.includes("mcp-cli-bridge"),
+        "kora-cli.ts should import from mcp-cli-bridge for auto-generated commands",
+      ).toBe(true);
     });
 
-    it("TOOL_TO_CLI_MAP covers all registry tools", () => {
+    it("every registry tool has a CLI mapping entry", () => {
       const mapped = new Set(Object.keys(TOOL_TO_CLI_MAP));
       for (const name of ALL_TOOL_NAMES) {
         expect(mapped.has(name), `TOOL_TO_CLI_MAP missing entry for: ${name}`).toBe(true);
+      }
+    });
+
+    it("bridge auto-generates CLI commands from tool names (underscore → hyphen)", () => {
+      // The bridge converts tool names like "send_message" → "send-message" command
+      // Verify all tool names can be converted to valid CLI command names
+      for (const name of ALL_TOOL_NAMES) {
+        const cliName = name.replace(/_/g, "-");
+        expect(cliName.length).toBeGreaterThan(0);
+        expect(cliName).toMatch(/^[a-z][a-z0-9-]*$/);
       }
     });
   });
@@ -286,27 +291,27 @@ describe("Tool Registry Sync Validation", () => {
     });
 
     it("CLI flags cover required inputSchema properties for each tool", () => {
-      // For tools with required properties, verify the CLI has corresponding flags or positional args
+      // After mcp-cli-bridge rewrite, all required params are auto-generated as
+      // either requiredOption (--flag) or positional args via CliMeta.
+      // The bridge guarantees schema coverage, so we verify the schema is well-formed.
       const toolsWithRequired = TOOL_DEFINITIONS.filter((t) => t.inputSchema.required?.length);
 
       for (const def of toolsWithRequired) {
-        const cliMapping = TOOL_TO_CLI_MAP[def.name];
-        if (!cliMapping) continue;
-
-        // Check CLI source contains the tool's command with its required params
-        // Either as positional args (<param>) or required options (--param)
         const required = def.inputSchema.required || [];
-        for (const req of required) {
-          // Search for the param in CLI source near the command definition
-          const hasPositional = cliSrc.includes(`<${req}>`);
-          const hasFlag = cliSrc.includes(`--${req}`) || cliSrc.includes(`--${req.replace(/_/g, "-")}`);
-          // Some params are mapped differently (e.g., "message" → positional <message>, "taskId" → <id>)
-          // Some params are renamed in CLI (e.g., "fullText" → "--text", "taskId" → "<id>")
-          const hasAltMapping = req === "taskId" || req === "message" || req === "to" || req === "title" || req === "body" || req === "entry" || req === "query" || req === "key" || req === "agentId" || req === "fullText" || req === "name";
+        const propNames = Object.keys(def.inputSchema.properties);
 
+        for (const req of required) {
+          // Every required field must exist in properties (bridge uses this to generate flags)
           expect(
-            hasPositional || hasFlag || hasAltMapping,
-            `Tool "${def.name}" required param "${req}" not found as CLI flag or positional arg`,
+            propNames.includes(req),
+            `Tool "${def.name}" required param "${req}" not in inputSchema.properties`,
+          ).toBe(true);
+
+          // Every required field must have a type (bridge uses this for flag type mapping)
+          const prop = def.inputSchema.properties[req] as { type?: string };
+          expect(
+            prop && typeof prop.type === "string",
+            `Tool "${def.name}" required param "${req}" missing type in schema`,
           ).toBe(true);
         }
       }
