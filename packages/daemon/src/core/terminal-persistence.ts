@@ -13,7 +13,7 @@ const TERMINALS_FILE = "terminals.json";
 
 export interface StandaloneTerminal {
   id: string;
-  tmuxSession: string;
+  terminalSession: string;
   name: string;
   createdAt: string;
   projectPath: string;
@@ -90,17 +90,17 @@ export async function restoreTerminalsWithHealthCheck(
   for (const term of persisted) {
     try {
       // Check if session exists
-      const sessionExists = await backend.hasSession(term.tmuxSession);
+      const sessionExists = await backend.hasSession(term.terminalSession);
       if (!sessionExists) {
-        logger.debug({ sessionId, terminalId: term.id, sessionName: term.tmuxSession }, "Terminal session no longer exists");
+        logger.debug({ sessionId, terminalId: term.id, sessionName: term.terminalSession }, "Terminal session no longer exists");
         dead.push(term);
         continue;
       }
 
       // For holdpty sessions, verify socket file exists
-      const socketExists = await verifySocketExists(backend, term.tmuxSession);
+      const socketExists = await verifySocketExists(backend, term.terminalSession);
       if (!socketExists) {
-        logger.warn({ sessionId, terminalId: term.id, sessionName: term.tmuxSession }, "Terminal socket file missing — skipping restore");
+        logger.warn({ sessionId, terminalId: term.id, sessionName: term.terminalSession }, "Terminal socket file missing — skipping restore");
         dead.push(term);
         continue;
       }

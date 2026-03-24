@@ -157,7 +157,7 @@ describe("AgentManager — worktree mode", () => {
 
   it("starts health monitoring after spawn", async () => {
     const agent = await manager.spawnAgent(makeOptions());
-    expect(mockStartMonitoring).toHaveBeenCalledWith(agent.id, agent.config.tmuxSession);
+    expect(mockStartMonitoring).toHaveBeenCalledWith(agent.id, agent.config.terminalSession);
   });
 
   it("creates a tmux session with correct name", async () => {
@@ -168,7 +168,7 @@ describe("AgentManager — worktree mode", () => {
   it("starts pipe-pane for terminal logging", async () => {
     const agent = await manager.spawnAgent(makeOptions());
     expect(mockPipePaneStart).toHaveBeenCalledWith(
-      agent.config.tmuxSession,
+      agent.config.terminalSession,
       expect.stringContaining(`${agent.id}.log`),
     );
   });

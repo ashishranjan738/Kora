@@ -27,7 +27,7 @@ describe("Terminal filter API", () => {
     mockStandaloneTerminals.set(sid, [
       {
         id: "term-1",
-        tmuxSession: "standalone-1",
+        terminalSession: "standalone-1",
         name: "Terminal 1",
         createdAt: "2026-03-18T10:00:00Z",
       },
@@ -40,7 +40,7 @@ describe("Terminal filter API", () => {
           id: "agent-1",
           config: {
             name: "Worker A",
-            tmuxSession: "agent-tmux-1",
+            terminalSession: "agent-tmux-1",
           },
           startedAt: "2026-03-18T09:00:00Z",
         },
@@ -58,7 +58,7 @@ describe("Terminal filter API", () => {
       sessionTerminals.forEach((term: any) => {
         terminals.push({
           id: term.id,
-          tmuxSession: term.tmuxSession,
+          terminalSession: term.terminalSession,
           name: term.name,
           type: "standalone",
           createdAt: term.createdAt,
@@ -73,7 +73,7 @@ describe("Terminal filter API", () => {
       agents.forEach((agent: any) => {
         terminals.push({
           id: agent.id,
-          tmuxSession: agent.config.tmuxSession,
+          terminalSession: agent.config.terminalSession,
           name: agent.config.name,
           type: "agent",
           agentName: agent.config.name,
@@ -100,13 +100,13 @@ describe("Terminal filter API", () => {
     mockStandaloneTerminals.set(sid, [
       {
         id: "term-1",
-        tmuxSession: "standalone-1",
+        terminalSession: "standalone-1",
         name: "Terminal 1",
         createdAt: "2026-03-18T10:00:00Z",
       },
       {
         id: "term-2",
-        tmuxSession: "standalone-2",
+        terminalSession: "standalone-2",
         name: "Terminal 2",
         createdAt: "2026-03-18T10:05:00Z",
       },
@@ -122,7 +122,7 @@ describe("Terminal filter API", () => {
       sessionTerminals.forEach((term: any) => {
         terminals.push({
           id: term.id,
-          tmuxSession: term.tmuxSession,
+          terminalSession: term.terminalSession,
           name: term.name,
           type: "standalone",
           createdAt: term.createdAt,
@@ -154,7 +154,7 @@ describe("Terminal filter API", () => {
           id: "agent-1",
           config: {
             name: "Frontend",
-            tmuxSession: "agent-tmux-1",
+            terminalSession: "agent-tmux-1",
           },
           startedAt: "2026-03-18T09:00:00Z",
         },
@@ -162,7 +162,7 @@ describe("Terminal filter API", () => {
           id: "agent-2",
           config: {
             name: "Backend",
-            tmuxSession: "agent-tmux-2",
+            terminalSession: "agent-tmux-2",
           },
           startedAt: "2026-03-18T09:05:00Z",
         },
@@ -179,7 +179,7 @@ describe("Terminal filter API", () => {
       agents.forEach((agent: any) => {
         terminals.push({
           id: agent.id,
-          tmuxSession: agent.config.tmuxSession,
+          terminalSession: agent.config.terminalSession,
           name: agent.config.name,
           type: "agent",
           agentName: agent.config.name,
@@ -193,7 +193,7 @@ describe("Terminal filter API", () => {
     terminals.forEach((term) => {
       expect(term.type).toBe("agent");
       expect(term.agentName).toBeDefined();
-      expect(term.tmuxSession).toMatch(/^agent-tmux-/);
+      expect(term.terminalSession).toMatch(/^agent-tmux-/);
     });
   });
 
@@ -216,7 +216,7 @@ describe("Terminal filter API", () => {
       sessionTerminals.forEach((term: any) => {
         terminals.push({
           id: term.id,
-          tmuxSession: term.tmuxSession,
+          terminalSession: term.terminalSession,
           name: term.name,
           type: "standalone",
           createdAt: term.createdAt,

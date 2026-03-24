@@ -197,7 +197,7 @@ export function AgentView() {
   const autonomyLevel = typeof agent?.autonomy === "number" ? agent.autonomy : 0;
   const spawnedBy = agent?.spawnedBy || "User";
   const workingDir = agent?.workingDir || agent?.cwd || "--";
-  const tmuxSession = agent?.tmuxSession || agent?.tmux || "--";
+  const terminalSession = agent?.terminalSession || agent?.tmux || "--";
   const crashes = agent?.crashes ?? agent?.healthCheck?.crashes ?? 0;
   const statusClass = getStatusClass(agentStatus);
 
@@ -402,7 +402,7 @@ export function AgentView() {
                 </div>
                 <div className="info-item">
                   <label>Tmux Session</label>
-                  <span className="info-value mono">{tmuxSession}</span>
+                  <span className="info-value mono">{terminalSession}</span>
                 </div>
               </div>
             )}

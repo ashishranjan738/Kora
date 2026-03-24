@@ -345,15 +345,15 @@ export class AgentHealthMonitor extends EventEmitter {
   }
 
   /** Start monitoring an agent */
-  startMonitoring(agentId: string, tmuxSession: string): void {
+  startMonitoring(agentId: string, terminalSession: string): void {
     const interval = setInterval(async () => {
-      const alive = await this.tmux.hasSession(tmuxSession);
+      const alive = await this.tmux.hasSession(terminalSession);
       if (!alive) {
         this.emit("agent-dead", agentId);
         return;
       }
 
-      const pid = await this.tmux.getPanePID(tmuxSession);
+      const pid = await this.tmux.getPanePID(terminalSession);
       if (pid === null) {
         this.emit("agent-dead", agentId);
         return;
@@ -363,7 +363,7 @@ export class AgentHealthMonitor extends EventEmitter {
 
       // Idle detection: check terminal output for activity
       if (this.agents) {
-        await this.checkIdleState(agentId, tmuxSession);
+        await this.checkIdleState(agentId, terminalSession);
       }
     }, HEALTH_CHECK_INTERVAL_MS);
     this.intervals.set(agentId, interval);
@@ -387,14 +387,14 @@ export class AgentHealthMonitor extends EventEmitter {
    * - Layer 2: Terminal prompt pattern matching (❯, $, %) -> idle after match
    * - Layer 3 (lowest): Hash-based change detection -> idle after 30s no change
    */
-  private async checkIdleState(agentId: string, tmuxSession: string): Promise<void> {
+  private async checkIdleState(agentId: string, terminalSession: string): Promise<void> {
     const agent = this.agents?.get(agentId);
     if (!agent) return;
 
     try {
       // Capture last 10 lines of terminal output.
       // capturePane(escapeSequences=false) strips ANSI in holdpty mode.
-      const rawOutput = await this.tmux.capturePane(tmuxSession, 10, false);
+      const rawOutput = await this.tmux.capturePane(terminalSession, 10, false);
       // Normalize output to prevent false "changed" detections from cursor movement,
       // trailing whitespace variations, shell status line updates, and system-injected
       // messages (notifications, nudges, broadcasts) that pollute the activity hash.

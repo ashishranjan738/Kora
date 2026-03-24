@@ -44,7 +44,7 @@ function createAgent(id: string, name: string): AgentState {
       model: "default",
       permissions: { canSpawnAgents: false, canStopAgents: false, canAccessTerminal: true, canEditFiles: true, maxSubAgents: 0 },
       persona: "",
-      tmuxSession: `kora-dev--test-${id}`,
+      terminalSession: `kora-dev--test-${id}`,
       worktreeDir: "/tmp",
       extraCliArgs: [],
     },
@@ -135,7 +135,7 @@ describe("AutoRelay", () => {
 
       // Should have sent to Frontend agent
       expect(pty.sendKeys).toHaveBeenCalledWith(
-        agentB.config.tmuxSession,
+        agentB.config.terminalSession,
         expect.stringContaining("please implement the login page"),
         { literal: true },
       );
@@ -156,12 +156,12 @@ describe("AutoRelay", () => {
       // Should send to both Frontend and Backend (not self)
       expect(pty.sendKeys).toHaveBeenCalledTimes(2);
       expect(pty.sendKeys).toHaveBeenCalledWith(
-        agentB.config.tmuxSession,
+        agentB.config.terminalSession,
         expect.stringContaining("status update"),
         { literal: true },
       );
       expect(pty.sendKeys).toHaveBeenCalledWith(
-        agentC.config.tmuxSession,
+        agentC.config.terminalSession,
         expect.stringContaining("status update"),
         { literal: true },
       );
@@ -180,7 +180,7 @@ describe("AutoRelay", () => {
       await vi.advanceTimersByTimeAsync(3000);
 
       expect(pty.sendKeys).toHaveBeenCalledWith(
-        agentB.config.tmuxSession,
+        agentB.config.terminalSession,
         expect.stringContaining("please help"),
         { literal: true },
       );
@@ -332,7 +332,7 @@ describe("AutoRelay", () => {
       // Should use queue instead of direct sendKeys
       expect(mockQueue.enqueue).toHaveBeenCalledWith(
         agentB.id,
-        agentB.config.tmuxSession,
+        agentB.config.terminalSession,
         expect.stringContaining("use the queue"),
         agentA.id,
       );
@@ -424,7 +424,7 @@ describe("AutoRelay", () => {
       await vi.advanceTimersByTimeAsync(3000);
 
       expect(pty.sendKeys).toHaveBeenCalledWith(
-        agentB.config.tmuxSession,
+        agentB.config.terminalSession,
         expect.stringContaining("[Message from Architect]"),
         { literal: true },
       );

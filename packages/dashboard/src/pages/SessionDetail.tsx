@@ -271,7 +271,7 @@ export function SessionDetail() {
       useTerminalSessionStore.getState().closeTab(pendingId);
       addSession({
         id: result.id,
-        tmuxSession: result.tmuxSession,
+        terminalSession: result.terminalSession,
         name: terminalName,
         type: "standalone",
         createdAt: new Date().toISOString(),
@@ -827,7 +827,7 @@ export function SessionDetail() {
                       if (!terminalSessions.find((s) => s.id === agentId)) {
                         addSession({
                           id: agentId,
-                          tmuxSession: agent.config?.tmuxSession || "",
+                          terminalSession: agent.config?.terminalSession || "",
                           name: agent.config?.name || agentId,
                           type: "agent",
                           agentName: agent.config?.name || agentId,
@@ -937,7 +937,7 @@ export function SessionDetail() {
             if (!terminalSessions.find((s) => s.id === agentId)) {
               addSession({
                 id: agentId,
-                tmuxSession: agents.find((a) => a.id === agentId)?.config?.tmuxSession || "",
+                terminalSession: agents.find((a) => a.id === agentId)?.config?.terminalSession || "",
                 name: agentName,
                 type: "agent",
                 agentName,
@@ -999,7 +999,7 @@ export function SessionDetail() {
               if (!terminalSessions.find((s) => s.id === agentId)) {
                 addSession({
                   id: agentId,
-                  tmuxSession: agent.config?.tmuxSession || "",
+                  terminalSession: agent.config?.terminalSession || "",
                   name: agent.config?.name || agentId,
                   type: "agent",
                   agentName: agent.config?.name || agentId,
@@ -1771,7 +1771,7 @@ function AgentsTab({
         serverTerminals.forEach((term: any) => {
           addSession({
             id: term.id,
-            tmuxSession: term.tmuxSession,
+            terminalSession: term.terminalSession,
             name: term.name || `Terminal ${term.id}`,
             type: term.type || "standalone",
             agentName: term.agentName,
@@ -2164,7 +2164,7 @@ function AgentsTab({
             api.openTerminal(sessionId).then((result) => {
               useTerminalSessionStore.getState().removeSession(pendingId);
               useTerminalSessionStore.getState().closeTab(pendingId);
-              addSession({ id: result.id, tmuxSession: result.tmuxSession, name: terminalName, type: "standalone", createdAt: new Date().toISOString() });
+              addSession({ id: result.id, terminalSession: result.terminalSession, name: terminalName, type: "standalone", createdAt: new Date().toISOString() });
               openTab(result.id);
             }).catch(() => {
               useTerminalSessionStore.getState().removeSession(pendingId);
@@ -2250,7 +2250,7 @@ function AgentsTab({
                     </Group>
                     <Group gap={8}>
                       <Text size="xs" c="dimmed">
-                        {terminal.tmuxSession || terminal.id}
+                        {terminal.terminalSession || terminal.id}
                       </Text>
                       <Text size="xs" c="dimmed">·</Text>
                       <Text size="xs" c="dimmed">

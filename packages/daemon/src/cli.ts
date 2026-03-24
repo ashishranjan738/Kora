@@ -609,7 +609,7 @@ async function handleRun(): Promise<void> {
     outputInterval = setInterval(async () => {
       try {
         // Capture recent lines
-        const output = await ptyBackend.capturePane(masterAgent.config.tmuxSession, 20, false);
+        const output = await ptyBackend.capturePane(masterAgent.config.terminalSession, 20, false);
         const lines = output.split('\n');
 
         // Print only lines we haven't seen before
@@ -678,7 +678,7 @@ async function handleRun(): Promise<void> {
     const failedAgents: typeof agents = [];
 
     for (const agent of agents) {
-      const sessionExists = await ptyBackend.hasSession(agent.config.tmuxSession);
+      const sessionExists = await ptyBackend.hasSession(agent.config.terminalSession);
       if (sessionExists) {
         allDone = false;
       } else {

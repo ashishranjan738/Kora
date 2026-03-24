@@ -94,7 +94,7 @@ export class AutoAssigner {
     try {
       this.config.messageQueue.enqueue(
         agentId,
-        agent.config.tmuxSession,
+        agent.config.terminalSession,
         `\x1b[1;35m${notifyMsg}\x1b[0m`,
         undefined, // fromAgentId = system
       );
@@ -171,7 +171,7 @@ export class AutoAssigner {
             try {
               this.config.messageQueue.enqueue(
                 agentId,
-                agent.config.tmuxSession,
+                agent.config.terminalSession,
                 `\x1b[1;32m${notifyMsg}\x1b[0m`,
               );
               this.config.database.insertMessage({

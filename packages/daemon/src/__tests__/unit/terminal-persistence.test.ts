@@ -77,21 +77,21 @@ describe("Terminal Persistence with Socket Verification", () => {
     const mockTerminals: StandaloneTerminal[] = [
       {
         id: "term-1",
-        tmuxSession: "session-1",
+        terminalSession: "session-1",
         name: "Terminal 1",
         createdAt: "2026-03-19T00:00:00Z",
         projectPath: "/project",
       },
       {
         id: "term-2",
-        tmuxSession: "session-2",
+        terminalSession: "session-2",
         name: "Terminal 2",
         createdAt: "2026-03-19T00:00:00Z",
         projectPath: "/project",
       },
       {
         id: "term-3",
-        tmuxSession: "session-3",
+        terminalSession: "session-3",
         name: "Terminal 3",
         createdAt: "2026-03-19T00:00:00Z",
         projectPath: "/project",

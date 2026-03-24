@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 export interface TerminalSession {
   id: string;
-  tmuxSession?: string;
+  terminalSession?: string;
   name: string;
   type: "agent" | "standalone";
   agentName?: string;

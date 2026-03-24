@@ -55,7 +55,7 @@ function makeAgent(overrides: Partial<AgentState> = {}): AgentState {
         maxSubAgents: 0,
       },
       persona: "",
-      tmuxSession: `kora--test-${id}`,
+      terminalSession: `kora--test-${id}`,
       worktreeDir: "/tmp",
       workingDirectory: "/tmp",
       extraCliArgs: [],

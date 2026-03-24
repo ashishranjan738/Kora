@@ -66,7 +66,7 @@ export function SideTerminalPanel({
           data.terminals.forEach((term: any) => {
             addSession({
               id: term.id,
-              tmuxSession: term.tmuxSession,
+              terminalSession: term.terminalSession,
               name: term.name || `Terminal ${term.id}`,
               type: term.type || "standalone",
               agentName: term.agentName,
@@ -324,7 +324,7 @@ export function SideTerminalPanel({
                 // Add to session store
                 addSession({
                   id: result.id,
-                  tmuxSession: result.tmuxSession,
+                  terminalSession: result.terminalSession,
                   name: terminalName,
                   type: "standalone",
                   createdAt: new Date().toISOString(),

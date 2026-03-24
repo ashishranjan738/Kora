@@ -20,7 +20,7 @@ describe("AgentHealthMonitor — Enhanced Pattern Integration", () => {
     agents = new Map();
     agents.set("agent-1", {
       id: "agent-1",
-      config: { name: "Worker", tmuxSession: "test-session" } as any,
+      config: { name: "Worker", terminalSession: "test-session" } as any,
       status: "running",
       activity: "working",
       lastActivityAt: new Date().toISOString(),

@@ -50,10 +50,10 @@ describe("broadcast-rebase", () => {
   describe("agent filtering", () => {
     it("should only broadcast to running agents", () => {
       const agents = [
-        { id: "a1", status: "running", config: { name: "Architect", tmuxSession: "t1" } },
-        { id: "a2", status: "crashed", config: { name: "Frontend", tmuxSession: "t2" } },
-        { id: "a3", status: "running", config: { name: "Backend", tmuxSession: "t3" } },
-        { id: "a4", status: "stopped", config: { name: "Tests", tmuxSession: "t4" } },
+        { id: "a1", status: "running", config: { name: "Architect", terminalSession: "t1" } },
+        { id: "a2", status: "crashed", config: { name: "Frontend", terminalSession: "t2" } },
+        { id: "a3", status: "running", config: { name: "Backend", terminalSession: "t3" } },
+        { id: "a4", status: "stopped", config: { name: "Tests", terminalSession: "t4" } },
       ];
 
       const runningAgents = agents.filter((a) => a.status === "running");
@@ -71,8 +71,8 @@ describe("broadcast-rebase", () => {
 
     it("should handle all agents stopped/crashed", () => {
       const agents = [
-        { id: "a1", status: "crashed", config: { name: "Architect", tmuxSession: "t1" } },
-        { id: "a2", status: "stopped", config: { name: "Frontend", tmuxSession: "t2" } },
+        { id: "a1", status: "crashed", config: { name: "Architect", terminalSession: "t1" } },
+        { id: "a2", status: "stopped", config: { name: "Frontend", terminalSession: "t2" } },
       ];
 
       const runningAgents = agents.filter((a) => a.status === "running");
