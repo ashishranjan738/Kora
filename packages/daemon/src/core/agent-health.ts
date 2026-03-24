@@ -127,6 +127,32 @@ export const IDLE_MESSAGE_KEYWORDS = [
   "reporting idle",
 ];
 
+/**
+ * Context exhaustion patterns — detect when an agent's context window is full.
+ * When detected, emit a "context-exhaustion-warning" event so the dashboard
+ * can show a warning badge and the orchestrator can proactively replace.
+ */
+export const CONTEXT_EXHAUSTION_PATTERNS = [
+  // Generic context window errors
+  /context\s*window/i,
+  /context\s*length/i,
+  /maximum\s*context/i,
+  /too\s*many\s*tokens/i,
+  /token\s*limit/i,
+  /context\s*limit/i,
+  // Claude-specific errors
+  /conversation\s*is\s*too\s*long/i,
+  /input\s*is\s*too\s*long/i,
+  /exceeds?\s*(?:the\s*)?(?:maximum|max)\s*(?:allowed\s*)?(?:length|tokens|size)/i,
+  // OpenAI / generic LLM errors
+  /maximum\s*(?:context|token)\s*length/i,
+  /reduce\s*(?:the\s*length|your\s*prompt|tokens)/i,
+  // Agent output indicating context pressure
+  /running\s*out\s*of\s*context/i,
+  /context\s*(?:is\s*)?(?:almost\s*)?(?:full|exhausted|exceeded)/i,
+  /(?:approaching|near(?:ing)?)\s*(?:the\s*)?context\s*limit/i,
+];
+
 /** How long to wait at a prompt before considering an agent idle (ms) */
 const IDLE_TIMEOUT_MS = 30_000; // 30 seconds — 10s was too aggressive, causing false idle during code reading
 
@@ -156,6 +182,9 @@ export class AgentHealthMonitor extends EventEmitter {
    * idle status while within the protection window.
    */
   private mcpIdleTimestamps = new Map<string, number>();
+
+  /** Track which agents have already emitted context exhaustion warning (emit only once) */
+  private contextExhaustionEmitted = new Set<string>();
 
   /**
    * Layer 3: MCP tool call activity timestamps.
@@ -397,6 +426,19 @@ export class AgentHealthMonitor extends EventEmitter {
       const isThinking = lastLines.some(line =>
         THINKING_PATTERNS.some(pattern => pattern.test(line))
       );
+
+      // Check for context exhaustion BEFORE idle/thinking — emit warning
+      const isContextExhausted = lastLines.some(line =>
+        CONTEXT_EXHAUSTION_PATTERNS.some(pattern => pattern.test(line))
+      );
+      if (isContextExhausted && !this.contextExhaustionEmitted.has(agentId)) {
+        this.contextExhaustionEmitted.add(agentId);
+        this.emit("context-exhaustion-warning", agentId, {
+          agentName: agent.config?.name || agentId,
+          detectedAt: new Date().toISOString(),
+          lastLines: lastLines.slice(-3),
+        });
+      }
 
       if (isThinking) {
         // LLM is processing — definitely working, update timestamps

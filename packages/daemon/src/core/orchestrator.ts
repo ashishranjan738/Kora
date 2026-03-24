@@ -1309,6 +1309,31 @@ Run list_tasks() to see if you have any assigned tasks.`;
       data: { oldAgentId: agentId, newAgentId: newAgent.id, reason: "replaced" },
     });
 
+    // Task briefing: send active tasks summary to the replacement agent
+    try {
+      const allTasks = this.database.getTasks(this.config.sessionId);
+      const activeTasks = allTasks.filter((t: any) =>
+        (t.assignedTo === oldConfig.name || t.assignedTo === agentId) &&
+        t.status !== "done"
+      );
+
+      if (activeTasks.length > 0) {
+        const taskList = activeTasks
+          .map((t: any) => `  - "${t.title}" (${t.id}) — status: ${t.status}`)
+          .join("\n");
+        const briefing =
+          `\x1b[1;36m[Task Briefing]\x1b[0m You are replacing a previous agent (${oldConfig.name}). ` +
+          `You have ${activeTasks.length} active task(s):\n${taskList}\n` +
+          `Use get_task(id) to read details and continue where the previous agent left off.`;
+
+        this.messageQueue.enqueue(
+          newAgent.id,
+          newAgent.config.tmuxSession,
+          briefing,
+        );
+      }
+    } catch { /* non-fatal — don't block replace on task briefing failure */ }
+
     await this.persistState();
     return newAgent;
   }
