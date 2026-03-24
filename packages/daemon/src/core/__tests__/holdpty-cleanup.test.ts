@@ -5,7 +5,7 @@
  * error handling, and edge cases.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { cleanupOrphanedSessions } from "../holdpty-cleanup.js";
 import type { IPtyBackend } from "../pty-backend.js";
 import type { AgentState } from "@kora/shared";
