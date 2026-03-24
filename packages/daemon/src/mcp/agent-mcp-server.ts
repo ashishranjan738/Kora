@@ -19,6 +19,8 @@ import { promisify } from "util";
 import { getPromptDefinition, getPromptsForRole } from "../tools/prompt-registry.js";
 import { RESOURCE_DEFINITIONS, getResourceDefinition } from "../tools/resource-registry.js";
 import { TOOL_HANDLER_MAP } from "../tools/tool-handlers.js";
+import { getToolDefinition } from "../tools/tool-registry.js";
+import { validateTool } from "../cli/mcp-cli-bridge.js";
 
 // Track resource subscriptions for live update notifications
 const resourceSubscriptions = new Set<string>();
@@ -2230,6 +2232,21 @@ rl.on("line", async (line: string) => {
             }) }],
           });
           break;
+        }
+
+        // Unified schema validation via mcp-cli-bridge
+        const toolSchema = getToolDefinition(toolName);
+        if (toolSchema) {
+          const validationErrors = validateTool(toolName, toolArgs, toolSchema.inputSchema);
+          if (validationErrors.length > 0) {
+            sendResponse(id, {
+              content: [{ type: "text", text: JSON.stringify({
+                error: `Validation failed for "${toolName}"`,
+                details: validationErrors.map(e => `${e.field}: ${e.reason}`),
+              }) }],
+            });
+            break;
+          }
         }
 
         try {
