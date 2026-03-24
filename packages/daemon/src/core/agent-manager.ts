@@ -380,9 +380,10 @@ export class AgentManager extends EventEmitter {
     if (process.env.KORA_CONFIG_DIR) {
       envEntries.push(["KORA_CONFIG_DIR", process.env.KORA_CONFIG_DIR]);
     }
-    // Add daemon's bin dir to PATH so `kora-cli` CLI is accessible from agent terminals
+    // Add monorepo root node_modules/.bin to PATH so `kora-cli` is accessible from agent terminals
+    // __dirname at runtime = packages/daemon/dist/core/ → go up 4 levels to monorepo root
     // PATH is handled separately since $PATH must expand in the shell (can't use single quotes)
-    const daemonBinDir = path.resolve(__dirname, "../../node_modules/.bin");
+    const daemonBinDir = path.resolve(__dirname, "../../../../node_modules/.bin");
 
     // Batch as single export command to minimize delays
     if (envEntries.length > 0) {
