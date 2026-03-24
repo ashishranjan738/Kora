@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 import { setupTestApp, type TestContext } from "./test-setup.js";
 import { join } from "path";
-import { mkdirSync } from "fs";
+import { mkdirSync, realpathSync } from "fs";
 
 describe("Session CRUD integration", () => {
   let ctx: TestContext;
@@ -25,6 +25,8 @@ describe("Session CRUD integration", () => {
     it("creates a new session with valid data", async () => {
       const projectPath = join(ctx.testDir, "test-project");
       mkdirSync(projectPath, { recursive: true });
+      // Resolve symlinks (macOS /var → /private/var) to match API response
+      const resolvedPath = realpathSync(projectPath);
 
       const res = await request(ctx.app)
         .post("/api/v1/sessions")
@@ -42,7 +44,7 @@ describe("Session CRUD integration", () => {
       expect(res.status).toBe(201);
       expect(res.body).toHaveProperty("id");
       expect(res.body).toHaveProperty("name", "Test Session");
-      expect(res.body).toHaveProperty("projectPath", projectPath);
+      expect(res.body).toHaveProperty("projectPath", resolvedPath);
       expect(res.body).toHaveProperty("defaultProvider", "claude-code");
       expect(res.body).toHaveProperty("status", "active");
       expect(res.body).toHaveProperty("agentCount", 0);
