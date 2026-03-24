@@ -10,6 +10,8 @@ interface AgentActivityBadgeProps {
   idleWarningThresholdMs?: number;
   /** Compact mode — just the dot + short label */
   compact?: boolean;
+  /** Number of active tasks — used to detect "working" with 0 tasks (likely idle) */
+  activeTasks?: number;
 }
 
 const ACTIVITY_CONFIG: Record<AgentActivity, {
@@ -44,6 +46,7 @@ export function AgentActivityBadge({
   since,
   idleWarningThresholdMs = 60000,
   compact = false,
+  activeTasks,
 }: AgentActivityBadgeProps) {
   const [elapsed, setElapsed] = useState(0);
 
@@ -59,10 +62,14 @@ export function AgentActivityBadge({
   const config = ACTIVITY_CONFIG[activity] || ACTIVITY_CONFIG.idle;
   const isIdle = activity === "idle";
   const isIdleWarning = isIdle && elapsed > idleWarningThresholdMs;
-  const badgeColor = isIdleWarning ? "yellow" : config.color;
+  // Detect "likely idle" — agent reports working but has 0 active tasks
+  const isLikelyIdle = !isIdle && activity === "working" && activeTasks === 0;
+  const badgeColor = isIdleWarning ? "yellow" : isLikelyIdle ? "teal" : config.color;
 
   const durationText = since ? formatDuration(elapsed) : "";
-  const tooltipText = `${config.label}${durationText ? ` for ${durationText}` : ""}${isIdleWarning ? " — no active task" : ""}`;
+  const tooltipText = isLikelyIdle
+    ? `Showing "working" but has 0 active tasks — may be idle (detection lag)`
+    : `${config.label}${durationText ? ` for ${durationText}` : ""}${isIdleWarning ? " — no active task" : ""}`;
 
   if (compact) {
     return (
@@ -75,8 +82,8 @@ export function AgentActivityBadge({
             <span className={`activity-dot-sm ${config.dotClass}`} />
           }
         >
-          {config.shortLabel}
-          {durationText && <span style={{ opacity: 0.7, marginLeft: 4 }}>{durationText}</span>}
+          {isLikelyIdle ? "Idle?" : config.shortLabel}
+          {durationText && !isLikelyIdle && <span style={{ opacity: 0.7, marginLeft: 4 }}>{durationText}</span>}
         </Badge>
       </Tooltip>
     );
@@ -95,8 +102,8 @@ export function AgentActivityBadge({
           root: isIdleWarning ? { animation: "tl-pulse 2s infinite" } : undefined,
         }}
       >
-        {config.icon} {config.label}
-        {durationText && (
+        {isLikelyIdle ? "\u23F8 Idle? (0 tasks)" : `${config.icon} ${config.label}`}
+        {durationText && !isLikelyIdle && (
           <Text component="span" size="xs" ml={4} opacity={0.7}>
             {durationText}
           </Text>
