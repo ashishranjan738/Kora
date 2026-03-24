@@ -1,377 +1,514 @@
 /**
- * Unit tests for mcp-cli-bridge — auto-generating CLI from tool registry.
- *
- * 7 categories, 35+ tests:
- * 1. Schema derivation (JSON Schema type → Commander flags)
- * 2. Validation (required/optional, types, enums)
- * 3. Integration (tool-registry → CLI args → API call args)
- * 4. Parity (CLI output shape matches MCP for shared handlers)
- * 5. RBAC (master-only commands enforced)
- * 6. Error handling (invalid tool, missing params)
- * 7. Edge cases (empty, special chars, arrays)
+ * Tests for mcp-cli-bridge — auto-generates CLI commands from MCP tool definitions.
+ * 36 tests covering all type mappings, validation, positional args, and end-to-end flows.
  */
-
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { Command } from "commander";
 import {
-  ALL_TOOL_NAMES,
-  TOOL_DEFINITIONS,
-  ROLE_TOOL_ACCESS,
-  isToolAllowed,
-} from "../../tools/tool-registry.js";
+  deriveCommandFromSchema,
+  registerToolsAsCli,
+  validateTool,
+  createMcpCli,
+  camelToKebab,
+  kebabToCamel,
+  ToolValidationError,
+  type CliToolDefinition,
+  type ToolHandler,
+} from "../../cli/mcp-cli-bridge.js";
+import type { ToolDefinition } from "../../tools/tool-registry.js";
 
 // ---------------------------------------------------------------------------
-// Helpers: Schema introspection (what the bridge would use)
+// Helpers
 // ---------------------------------------------------------------------------
 
-interface SchemaProperty {
-  type?: string;
-  description?: string;
-  enum?: string[];
-  items?: { type: string };
+/** Parse a command with given argv (simulate CLI invocation) */
+function parseCmd(cmd: Command, argv: string[]): Promise<void> {
+  cmd.exitOverride(); // throw instead of process.exit
+  return cmd.parseAsync(["node", "test", ...argv]);
 }
 
-function getToolSchema(toolName: string) {
-  return TOOL_DEFINITIONS.find((t) => t.name === toolName)?.inputSchema;
-}
-
-function getProperties(toolName: string): Record<string, SchemaProperty> {
-  const schema = getToolSchema(toolName);
-  return (schema?.properties || {}) as Record<string, SchemaProperty>;
-}
-
-function getRequired(toolName: string): string[] {
-  return getToolSchema(toolName)?.required || [];
-}
-
-/** Derive positional args: required string fields in order */
-function derivePositionals(toolName: string): string[] {
-  const required = getRequired(toolName);
-  const props = getProperties(toolName);
-  return required.filter((name) => {
-    const prop = props[name];
-    return prop && (prop as SchemaProperty).type === "string";
-  });
-}
-
-/** Derive optional flags: non-required fields or non-string required fields */
-function deriveFlags(toolName: string): string[] {
-  const required = new Set(getRequired(toolName));
-  const props = getProperties(toolName);
-  const positionals = new Set(derivePositionals(toolName));
-  return Object.keys(props).filter((name) => !positionals.has(name));
+/** Create a simple tool definition */
+function mkTool(
+  name: string,
+  props: Record<string, unknown>,
+  required?: string[],
+  cliMeta?: CliToolDefinition["cliMeta"],
+): CliToolDefinition {
+  return {
+    name,
+    description: `Test tool: ${name}`,
+    inputSchema: { type: "object" as const, properties: props, required },
+    cliMeta,
+  };
 }
 
 // ---------------------------------------------------------------------------
-// 1. Schema Derivation Tests
+// camelToKebab / kebabToCamel
 // ---------------------------------------------------------------------------
 
-describe("Schema Derivation", () => {
-  it("string required fields become positional args", () => {
-    // send_message: required=["message"], "to" is optional
-    const positionals = derivePositionals("send_message");
-    expect(positionals).toContain("message");
+describe("camelToKebab", () => {
+  it("converts camelCase to kebab-case", () => {
+    expect(camelToKebab("assignedTo")).toBe("assigned-to");
+    expect(camelToKebab("maxTasks")).toBe("max-tasks");
+    expect(camelToKebab("simple")).toBe("simple");
+    expect(camelToKebab("skipTests")).toBe("skip-tests");
   });
+});
 
-  it("optional string fields become flags", () => {
-    const flags = deriveFlags("send_message");
-    expect(flags).toContain("to");
-    expect(flags).toContain("messageType");
-    expect(flags).toContain("channel");
-  });
-
-  it("tools with no required fields have no positional args", () => {
-    expect(derivePositionals("check_messages")).toEqual([]);
-    expect(derivePositionals("list_agents")).toEqual([]);
-    expect(derivePositionals("list_tasks")).toEqual([]);
-  });
-
-  it("tools with no properties have no flags", () => {
-    expect(deriveFlags("check_messages")).toEqual([]);
-    expect(deriveFlags("list_agents")).toEqual([]);
-  });
-
-  it("boolean schema fields should become boolean flags", () => {
-    const props = getProperties("update_task");
-    const forceField = props["force"] as SchemaProperty;
-    if (forceField) {
-      expect(forceField.type).toBe("boolean");
-    }
-  });
-
-  it("array schema fields exist for labels", () => {
-    const props = getProperties("update_task");
-    const labelsField = props["labels"] as SchemaProperty;
-    if (labelsField) {
-      expect(labelsField.type).toBe("array");
-    }
-  });
-
-  it("every tool has an inputSchema with type 'object'", () => {
-    for (const def of TOOL_DEFINITIONS) {
-      expect(def.inputSchema.type, `${def.name} missing type`).toBe("object");
-      expect(def.inputSchema.properties, `${def.name} missing properties`).toBeDefined();
-    }
-  });
-
-  it("all required fields exist in properties", () => {
-    for (const def of TOOL_DEFINITIONS) {
-      const propNames = Object.keys(def.inputSchema.properties);
-      for (const req of def.inputSchema.required || []) {
-        expect(propNames, `${def.name}: required "${req}" not in properties`).toContain(req);
-      }
-    }
+describe("kebabToCamel", () => {
+  it("converts kebab-case to camelCase", () => {
+    expect(kebabToCamel("assigned-to")).toBe("assignedTo");
+    expect(kebabToCamel("max-tasks")).toBe("maxTasks");
+    expect(kebabToCamel("simple")).toBe("simple");
   });
 });
 
 // ---------------------------------------------------------------------------
-// 2. Validation Tests
+// deriveCommandFromSchema — type mappings
 // ---------------------------------------------------------------------------
 
-describe("Validation", () => {
-  it("send_message requires 'message' field", () => {
-    const required = getRequired("send_message");
-    expect(required).toContain("message");
+describe("deriveCommandFromSchema", () => {
+  it("creates a command with correct name and description", () => {
+    const tool = mkTool("my-tool", {});
+    const cmd = deriveCommandFromSchema(tool);
+    expect(cmd.name()).toBe("my-tool");
+    expect(cmd.description()).toBe("Test tool: my-tool");
   });
 
-  it("broadcast requires 'message' field", () => {
-    const required = getRequired("broadcast");
-    expect(required).toContain("message");
+  it("maps string properties to --flag <value>", () => {
+    const tool = mkTool("send", { to: { type: "string", description: "recipient" } });
+    const cmd = deriveCommandFromSchema(tool);
+    const opt = cmd.options.find((o) => o.long === "--to");
+    expect(opt).toBeDefined();
+    expect(opt!.flags).toContain("<value>");
   });
 
-  it("create_task requires 'title' field", () => {
-    const required = getRequired("create_task");
-    expect(required).toContain("title");
+  it("maps number properties to --flag <n> with number parser", async () => {
+    const handler = vi.fn().mockResolvedValue({ ok: true });
+    const tool = mkTool("peek", { lines: { type: "number", description: "line count" } }, undefined);
+    const cmd = deriveCommandFromSchema(tool, handler);
+
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await parseCmd(cmd, ["--lines", "42"]);
+    writeSpy.mockRestore();
+
+    expect(handler).toHaveBeenCalledWith("peek", { lines: 42 });
   });
 
-  it("get_task requires 'taskId' field", () => {
-    const required = getRequired("get_task");
-    expect(required).toContain("taskId");
+  it("maps boolean properties to --flag (no value)", async () => {
+    const handler = vi.fn().mockResolvedValue({ ok: true });
+    const tool = mkTool("verify", { skipTests: { type: "boolean", description: "skip" } });
+    const cmd = deriveCommandFromSchema(tool, handler);
+
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await parseCmd(cmd, ["--skip-tests"]);
+    writeSpy.mockRestore();
+
+    expect(handler).toHaveBeenCalledWith("verify", { skipTests: true });
   });
 
-  it("update_task requires 'taskId' field", () => {
-    const required = getRequired("update_task");
-    expect(required).toContain("taskId");
+  it("maps array properties to comma-separated --flag <items>", async () => {
+    const handler = vi.fn().mockResolvedValue({ ok: true });
+    const tool = mkTool("create-task", {
+      labels: { type: "array", items: { type: "string" }, description: "labels" },
+    });
+    const cmd = deriveCommandFromSchema(tool, handler);
+
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await parseCmd(cmd, ["--labels", "bug,frontend,urgent"]);
+    writeSpy.mockRestore();
+
+    expect(handler).toHaveBeenCalledWith("create-task", {
+      labels: ["bug", "frontend", "urgent"],
+    });
   });
 
-  it("check_messages has no required fields", () => {
-    expect(getRequired("check_messages")).toEqual([]);
+  it("maps enum properties with choices validation", async () => {
+    const tool = mkTool("update", {
+      priority: { type: "string", enum: ["P0", "P1", "P2", "P3"], description: "priority" },
+    });
+    const handler = vi.fn().mockResolvedValue({});
+    const cmd = deriveCommandFromSchema(tool, handler);
+
+    // Valid enum value
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await parseCmd(cmd, ["--priority", "P1"]);
+    writeSpy.mockRestore();
+    expect(handler).toHaveBeenCalledWith("update", { priority: "P1" });
+
+    // Invalid enum value — should throw
+    await expect(parseCmd(cmd, ["--priority", "INVALID"])).rejects.toThrow();
   });
 
-  it("list_tasks has no required fields (all optional filters)", () => {
-    expect(getRequired("list_tasks")).toEqual([]);
+  it("marks required fields as requiredOption", async () => {
+    const tool = mkTool(
+      "send",
+      { message: { type: "string", description: "msg" } },
+      ["message"],
+    );
+    const cmd = deriveCommandFromSchema(tool);
+
+    // Missing required option should throw
+    await expect(parseCmd(cmd, [])).rejects.toThrow();
   });
 
-  it("spawn_agent requires 'name' field", () => {
-    const required = getRequired("spawn_agent");
-    expect(required).toContain("name");
+  it("handles optional fields without error", async () => {
+    const handler = vi.fn().mockResolvedValue({});
+    const tool = mkTool("list", {
+      status: { type: "string", description: "filter" },
+      summary: { type: "boolean", description: "compact" },
+    });
+    const cmd = deriveCommandFromSchema(tool, handler);
+
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await parseCmd(cmd, []);
+    writeSpy.mockRestore();
+
+    expect(handler).toHaveBeenCalledWith("list", {});
   });
 
-  it("create_pr requires 'title' and 'body' fields", () => {
-    const required = getRequired("create_pr");
-    expect(required).toContain("title");
-    expect(required).toContain("body");
+  it("sets aliases from cliMeta", () => {
+    const tool = mkTool("list-agents", {}, undefined, { aliases: ["agents", "la"] });
+    const cmd = deriveCommandFromSchema(tool);
+    expect(cmd.aliases()).toContain("agents");
+    expect(cmd.aliases()).toContain("la");
+  });
+
+  it("supports positional args from cliMeta", async () => {
+    const handler = vi.fn().mockResolvedValue({});
+    const tool = mkTool(
+      "send",
+      {
+        to: { type: "string", description: "recipient" },
+        message: { type: "string", description: "content" },
+      },
+      ["to", "message"],
+      { positionalArgs: ["to", "message"] },
+    );
+    const cmd = deriveCommandFromSchema(tool, handler);
+
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await parseCmd(cmd, ["worker-a", "hello"]);
+    writeSpy.mockRestore();
+
+    expect(handler).toHaveBeenCalledWith("send", { to: "worker-a", message: "hello" });
+  });
+
+  it("uses custom formatOutput from cliMeta", async () => {
+    const captured: string[] = [];
+    const handler = vi.fn().mockResolvedValue({ count: 5 });
+    const tool = mkTool("count", {}, undefined, {
+      formatOutput: (r) => `Count: ${(r as { count: number }).count}`,
+    });
+    const cmd = deriveCommandFromSchema(tool, handler);
+
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: unknown) => {
+      captured.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      await parseCmd(cmd, []);
+    } finally {
+      process.stdout.write = origWrite;
+    }
+
+    expect(captured.some((s) => s.includes("Count: 5"))).toBe(true);
+  });
+
+  it("handles number parsing errors gracefully", async () => {
+    const tool = mkTool("peek", { lines: { type: "number", description: "n" } });
+    const cmd = deriveCommandFromSchema(tool);
+
+    await expect(parseCmd(cmd, ["--lines", "abc"])).rejects.toThrow("not a valid number");
+  });
+
+  it("supports default values for optional fields", async () => {
+    const handler = vi.fn().mockResolvedValue({});
+    const tool = mkTool("list", {
+      limit: { type: "number", description: "max", default: 20 },
+    });
+    const cmd = deriveCommandFromSchema(tool, handler);
+
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await parseCmd(cmd, []);
+    writeSpy.mockRestore();
+
+    expect(handler).toHaveBeenCalledWith("list", { limit: 20 });
+  });
+
+  it("outputs JSON by default when no formatOutput", async () => {
+    const captured: string[] = [];
+    const handler = vi.fn().mockResolvedValue({ status: "ok" });
+    const tool = mkTool("check", {});
+    const cmd = deriveCommandFromSchema(tool, handler);
+
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: unknown) => {
+      captured.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      await parseCmd(cmd, []);
+    } finally {
+      process.stdout.write = origWrite;
+    }
+
+    const output = captured.join("");
+    expect(JSON.parse(output.trim())).toEqual({ status: "ok" });
   });
 });
 
 // ---------------------------------------------------------------------------
-// 3. Integration Tests (tool registry completeness)
+// validateTool
 // ---------------------------------------------------------------------------
 
-describe("Integration: Tool Registry Completeness", () => {
-  it("every tool in ALL_TOOL_NAMES has a TOOL_DEFINITION", () => {
-    const defNames = new Set(TOOL_DEFINITIONS.map((t) => t.name));
-    for (const name of ALL_TOOL_NAMES) {
-      expect(defNames.has(name), `Missing definition for: ${name}`).toBe(true);
-    }
-  });
-
-  it("no orphan definitions (every definition is in ALL_TOOL_NAMES)", () => {
-    const nameSet = new Set<string>(ALL_TOOL_NAMES);
-    for (const def of TOOL_DEFINITIONS) {
-      expect(nameSet.has(def.name), `Orphan definition: ${def.name}`).toBe(true);
-    }
-  });
-
-  it("tool count matches between ALL_TOOL_NAMES and TOOL_DEFINITIONS", () => {
-    expect(TOOL_DEFINITIONS.length).toBe(ALL_TOOL_NAMES.length);
-  });
-
-  it("every tool has a non-empty description", () => {
-    for (const def of TOOL_DEFINITIONS) {
-      expect(def.description.length, `${def.name} has empty description`).toBeGreaterThan(0);
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 4. Parity Tests (CLI group/subcommand mapping)
-// ---------------------------------------------------------------------------
-
-describe("Parity: Tool Name → CLI Command Mapping", () => {
-  // The bridge should map tool names to CLI commands consistently
-  const EXPECTED_GROUPS: Record<string, string> = {
-    get_task: "task",
-    update_task: "task",
-    create_task: "task",
-    delete_task: "task",
-    spawn_agent: "agent",
-    remove_agent: "agent",
-    peek_agent: "agent",
-    nudge_agent: "agent",
-    prepare_pr: "pr",
-    create_pr: "pr",
-    save_knowledge: "knowledge",
-    get_knowledge: "knowledge",
-    search_knowledge: "knowledge",
-    save_persona: "persona",
-    channel_list: "channel",
-    channel_join: "channel",
-    channel_history: "channel",
+describe("validateTool", () => {
+  const schema: ToolDefinition["inputSchema"] = {
+    type: "object",
+    properties: {
+      to: { type: "string", description: "recipient" },
+      message: { type: "string", description: "content" },
+      count: { type: "number", description: "n" },
+      force: { type: "boolean", description: "force" },
+      labels: { type: "array", items: { type: "string" }, description: "tags" },
+      priority: { type: "string", enum: ["P0", "P1", "P2"], description: "pri" },
+    },
+    required: ["to", "message"],
   };
 
-  it("grouped tools derive correct parent command", () => {
-    for (const [tool, group] of Object.entries(EXPECTED_GROUPS)) {
-      // Tool name format: action_entity → group=entity, subcommand=action
-      // Or: entity_action → group=entity, subcommand=action
-      expect(typeof group).toBe("string");
-      expect(group.length).toBeGreaterThan(0);
-    }
+  it("returns no errors for valid input", () => {
+    const errors = validateTool("send", { to: "agent-a", message: "hi" }, schema);
+    expect(errors).toHaveLength(0);
   });
 
-  it("top-level tools have no group", () => {
-    const topLevel = [
-      "send_message", "check_messages", "list_agents", "broadcast",
-      "list_tasks", "report_idle", "request_task", "verify_work",
-      "list_personas", "get_workflow_states", "share_image", "whoami",
-      "get_context",
+  it("returns errors for missing required fields", () => {
+    const errors = validateTool("send", {}, schema);
+    expect(errors.length).toBeGreaterThanOrEqual(2);
+    expect(errors.some((e) => e.field === "to")).toBe(true);
+    expect(errors.some((e) => e.field === "message")).toBe(true);
+  });
+
+  it("returns error for wrong type — string expected, got number", () => {
+    const errors = validateTool("send", { to: 123, message: "hi" }, schema);
+    expect(errors.some((e) => e.field === "to" && e.reason.includes("Expected string"))).toBe(true);
+  });
+
+  it("returns error for wrong type — number expected, got string", () => {
+    const errors = validateTool("send", { to: "a", message: "b", count: "not-a-number" }, schema);
+    expect(errors.some((e) => e.field === "count" && e.reason.includes("Expected number"))).toBe(true);
+  });
+
+  it("returns error for wrong type — boolean expected", () => {
+    const errors = validateTool("send", { to: "a", message: "b", force: "yes" }, schema);
+    expect(errors.some((e) => e.field === "force" && e.reason.includes("Expected boolean"))).toBe(true);
+  });
+
+  it("returns error for wrong type — array expected", () => {
+    const errors = validateTool("send", { to: "a", message: "b", labels: "not-array" }, schema);
+    expect(errors.some((e) => e.field === "labels" && e.reason.includes("Expected array"))).toBe(true);
+  });
+
+  it("validates array item types", () => {
+    const errors = validateTool("send", { to: "a", message: "b", labels: ["ok", 123] }, schema);
+    expect(errors.some((e) => e.field === "labels[1]")).toBe(true);
+  });
+
+  it("validates enum values", () => {
+    const errors = validateTool("send", { to: "a", message: "b", priority: "INVALID" }, schema);
+    expect(errors.some((e) => e.field === "priority" && e.reason.includes("Invalid value"))).toBe(true);
+  });
+
+  it("accepts valid enum values", () => {
+    const errors = validateTool("send", { to: "a", message: "b", priority: "P0" }, schema);
+    expect(errors).toHaveLength(0);
+  });
+
+  it("treats empty string as missing for required fields", () => {
+    const errors = validateTool("send", { to: "", message: "hi" }, schema);
+    expect(errors.some((e) => e.field === "to")).toBe(true);
+  });
+
+  it("ToolValidationError has correct properties", () => {
+    const err = new ToolValidationError("mytool", "myfield", "bad value");
+    expect(err.toolName).toBe("mytool");
+    expect(err.field).toBe("myfield");
+    expect(err.reason).toBe("bad value");
+    expect(err.name).toBe("ToolValidationError");
+    expect(err.message).toContain("mytool");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// registerToolsAsCli
+// ---------------------------------------------------------------------------
+
+describe("registerToolsAsCli", () => {
+  it("registers multiple tools as subcommands", () => {
+    const program = new Command();
+    const tools: CliToolDefinition[] = [
+      mkTool("send-message", { message: { type: "string" } }, ["message"]),
+      mkTool("check-messages", {}),
+      mkTool("list-agents", {}),
     ];
-    for (const tool of topLevel) {
-      expect(EXPECTED_GROUPS[tool], `${tool} should be top-level`).toBeUndefined();
-    }
+    const handler = vi.fn().mockResolvedValue({});
+
+    registerToolsAsCli(program, tools, handler);
+
+    const names = program.commands.map((c) => c.name());
+    expect(names).toContain("send-message");
+    expect(names).toContain("check-messages");
+    expect(names).toContain("list-agents");
+  });
+
+  it("returns the program for chaining", () => {
+    const program = new Command();
+    const result = registerToolsAsCli(program, [], vi.fn());
+    expect(result).toBe(program);
   });
 });
 
 // ---------------------------------------------------------------------------
-// 5. RBAC Tests
+// createMcpCli
 // ---------------------------------------------------------------------------
 
-describe("RBAC: Role-Based Access Control", () => {
-  const MASTER_ONLY = ["spawn_agent", "remove_agent", "peek_agent", "nudge_agent", "delete_task"];
-
-  it("master has access to all tools", () => {
-    for (const name of ALL_TOOL_NAMES) {
-      expect(isToolAllowed("master", name), `Master denied: ${name}`).toBe(true);
-    }
+describe("createMcpCli", () => {
+  it("creates a program with name, version, description", () => {
+    const handler = vi.fn().mockResolvedValue({});
+    const prog = createMcpCli([], {
+      name: "test-cli",
+      version: "1.0.0",
+      description: "Test CLI",
+      handler,
+    });
+    expect(prog.name()).toBe("test-cli");
+    expect(prog.version()).toBe("1.0.0");
+    expect(prog.description()).toBe("Test CLI");
   });
 
-  it("worker denied master-only tools", () => {
-    for (const tool of MASTER_ONLY) {
-      expect(isToolAllowed("worker", tool), `Worker should be denied: ${tool}`).toBe(false);
-    }
-  });
-
-  it("worker allowed all non-master tools", () => {
-    const masterOnly = new Set(MASTER_ONLY);
-    for (const name of ALL_TOOL_NAMES) {
-      if (!masterOnly.has(name)) {
-        expect(isToolAllowed("worker", name), `Worker denied: ${name}`).toBe(true);
-      }
-    }
-  });
-
-  it("unknown role defaults to worker permissions", () => {
-    expect(isToolAllowed("unknown-role", "send_message")).toBe(true);
-    expect(isToolAllowed("unknown-role", "spawn_agent")).toBe(false);
-  });
-
-  it("empty role string defaults to worker permissions", () => {
-    expect(isToolAllowed("", "list_tasks")).toBe(true);
-    expect(isToolAllowed("", "delete_task")).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 6. Error Handling Tests
-// ---------------------------------------------------------------------------
-
-describe("Error Handling", () => {
-  it("non-existent tool has no definition", () => {
-    const def = TOOL_DEFINITIONS.find((t) => t.name === "nonexistent_tool");
-    expect(def).toBeUndefined();
-  });
-
-  it("isToolAllowed returns false for non-existent tool (unknown role)", () => {
-    expect(isToolAllowed("worker", "nonexistent_tool")).toBe(false);
-  });
-
-  it("isToolAllowed returns true for non-existent tool (master)", () => {
-    // Master set contains ALL_TOOL_NAMES, so a non-existent tool won't be in it
-    expect(isToolAllowed("master", "nonexistent_tool")).toBe(false);
-  });
-
-  it("tool with empty properties has no positionals or flags", () => {
-    expect(derivePositionals("check_messages")).toEqual([]);
-    expect(deriveFlags("check_messages")).toEqual([]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 7. Edge Cases
-// ---------------------------------------------------------------------------
-
-describe("Edge Cases", () => {
-  it("tool names are all lowercase with underscores", () => {
-    for (const name of ALL_TOOL_NAMES) {
-      expect(name).toMatch(/^[a-z_]+$/);
-    }
-  });
-
-  it("no duplicate tool names", () => {
-    const names = [...ALL_TOOL_NAMES];
-    const unique = new Set(names);
-    expect(unique.size).toBe(names.length);
-  });
-
-  it("tool descriptions don't contain raw HTML or markdown links", () => {
-    for (const def of TOOL_DEFINITIONS) {
-      expect(def.description).not.toMatch(/<[a-z]+>/i);
-      expect(def.description).not.toMatch(/\[.*\]\(http/);
-    }
-  });
-
-  it("property descriptions are strings (not objects)", () => {
-    for (const def of TOOL_DEFINITIONS) {
-      for (const [key, prop] of Object.entries(def.inputSchema.properties)) {
-        const p = prop as SchemaProperty;
-        if (p.description) {
-          expect(typeof p.description, `${def.name}.${key}.description`).toBe("string");
-        }
-      }
-    }
-  });
-
-  it("camelCase property names can be converted to kebab-case flags", () => {
-    const camelToKebab = (s: string) => s.replace(/([A-Z])/g, "-$1").toLowerCase();
-    const testCases = [
-      ["assignedTo", "--assigned-to"],
-      ["messageType", "--message-type"],
-      ["dueDate", "--due-date"],
-      ["maxTasks", "--max-tasks"],
+  it("registers all provided tools", () => {
+    const handler = vi.fn().mockResolvedValue({});
+    const tools: CliToolDefinition[] = [
+      mkTool("alpha", {}),
+      mkTool("beta", {}),
     ];
-    for (const [camel, expected] of testCases) {
-      expect("--" + camelToKebab(camel)).toBe(expected);
-    }
+    const prog = createMcpCli(tools, { handler });
+    const names = prog.commands.map((c) => c.name());
+    expect(names).toContain("alpha");
+    expect(names).toContain("beta");
   });
 
-  it("all property types are valid JSON Schema types", () => {
-    const validTypes = new Set(["string", "number", "integer", "boolean", "array", "object"]);
-    for (const def of TOOL_DEFINITIONS) {
-      for (const [key, prop] of Object.entries(def.inputSchema.properties)) {
-        const p = prop as SchemaProperty;
-        if (p.type) {
-          expect(validTypes.has(p.type), `${def.name}.${key} has invalid type: ${p.type}`).toBe(true);
-        }
-      }
-    }
+  it("adds --json global option when jsonOutput is true", () => {
+    const handler = vi.fn().mockResolvedValue({});
+    const prog = createMcpCli([], { handler, jsonOutput: true });
+    const jsonOpt = prog.options.find((o) => o.long === "--json");
+    expect(jsonOpt).toBeDefined();
+  });
+
+  it("uses defaults for name, version, description when not provided", () => {
+    const handler = vi.fn().mockResolvedValue({});
+    const prog = createMcpCli([], { handler });
+    expect(prog.name()).toBe("mcp-cli");
+    expect(prog.version()).toBe("0.1.0");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// End-to-end: tool definition → CLI → parse → handler → output
+// ---------------------------------------------------------------------------
+
+describe("end-to-end", () => {
+  it("complete flow: tool def → CLI command → parse args → correct handler call", async () => {
+    const handler = vi.fn().mockResolvedValue({ success: true, taskId: "abc123" });
+    const tool = mkTool(
+      "create-task",
+      {
+        title: { type: "string", description: "Task title" },
+        priority: { type: "string", enum: ["P0", "P1", "P2", "P3"], description: "Priority" },
+        labels: { type: "array", items: { type: "string" }, description: "Labels" },
+        assignedTo: { type: "string", description: "Assignee" },
+      },
+      ["title"],
+      { positionalArgs: ["title"] },
+    );
+
+    const cmd = deriveCommandFromSchema(tool, handler);
+
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await parseCmd(cmd, [
+      "Fix the bug",
+      "--priority", "P0",
+      "--labels", "bug,urgent",
+      "--assigned-to", "dev-1",
+    ]);
+    writeSpy.mockRestore();
+
+    expect(handler).toHaveBeenCalledWith("create-task", {
+      title: "Fix the bug",
+      priority: "P0",
+      labels: ["bug", "urgent"],
+      assignedTo: "dev-1",
+    });
+  });
+
+  it("mixed positional + options with validation", async () => {
+    const handler = vi.fn().mockResolvedValue({ sent: true });
+    const tool = mkTool(
+      "send-message",
+      {
+        to: { type: "string", description: "recipient" },
+        message: { type: "string", description: "content" },
+        messageType: { type: "string", enum: ["text", "question", "ack"], description: "type" },
+      },
+      ["to", "message"],
+      { positionalArgs: ["to", "message"] },
+    );
+
+    const cmd = deriveCommandFromSchema(tool, handler);
+
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await parseCmd(cmd, ["worker-a", "hello world", "--message-type", "question"]);
+    writeSpy.mockRestore();
+
+    expect(handler).toHaveBeenCalledWith("send-message", {
+      to: "worker-a",
+      message: "hello world",
+      messageType: "question",
+    });
+  });
+
+  it("validation then CLI parse gives consistent results", async () => {
+    const schema: ToolDefinition["inputSchema"] = {
+      type: "object",
+      properties: {
+        taskId: { type: "string", description: "id" },
+        status: { type: "string", enum: ["pending", "in-progress", "done"], description: "status" },
+        force: { type: "boolean", description: "force" },
+      },
+      required: ["taskId"],
+    };
+
+    // Validate programmatically
+    const validErrors = validateTool("update", { taskId: "abc", status: "done", force: true }, schema);
+    expect(validErrors).toHaveLength(0);
+
+    const invalidErrors = validateTool("update", { taskId: "abc", status: "INVALID" }, schema);
+    expect(invalidErrors.length).toBeGreaterThan(0);
+
+    // Same via CLI
+    const handler = vi.fn().mockResolvedValue({});
+    const tool: CliToolDefinition = {
+      name: "update",
+      description: "Update task",
+      inputSchema: schema,
+      cliMeta: { positionalArgs: ["taskId"] },
+    };
+    const cmd = deriveCommandFromSchema(tool, handler);
+
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await parseCmd(cmd, ["abc", "--status", "done", "--force"]);
+    writeSpy.mockRestore();
+
+    expect(handler).toHaveBeenCalledWith("update", { taskId: "abc", status: "done", force: true });
   });
 });
