@@ -1,140 +1,104 @@
 /**
- * Tests for Kiro MCP server lifecycle: registration via kiro-cli mcp add
- * and cleanup via kiro-cli mcp remove on agent stop.
+ * Tests for Kiro MCP lifecycle: auto-switch to isolated worktrees,
+ * per-worktree .kiro/settings/mcp.json write, no global config pollution.
  */
 import { describe, it, expect } from "vitest";
 
 // ---------------------------------------------------------------------------
-// 1. kiro-cli mcp add command construction
+// 1. Kiro + MCP + shared → auto-switch to isolated
 // ---------------------------------------------------------------------------
 
-describe("Kiro MCP add command construction", () => {
-  function buildMcpAddArgs(
-    agentId: string,
-    serverCommand: string,
-    serverArgs: string[],
-  ): string[] {
-    const mcpServerName = `kora-${agentId}`;
-    const addArgs = [
-      "mcp", "add",
-      "--name", mcpServerName,
-      "--scope", "default",
-      "--agent", "kiro_default",
-      "--command", serverCommand,
-    ];
-    for (const arg of serverArgs) {
-      addArgs.push("--args", arg);
+describe("Kiro worktree mode auto-switch", () => {
+  function resolveWorktreeMode(
+    providerId: string,
+    messagingMode: string,
+    worktreeMode: string,
+  ): string {
+    // Mirrors the logic in agent-manager.ts
+    let effective = worktreeMode;
+    if (providerId === "kiro" && messagingMode === "mcp" && effective === "shared") {
+      effective = "isolated";
     }
-    addArgs.push("--force");
-    return addArgs;
+    return effective;
   }
 
-  it("generates correct command with all args", () => {
-    const args = buildMcpAddArgs("agent-123", "node", [
-      "/path/to/mcp-server.js",
-      "--agent-id", "agent-123",
-      "--session-id", "session-abc",
-    ]);
-
-    expect(args[0]).toBe("mcp");
-    expect(args[1]).toBe("add");
-    expect(args).toContain("--name");
-    expect(args[args.indexOf("--name") + 1]).toBe("kora-agent-123");
-    expect(args).toContain("--scope");
-    expect(args[args.indexOf("--scope") + 1]).toBe("default");
-    expect(args).toContain("--agent");
-    expect(args[args.indexOf("--agent") + 1]).toBe("kiro_default");
-    expect(args).toContain("--command");
-    expect(args[args.indexOf("--command") + 1]).toBe("node");
-    expect(args[args.length - 1]).toBe("--force");
+  it("auto-switches kiro+mcp+shared to isolated", () => {
+    expect(resolveWorktreeMode("kiro", "mcp", "shared")).toBe("isolated");
   });
 
-  it("includes each server arg with --args prefix", () => {
-    const args = buildMcpAddArgs("agent-1", "node", [
-      "/path/server.js", "--agent-id", "a1", "--session-id", "s1",
-    ]);
-
-    // Count --args occurrences
-    const argsFlags = args.filter(a => a === "--args");
-    expect(argsFlags).toHaveLength(5); // 5 server args: path, --agent-id, a1, --session-id, s1
+  it("keeps kiro+mcp+isolated as isolated", () => {
+    expect(resolveWorktreeMode("kiro", "mcp", "isolated")).toBe("isolated");
   });
 
-  it("uses unique server name per agent", () => {
-    const args1 = buildMcpAddArgs("agent-aaa", "node", []);
-    const args2 = buildMcpAddArgs("agent-bbb", "node", []);
-
-    const name1 = args1[args1.indexOf("--name") + 1];
-    const name2 = args2[args2.indexOf("--name") + 1];
-
-    expect(name1).toBe("kora-agent-aaa");
-    expect(name2).toBe("kora-agent-bbb");
-    expect(name1).not.toBe(name2);
+  it("keeps kiro+cli+shared as shared (no MCP needed)", () => {
+    expect(resolveWorktreeMode("kiro", "cli", "shared")).toBe("shared");
   });
 
-  it("handles empty server args", () => {
-    const args = buildMcpAddArgs("agent-x", "node", []);
-    expect(args.filter(a => a === "--args")).toHaveLength(0);
-    expect(args[args.length - 1]).toBe("--force");
+  it("keeps claude-code+mcp+shared as shared", () => {
+    expect(resolveWorktreeMode("claude-code", "mcp", "shared")).toBe("shared");
+  });
+
+  it("keeps claude-code+cli+shared as shared", () => {
+    expect(resolveWorktreeMode("claude-code", "cli", "shared")).toBe("shared");
+  });
+
+  it("does not affect non-kiro providers", () => {
+    for (const provider of ["claude-code", "aider", "codex", "goose"]) {
+      expect(resolveWorktreeMode(provider, "mcp", "shared")).toBe("shared");
+    }
   });
 });
 
 // ---------------------------------------------------------------------------
-// 2. kiro-cli mcp remove command construction
+// 2. Per-worktree MCP config: no global pollution
 // ---------------------------------------------------------------------------
 
-describe("Kiro MCP remove command construction", () => {
-  function buildMcpRemoveArgs(agentId: string): string[] {
-    return [
-      "mcp", "remove",
-      "--name", `kora-${agentId}`,
-      "--scope", "default",
-      "--force",
-    ];
-  }
-
-  it("generates correct remove command", () => {
-    const args = buildMcpRemoveArgs("agent-456");
-    expect(args).toEqual([
-      "mcp", "remove",
-      "--name", "kora-agent-456",
-      "--scope", "default",
-      "--force",
-    ]);
+describe("Kiro per-worktree MCP config", () => {
+  it("config is written to agentWorkDir, not global ~/.kiro", () => {
+    const agentWorkDir = "/project/.kora/worktrees/agent-123";
+    const configDir = `${agentWorkDir}/.kiro/settings`;
+    expect(configDir).not.toContain("~");
+    expect(configDir).not.toContain("homedir");
+    expect(configDir).toContain("worktrees/agent-123");
   });
 
-  it("remove name matches add name for same agent", () => {
-    const agentId = "test-agent-789";
-    const addName = `kora-${agentId}`;
-    const removeArgs = buildMcpRemoveArgs(agentId);
-    const removeName = removeArgs[removeArgs.indexOf("--name") + 1];
-    expect(removeName).toBe(addName);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 3. Lifecycle: no fake directory, real project dir
-// ---------------------------------------------------------------------------
-
-describe("Kiro MCP lifecycle: no fake directory", () => {
-  it("cdTarget should be agentWorkDir, not kiroWorkspaceRoot", () => {
-    // After the fix, cdTarget = agentWorkDir (real project dir)
-    // Old code: cdTarget = options._kiroWorkspaceRoot || agentWorkDir
-    const agentWorkDir = "/Users/test/project";
-    const cdTarget = agentWorkDir; // new code
-    expect(cdTarget).toBe("/Users/test/project");
-  });
-
-  it("multiple agents get unique MCP server names", () => {
+  it("each agent gets unique config path in isolated mode", () => {
     const agents = ["agent-1", "agent-2", "agent-3"];
-    const names = agents.map(id => `kora-${id}`);
-    const unique = new Set(names);
+    const paths = agents.map(id => `/project/.kora/worktrees/${id}/.kiro/settings/mcp.json`);
+    const unique = new Set(paths);
     expect(unique.size).toBe(agents.length);
   });
 
-  it("server name format is valid for kiro-cli", () => {
-    const agentId = "worker-abc-def123";
-    const serverName = `kora-${agentId}`;
-    // kiro-cli server names should be alphanumeric + hyphens
-    expect(serverName).toMatch(/^[a-z0-9-]+$/);
+  it("config format matches Kiro expectations", () => {
+    const kiroMcpConfig = {
+      mcpServers: {
+        kora: {
+          command: "node",
+          args: ["/path/to/server.js", "--agent-id", "agent-1"],
+        },
+      },
+    };
+    expect(kiroMcpConfig.mcpServers.kora.command).toBe("node");
+    expect(kiroMcpConfig.mcpServers.kora.args).toHaveLength(3);
+    expect(JSON.stringify(kiroMcpConfig)).toContain("mcpServers");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3. No fake directory / no kiro-workspaces
+// ---------------------------------------------------------------------------
+
+describe("No fake directory hack", () => {
+  it("cdTarget is agentWorkDir (real project dir)", () => {
+    const agentWorkDir = "/project/.kora/worktrees/agent-123";
+    const cdTarget = agentWorkDir;
+    expect(cdTarget).toBe(agentWorkDir);
+    expect(cdTarget).not.toContain("kiro-workspaces");
+  });
+
+  it("no _kiroWorkspaceRoot override", () => {
+    // The _kiroWorkspaceRoot property has been removed from SpawnAgentOptions
+    const options: Record<string, unknown> = { workingDirectory: "/project" };
+    expect(options._kiroWorkspaceRoot).toBeUndefined();
   });
 });

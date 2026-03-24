@@ -11,11 +11,7 @@ import fs from "fs/promises";
 import { readFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { logger } from "./logger.js";
-
-const execFileAsync = promisify(execFile);
 
 export interface SpawnAgentOptions {
   sessionId: string;
@@ -112,9 +108,18 @@ export class AgentManager extends EventEmitter {
     const systemPromptFile = path.join(personasDir, `${agentId}-boot.md`);
     await fs.writeFile(systemPromptFile, bootPrompt, "utf-8");
 
+    // Kiro + MCP mode requires isolated worktrees: each agent needs its own
+    // .kiro/settings/mcp.json. In shared mode this would overwrite between agents.
+    // Auto-switch to isolated with a warning.
+    let effectiveWorktreeMode = options.worktreeMode;
+    if (options.provider.id === "kiro" && (options.messagingMode ?? "mcp") === "mcp" && effectiveWorktreeMode === "shared") {
+      effectiveWorktreeMode = "isolated";
+      logger.warn(`[agent-manager] Kiro + MCP requires isolated worktrees — auto-switching from shared to isolated for ${agentId}`);
+    }
+
     // Create git worktree for agent isolation (if in a git repo and not shared mode)
     let agentWorkDir = options.workingDirectory;
-    if (options.worktreeMode !== "shared" && await this.worktreeManager.isGitRepo(options.workingDirectory)) {
+    if (effectiveWorktreeMode !== "shared" && await this.worktreeManager.isGitRepo(options.workingDirectory)) {
       try {
         agentWorkDir = await this.worktreeManager.createWorktree(
           options.workingDirectory,
@@ -321,56 +326,33 @@ export class AgentManager extends EventEmitter {
       await new Promise(r => setTimeout(r, pollInterval));
     }
 
-    // 5b. For Kiro: register per-agent MCP server via kiro-cli mcp add.
-    // Uses --scope default to write to ~/.kiro/settings/ (not workspace),
-    // with a unique server name per agent to avoid collisions.
-    // This replaces the old fake-directory hack that broke file access.
+    // 5b. For Kiro: write per-worktree MCP config to <worktree>/.kiro/settings/mcp.json.
+    // Kiro agents have includeMcpJson: true, so they auto-load from workspace config.
+    // Requires isolated worktrees (auto-switched above for Kiro+MCP+shared).
     if (options.provider.id === "kiro" && mcpConfigPath) {
       try {
         const mcpConfig = JSON.parse(readFileSync(mcpConfigPath, "utf-8"));
         const serverConfig = mcpConfig?.mcpServers?.kora || mcpConfig?.mcpServers?.[MCP_SERVER_NAME];
         if (serverConfig) {
-          const mcpServerName = `kora-${agentId}`;
-          const addArgs = [
-            "mcp", "add",
-            "--name", mcpServerName,
-            "--scope", "default",
-            "--agent", "kiro_default",
-            "--command", serverConfig.command,
-          ];
-          // Add each arg separately with --args flag
-          for (const arg of (serverConfig.args || [])) {
-            addArgs.push("--args", arg);
-          }
-          addArgs.push("--force");
-
-          await execFileAsync("kiro-cli", addArgs, { timeout: 10_000 });
-          logger.info(`[agent-manager] Registered Kiro MCP server "${mcpServerName}" for ${agentId} via kiro-cli mcp add`);
+          const kiroSettingsDir = path.join(agentWorkDir, ".kiro", "settings");
+          await fs.mkdir(kiroSettingsDir, { recursive: true });
+          const kiroMcpConfig = {
+            mcpServers: {
+              kora: {
+                command: serverConfig.command,
+                args: serverConfig.args || [],
+              },
+            },
+          };
+          await fs.writeFile(
+            path.join(kiroSettingsDir, "mcp.json"),
+            JSON.stringify(kiroMcpConfig, null, 2),
+            "utf-8"
+          );
+          logger.info(`[agent-manager] Wrote Kiro workspace MCP config for ${agentId} at ${kiroSettingsDir}/mcp.json`);
         }
       } catch (err) {
-        logger.warn({ err }, `[agent-manager] Failed to register Kiro MCP config for ${agentId} — falling back to manual config write`);
-        // Fallback: write config file directly to ~/.kiro/settings/mcp.json
-        try {
-          const os = await import("os");
-          const kiroSettingsDir = path.join(os.default.homedir(), ".kiro", "settings");
-          await fs.mkdir(kiroSettingsDir, { recursive: true });
-          const configPath = path.join(kiroSettingsDir, "mcp.json");
-          let existing: Record<string, unknown> = {};
-          try {
-            existing = JSON.parse(readFileSync(configPath, "utf-8"));
-          } catch { /* file may not exist */ }
-          const mcpConfig = JSON.parse(readFileSync(mcpConfigPath, "utf-8"));
-          const serverConfig = mcpConfig?.mcpServers?.kora || mcpConfig?.mcpServers?.[MCP_SERVER_NAME];
-          if (serverConfig) {
-            const servers = (existing as any).mcpServers || {};
-            servers[`kora-${agentId}`] = { command: serverConfig.command, args: serverConfig.args || [] };
-            (existing as any).mcpServers = servers;
-            await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
-            logger.info(`[agent-manager] Wrote Kiro MCP config fallback for ${agentId}`);
-          }
-        } catch (fallbackErr) {
-          logger.warn({ err: fallbackErr }, `[agent-manager] Kiro MCP config fallback also failed for ${agentId}`);
-        }
+        logger.warn({ err }, `[agent-manager] Failed to write Kiro MCP config for ${agentId}`);
       }
     }
 
@@ -563,18 +545,6 @@ export class AgentManager extends EventEmitter {
     // cleans up orphaned socket + metadata files on disk.
     try { await this.tmux.killSession(tmuxSession); } catch {}
 
-    // 4. Clean up Kiro MCP server registration (if Kiro provider)
-    if (agent.config.cliProvider === "kiro") {
-      try {
-        await execFileAsync("kiro-cli", [
-          "mcp", "remove",
-          "--name", `kora-${agentId}`,
-          "--scope", "default",
-          "--force",
-        ], { timeout: 5_000 });
-        logger.info(`[agent-manager] Removed Kiro MCP server "kora-${agentId}" on stop`);
-      } catch { /* non-fatal — kiro-cli may not be installed or config already removed */ }
-    }
 
     // 6. Clean up git worktree (if one was created for this agent)
     if (!opts?.skipWorktreeRemoval) {
