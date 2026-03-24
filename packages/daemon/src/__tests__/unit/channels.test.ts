@@ -72,6 +72,7 @@ describe("Channels DB", () => {
         messageType: "text",
         content: `Message ${i}`,
         channel: "#frontend",
+        createdAt: new Date().toISOString(),
       });
     }
     const msgs = db.getChannelMessages("#frontend", 5);
