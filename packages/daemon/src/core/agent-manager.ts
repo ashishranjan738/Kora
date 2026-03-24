@@ -288,8 +288,10 @@ export class AgentManager extends EventEmitter {
           command.push("--allowedTools", ...approvedTools);
         }
       } else if (options.provider.id === "kiro") {
-        // Kiro in non-MCP mode: use --trust-tools=read (Kiro doesn't support --allowedTools)
-        command.push("--trust-tools=read");
+        // Kiro in non-MCP mode (CLI mode): needs read + write + shell to run kora-cli.
+        // Kiro has no Bash tool — shell trust is required for ANY command execution.
+        const kiroCliTools = ["read", "write", "shell"];
+        command.push(`--trust-tools=${kiroCliTools.join(",")}`);
       } else {
         // Claude Code in non-MCP modes: only pre-approve read operations
         command.push(

@@ -10,7 +10,7 @@ export const kiroProvider: CLIProvider = {
   id: "kiro",
   displayName: "Kiro (Amazon)",
 
-  allowedExtraArgs: ["--verbose", "--profile", "--region"],
+  allowedExtraArgs: ["--verbose", "--profile", "--region", "--trust-tools", "--trust-all-tools"],
 
   supportsMcp: true,
   supportsHotModelSwap: false,
