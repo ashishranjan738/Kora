@@ -1100,8 +1100,12 @@ export function AllSessions() {
                 <BrowseButton onClick={() => setShowBrowseForCreate(true)} />
               </div>
               {newPathIsGitRepo === false && (
-                <div style={{ fontSize: 11, color: "var(--accent-yellow)", marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
-                  <span>&#9888;&#65039;</span> Not a git repository — agents will share the working directory
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 12px", borderRadius: 6, backgroundColor: "rgba(210, 153, 34, 0.1)", border: "1px solid rgba(210, 153, 34, 0.3)", marginTop: 4 }}>
+                  <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>&#9888;</span>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--accent-yellow)" }}>Not a git repository</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>Worktree isolation is unavailable. All agents will share the same working directory.</div>
+                  </div>
                 </div>
               )}
               <datalist id="recent-paths-datalist">
@@ -1382,8 +1386,14 @@ export function AllSessions() {
                         <BrowseButton onClick={() => setShowBrowseForPlaybook(true)} />
                       </div>
                       {playbookPathIsGitRepo === false && (
-                        <div style={{ fontSize: 11, color: "var(--accent-yellow)", marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
-                          <span>&#9888;&#65039;</span> Not a git repository — agents will share the working directory
+                        <div className="git-repo-warning" style={{ gridColumn: "1 / -1" }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 12px", borderRadius: 6, backgroundColor: "rgba(210, 153, 34, 0.1)", border: "1px solid rgba(210, 153, 34, 0.3)" }}>
+                            <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>&#9888;</span>
+                            <div>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--accent-yellow)" }}>Not a git repository</div>
+                              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>Worktree isolation is unavailable. All agents will share the same working directory.</div>
+                            </div>
+                          </div>
                         </div>
                       )}
                       <DirectoryBrowser
