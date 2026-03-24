@@ -67,14 +67,19 @@ export class AutoAssigner {
       return null;
     }
 
+    // Fix 4: Non-coding roles only get tasks explicitly labeled for their skill
+    const NON_CODING_PATTERNS = ["product", "pm", "researcher", "tester", "reviewer"];
+    const agentNameLower = agent.config.name.toLowerCase();
+    const isNonCoding = NON_CODING_PATTERNS.some(p => agentNameLower.includes(p));
+
     // Rate limit: max 3 per 5 minutes per agent
     if (!this.isWithinRateLimit(agentId)) {
       logger.debug({ agentId }, "[auto-assign] Rate limited");
       return null;
     }
 
-    // Find best unassigned task
-    const task = this.findBestUnassignedTask(agent);
+    // Find best unassigned task (non-coding agents only get role-matched tasks)
+    const task = this.findBestUnassignedTask(agent, isNonCoding);
     if (!task) return null;
 
     // Assign task + auto-transition from first to second workflow state
@@ -204,7 +209,7 @@ export class AutoAssigner {
   // ─── Internals ─────────────────────────────────────────────────
 
   /** Find best unassigned pending task for an agent, using priority scoring */
-  findBestUnassignedTask(agent: AgentState): { id: string; title: string; priority: string } | null {
+  findBestUnassignedTask(agent: AgentState, isNonCoding = false): { id: string; title: string; priority: string } | null {
     const allTasks = this.config.database.getTasks(this.config.sessionId);
 
     // Get first workflow state ID (the "pending"/"backlog" state)
@@ -248,10 +253,22 @@ export class AutoAssigner {
     for (const task of unblocked) {
       let score = priorityScore(task.priority || "P2");
 
-      // Skill match bonus: +50 if task labels match agent skills
       const taskLabels: string[] = task.labels || [];
+
+      // Fix 4: Non-coding agents only get tasks that match their skills
+      if (isNonCoding) {
+        const hasRoleMatch = taskLabels.some((l: string) => agentSkills.includes(l));
+        if (!hasRoleMatch && taskLabels.length > 0) continue; // skip — no role match
+      }
+
+      // Skill match bonus: +50 if task labels match agent skills
       const skillMatches = taskLabels.filter((l: string) => agentSkills.includes(l));
       if (skillMatches.length > 0) score += 50;
+
+      // Fix 3: Require skill match — if task has skill labels, agent must match at least one
+      const skillKeywords = ["backend", "frontend", "testing", "review", "research", "devops"];
+      const taskSkillLabels = taskLabels.filter((l: string) => skillKeywords.includes(l));
+      if (taskSkillLabels.length > 0 && skillMatches.length === 0) continue; // skip — no skill match
 
       // Skill mismatch penalty: -100 if task has skill-specific labels the agent lacks
       const mismatches = getSkillMismatches(agentSkills, taskLabels);
@@ -265,6 +282,8 @@ export class AutoAssigner {
       }
     }
 
+    // Fix 1: Minimum score threshold — don't assign if net score is negative
+    if (best && bestScore < 0) return null;
     return best ? { id: best.id, title: best.title, priority: best.priority || "P2" } : null;
   }
 
