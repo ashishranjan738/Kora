@@ -352,5 +352,17 @@ export function useApi() {
         method: "PATCH",
         body: JSON.stringify(config),
       }),
+    // Channels (group chat)
+    getChannels: (sid: string) =>
+      apiFetch<{ channels: Array<{ id: string; name: string; description?: string; memberCount?: number; isDefault?: boolean }> }>(`/sessions/${sid}/channels`),
+    createChannel: (sid: string, data: { id: string; name: string; description?: string }) =>
+      apiFetch<{ channel: any }>(`/sessions/${sid}/channels`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    deleteChannel: (sid: string, channelId: string) =>
+      apiFetch<{ deleted: boolean }>(`/sessions/${sid}/channels/${encodeURIComponent(channelId)}`, { method: "DELETE" }),
+    getChannelMessages: (sid: string, channelId: string, limit?: number) =>
+      apiFetch<{ messages: any[] }>(`/sessions/${sid}/channels/${encodeURIComponent(channelId)}/messages?limit=${limit || 50}`),
   };
 }
