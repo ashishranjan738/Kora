@@ -385,6 +385,48 @@ export class AppDatabase extends EventEmitter {
         PRAGMA user_version = 15;
       `);
     }
+
+    if (version < 16) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS channels (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT,
+          created_by TEXT,
+          created_at INTEGER NOT NULL,
+          is_default INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_channels_session ON channels(session_id);
+        PRAGMA user_version = 16;
+      `);
+    }
+  }
+
+  // ─── Channels ──────────────────────────────────────────────
+
+  createChannel(channel: { id: string; sessionId: string; name: string; description?: string; createdBy?: string; isDefault?: boolean }): void {
+    this.db.prepare(`INSERT OR IGNORE INTO channels (id, session_id, name, description, created_by, created_at, is_default) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(channel.id, channel.sessionId, channel.name, channel.description || null, channel.createdBy || null, Date.now(), channel.isDefault ? 1 : 0);
+  }
+
+  getChannels(sessionId: string): Array<{ id: string; name: string; description: string | null; createdBy: string | null; createdAt: number; isDefault: boolean }> {
+    const rows = this.db.prepare(`SELECT id, name, description, created_by, created_at, is_default FROM channels WHERE session_id = ? ORDER BY is_default DESC, name ASC`).all(sessionId) as any[];
+    return rows.map(r => ({ id: r.id, name: r.name, description: r.description, createdBy: r.created_by, createdAt: r.created_at, isDefault: !!r.is_default }));
+  }
+
+  deleteChannel(channelId: string): boolean {
+    const result = this.db.prepare(`DELETE FROM channels WHERE id = ? AND is_default = 0`).run(channelId);
+    return result.changes > 0;
+  }
+
+  getChannelMessages(channel: string, limit = 50, before?: string): Array<{ id: string; from: string; content: string; timestamp: string; channel: string }> {
+    let sql = `SELECT id, from_agent_id as "from", content, created_at as timestamp, channel FROM messages WHERE channel = ?`;
+    const params: unknown[] = [channel];
+    if (before) { sql += ` AND created_at < ?`; params.push(before); }
+    sql += ` ORDER BY created_at DESC LIMIT ?`;
+    params.push(Math.min(limit, 100));
+    return this.db.prepare(sql).all(...params) as any[];
   }
 
   // ─── Events ──────────────────────────────────────────────

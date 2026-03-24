@@ -1374,7 +1374,7 @@ export function createApiRouter(deps: {
   router.post("/sessions/:sid/relay", async (req: Request, res: Response) => {
     try {
       const sid = String(req.params.sid);
-      const body = req.body as { from: string; to: string; message: string; messageType?: string };
+      const body = req.body as { from: string; to: string; message: string; messageType?: string; channel?: string };
 
       if (!body.to || !body.message) {
         res.status(400).json({ error: "to and message are required" });
@@ -1392,7 +1392,7 @@ export function createApiRouter(deps: {
         try { orch.agentManager.recordMcpCall(body.from); } catch { /* non-fatal */ }
       }
 
-      const success = await orch.relayMessage(body.from || "user", body.to, body.message, body.messageType);
+      const success = await orch.relayMessage(body.from || "user", body.to, body.message, body.messageType, body.channel);
       if (!success) {
         res.status(404).json({ error: `Target agent "${body.to}" not found or not running` });
         return;
@@ -4841,6 +4841,101 @@ export function createApiRouter(deps: {
       logger.error({ err: err }, "[api] GET /suggestions/agent-configs error");
       res.status(500).json({ error: String(err) });
     }
+  });
+
+  // ── Channels (Group Chat) ──────────────────────────────────
+
+  router.get("/sessions/:sid/channels", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+      const orch = orchestrators.get(sid);
+      const agents = orch ? orch.agentManager.listAgents() : [];
+      const channels = db.getChannels(sid).map(ch => ({
+        ...ch,
+        memberCount: agents.filter(a => (a.config.channels || []).includes(ch.id)).length,
+      }));
+      res.json({ channels });
+    } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  });
+
+  router.post("/sessions/:sid/channels", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+      const { id, name, description } = req.body;
+      if (!id || !name) { res.status(400).json({ error: "id and name required" }); return; }
+      if (!id.startsWith("#") || /\s/.test(id)) { res.status(400).json({ error: "Channel id must start with # and contain no spaces" }); return; }
+      db.createChannel({ id, sessionId: sid, name, description, createdBy: req.headers["x-agent-id"] as string || "user" });
+      broadcastEvent({ event: "channel-created", sessionId: sid, channelId: id, name });
+      res.status(201).json({ id, name, description, isDefault: false });
+    } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  });
+
+  router.delete("/sessions/:sid/channels/:channelId", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const channelId = String(req.params.channelId);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+      const deleted = db.deleteChannel(channelId);
+      if (!deleted) { res.status(400).json({ error: "Cannot delete default channel or channel not found" }); return; }
+      broadcastEvent({ event: "channel-deleted", sessionId: sid, channelId });
+      res.json({ success: true, deleted: channelId });
+    } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  });
+
+  router.get("/sessions/:sid/channels/:channelId/messages", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const channelId = String(req.params.channelId);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+      const limit = parseInt(req.query.limit as string) || 50;
+      const before = req.query.before as string | undefined;
+      const messages = db.getChannelMessages(channelId, limit, before);
+      res.json({ messages, channel: channelId });
+    } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  });
+
+  // NOTE: join/leave modify in-memory agent config only. Channel memberships
+  // are not persisted to DB — they reset on daemon restart. Agents are re-assigned
+  // default channels (#all, #orchestration) on spawn/restore.
+  router.post("/sessions/:sid/channels/:channelId/join", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const channelId = String(req.params.channelId);
+      if (!channelId.startsWith("#") || /\s/.test(channelId)) { res.status(400).json({ error: "Invalid channel ID" }); return; }
+      const orch = orchestrators.get(sid);
+      if (!orch) { res.status(404).json({ error: "Session not running" }); return; }
+      const agentId = req.body.agentId || req.headers["x-agent-id"] as string;
+      if (!agentId) { res.status(400).json({ error: "agentId required" }); return; }
+      const agent = orch.agentManager.getAgent(agentId);
+      if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+      const channels = new Set(agent.config.channels || []);
+      channels.add(channelId);
+      agent.config.channels = [...channels];
+      res.json({ success: true, agentId, channel: channelId, channels: agent.config.channels });
+    } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  });
+
+  router.post("/sessions/:sid/channels/:channelId/leave", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const channelId = String(req.params.channelId);
+      if (!channelId.startsWith("#") || /\s/.test(channelId)) { res.status(400).json({ error: "Invalid channel ID" }); return; }
+      if (channelId === "#all") { res.status(400).json({ error: "Cannot leave #all channel" }); return; }
+      const orch = orchestrators.get(sid);
+      if (!orch) { res.status(404).json({ error: "Session not running" }); return; }
+      const agentId = req.body.agentId || req.headers["x-agent-id"] as string;
+      if (!agentId) { res.status(400).json({ error: "agentId required" }); return; }
+      const agent = orch.agentManager.getAgent(agentId);
+      if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+      agent.config.channels = (agent.config.channels || []).filter(c => c !== channelId);
+      res.json({ success: true, agentId, channel: channelId, channels: agent.config.channels });
+    } catch (err) { res.status(500).json({ error: "Internal server error" }); }
   });
 
   // ── Browse Directories ──────────────────────────────────

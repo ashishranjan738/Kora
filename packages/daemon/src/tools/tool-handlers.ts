@@ -359,6 +359,7 @@ export async function handleSendMessage(
         to: sub.id,
         message: `[${args.channel}] ${args.message}`,
         messageType: args.messageType || "text",
+        channel: args.channel,
       });
     }
 

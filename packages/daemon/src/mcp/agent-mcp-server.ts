@@ -196,7 +196,7 @@ async function countUnreadMessages(): Promise<number> {
 }
 
 /** Read messages from SQLite (primary source) */
-async function readSqliteMessages(): Promise<Array<{ id: string; from: string; content: string; timestamp: string }>> {
+async function readSqliteMessages(): Promise<Array<{ id: string; from: string; content: string; timestamp: string; channel?: string | null }>> {
   try {
     const response = (await apiCall(
       "GET",
@@ -217,6 +217,7 @@ async function readSqliteMessages(): Promise<Array<{ id: string; from: string; c
         from: m.fromName || m.fromAgentId || 'system',
         content: m.content,
         timestamp: new Date(m.createdAt).toISOString(),
+        channel: m.channel || null,
       }));
     }
     return [];
@@ -1099,7 +1100,7 @@ async function handleToolCall(
 
       // Combine (SQLite first, then pending, then inbox, deduplicate by content)
       const seen = new Set<string>();
-      const allMessages: Array<{ from: string; content: string; timestamp: string }> = [];
+      const allMessages: Array<{ from: string; content: string; timestamp: string; channel?: string | null }> = [];
 
       for (const sm of sqliteMessages) {
         const key = `${sm.from}:${sm.content.substring(0, 100)}`;
