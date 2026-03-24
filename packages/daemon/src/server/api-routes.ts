@@ -1401,8 +1401,9 @@ export function createApiRouter(deps: {
       }
 
       // Record MCP activity for the sender (prevents premature idle detection)
+      // Pass toolName so PASSIVE_TOOLS filtering works in agent-health.ts
       if (body.from && body.from !== "user") {
-        try { orch.agentManager.recordMcpCall(body.from); } catch { /* non-fatal */ }
+        try { orch.agentManager.recordMcpCall(body.from, "send_message"); } catch { /* non-fatal */ }
       }
 
       // Resolve agent name to ID (case-insensitive) — kora-cli sends names, not IDs
@@ -1982,6 +1983,14 @@ export function createApiRouter(deps: {
       if (!db) { res.status(404).json({ error: "Session not found" }); return; }
       const { randomUUID } = require("crypto");
       const { toolName, inputArgs, outputResult, durationMs, success } = req.body;
+
+      // Record MCP activity with toolName so PASSIVE_TOOLS filtering works.
+      // This is the primary call site — every MCP tool call flows through traces.
+      const orch = orchestrators.get(String(sid));
+      if (orch && toolName) {
+        try { orch.agentManager.recordMcpCall(String(aid), toolName); } catch { /* non-fatal */ }
+      }
+
       db.insertTrace({
         id: randomUUID().slice(0, 12),
         sessionId: String(sid), agentId: String(aid),
