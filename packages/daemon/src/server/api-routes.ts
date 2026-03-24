@@ -5235,6 +5235,25 @@ export function createApiRouter(deps: {
         }
       } catch { /* file may not exist */ }
 
+      // 3. Read from SQLite knowledge-db (entries saved via kora-cli save --key or MCP save_knowledge with key)
+      try {
+        const db = getDb(sid);
+        if (db) {
+          const dbEntries = db.listKnowledge(sid, 100);
+          const existingTexts = new Set(entries.map(e => e.text));
+          for (const e of dbEntries) {
+            const text = (e as Record<string, unknown>).value as string || (e as Record<string, unknown>).entry as string || "";
+            if (text && !existingTexts.has(text)) {
+              entries.push({
+                text: (e as Record<string, unknown>).key ? `[${(e as Record<string, unknown>).key}] ${text}` : text,
+                source: "knowledge-db",
+                timestamp: (e as Record<string, unknown>).createdAt ? new Date((e as Record<string, unknown>).createdAt as number).toISOString() : undefined,
+              });
+            }
+          }
+        }
+      } catch { /* knowledge-db may not exist */ }
+
       res.json({ entries });
     } catch (err) {
       logger.error({ err }, "[api] GET knowledge error");
