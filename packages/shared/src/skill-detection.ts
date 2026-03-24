@@ -31,6 +31,9 @@ const NAME_SKILL_MAP: Record<string, string[]> = {
   architect: ["research", "review", "backend", "frontend"],
   dev: ["backend", "frontend"],
   engineer: ["backend", "frontend"],
+  product: ["research", "review"],
+  pm: ["research", "review"],
+  manager: ["research", "review"],
 };
 
 /** Default skills by agent role */
