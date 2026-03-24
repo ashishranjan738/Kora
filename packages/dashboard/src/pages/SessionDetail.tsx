@@ -1951,6 +1951,7 @@ function AgentsTab({
                 <AgentActivityBadge
                   activity={activity}
                   since={activitySince[a.id]}
+                  activeTasks={taskCount}
                   compact
                 />
                 <ActivitySparkline
