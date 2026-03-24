@@ -1,8 +1,12 @@
 // @vitest-environment happy-dom
+/**
+ * Tests for AgentActivityBadge likely-idle heuristic.
+ * Tests the logic by checking rendered output via snapshot of badge text.
+ * Each test renders fresh into an isolated container and unmounts immediately.
+ */
 import { describe, it, expect, vi } from "vitest";
-import * as matchers from "@testing-library/jest-dom/matchers";
-expect.extend(matchers);
-import { render, screen } from "@testing-library/react";
+import { createElement } from "react";
+import { renderToString } from "react-dom/server";
 import { MantineProvider } from "@mantine/core";
 import { AgentActivityBadge } from "../AgentActivityBadge";
 
@@ -11,75 +15,73 @@ vi.mock("@mantine/hooks", async () => {
   return { ...actual, useMediaQuery: () => false };
 });
 
-function renderBadge(props: Partial<Parameters<typeof AgentActivityBadge>[0]> = {}) {
-  const defaultProps = {
-    activity: "working" as const,
-    ...props,
-  };
-  return render(
-    <MantineProvider>
-      <AgentActivityBadge {...defaultProps} />
-    </MantineProvider>
+/** Server-side render to get HTML string — no DOM pollution */
+function renderBadgeHTML(props: Record<string, unknown> = {}): string {
+  const defaultProps = { activity: "working", ...props };
+  return renderToString(
+    createElement(MantineProvider, null,
+      createElement(AgentActivityBadge as any, defaultProps)
+    )
   );
 }
 
 describe("AgentActivityBadge", () => {
   describe("likely idle heuristic", () => {
-    it("shows 'Idle?' when working with 0 active tasks", () => {
-      renderBadge({ activity: "working", activeTasks: 0 });
-      expect(screen.getByText(/Idle\?/)).toBeInTheDocument();
+    it("shows Idle? when working with 0 active tasks", () => {
+      const html = renderBadgeHTML({ activity: "working", activeTasks: 0 });
+      expect(html).toContain("Idle?");
     });
 
-    it("shows normal 'Working' when working with active tasks", () => {
-      renderBadge({ activity: "working", activeTasks: 2 });
-      expect(screen.getByText(/Working/)).toBeInTheDocument();
-      expect(screen.queryByText(/Idle\?/)).not.toBeInTheDocument();
+    it("shows Working when working with active tasks", () => {
+      const html = renderBadgeHTML({ activity: "working", activeTasks: 2 });
+      expect(html).toContain("Working");
+      expect(html).not.toContain("Idle?");
     });
 
-    it("shows normal 'Idle' when idle with 0 tasks (not likely-idle)", () => {
-      renderBadge({ activity: "idle", activeTasks: 0 });
-      expect(screen.getByText(/Idle/)).toBeInTheDocument();
-      expect(screen.queryByText(/Idle\?/)).not.toBeInTheDocument();
+    it("shows Idle when idle with 0 tasks (not likely-idle)", () => {
+      const html = renderBadgeHTML({ activity: "idle", activeTasks: 0 });
+      expect(html).toContain("Idle");
+      expect(html).not.toContain("Idle?");
     });
 
-    it("shows normal 'Working' when activeTasks is undefined (backward compat)", () => {
-      renderBadge({ activity: "working" });
-      expect(screen.getByText(/Working/)).toBeInTheDocument();
-      expect(screen.queryByText(/Idle\?/)).not.toBeInTheDocument();
+    it("shows Working when activeTasks undefined (backward compat)", () => {
+      const html = renderBadgeHTML({ activity: "working" });
+      expect(html).toContain("Working");
+      expect(html).not.toContain("Idle?");
     });
   });
 
   describe("compact mode", () => {
-    it("shows 'Idle?' in compact mode with 0 tasks", () => {
-      renderBadge({ activity: "working", activeTasks: 0, compact: true });
-      expect(screen.getByText(/Idle\?/)).toBeInTheDocument();
+    it("shows Idle? in compact mode with 0 tasks", () => {
+      const html = renderBadgeHTML({ activity: "working", activeTasks: 0, compact: true });
+      expect(html).toContain("Idle?");
     });
 
-    it("shows short label in compact mode normally", () => {
-      renderBadge({ activity: "working", activeTasks: 1, compact: true });
-      expect(screen.getByText(/Working/)).toBeInTheDocument();
+    it("shows Working in compact mode with tasks", () => {
+      const html = renderBadgeHTML({ activity: "working", activeTasks: 1, compact: true });
+      expect(html).toContain("Working");
     });
   });
 
   describe("standard activity states", () => {
     it("renders working state", () => {
-      renderBadge({ activity: "working" });
-      expect(screen.getByText(/Working/)).toBeInTheDocument();
+      const html = renderBadgeHTML({ activity: "working" });
+      expect(html).toContain("Working");
     });
 
     it("renders idle state", () => {
-      renderBadge({ activity: "idle" });
-      expect(screen.getByText(/Idle/)).toBeInTheDocument();
+      const html = renderBadgeHTML({ activity: "idle" });
+      expect(html).toContain("Idle");
     });
 
     it("renders crashed state", () => {
-      renderBadge({ activity: "crashed" });
-      expect(screen.getByText(/Crashed/)).toBeInTheDocument();
+      const html = renderBadgeHTML({ activity: "crashed" });
+      expect(html).toContain("Crashed");
     });
 
     it("renders stopped state", () => {
-      renderBadge({ activity: "stopped" });
-      expect(screen.getByText(/Stopped/)).toBeInTheDocument();
+      const html = renderBadgeHTML({ activity: "stopped" });
+      expect(html).toContain("Stopped");
     });
   });
 });
