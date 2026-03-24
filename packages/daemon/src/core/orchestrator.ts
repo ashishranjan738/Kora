@@ -349,7 +349,9 @@ export class Orchestrator extends EventEmitter {
         });
         // Also send terminal notification so agent sees it immediately
         try {
-          await this.agentManager.sendMessage(existing.id, `[New message from system. Use check_messages tool to read it.]`);
+          const mode = this.config.messagingMode || "mcp";
+          const cmd = mode === "cli" ? "kora-cli messages" : "check_messages";
+          await this.agentManager.sendMessage(existing.id, mode === "terminal" ? `[New message from system.]` : `[New message from system. Use ${cmd} tool to read it.]`);
         } catch { /* non-fatal — agent may not be ready */ }
       }
 
@@ -402,7 +404,9 @@ export class Orchestrator extends EventEmitter {
         });
         // Also send terminal notification so agent sees it immediately
         try {
-          await this.agentManager.sendMessage(remaining.id, `[New message from system. Use check_messages tool to read it.]`);
+          const leaveMode = this.config.messagingMode || "mcp";
+          const leaveCmd = leaveMode === "cli" ? "kora-cli messages" : "check_messages";
+          await this.agentManager.sendMessage(remaining.id, leaveMode === "terminal" ? `[New message from system.]` : `[New message from system. Use ${leaveCmd} tool to read it.]`);
         } catch { /* non-fatal */ }
       }
 
@@ -731,7 +735,9 @@ export class Orchestrator extends EventEmitter {
       // Always send short notification via direct sendKeys — even for blocked agents.
       // This ensures the agent sees "you have a message" even when full content is buffered.
       const senderName = fromAgent?.config.name || fromAgentId;
-      const shortNotification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
+      const relayMode = this.config.messagingMode || "mcp";
+      const relayCmd = relayMode === "cli" ? "kora-cli messages" : "check_messages";
+      const shortNotification = relayMode === "terminal" ? `[New message from ${senderName}.]` : `[New message from ${senderName}. Use ${relayCmd} tool to read it.]`;
       try {
         await this.config.tmux.sendKeys(toAgent.config.tmuxSession, shortNotification, { literal: true });
       } catch { /* non-fatal — agent terminal may be busy */ }
