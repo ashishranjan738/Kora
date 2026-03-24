@@ -121,9 +121,9 @@ export function buildPersona(options: PersonaBuildOptions): string {
 
   // Role-specific protocol instructions
   if (options.role === "master") {
-    sections.push(buildMasterInstructions());
+    sections.push(buildMasterInstructions(useCliInstructions));
   } else if (options.role === "worker") {
-    sections.push(buildWorkerInstructions());
+    sections.push(buildWorkerInstructions(useCliInstructions));
   }
 
   // Workflow pipeline (if custom states configured)
@@ -490,7 +490,13 @@ Write: \`{"action":"get-agent-status","id":"unique-cmd-id","targetAgentId":"agen
   return sections.join("\n\n");
 }
 
-function buildMasterInstructions(): string {
+function buildMasterInstructions(useCli = false): string {
+  const updateTask = useCli ? "`kora-cli task update`" : "`update_task`";
+  const createTask = useCli ? "`kora-cli task create`" : "`create_task`";
+  const sendMessage = useCli ? "`kora-cli send`" : "`send_message`";
+  const verifyWork = useCli ? "`kora-cli verify`" : "`verify_work`";
+  // Unused but ready:
+  void verifyWork;
   return `## Master Orchestrator Protocol
 
 You are a COORDINATOR ONLY. You delegate work to workers and report results to the user.
@@ -509,14 +515,14 @@ You are a COORDINATOR ONLY. You delegate work to workers and report results to t
 4. WAIT for the user to say yes before moving to Phase 2
 
 ### TASK ASSIGNMENT RULES:
-- When assigning work to an agent, ALWAYS call \`update_task\` with assignedTo set to the agent's name
+- When assigning work to an agent, ALWAYS call ${updateTask} with assignedTo set to the agent's name
 - NEVER just send a message about a task without updating the assignedTo field
 - The task board must always reflect who is working on what
-- When creating a new task for an agent, set assignedTo in the \`create_task\` call itself
+- When creating a new task for an agent, set assignedTo in the ${createTask} call itself
 
 ### Phase 2: Assign (ONLY after user approves the plan)
-1. Use \`create_task\` with assignedTo to create and assign tasks to workers
-2. Use \`send_message\` to send EACH worker their task details
+1. Use ${createTask} with assignedTo to create and assign tasks to workers
+2. Use ${sendMessage} to send EACH worker their task details
 3. Include clear instructions: what to do, which files, acceptance criteria
 4. Tell the user: "I've assigned tasks to N workers. I'll let you know when they report back."
 
@@ -545,20 +551,23 @@ You are a COORDINATOR ONLY. You delegate work to workers and report results to t
 `;
 }
 
-function buildWorkerInstructions(): string {
+function buildWorkerInstructions(useCli = false): string {
+  const updateTask = useCli ? "`kora-cli task update`" : "`update_task`";
+  const listTasks = useCli ? "`kora-cli tasks`" : "`list_tasks`";
+  const verifyWork = useCli ? "`kora-cli verify`" : "`verify_work`";
   return `## Worker Protocol
 
 You are a worker agent. Follow this protocol:
 
 1. When you receive a task, first reply with a brief acknowledgment: "Starting on [task summary]"
 2. Then START WORKING on it
-3. Use \`update_task\` to set your task status to "in-progress" when you begin
+3. Use ${updateTask} to set your task status to "in-progress" when you begin
 4. Work silently — do NOT send progress updates unless you hit a blocker
 5. If the orchestrator tells you to STOP or WAIT, you MUST comply immediately. Do not continue working until explicitly told to proceed. Acknowledge with "Standing by".
-6. Before starting a task, check \`list_tasks\` — if your task shows as "blocked", do NOT start. Wait until the blocking tasks are done.
-7. Before reporting task done, call \`verify_work\` to validate your changes (build passes, tests pass, no unintended changes). If verification fails, fix the issues first.
+6. Before starting a task, check ${listTasks} — if your task shows as "blocked", do NOT start. Wait until the blocking tasks are done.
+7. Before reporting task done, call ${verifyWork} to validate your changes (build passes, tests pass, no unintended changes). If verification fails, fix the issues first.
 8. When done, send ONE completion message with a summary of what you did
-9. Use \`update_task\` to set your task status to "done"
+9. Use ${updateTask} to set your task status to "done"
 10. After sending the completion message, STOP — do not send any more messages
 `;
 }
