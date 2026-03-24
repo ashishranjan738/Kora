@@ -41,10 +41,11 @@ function getArg(name: string): string {
   return idx >= 0 && idx + 1 < args.length ? args[idx + 1] : "";
 }
 
-const AGENT_ID = getArg("agent-id");
-const SESSION_ID = getArg("session-id");
-let PROJECT_PATH = getArg("project-path");
-let AGENT_ROLE = getArg("agent-role") || "worker";
+// CLI args take precedence over env vars for all identity fields
+const AGENT_ID = getArg("agent-id") || process.env.KORA_AGENT_ID || "";
+const SESSION_ID = getArg("session-id") || process.env.KORA_SESSION_ID || "";
+let PROJECT_PATH = getArg("project-path") || process.env.KORA_PROJECT_PATH || "";
+let AGENT_ROLE = getArg("agent-role") || process.env.KORA_AGENT_ROLE || "worker";
 
 // Self-bootstrap: fetch role and projectPath from daemon API if not in CLI args
 async function selfBootstrap(): Promise<void> {
@@ -110,9 +111,11 @@ function getConfigDir(): string {
 }
 
 function getDaemonUrl(): string {
-  // CLI args take priority (always correct for the daemon that spawned us)
+  // Priority: CLI args > env var > filesystem > default port
   const cliUrl = getArg("daemon-url");
   if (cliUrl) return cliUrl;
+  const envUrl = process.env.KORA_DAEMON_URL;
+  if (envUrl) return envUrl;
   // Filesystem fallback
   try {
     const path = require("path");
@@ -125,9 +128,11 @@ function getDaemonUrl(): string {
 }
 
 function getToken(): string {
-  // CLI args take priority (always correct for the daemon that spawned us)
+  // Priority: CLI args > env var > filesystem
   const cliToken = getArg("token");
   if (cliToken) return cliToken;
+  const envToken = process.env.KORA_TOKEN;
+  if (envToken) return envToken;
   // Filesystem fallback
   try {
     const path = require("path");
@@ -159,10 +164,12 @@ function notifyResourceChanged(uri: string): void {
   }
 }
 
-// If called with no args, print usage and exit (serves as a --help check)
+// If called with no identity (no args AND no env vars), print usage and exit
 if (!AGENT_ID && !SESSION_ID) {
   process.stderr.write(
-    "Usage: agent-mcp-server --agent-id <id> --session-id <id> [--daemon-url URL] [--token TOKEN]\n",
+    "Missing agent identity. Provide via CLI args or env vars:\n" +
+    "  CLI:  agent-mcp-server --agent-id <id> --session-id <id> [--daemon-url URL] [--token TOKEN]\n" +
+    "  Env:  KORA_AGENT_ID, KORA_SESSION_ID, KORA_DAEMON_URL, KORA_TOKEN, KORA_AGENT_ROLE\n",
   );
   process.exit(0);
 }
