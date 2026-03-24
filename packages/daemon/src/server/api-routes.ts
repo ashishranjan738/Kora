@@ -2038,6 +2038,8 @@ export function createApiRouter(deps: {
       }
 
       orch.database.markMessagesRead(messageIds);
+      // Also reset re-notification escalation — agent has actively read messages
+      orch.messageQueue.resetNotificationAttempts(String(aid));
       res.json({ success: true, markedRead: messageIds.length });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
