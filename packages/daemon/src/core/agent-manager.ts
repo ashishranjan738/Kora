@@ -145,9 +145,10 @@ export class AgentManager extends EventEmitter {
       );
 
       // Also write AGENTS.md which Kiro auto-reads from workspace root
+      // AGENTS.md also gets boot prompt (Kiro reads this automatically)
       await fs.writeFile(
         path.join(agentWorkDir, "AGENTS.md"),
-        personaContent,
+        kiroBootPrompt,
         "utf-8",
       );
     }
