@@ -111,6 +111,20 @@ function fmtWf(d: Record<string, unknown>): string {
 function rS(c: Cfg): string { if (!c.sessionId) { process.stderr.write("Error: No session ID. Set KORA_SESSION_ID or --session.\n"); process.exit(1); } return c.sessionId; }
 function rA(c: Cfg): string { if (!c.agentId) { process.stderr.write("Error: No agent ID. Set KORA_AGENT_ID or --agent.\n"); process.exit(1); } return c.agentId; }
 
+/** Master-only commands that workers cannot execute */
+const MASTER_ONLY_TOOLS = new Set(["spawn_agent", "remove_agent", "peek_agent", "nudge_agent", "delete_task"]);
+
+/** Check role-based access before executing master-only commands.
+ *  Human users (no KORA_AGENT_ROLE set) are always allowed.
+ *  Only blocks when role is explicitly set and is not "master". */
+function requireMaster(_c: Cfg, toolName: string): void {
+  const role = process.env.KORA_AGENT_ROLE;
+  if (role && role !== "master") {
+    process.stderr.write(`Error: "${toolName}" is restricted to master/orchestrator agents. Your role: ${role}\n`);
+    process.exit(1);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
@@ -243,6 +257,7 @@ tCmd.command("create <title>").description("Create task")
 tCmd.command("delete <id>").description("Delete task (master only)")
   .option("--reason <r>", "Reason for deletion")
   .action(async (id: string, o: { reason?: string }) => {
+    requireMaster(cfg, "delete_task");
     const r = (await api(cfg, "DELETE", `/api/v1/sessions/${rS(cfg)}/tasks/${id}`)) as Record<string, unknown>;
     out(J() ? { success: true, deleted: id, ...r, ...(o.reason ? { reason: o.reason } : {}) } : `Task ${id} deleted.`, J());
   });
@@ -259,6 +274,7 @@ aCmd.command("spawn <name>").description("Spawn agent (master only)")
   .requiredOption("--model <m>").option("--role <r>", "", "worker").option("--persona <p>")
   .option("--persona-id <id>").option("--task <t>").option("--provider <p>")
   .action(async (name: string, o: Record<string, string | undefined>) => {
+    requireMaster(cfg, "spawn_agent");
     const b: Record<string, unknown> = { name, model: o.model };
     if (o.role) b.role = o.role; if (o.persona) b.persona = o.persona;
     if (o.personaId) b.personaId = o.personaId; if (o.task) b.task = o.task; if (o.provider) b.cliProvider = o.provider;
@@ -267,17 +283,20 @@ aCmd.command("spawn <name>").description("Spawn agent (master only)")
   });
 aCmd.command("remove <id>").alias("stop").description("Remove agent (master only)").option("--reason <r>")
   .action(async (id: string, o: { reason?: string }) => {
+    requireMaster(cfg, "remove_agent");
     await api(cfg, "DELETE", `/api/v1/sessions/${rS(cfg)}/agents/${id}${o.reason ? `?reason=${encodeURIComponent(o.reason)}` : ""}`);
     out(J() ? { success: true } : `Agent ${id} removed.`, J());
   });
 aCmd.command("peek <id>").description("View agent terminal (master only)").option("--lines <n>", "", "15")
   .action(async (id: string, o: { lines?: string }) => {
+    requireMaster(cfg, "peek_agent");
     const n = Math.min(parseInt(o.lines || "15", 10), 50);
     const r = (await api(cfg, "GET", `/api/v1/sessions/${rS(cfg)}/agents/${id}/output?lines=${n}`)) as Record<string, unknown>;
     if (J()) { out(r, true); } else { const t = r.output; out(Array.isArray(t) ? t.join("\n") : (t || r.text || "") as string, false); }
   });
 aCmd.command("nudge <id>").description("Nudge agent (master only)").option("--message <m>")
   .action(async (id: string, o: { message?: string }) => {
+    requireMaster(cfg, "nudge_agent");
     const b: Record<string, unknown> = {}; if (o.message) b.message = o.message;
     await api(cfg, "POST", `/api/v1/sessions/${rS(cfg)}/agents/${id}/nudge`, b);
     out(J() ? { success: true } : `Agent ${id} nudged.`, J());
