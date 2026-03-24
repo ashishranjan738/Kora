@@ -112,6 +112,12 @@ export class Orchestrator extends EventEmitter {
     this.messageQueue = new MessageQueue(config.tmux, config.runtimeDir, config.messagingMode || "mcp");
     this.autoRelay.setMessageQueue(this.messageQueue);
 
+    // Wire agent alive check — skip terminal delivery for crashed/stopped agents
+    this.messageQueue.setAgentAliveCheck((agentId: string) => {
+      const agent = this.agentManager.getAgent(agentId);
+      return agent?.status === "running";
+    });
+
     // Wire re-notification callbacks so MessageQueue can check unread counts
     this.messageQueue.setRenotifyCallbacks(
       (agentId: string) => this.messageBus.getUnreadCount(agentId),

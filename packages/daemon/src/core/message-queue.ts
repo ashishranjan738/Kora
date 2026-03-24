@@ -107,6 +107,8 @@ export class MessageQueue {
   private architectAlerted = new Set<string>();
   /** Track recovery state for escalated agents */
   private recoveryState = new Map<string, "escalated" | "partial-recovery" | "recovered">();
+  /** Callback to check if agent is alive (running) — skip terminal delivery for crashed/stopped agents */
+  private isAgentAliveFn: ((agentId: string) => boolean) | null = null;
   /** Callback to check if agent has recent MCP activity (from AgentHealthMonitor) */
   private hasMcpActivityFn: ((agentId: string) => boolean) | null = null;
   private renotifyInterval: ReturnType<typeof setTimeout> | null = null;
@@ -236,6 +238,11 @@ export class MessageQueue {
   /** Set callback to broadcast WebSocket events to dashboard */
   setBroadcastCallback(cb: (event: Record<string, unknown>) => void): void {
     this.broadcastFn = cb;
+  }
+
+  /** Set callback to check if agent is alive (running). Used to skip terminal delivery for crashed/stopped agents. */
+  setAgentAliveCheck(cb: (agentId: string) => boolean): void {
+    this.isAgentAliveFn = cb;
   }
 
   /** Batch-enqueue messages without triggering processQueues for each one.
@@ -618,6 +625,11 @@ export class MessageQueue {
 
   /** MCP mode: write full message to inbox file, send short tmux notification */
   private async deliverViaMcp(msg: QueuedMessage): Promise<void> {
+    // Skip terminal delivery for crashed/stopped agents (still persisted in SQLite)
+    if (this.isAgentAliveFn && !this.isAgentAliveFn(msg.agentId)) {
+      logger.debug({ agentId: msg.agentId }, "[MessageQueue] Skipping MCP delivery — agent not alive");
+      return;
+    }
     const messageId = crypto.randomUUID();
     const senderName = extractSenderName(msg.message, msg.fromAgentId);
     const isBroadcast = msg.message.includes("[Broadcast]");
@@ -677,6 +689,10 @@ export class MessageQueue {
 
   /** MCP pending mode: write to mcp-pending store + send tmux notification */
   private async deliverViaMcpPending(msg: QueuedMessage): Promise<void> {
+    if (this.isAgentAliveFn && !this.isAgentAliveFn(msg.agentId)) {
+      logger.debug({ agentId: msg.agentId }, "[MessageQueue] Skipping MCP-pending delivery — agent not alive");
+      return;
+    }
     const messageId = crypto.randomUUID();
     const senderName = extractSenderName(msg.message, msg.fromAgentId);
     const isBroadcast = msg.message.includes("[Broadcast]");
@@ -739,6 +755,10 @@ export class MessageQueue {
 
   /** Terminal mode: send directly via tmux with 500 char limit */
   private async deliverViaTerminal(msg: QueuedMessage): Promise<void> {
+    if (this.isAgentAliveFn && !this.isAgentAliveFn(msg.agentId)) {
+      logger.debug({ agentId: msg.agentId }, "[MessageQueue] Skipping terminal delivery — agent not alive");
+      return;
+    }
     // Strip ANSI codes (they don't work with -l flag)
     let cleanMsg = msg.message.replace(/\x1b\[[0-9;]*m/g, "");
 
