@@ -364,5 +364,12 @@ export function useApi() {
       apiFetch<{ deleted: boolean }>(`/sessions/${sid}/channels/${encodeURIComponent(channelId)}`, { method: "DELETE" }),
     getChannelMessages: (sid: string, channelId: string, limit?: number) =>
       apiFetch<{ messages: any[] }>(`/sessions/${sid}/channels/${encodeURIComponent(channelId)}/messages?limit=${limit || 50}`),
+    addChannelMember: (sid: string, channelId: string, agentId: string) =>
+      apiFetch<{ joined: boolean }>(`/sessions/${sid}/channels/${encodeURIComponent(channelId)}/members`, {
+        method: "POST",
+        body: JSON.stringify({ agentId }),
+      }),
+    removeChannelMember: (sid: string, channelId: string, agentId: string) =>
+      apiFetch<{ removed: boolean }>(`/sessions/${sid}/channels/${encodeURIComponent(channelId)}/members/${encodeURIComponent(agentId)}`, { method: "DELETE" }),
   };
 }

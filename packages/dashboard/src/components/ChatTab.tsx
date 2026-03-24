@@ -13,6 +13,8 @@ import {
   ActionIcon,
   Tooltip,
   Loader,
+  Popover,
+  Checkbox,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { useApi } from "../hooks/useApi";
@@ -25,8 +27,16 @@ interface Channel {
   name: string;
   description?: string;
   memberCount?: number;
+  members?: string[];
   isDefault?: boolean;
   unread?: number;
+}
+
+interface SessionAgent {
+  id: string;
+  name: string;
+  role?: string;
+  status?: string;
 }
 
 interface ChatMessage {
@@ -83,13 +93,17 @@ export function ChatTab({ sessionId, wsEvents }: ChatTabProps) {
   const [creatingChannel, setCreatingChannel] = useState(false);
   const [showSidebar, setShowSidebar] = useState(!isMobile);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [sessionAgents, setSessionAgents] = useState<SessionAgent[]>([]);
+  const [showMemberPopover, setShowMemberPopover] = useState(false);
+  const [addingAgents, setAddingAgents] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load channels on mount
+  // Load channels + agents on mount
   useEffect(() => {
     fetchChannels();
+    fetchAgents();
   }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load messages when active channel changes
@@ -117,6 +131,30 @@ export function ChatTab({ sessionId, wsEvents }: ChatTabProps) {
       }
     }
   }, [wsEvents, activeChannel]);
+
+  async function fetchAgents() {
+    try {
+      const data: any = await api.getAgents(sessionId);
+      setSessionAgents((data.agents || []).map((a: any) => ({
+        id: a.id, name: a.config?.name || a.name || a.id,
+        role: a.config?.role || a.role, status: a.status,
+      })));
+    } catch { /* silently fail */ }
+  }
+
+  async function addAgentToChannel(channelId: string, agentId: string) {
+    try {
+      await api.addChannelMember(sessionId, channelId, agentId);
+      await fetchChannels();
+    } catch (err: any) { setError(err.message || "Failed to add agent"); }
+  }
+
+  async function removeAgentFromChannel(channelId: string, agentId: string) {
+    try {
+      await api.removeChannelMember(sessionId, channelId, agentId);
+      await fetchChannels();
+    } catch (err: any) { setError(err.message || "Failed to remove agent"); }
+  }
 
   async function fetchChannels() {
     setLoadingChannels(true);
@@ -280,9 +318,51 @@ export function ChatTab({ sessionId, wsEvents }: ChatTabProps) {
           <Text size="sm" fw={600} c="var(--text-primary)" style={{ flex: 1 }}>
             {activeChannelObj?.name || activeChannel}
           </Text>
-          {activeChannelObj?.memberCount !== undefined && (
-            <Text size="xs" c="var(--text-muted)">{activeChannelObj.memberCount} members</Text>
-          )}
+          <Group gap={6}>
+            {(activeChannelObj?.members?.length ?? activeChannelObj?.memberCount ?? 0) > 0 && (
+              <Tooltip label={(activeChannelObj?.members || []).map(id => sessionAgents.find(a => a.id === id)?.name || id).join(", ") || `${activeChannelObj?.memberCount} members`} multiline w={200} withArrow>
+                <Badge variant="light" color="gray" size="sm" style={{ cursor: "default" }}>
+                  {activeChannelObj?.members?.length ?? activeChannelObj?.memberCount ?? 0} member{(activeChannelObj?.members?.length ?? activeChannelObj?.memberCount ?? 0) !== 1 ? "s" : ""}
+                </Badge>
+              </Tooltip>
+            )}
+            {activeChannelObj && !activeChannelObj.isDefault && (
+              <Popover opened={showMemberPopover} onChange={setShowMemberPopover} position="bottom-end" width={240}>
+                <Popover.Target>
+                  <Button variant="subtle" size="compact-xs" onClick={() => setShowMemberPopover(o => !o)} styles={{ root: { color: "var(--accent-blue)", fontSize: 12 } }}>
+                    + Add Agent
+                  </Button>
+                </Popover.Target>
+                <Popover.Dropdown style={{ backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border-color)", padding: 8 }}>
+                  <Text size="xs" fw={600} c="var(--text-primary)" mb={6}>Manage members</Text>
+                  <Stack gap={4}>
+                    {sessionAgents.filter(a => a.status === "running").map(agent => {
+                      const isMember = activeChannelObj?.members?.includes(agent.id) ?? false;
+                      return (
+                        <Group key={agent.id} justify="space-between" style={{ padding: "4px 0" }}>
+                          <Group gap={6}>
+                            <Checkbox size="xs" checked={isMember} disabled={addingAgents}
+                              onChange={async () => {
+                                setAddingAgents(true);
+                                if (isMember) await removeAgentFromChannel(activeChannel, agent.id);
+                                else await addAgentToChannel(activeChannel, agent.id);
+                                setAddingAgents(false);
+                              }}
+                            />
+                            <Text size="xs" c="var(--text-primary)">{agent.name}</Text>
+                          </Group>
+                          <Badge size="xs" variant="light" color={getRoleBadgeColor(agent.role)}>{agent.role || "worker"}</Badge>
+                        </Group>
+                      );
+                    })}
+                    {sessionAgents.filter(a => a.status === "running").length === 0 && (
+                      <Text size="xs" c="var(--text-muted)">No running agents</Text>
+                    )}
+                  </Stack>
+                </Popover.Dropdown>
+              </Popover>
+            )}
+          </Group>
         </div>
 
         {error && (
