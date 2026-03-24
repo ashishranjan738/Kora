@@ -1966,8 +1966,8 @@ export function createApiRouter(deps: {
         return;
       }
 
-      // Record MCP activity — agent is actively checking messages
-      try { orch.agentManager.recordMcpCall(String(aid)); } catch { /* non-fatal */ }
+      // Don't record check_messages as MCP activity — it's passive/polling
+      // (was causing agents to never go idle)
 
       const status = req.query.status as string | string[] | undefined;
       const since = req.query.since ? parseInt(req.query.since as string, 10) : undefined;

@@ -228,7 +228,18 @@ export class AgentHealthMonitor extends EventEmitter {
    * If within IDLE_TIMEOUT_MS, agent is considered "working" even if terminal shows no output
    * (e.g. agent is reading code via Read tool — no terminal output but definitely working).
    */
-  recordMcpActivity(agentId: string): void {
+  /** Passive/read-only tools that should NOT reset the idle timer */
+  private static readonly PASSIVE_TOOLS = new Set([
+    "check_messages", "list_agents", "list_tasks", "get_task",
+    "get_workflow_states", "report_idle", "request_task",
+    "whoami", "get_context", "channel_list", "channel_history",
+    "list_personas",
+  ]);
+
+  recordMcpActivity(agentId: string, toolName?: string): void {
+    // Passive tools (read-only) don't count as "working"
+    if (toolName && AgentHealthMonitor.PASSIVE_TOOLS.has(toolName)) return;
+
     this.lastMcpCallTimestamps.set(agentId, Date.now());
     // If agent was idle, flip to working
     const agent = this.agents?.get(agentId);
@@ -243,8 +254,8 @@ export class AgentHealthMonitor extends EventEmitter {
   }
 
   /** Alias for recordMcpActivity — called from AgentManager */
-  recordMcpCall(agentId: string): void {
-    this.recordMcpActivity(agentId);
+  recordMcpCall(agentId: string, toolName?: string): void {
+    this.recordMcpActivity(agentId, toolName);
   }
 
   /**

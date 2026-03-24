@@ -691,8 +691,8 @@ export class AgentManager extends EventEmitter {
    * Record that an agent made an MCP tool call (read file, send message, etc.)
    * Prevents premature idle detection while agent is actively using tools.
    */
-  recordMcpCall(agentId: string): void {
-    this.healthMonitor.recordMcpCall(agentId);
+  recordMcpCall(agentId: string, toolName?: string): void {
+    this.healthMonitor.recordMcpCall(agentId, toolName);
   }
 
   /**
