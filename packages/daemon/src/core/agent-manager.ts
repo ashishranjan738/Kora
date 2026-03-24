@@ -159,7 +159,10 @@ export class AgentManager extends EventEmitter {
     // 3a. Generate MCP config for inter-agent messaging (MCP-capable providers + MCP mode only)
     const effectiveMessagingMode = options.messagingMode ?? "mcp";
     let mcpConfigPath: string | undefined;
-    if (options.provider.supportsMcp && effectiveMessagingMode === "mcp") {
+    // Generate MCP config for MCP-capable providers. Kiro ALWAYS needs MCP config
+    // (it reads tools from .kiro/settings/mcp.json) regardless of session messaging mode.
+    const needsMcpConfig = options.provider.supportsMcp && (effectiveMessagingMode === "mcp" || options.provider.id === "kiro");
+    if (needsMcpConfig) {
       try {
         const mcpDir = path.join(options.runtimeDir, "mcp");
         await fs.mkdir(mcpDir, { recursive: true });
@@ -322,7 +325,7 @@ export class AgentManager extends EventEmitter {
     // so they automatically load MCP servers from the workspace config.
     // This gives per-agent isolation (each worktree has its own config)
     // and works with any agent (kiro_planner, kiro_help, custom agents).
-    if (options.provider.id === "kiro" && mcpConfigPath && effectiveMessagingMode === "mcp") {
+    if (options.provider.id === "kiro" && mcpConfigPath) {
       try {
         const mcpConfig = JSON.parse(readFileSync(mcpConfigPath, "utf-8"));
         const serverConfig = mcpConfig?.mcpServers?.kora || mcpConfig?.mcpServers?.[MCP_SERVER_NAME];
