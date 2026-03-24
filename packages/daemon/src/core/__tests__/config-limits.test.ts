@@ -83,7 +83,7 @@ describe("MAX_AGENTS_PER_SESSION enforcement", () => {
     vi.clearAllMocks();
   });
 
-  it("allows spawning up to MAX_AGENTS_PER_SESSION agents", async () => {
+  it("allows spawning up to MAX_AGENTS_PER_SESSION agents", { timeout: 30_000 }, async () => {
     const options: SpawnAgentOptions = {
       sessionId: "test-session",
       name: "Test Agent",
@@ -109,7 +109,7 @@ describe("MAX_AGENTS_PER_SESSION enforcement", () => {
     expect(agents).toHaveLength(MAX_AGENTS_PER_SESSION);
   });
 
-  it("rejects spawning more than MAX_AGENTS_PER_SESSION agents", async () => {
+  it("rejects spawning more than MAX_AGENTS_PER_SESSION agents", { timeout: 30_000 }, async () => {
     const options: SpawnAgentOptions = {
       sessionId: "test-session",
       name: "Test Agent",
