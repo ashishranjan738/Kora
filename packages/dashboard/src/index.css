@@ -4073,5 +4073,47 @@ textarea:focus {
   border-color: var(--border-color) !important;
 }
 
+/* ── Sessions List View ── */
+.sessions-list-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.sessions-list-table thead th {
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-weight: 500;
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-color);
+  user-select: none;
+}
+.sessions-list-table tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+.sessions-list-row {
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+.sessions-list-row:hover {
+  background-color: var(--bg-tertiary);
+}
+.sessions-list-row:nth-child(even) {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+.sessions-list-row:nth-child(even):hover {
+  background-color: var(--bg-tertiary);
+}
+.sessions-list-actions {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.sessions-list-row:hover .sessions-list-actions {
+  opacity: 1;
+}
+
 /* Mobile Responsive Fixes - Additional Improvements */
 @import './mobile-responsive-fixes.css';
