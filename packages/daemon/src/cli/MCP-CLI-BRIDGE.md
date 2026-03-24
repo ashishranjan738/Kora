@@ -213,17 +213,36 @@ kebabToCamel("assigned-to") // "assignedTo"
 Extends `ToolDefinition` with optional CLI metadata:
 
 ```typescript
+// In mcp-cli-bridge.ts (bridge-level interface):
+interface CliMeta {
+  /** Properties that become positional args (in order) */
+  positionalArgs?: string[];
+  /** Command aliases */
+  aliases?: string[];
+  /** Custom output formatter (bridge-only, not in registry) */
+  formatOutput?: (result: unknown) => string;
+}
+
 interface CliToolDefinition extends ToolDefinition {
-  cliMeta?: {
-    /** Properties that become positional args (in order) */
-    positionalArgs?: string[];
-    /** Command aliases */
-    aliases?: string[];
-    /** Custom output formatter */
-    formatOutput?: (result: unknown) => string;
-  };
+  cliMeta?: CliMeta;
 }
 ```
+
+The tool registry (`tool-registry.ts`) uses a compatible but leaner interface:
+
+```typescript
+// In tool-registry.ts (registry-level interface):
+interface ToolCliMeta {
+  positionalArgs?: string[];
+  aliases?: string[];
+  group?: string;       // Subcommand group (e.g. "task", "agent", "pr")
+  subcommand?: string;  // Subcommand name within group (e.g. "update", "create")
+}
+```
+
+The `group` and `subcommand` fields control CLI routing (e.g. `kora-cli task update`).
+The `formatOutput` field is available in the bridge for custom output formatting
+but is not stored in the registry — formatters are defined in `kora-cli.ts` at registration time.
 
 ### `ToolHandler`
 
@@ -299,20 +318,28 @@ export const TOOL_HANDLER_MAP = {
 
 ### Optional: Add CLI metadata
 
-For better CLI ergonomics, add `cliMeta` in `getToolDefinitionsWithCliMeta()`:
+For better CLI ergonomics, add `cliMeta` in the `CLI_META` map in `tool-registry.ts`:
 
 ```typescript
-{
-  ...toolDef,
-  cliMeta: {
+// In CLI_META (tool-registry.ts):
+export const CLI_META: Record<string, ToolCliMeta> = {
+  my_new_tool: {
     positionalArgs: ["target"],     // kora-cli my_new_tool <target>
     aliases: ["mnt"],               // kora-cli mnt <target>
-    formatOutput: (result) => {     // Human-readable output
-      const r = result as any;
-      return r.success ? "Done!" : `Error: ${r.error}`;
-    },
   },
-}
+};
+```
+
+For custom output formatting, add a formatter in `kora-cli.ts` at registration time:
+
+```typescript
+// In kora-cli.ts (at registration):
+const FORMATTERS: Record<string, (result: unknown) => string> = {
+  my_new_tool: (result) => {
+    const r = result as any;
+    return r.success ? "Done!" : `Error: ${r.error}`;
+  },
+};
 ```
 
 ## How It Works Internally
