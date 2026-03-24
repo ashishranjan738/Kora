@@ -17,6 +17,7 @@ import { TaskBoard } from "../components/TaskBoard";
 import { SessionSummary } from "../components/SessionSummary";
 import { KnowledgeViewer } from "../components/KnowledgeViewer";
 import { WorkloadChart, type TaskMetricsResponse } from "../components/WorkloadChart";
+import { ChatTab } from "../components/ChatTab";
 import { BottleneckAlert } from "../components/BottleneckAlert";
 import { CycleTimeChart } from "../components/CycleTimeChart";
 import { TransitionAnalytics } from "../components/TransitionAnalytics";
@@ -66,7 +67,7 @@ import type { AgentResponse, SessionResponse, TaskResponse } from "../types/api"
 import type { WorkflowState, OrchestratorEvent } from "@kora/shared";
 import { PROVIDER_IDS } from "../constants/providers";
 
-type TabId = "editor" | "agents" | "tasks" | "execution" | "timeline" | "changes" | "knowledge" | "workload";
+type TabId = "editor" | "agents" | "tasks" | "execution" | "timeline" | "changes" | "knowledge" | "workload" | "chat";
 
 function getInitialTab(): TabId {
   const hash = window.location.hash.replace("#", "");
@@ -786,6 +787,12 @@ export function SessionDetail() {
         >
           Workload
         </button>
+        <button
+          className={activeTab === "chat" ? "tab-active" : ""}
+          onClick={() => setActiveTab("chat")}
+        >
+          Chat
+        </button>
       </div>
 
       {/* Tab content */}
@@ -1021,6 +1028,10 @@ export function SessionDetail() {
           api={api}
           agents={agents}
         />
+      )}
+
+      {activeTab === "chat" && sessionId && (
+        <ChatTab sessionId={sessionId} />
       )}
 
       {/* Close Terminal Confirm Dialog */}
