@@ -56,6 +56,27 @@ export function classifyPriority(message: string): MessagePriority {
 /** Extract sender name from a message string, handling various formats.
  *  Strips ANSI escape codes before matching.
  */
+/** Build mode-aware notification text for new messages */
+function buildNewMessageNotification(senderName: string, mode: MessagingMode): string {
+  switch (mode) {
+    case "cli": return `[New message from ${senderName}. Run kora-cli messages to read it.]`;
+    case "terminal": return `[New message from ${senderName}.]`;
+    default: return `[New message from ${senderName}. Use check_messages tool to read it.]`;
+  }
+}
+
+/** Build mode-aware notification text for unread reminders */
+function buildUnreadReminder(count: number, mode: MessagingMode, level: "normal" | "warning" | "urgent" | "critical", elapsedSec?: number): string {
+  const cmd = mode === "cli" ? "kora-cli messages" : "check_messages";
+  const elapsed = elapsedSec ? ` waiting ${elapsedSec}s` : "";
+  switch (level) {
+    case "normal": return `\n[Reminder: You have ${count} unread message(s). Run ${cmd} when ready.]\n`;
+    case "warning": return `[You have ${count} unread message(s)${elapsed}. Run ${cmd} to read.]`;
+    case "urgent": return `\n🔴 URGENT: ${count} unread message(s)${elapsed}! Run ${cmd} NOW.\n`;
+    case "critical": return `\n🚨 CRITICAL: ${count} unread message(s)${elapsed}! Run ${cmd} IMMEDIATELY.\n`;
+  }
+}
+
 function extractSenderName(message: string, fromAgentId?: string): string {
   // Strip ANSI escape codes for cleaner matching
   const clean = message.replace(/\x1b\[[0-9;]*m/g, "");
@@ -682,7 +703,7 @@ export class MessageQueue {
       // Short broadcasts: send content directly for convenience
       await this.tmux.sendKeys(msg.tmuxSession, cleanMsg.slice(0, 500), { literal: true });
     } else {
-      const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
+      const notification = buildNewMessageNotification(senderName, this.messagingMode);
       await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
     }
   }
@@ -748,7 +769,7 @@ export class MessageQueue {
       // Short broadcasts: send content directly for convenience
       await this.tmux.sendKeys(msg.tmuxSession, cleanMsg.slice(0, 500), { literal: true });
     } else {
-      const notification = `[New message from ${senderName}. Use check_messages tool to read it.]`;
+      const notification = buildNewMessageNotification(senderName, this.messagingMode);
       await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
     }
   }
@@ -990,7 +1011,7 @@ export class MessageQueue {
         const currentRecovery = this.recoveryState.get(agentId);
         if (currentRecovery === "escalated" && hasMcpActivity) {
           this.recoveryState.set(agentId, "partial-recovery");
-          notification = `\n[Reminder: You have ${unread} unread message(s). Run check_messages when ready.]\n`;
+          notification = buildUnreadReminder(unread, this.messagingMode, "normal");
           // Downgrade dashboard alert
           if (this.broadcastFn) {
             this.broadcastFn({
@@ -1009,22 +1030,22 @@ export class MessageQueue {
 
         if (elapsedMs < this.escalationThresholds.warning) {
           // Tier 0: Normal notification (< 30s)
-          notification = `[You have ${unread} unread message(s). Run check_messages to read.]`;
+          notification = buildUnreadReminder(unread, this.messagingMode, "warning");
         } else if (elapsedMs < this.escalationThresholds.urgent) {
           // Tier 1: Warning escalation (30s - 60s)
-          notification = `\n⚠️ ${unread} UNREAD MESSAGE(S) waiting for ${Math.round(elapsedMs / 1000)}s. Please run check_messages.\n`;
+          notification = buildUnreadReminder(unread, this.messagingMode, "warning", Math.round(elapsedMs / 1000));
         } else if (elapsedMs < this.escalationThresholds.critical) {
           // Tier 2: Urgent escalation (60s - 120s)
-          notification = `\n🔴 URGENT: ${unread} unread message(s) waiting ${Math.round(elapsedMs / 1000)}s! Run check_messages NOW.\n`;
+          notification = buildUnreadReminder(unread, this.messagingMode, "urgent", Math.round(elapsedMs / 1000));
         } else {
           // Tier 3: Critical — alert architect/dashboard (120s+)
           this.recoveryState.set(agentId, "escalated");
 
           // Auto-nudge at 5+ min (300s): forceful terminal sendKeys
           if (elapsedMs > 300_000) {
-            notification = `\n[SYSTEM] You have ${unread} unread messages. Run check_messages NOW.\n`;
+            notification = buildUnreadReminder(unread, this.messagingMode, "urgent", Math.round(elapsedMs / 1000));
           } else {
-            notification = `\n🚨 CRITICAL: ${unread} unread message(s) waiting ${Math.round(elapsedMs / 1000)}s! Run check_messages IMMEDIATELY.\n`;
+            notification = buildUnreadReminder(unread, this.messagingMode, "critical", Math.round(elapsedMs / 1000));
           }
 
           // Alert architect once per escalation cycle
