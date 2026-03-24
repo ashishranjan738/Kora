@@ -156,9 +156,9 @@ export class AgentManager extends EventEmitter {
     // 3a. Generate MCP config for inter-agent messaging (MCP-capable providers + MCP mode only)
     const effectiveMessagingMode = options.messagingMode ?? "mcp";
     let mcpConfigPath: string | undefined;
-    // Generate MCP config for MCP-capable providers. Kiro ALWAYS needs MCP config
-    // (it reads tools from .kiro/settings/mcp.json) regardless of session messaging mode.
-    const needsMcpConfig = options.provider.supportsMcp && (effectiveMessagingMode === "mcp" || options.provider.id === "kiro");
+    // Generate MCP config for MCP-capable providers in MCP mode only.
+    // CLI mode means kora-cli only — no MCP server, for ALL providers including Kiro.
+    const needsMcpConfig = options.provider.supportsMcp && effectiveMessagingMode === "mcp";
     if (needsMcpConfig) {
       try {
         const mcpDir = path.join(options.runtimeDir, "mcp");
