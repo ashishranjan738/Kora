@@ -1405,7 +1405,19 @@ export function createApiRouter(deps: {
         try { orch.agentManager.recordMcpCall(body.from); } catch { /* non-fatal */ }
       }
 
-      const success = await orch.relayMessage(body.from || "user", body.to, body.message, body.messageType, body.channel);
+      // Resolve agent name to ID (case-insensitive) — kora-cli sends names, not IDs
+      let targetId = body.to;
+      if (!orch.agentManager.getAgent(targetId)) {
+        const agents = orch.agentManager.listAgents();
+        const match = agents.find(a =>
+          a.config.name.toLowerCase() === targetId.toLowerCase() ||
+          a.id.toLowerCase() === targetId.toLowerCase() ||
+          a.config.name.toLowerCase().includes(targetId.toLowerCase())
+        );
+        if (match) targetId = match.id;
+      }
+
+      const success = await orch.relayMessage(body.from || "user", targetId, body.message, body.messageType, body.channel);
       if (!success) {
         res.status(404).json({ error: `Target agent "${body.to}" not found or not running` });
         return;
