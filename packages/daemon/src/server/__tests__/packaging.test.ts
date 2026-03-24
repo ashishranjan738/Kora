@@ -44,7 +44,7 @@ describe("npm Packaging — Package Configuration", () => {
     expect(packageJson.bin).toHaveProperty("kora");
     expect(packageJson.bin).toHaveProperty("kora-cli");
     expect(packageJson.bin.kora).toBe("dist/cli.js");
-    expect(packageJson.bin["kora-cli"]).toBe("dist/cli.js");
+    expect(packageJson.bin["kora-cli"]).toBe("dist/cli/kora-cli.js");
 
     // Check bundled dependencies
     expect(packageJson.bundleDependencies).toContain("@kora/shared");

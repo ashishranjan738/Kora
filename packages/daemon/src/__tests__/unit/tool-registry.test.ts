@@ -15,7 +15,7 @@ import { TOOL_HANDLER_MAP } from "../../tools/tool-handlers.js";
 
 describe("Tool Registry", () => {
   it("has exactly 24 tool definitions", () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(27);
+    expect(TOOL_DEFINITIONS).toHaveLength(30);
   });
 
   it("ALL_TOOL_NAMES matches TOOL_DEFINITIONS", () => {
@@ -85,7 +85,7 @@ describe("Role-Based Access Control", () => {
   it("getToolsForRole returns filtered list", () => {
     const masterTools = getToolsForRole("master");
     const workerTools = getToolsForRole("worker");
-    expect(masterTools.length).toBe(27);
+    expect(masterTools.length).toBe(30);
     expect(workerTools.length).toBeLessThan(masterTools.length);
     expect(workerTools.every(t => isToolAllowed("worker", t.name))).toBe(true);
   });
@@ -132,7 +132,7 @@ describe("findAgentByNameOrId", () => {
 describe("Tool Handler Map", () => {
   it("has handlers for 20 extracted tools", () => {
     // 25 total - 5 MCP-specific (check_messages, prepare_pr, verify_work, create_pr, + check_messages file I/O)
-    expect(Object.keys(TOOL_HANDLER_MAP).length).toBe(23);
+    expect(Object.keys(TOOL_HANDLER_MAP).length).toBe(26);
   });
 
   it("every handler is a function", () => {

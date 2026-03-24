@@ -142,7 +142,7 @@ describe("npm Packaging Integration Tests", () => {
     expect(packageJson.bin).toHaveProperty("kora");
     expect(packageJson.bin).toHaveProperty("kora-cli");
     expect(packageJson.bin.kora).toBe("dist/cli.js");
-    expect(packageJson.bin["kora-cli"]).toBe("dist/cli.js");
+    expect(packageJson.bin["kora-cli"]).toBe("dist/cli/kora-cli.js");
   });
 
   it("should bundle dashboard assets in tarball", async () => {
