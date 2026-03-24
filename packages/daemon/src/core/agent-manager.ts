@@ -287,8 +287,11 @@ export class AgentManager extends EventEmitter {
           }
           command.push("--allowedTools", ...approvedTools);
         }
+      } else if (options.provider.id === "kiro") {
+        // Kiro in non-MCP mode: use --trust-tools=read (Kiro doesn't support --allowedTools)
+        command.push("--trust-tools=read");
       } else {
-        // Non-MCP modes: only pre-approve read operations
+        // Claude Code in non-MCP modes: only pre-approve read operations
         command.push(
           "--allowedTools",
           "Read",
