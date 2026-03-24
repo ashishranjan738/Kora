@@ -1,5 +1,5 @@
 /**
- * Boot Prompt Builder — generates a tiny (~500 byte) system prompt that instructs
+ * Boot Prompt Builder — generates a tiny system prompt that instructs
  * agents to load their full context via get_context() or kora-cli at startup.
  *
  * Replaces the monolithic persona-builder.ts output (5-15KB) with a universal,
@@ -29,6 +29,12 @@ Core commands:
 - kora-cli tasks — see your task assignments
 - kora-cli task update <id> --status <s> — update task progress
 
+RULES:
+- NEVER read .kora/ files directly — use kora-cli commands only
+- NEVER curl or fetch the daemon API directly — use kora-cli commands only
+- NEVER query SQLite databases directly
+- Use ONLY the kora-cli commands listed above for all Kora interactions
+
 You MUST run \`kora-cli context all\` before doing anything else.`;
   }
 
@@ -38,6 +44,11 @@ You MUST run \`kora-cli context all\` before doing anything else.`;
 Communicate with teammates using @mentions:
 - @AgentName: your message — send to a specific agent
 - @all: your message — broadcast to everyone
+
+RULES:
+- NEVER read .kora/ files directly
+- NEVER curl or fetch the daemon API directly
+- Use @mentions for all communication
 
 Check your system prompt for your full role and team details.`;
   }
@@ -53,6 +64,12 @@ Core tools:
 - check_messages() — read your inbox
 - list_tasks() — see your task assignments
 - update_task(taskId, status, comment) — update task progress
+
+RULES:
+- NEVER read .kora/ files directly — use MCP tools only
+- NEVER curl or fetch the daemon API directly — use MCP tools only
+- NEVER query SQLite databases directly
+- Use ONLY the MCP tools listed above for all Kora interactions
 
 You MUST call get_context("all") before doing anything else.`;
 }
