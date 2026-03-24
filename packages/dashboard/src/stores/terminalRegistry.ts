@@ -71,10 +71,11 @@ function connectWs(entry: TerminalEntry): void {
         entry.onMessageNotification(match[1]);
       }
 
+      // Capture scroll state BEFORE write — xterm's internal auto-scroll
+      // can change viewportY during write, making post-write check unreliable
+      const wasScrolledUp = entry.userScrolledUp || entry.manuallyPaused;
       entry.term.write(text, () => {
-        // Use real-time userScrolledUp state (not stale pre-write cache)
-        // to prevent scroll jumps when user is reading history
-        if (!entry.userScrolledUp && !entry.manuallyPaused) {
+        if (!wasScrolledUp) {
           entry.term.scrollToBottom();
         }
       });
@@ -94,7 +95,7 @@ function connectWs(entry: TerminalEntry): void {
       // Debounced refresh after rapid output bursts
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => {
-        if (!entry.userScrolledUp) {
+        if (!entry.userScrolledUp && !entry.manuallyPaused) {
           entry.term.refresh(0, entry.term.rows - 1);
         }
       }, 150);
