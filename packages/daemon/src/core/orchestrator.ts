@@ -967,48 +967,78 @@ export class Orchestrator extends EventEmitter {
     }
   }
 
-  /** Build mode-appropriate welcome notification for a newly spawned agent */
+  /**
+   * Build self-contained startup notification for a newly spawned agent.
+   * This must be comprehensive — assume the agent has NOT read any boot prompt,
+   * persona file, or steering file. This notification alone should be enough
+   * for the agent to start operating.
+   */
   private buildStartupNotification(agent: AgentState): string {
     const mode = this.config.messagingMode || "mcp";
     const name = agent.config.name;
     const role = agent.config.role;
     const sid = this.config.sessionId;
+    const shared = this.config.worktreeMode === "shared"
+      ? `\n\n⚠️ SHARED WORKSPACE: All agents share the same directory. Only edit files assigned to you.`
+      : "";
 
-    const header = `\x1b[1;32m[System]\x1b[0m Welcome, ${name}. You are a ${role} agent in session "${sid}".
-Your persona and instructions are loaded via system prompt.`;
-
-    let body: string;
     if (mode === "cli") {
-      body = `Use kora-cli to communicate and stay current:
-  • kora-cli whoami — see your role and instructions
-  • kora-cli context all — full context (team, tasks, workflow)
-  • kora-cli messages — check for messages from teammates
-  • kora-cli tasks — see your task assignments
-Run \`kora-cli tasks\` to see if you have any assigned tasks.`;
-    } else if (mode === "terminal") {
-      body = `Communicate with teammates using @mentions:
-  • @AgentName: your message — send to a specific agent
-  • @all: your message — broadcast to everyone
-Check your system prompt for your full role and team details.`;
-    } else if (mode === "manual") {
-      body = `Messaging is in manual mode. Check .kora/messages/inbox-${agent.id}/ for messages.`;
-    } else {
-      // MCP mode (default)
-      body = `Use these MCP tools to stay current:
-  • get_context("team") — live teammate roster
-  • get_context("tasks") — your task assignments
-  • get_context("all") — full context refresh
-  • check_messages() — read messages from teammates
-Run list_tasks() to see if you have any assigned tasks.`;
+      return `\x1b[1;32m[System]\x1b[0m You are ${name}, a Kora multi-agent team member in session "${sid}".
+Your role: ${role}. You are in CLI messaging mode. Use kora-cli for ALL team communication:
+
+  kora-cli context all    — load your full role, team, tasks, and instructions
+  kora-cli messages       — check for messages from teammates
+  kora-cli send <name> <msg> — message a teammate
+  kora-cli tasks          — see your task assignments
+  kora-cli whoami         — see your identity and role
+  kora-cli task update <id> --status <s> — update task progress
+
+FIRST ACTION: Run \`kora-cli context all\` now to load your complete instructions.
+
+RULES:
+- NEVER read .kora/ files directly — use kora-cli commands only
+- Use ONLY kora-cli commands for all Kora interactions
+- Run \`kora-cli messages\` regularly to check for teammate messages${shared}`;
     }
 
-    let msg = `${header}\n${body}`;
+    if (mode === "terminal") {
+      return `\x1b[1;32m[System]\x1b[0m You are ${name}, a Kora multi-agent team member in session "${sid}".
+Your role: ${role}. You are in terminal messaging mode. Communicate with teammates using @mentions:
 
-    if (this.config.worktreeMode === "shared") {
-      msg += `\n\n⚠️ SHARED WORKSPACE: All agents share the same directory. Only edit files assigned to you.`;
+  @AgentName: your message — send to a specific agent
+  @all: your message       — broadcast to everyone
+
+FIRST ACTION: Check your system prompt for your full role, team, and task details.
+
+RULES:
+- Use @mentions for all team communication
+- Check your system prompt for persona and workflow instructions${shared}`;
     }
 
-    return msg;
+    if (mode === "manual") {
+      return `\x1b[1;32m[System]\x1b[0m You are ${name}, a Kora multi-agent team member in session "${sid}".
+Your role: ${role}. Messaging is in manual mode.
+
+Check .kora/messages/inbox-${agent.id}/ for messages from teammates.
+Your full instructions are in your system prompt / persona file.${shared}`;
+    }
+
+    // MCP mode (default) — self-contained initialization
+    return `\x1b[1;32m[System]\x1b[0m You are ${name}, a Kora multi-agent team member in session "${sid}".
+Your role: ${role}. You are in MCP messaging mode. Use these MCP tools for ALL team interaction:
+
+  get_context("all")   — load your full role, team, tasks, workflow, and instructions
+  check_messages()     — read messages from teammates
+  send_message(to, message) — message a teammate
+  list_tasks()         — see your task assignments
+  update_task(taskId, status, comment) — update task progress
+
+FIRST ACTION: Call get_context("all") now to load your complete role, team, tasks, workflow, and rules.
+
+RULES:
+- NEVER read .kora/ files directly — use MCP tools only
+- NEVER curl or fetch the daemon API directly — use MCP tools only
+- Use ONLY the MCP tools listed above for all Kora interactions${shared}`;
   }
 
   /** Persist current agent state to disk */
