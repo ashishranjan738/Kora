@@ -385,13 +385,14 @@ export class AgentManager extends EventEmitter {
     // PATH is handled separately since $PATH must expand in the shell (can't use single quotes)
     const daemonBinDir = path.resolve(__dirname, "../../../../node_modules/.bin");
 
-    // Batch as single export command to minimize delays
+    // Export env vars individually to avoid terminal line buffer truncation.
+    // Single long export lines can exceed terminal width and get corrupted.
     if (envEntries.length > 0) {
-      // Escape single quotes to prevent shell injection (use single quotes to avoid $var expansion)
       const escapeValue = (v: string) => v.replace(/'/g, "'\\''");
-      const exportCmd = envEntries.map(([k, v]) => `${k}='${escapeValue(v)}'`).join(" ");
-      await this.tmux.sendKeys(tmuxSession, `export ${exportCmd}`, { literal: false });
-      await new Promise(r => setTimeout(r, 200)); // brief pause for shell to process
+      for (const [k, v] of envEntries) {
+        await this.tmux.sendKeys(tmuxSession, `export ${k}='${escapeValue(v)}'`, { literal: false });
+      }
+      await new Promise(r => setTimeout(r, 300)); // brief pause for shell to process all exports
     }
     // PATH uses double quotes so $PATH expands in the shell
     await this.tmux.sendKeys(tmuxSession, `export PATH="${daemonBinDir}:$PATH"`, { literal: false });
