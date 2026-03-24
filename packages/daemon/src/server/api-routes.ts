@@ -1363,6 +1363,19 @@ export function createApiRouter(deps: {
         });
       }
 
+      // Emit as channel-message on #all for Chat tab
+      broadcastEvent({
+        event: "channel-message",
+        sessionId: sid,
+        channel: "#all",
+        message: {
+          from: (body as any).from || "user",
+          content: body.message,
+          timestamp: new Date().toISOString(),
+          channel: "#all",
+        },
+      });
+
       res.json({ broadcast: true, message: body.message, sentTo: results.length, results });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1424,6 +1437,21 @@ export function createApiRouter(deps: {
               "[relay] Skipping idle detection — agent has active tasks");
           }
         }
+      }
+
+      // Emit WebSocket event for channel messages (enables real-time Chat tab)
+      if (body.channel) {
+        broadcastEvent({
+          event: "channel-message",
+          sessionId: sid,
+          channel: body.channel,
+          message: {
+            from: body.from || "user",
+            content: body.message,
+            timestamp: new Date().toISOString(),
+            channel: body.channel,
+          },
+        });
       }
 
       res.json({ relayed: true, from: body.from || "user", to: body.to });
