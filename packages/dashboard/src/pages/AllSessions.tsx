@@ -93,6 +93,11 @@ export function AllSessions() {
   const [taskCarryOver, setTaskCarryOver] = useState<"clean" | "active" | "all">("clean");
   const [carryOverSource, setCarryOverSource] = useState<string>("");
   const [recentPaths, setRecentPaths] = useState<string[]>([]);
+  const [viewMode, setViewMode] = useState<"card" | "list">(() => {
+    return (localStorage.getItem("kora-sessions-view") as "card" | "list") || "card";
+  });
+  const [sortField, setSortField] = useState<"name" | "status" | "agents" | "cost">("name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   // Playbook state
   const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
@@ -131,6 +136,13 @@ export function AllSessions() {
   }>({ connected: false });
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+  const isTablet = typeof window !== "undefined" && window.innerWidth < 1024;
+  const effectiveViewMode = isMobile ? "card" : viewMode;
+
+  useEffect(() => {
+    localStorage.setItem("kora-sessions-view", viewMode);
+  }, [viewMode]);
 
   // Fetch sessions + daemon status
   const refreshData = useCallback(async () => {
@@ -594,7 +606,36 @@ export function AllSessions() {
             }}
           >
             <h2 style={{ fontSize: 18, fontWeight: 600 }}>Sessions</h2>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {/* View toggle */}
+              {!isMobile && (
+                <div style={{ display: "flex", gap: 0, borderRadius: 6, overflow: "hidden", border: "1px solid var(--border-color)", marginRight: 4 }}>
+                  <button
+                    onClick={() => setViewMode("list")}
+                    title="List view"
+                    style={{
+                      padding: "5px 8px", border: "none", cursor: "pointer",
+                      backgroundColor: effectiveViewMode === "list" ? "var(--accent-blue)" : "var(--bg-tertiary)",
+                      color: effectiveViewMode === "list" ? "#fff" : "var(--text-muted)",
+                      display: "flex", alignItems: "center",
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                  </button>
+                  <button
+                    onClick={() => setViewMode("card")}
+                    title="Card view"
+                    style={{
+                      padding: "5px 8px", border: "none", borderLeft: "1px solid var(--border-color)", cursor: "pointer",
+                      backgroundColor: effectiveViewMode === "card" ? "var(--accent-blue)" : "var(--bg-tertiary)",
+                      color: effectiveViewMode === "card" ? "#fff" : "var(--text-muted)",
+                      display: "flex", alignItems: "center",
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                  </button>
+                </div>
+              )}
               <button
                 onClick={() => setShowPersonaLibrary(true)}
                 style={{
@@ -624,7 +665,112 @@ export function AllSessions() {
             </div>
           </div>
 
-          <div className="grid">
+          {/* ── List View ── */}
+          {effectiveViewMode === "list" && (
+            <div style={{ border: "1px solid var(--border-color)", borderRadius: 8, overflow: "hidden" }}>
+              <table className="sessions-list-table">
+                <thead>
+                  <tr>
+                    {[
+                      { key: "name" as const, label: "Name" },
+                      { key: "status" as const, label: "Status" },
+                    ].map(({ key, label }) => (
+                      <th key={key} onClick={() => { if (sortField === key) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortField(key); setSortDir("asc"); } }} style={{ cursor: "pointer" }}>
+                        {label} {sortField === key ? (sortDir === "asc" ? "\u25B2" : "\u25BC") : ""}
+                      </th>
+                    ))}
+                    <th>Path</th>
+                    <th onClick={() => { if (sortField === "agents") setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortField("agents"); setSortDir("desc"); } }} style={{ cursor: "pointer" }}>
+                      Agents {sortField === "agents" ? (sortDir === "asc" ? "\u25B2" : "\u25BC") : ""}
+                    </th>
+                    {!isTablet && <>
+                      <th onClick={() => { if (sortField === "cost") setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortField("cost"); setSortDir("desc"); } }} style={{ cursor: "pointer" }}>
+                        Cost {sortField === "cost" ? (sortDir === "asc" ? "\u25B2" : "\u25BC") : ""}
+                      </th>
+                      <th>Mode</th>
+                    </>}
+                    <th style={{ width: 100 }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...sessions].sort((a, b) => {
+                    const dir = sortDir === "asc" ? 1 : -1;
+                    if (sortField === "name") return dir * (a.name || "").localeCompare(b.name || "");
+                    if (sortField === "status") return dir * (a.status || "").localeCompare(b.status || "");
+                    if (sortField === "agents") return dir * ((a.agentCount ?? 0) - (b.agentCount ?? 0));
+                    if (sortField === "cost") return dir * ((typeof a.cost === "number" ? a.cost : 0) - (typeof b.cost === "number" ? b.cost : 0));
+                    return 0;
+                  }).map((s) => (
+                    <tr
+                      key={s.id}
+                      className="sessions-list-row"
+                      style={s.status === "stopped" ? { opacity: 0.5 } : undefined}
+                      onClick={() => navigate(`/session/${s.id}`)}
+                    >
+                      <td>
+                        <strong style={{ color: "var(--text-primary)", fontSize: 13 }}>{s.name || "Unnamed"}</strong>
+                      </td>
+                      <td>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <span style={{
+                            width: 7, height: 7, borderRadius: "50%",
+                            background: s.status === "active" ? "var(--accent-green)" : s.status === "stopped" ? "var(--text-muted)" : "var(--accent-yellow)",
+                          }} />
+                          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{s.status}</span>
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "var(--font-mono)", maxWidth: 200, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={s.projectPath || ""}>
+                          {s.projectPath || "-"}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                          {s.activeAgentCount ?? s.agentCount ?? 0}
+                          {(s as any).stoppedAgentCount ? ` / ${(s as any).stoppedAgentCount} stopped` : ""}
+                        </span>
+                      </td>
+                      {!isTablet && <>
+                        <td>
+                          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                            {typeof s.cost === "number" ? `$${s.cost.toFixed(2)}` : "-"}
+                          </span>
+                        </td>
+                        <td>
+                          {(s as any).worktreeMode && (
+                            <span style={{
+                              fontSize: 11, padding: "2px 6px", borderRadius: 4,
+                              color: (s as any).worktreeMode === "isolated" ? "var(--accent-blue)" : "var(--accent-purple)",
+                              backgroundColor: (s as any).worktreeMode === "isolated" ? "rgba(88,166,255,0.1)" : "rgba(188,140,255,0.1)",
+                            }}>
+                              {(s as any).worktreeMode === "isolated" ? "Isolated" : "Shared"}
+                            </span>
+                          )}
+                        </td>
+                      </>}
+                      <td>
+                        <div className="sessions-list-actions">
+                          {s.status === "active" && (
+                            <button
+                              className="session-action-btn"
+                              title="Stop session"
+                              onClick={(e) => { e.stopPropagation(); setStopConfirmSession(s); }}
+                              style={{ fontSize: 11, padding: "3px 8px" }}
+                            >
+                              Stop
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* ── Card View ── */}
+          {effectiveViewMode === "card" && <div className="grid">
             {/* Create options — at the top */}
             <div
               className="card session-card create-option-card"
@@ -914,7 +1060,7 @@ export function AllSessions() {
               </div>
             ))}
 
-          </div>
+          </div>}
         </>
       )}
 
