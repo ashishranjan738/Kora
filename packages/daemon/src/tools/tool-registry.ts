@@ -22,6 +22,7 @@ export const ALL_TOOL_NAMES = [
   "list_personas", "save_persona", "get_workflow_states",
   "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
   "verify_work", "create_pr", "whoami", "get_context", "delete_task",
+  "channel_list", "channel_join", "channel_history",
 ] as const;
 
 export type ToolName = (typeof ALL_TOOL_NAMES)[number];
@@ -36,6 +37,7 @@ export const ROLE_TOOL_ACCESS: Record<string, Set<string>> = {
     "list_personas", "save_persona", "get_workflow_states",
     "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
     "verify_work", "create_pr", "whoami", "get_context",
+    "channel_list", "channel_join", "channel_history",
   ]),
 };
 
@@ -374,6 +376,34 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         reason: { type: "string", description: "Optional reason for deletion" },
       },
       required: ["taskId"],
+    },
+  },
+  {
+    name: "channel_list",
+    description: "List available channels in the session with member counts.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "channel_join",
+    description: "Join a channel to receive its messages. Use channel_list to see available channels.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        channel: { type: "string", description: "Channel ID (e.g. #frontend)" },
+      },
+      required: ["channel"],
+    },
+  },
+  {
+    name: "channel_history",
+    description: "Read recent message history in a channel. Use this to catch up on a conversation.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        channel: { type: "string", description: "Channel ID (e.g. #frontend)" },
+        limit: { type: "number", description: "Number of messages to return (default: 20, max: 100)" },
+      },
+      required: ["channel"],
     },
   },
 ];
