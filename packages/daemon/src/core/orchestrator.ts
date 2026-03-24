@@ -680,14 +680,16 @@ export class Orchestrator extends EventEmitter {
    * Relay a message from one agent to another by sending it directly to the target's tmux terminal.
    * This is the reliable path -- agents don't need to check file inboxes.
    */
-  async relayMessage(fromAgentId: string, toAgentId: string, message: string, messageType?: string): Promise<boolean> {
+  async relayMessage(fromAgentId: string, toAgentId: string, message: string, messageType?: string, channel?: string): Promise<boolean> {
     const fromAgent = this.agentManager.getAgent(fromAgentId);
     const toAgent = this.agentManager.getAgent(toAgentId);
     if (!toAgent || toAgent.status !== 'running') return false;
 
-    const relayMsg = fromAgent
-      ? `\x1b[1;36m[Message from ${fromAgent.config.name}]\x1b[0m: ${message}`
-      : `\x1b[1;32m[System message]\x1b[0m: ${message}`;
+    const relayMsg = channel
+      ? `\x1b[1;36m[${channel}] ${fromAgent?.config.name || fromAgentId}\x1b[0m: ${message}`
+      : fromAgent
+        ? `\x1b[1;36m[Message from ${fromAgent.config.name}]\x1b[0m: ${message}`
+        : `\x1b[1;32m[System message]\x1b[0m: ${message}`;
 
     // Check if the SENDER (master agent) is producing a blocking message
     if (fromAgent?.config.role === "master") {
@@ -708,6 +710,7 @@ export class Orchestrator extends EventEmitter {
         priority: "normal",
         createdAt: Date.now(),
         expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 day TTL
+        channel: channel || undefined,
       });
     } catch (err) {
       logger.warn({ err, from: fromAgentId, to: toAgentId }, "[orchestrator] Failed to persist message to SQLite");

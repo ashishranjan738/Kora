@@ -1374,7 +1374,7 @@ export function createApiRouter(deps: {
   router.post("/sessions/:sid/relay", async (req: Request, res: Response) => {
     try {
       const sid = String(req.params.sid);
-      const body = req.body as { from: string; to: string; message: string; messageType?: string };
+      const body = req.body as { from: string; to: string; message: string; messageType?: string; channel?: string };
 
       if (!body.to || !body.message) {
         res.status(400).json({ error: "to and message are required" });
@@ -1392,7 +1392,7 @@ export function createApiRouter(deps: {
         try { orch.agentManager.recordMcpCall(body.from); } catch { /* non-fatal */ }
       }
 
-      const success = await orch.relayMessage(body.from || "user", body.to, body.message, body.messageType);
+      const success = await orch.relayMessage(body.from || "user", body.to, body.message, body.messageType, body.channel);
       if (!success) {
         res.status(404).json({ error: `Target agent "${body.to}" not found or not running` });
         return;
