@@ -8,7 +8,7 @@ import { WorktreeManager } from "./worktree.js";
 import { EventEmitter } from "events";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs/promises";
-import { readFileSync } from "fs";
+// readFileSync removed — was only used by old kiro-workspaces hack
 import path from "path";
 import { fileURLToPath } from "url";
 import { logger } from "./logger.js";
@@ -32,8 +32,6 @@ export interface SpawnAgentOptions {
   skipArgValidation?: boolean;
   /** Reuse a specific agent ID instead of generating a new one (used by restart to preserve identity) */
   forceAgentId?: string;
-  /** Kiro workspace root directory (set internally during Kiro MCP config setup) */
-  _kiroWorkspaceRoot?: string;
 }
 
 /** Convert a name like "CSS Expert" to "css-expert" */
@@ -183,20 +181,13 @@ export class AgentManager extends EventEmitter {
           daemonToken = (await fs.readFile(path.join(globalDir, "daemon.token"), "utf-8")).trim();
         } catch { /* empty token */ }
 
+        // Generic MCP config — zero per-agent args. MCP server reads identity
+        // from KORA_* env vars (inherited from agent shell process).
         const mcpConfig = {
           mcpServers: {
             [MCP_SERVER_NAME]: {
               command: "node",
-              args: [
-                mcpServerScript,
-                "--agent-id", agentId,
-                "--session-id", options.sessionId,
-                // agent-role, daemon-url, token, project-path self-bootstrapped via API
-              ],
-              env: {
-                KORA_DEV: isDev ? "1" : "0",
-                ...(process.env.KORA_CONFIG_DIR ? { KORA_CONFIG_DIR: process.env.KORA_CONFIG_DIR } : {}),
-              },
+              args: [mcpServerScript],
             },
           },
         };
@@ -319,42 +310,20 @@ export class AgentManager extends EventEmitter {
       await new Promise(r => setTimeout(r, pollInterval));
     }
 
-    // 5b. For Kiro: write workspace MCP config directly to <worktree>/.kiro/settings/mcp.json
-    // All Kiro agents (built-in and custom) have includeMcpJson: true by default,
-    // so they automatically load MCP servers from the workspace config.
-    // This gives per-agent isolation (each worktree has its own config)
-    // and works with any agent (kiro_planner, kiro_help, custom agents).
+    // 5b. For Kiro: write generic MCP config to workspace .kiro/settings/mcp.json
+    // Kiro loads MCP servers from workspace config (includeMcpJson: true).
+    // Config is identical for all agents — identity comes from env vars.
     if (options.provider.id === "kiro" && mcpConfigPath) {
       try {
-        const mcpConfig = JSON.parse(readFileSync(mcpConfigPath, "utf-8"));
-        const serverConfig = mcpConfig?.mcpServers?.kora || mcpConfig?.mcpServers?.[MCP_SERVER_NAME];
-        if (serverConfig) {
-          // For Kiro, write workspace MCP config to a per-agent directory.
-          // In isolated mode, agentWorkDir is already unique per agent (git worktree).
-          // In shared mode, agentWorkDir is the project root (shared by all agents),
-          // so we use a per-agent subdirectory under runtimeDir to avoid overwrites.
-          const kiroWorkspaceRoot = agentWorkDir === options.workingDirectory
-            ? path.join(options.runtimeDir, "kiro-workspaces", agentId)  // shared: use per-agent dir
-            : agentWorkDir;                                                // isolated: worktree is already unique
-          const kiroSettingsDir = path.join(kiroWorkspaceRoot, ".kiro", "settings");
-          await fs.mkdir(kiroSettingsDir, { recursive: true });
-          const kiroMcpConfig = {
-            mcpServers: {
-              kora: {
-                command: serverConfig.command,
-                args: serverConfig.args || [],
-              },
-            },
-          };
-          await fs.writeFile(
-            path.join(kiroSettingsDir, "mcp.json"),
-            JSON.stringify(kiroMcpConfig, null, 2),
-            "utf-8"
-          );
-          // Store the Kiro workspace root so we cd there before starting chat
-          options._kiroWorkspaceRoot = kiroWorkspaceRoot;
-          logger.info(`[agent-manager] Wrote Kiro workspace MCP config for ${agentId} at ${kiroSettingsDir}/mcp.json`);
-        }
+        const mcpServerScript = path.resolve(__dirname, "../mcp/agent-mcp-server.js");
+        const kiroSettingsDir = path.join(agentWorkDir, ".kiro", "settings");
+        await fs.mkdir(kiroSettingsDir, { recursive: true });
+        await fs.writeFile(
+          path.join(kiroSettingsDir, "mcp.json"),
+          JSON.stringify({ mcpServers: { kora: { command: "node", args: [mcpServerScript] } } }, null, 2),
+          "utf-8"
+        );
+        logger.info(`[agent-manager] Wrote Kiro MCP config at ${kiroSettingsDir}/mcp.json`);
       } catch (err) {
         logger.warn({ err }, `[agent-manager] Failed to write Kiro MCP config for ${agentId}`);
       }
@@ -365,16 +334,22 @@ export class AgentManager extends EventEmitter {
     if (options.envVars) {
       envEntries.push(...Object.entries(options.envVars));
     }
-    // Always set KORA_* env vars so agents (MCP and non-MCP) can access daemon
+    // Always set KORA_* env vars — MCP server + kora-cli read identity from these
     envEntries.push(["KORA_AGENT_ID", agentId]);
     envEntries.push(["KORA_SESSION_ID", options.sessionId]);
+    envEntries.push(["KORA_AGENT_ROLE", options.role]);
     try {
       const os = await import("os");
       const isDev = process.env.KORA_DEV === "1";
       const cfgDir = process.env.KORA_CONFIG_DIR || path.join(os.default.homedir(), isDev ? ".kora-dev" : ".kora");
-      try { const port = (await fs.readFile(path.join(cfgDir, "daemon.port"), "utf-8")).trim(); envEntries.push(["KORA_DAEMON_URL", `http://localhost:${port}`]); } catch { envEntries.push(["KORA_DAEMON_URL", `http://localhost:${isDev ? 7891 : 7890}`]); }
-      // KORA_TOKEN intentionally NOT exported to agent env — prevents direct API curl
-      // kora-cli and MCP server read token from ~/.kora[-dev]/daemon.token file
+      let daemonPort = isDev ? "7891" : "7890";
+      let daemonToken = "";
+      try { daemonPort = (await fs.readFile(path.join(cfgDir, "daemon.port"), "utf-8")).trim(); } catch { /* use default */ }
+      try { daemonToken = (await fs.readFile(path.join(cfgDir, "daemon.token"), "utf-8")).trim(); } catch { /* empty */ }
+      envEntries.push(["KORA_DAEMON_URL", `http://localhost:${daemonPort}`]);
+      // KORA_TOKEN exported so MCP server can authenticate with daemon.
+      // Boot prompt RULES forbid agents from using it directly.
+      if (daemonToken) envEntries.push(["KORA_TOKEN", daemonToken]);
     } catch { /* non-fatal */ }
     if (process.env.KORA_DEV === "1") {
       envEntries.push(["KORA_DEV", "1"]);
@@ -401,8 +376,7 @@ export class AgentManager extends EventEmitter {
     await new Promise(r => setTimeout(r, 100));
 
     // 7. cd to workingDirectory (use worktree if available)
-    // For Kiro: cd to the Kiro workspace root so it loads the per-agent .kiro/settings/mcp.json
-    const cdTarget = options._kiroWorkspaceRoot || agentWorkDir;
+    const cdTarget = agentWorkDir;
     await this.tmux.sendKeys(tmuxSession, `cd ${cdTarget}`, { literal: false });
 
     // Wait for cd to complete — poll for prompt to reappear
