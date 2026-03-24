@@ -69,6 +69,7 @@ describe("Channels DB", () => {
         sessionId: "s1",
         fromAgentId: "agent-1",
         toAgentId: "agent-2",
+        messageType: "text",
         content: `Message ${i}`,
         channel: "#frontend",
       });
