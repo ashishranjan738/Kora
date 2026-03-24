@@ -128,30 +128,27 @@ export class AgentManager extends EventEmitter {
       }
     }
 
-    // Kiro-specific: inject persona via steering files instead of CLI flags.
+    // Kiro-specific: inject boot prompt via steering files instead of CLI flags.
     // Kiro doesn't support --system-prompt-file; it reads .kiro/steering/*.md
-    // and AGENTS.md from the workspace root automatically.
-    if (options.provider.id === "kiro" && options.persona) {
-      const personaContent = options.persona
-        .replace(/inbox-pending\//g, `inbox-${agentId}/`)
-        .replace(/outbox-pending\//g, `outbox-${agentId}/`)
-        .replace(/commands-pending\//g, `commands-${agentId}/`)
-        .replace(/responses-pending\//g, `responses-${agentId}/`)
-        .replace(/"from":"pending"/g, `"from":"${agentId}"`)
-        .replace(/Your ID is `pending`/g, `Your ID is \`${agentId}\``);
+    // Boot prompt is ~500 bytes — no file conflicts in shared workspaces.
+    // Full persona available via get_context("persona") API.
+    if (options.provider.id === "kiro") {
+      const { buildBootPrompt } = await import("./boot-prompt-builder.js");
+      const kiroBootPrompt = buildBootPrompt(options.messagingMode);
 
       const kiroSteeringDir = path.join(agentWorkDir, ".kiro", "steering");
       await fs.mkdir(kiroSteeringDir, { recursive: true });
       await fs.writeFile(
         path.join(kiroSteeringDir, "kora.md"),
-        personaContent,
+        kiroBootPrompt,
         "utf-8",
       );
 
       // Also write AGENTS.md which Kiro auto-reads from workspace root
+      // AGENTS.md also gets boot prompt (Kiro reads this automatically)
       await fs.writeFile(
         path.join(agentWorkDir, "AGENTS.md"),
-        personaContent,
+        kiroBootPrompt,
         "utf-8",
       );
     }
