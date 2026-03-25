@@ -9,11 +9,13 @@ import type { IPtyBackend } from "./pty-backend.js";
  * Kiro and other CLIs need the Enter keystroke to process input;
  * Claude Code reads terminal passively so Enter is harmless.
  *
- * Collapses multiline text to a single line — multiline sendKeys causes
+ * Collapses multiline text to a single line — multiline input causes
  * Kiro to display the text but not submit it (cursor sits at bottom).
  * LLMs don't need formatting; they parse the content regardless.
  *
- * Uses literal mode (text injected without interpretation) + Enter press.
+ * Uses sendRawInput (raw bytes, no automatic \r) for precise control:
+ * two separate writes — text then Enter — to avoid terminal buffer issues
+ * with large payloads where sendKeys drops the trailing \r.
  */
 export async function sendTerminalNotification(
   terminal: IPtyBackend,
@@ -22,6 +24,6 @@ export async function sendTerminalNotification(
 ): Promise<void> {
   // Collapse newlines to single line — prevents multiline display issues in Kiro
   const singleLine = text.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
-  await terminal.sendKeys(session, singleLine, { literal: true });
-  await terminal.sendKeys(session, '', { literal: false }); // Press Enter
+  await terminal.sendRawInput(session, singleLine); // text only, no \r
+  await terminal.sendRawInput(session, '\r');         // Enter separately
 }
