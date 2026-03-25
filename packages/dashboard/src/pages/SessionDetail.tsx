@@ -71,7 +71,7 @@ type TabId = "editor" | "agents" | "tasks" | "execution" | "timeline" | "changes
 
 function getInitialTab(): TabId {
   const hash = window.location.hash.replace("#", "");
-  if (["agents", "tasks", "execution", "timeline", "changes", "knowledge", "workload"].includes(hash)) return hash as TabId;
+  if (["agents", "tasks", "execution", "timeline", "changes", "knowledge", "workload", "chat"].includes(hash)) return hash as TabId;
   return "editor";
 }
 
