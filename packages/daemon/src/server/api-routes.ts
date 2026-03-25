@@ -1869,10 +1869,10 @@ export function createApiRouter(deps: {
       }
 
       if (customMessage) {
-        // Direct custom message via tmux — bypass queue entirely
+        // Direct custom message via sendTerminalNotification — bypass queue entirely
         try {
-          await tmux.sendKeys(agent.config.terminalSession, `[Nudge]: ${customMessage}`, { literal: true });
-          await tmux.sendKeys(agent.config.terminalSession, '', { literal: false }); // Press Enter
+          const { sendTerminalNotification } = await import("../core/terminal-utils.js");
+          await sendTerminalNotification(tmux, agent.config.terminalSession, `[Nudge]: ${customMessage}`);
           logger.info({ agentId: aid, customMessage, sessionId: sid }, "[API] Custom nudge sent successfully");
 
           // Track nudge-sent event

@@ -602,12 +602,12 @@ export class AgentManager extends EventEmitter {
     }
   }
 
-  /** Send a message to an agent via tmux send-keys */
+  /** Send a notification message to an agent's terminal via sendTerminalNotification */
   async sendMessage(agentId: string, message: string): Promise<void> {
     const agent = this.agents.get(agentId);
     if (!agent) throw new Error(`Agent ${agentId} not found`);
-    const terminalSession = agent.config.terminalSession;
-    await this.terminal.sendKeys(terminalSession, message, { literal: false });
+    const { sendTerminalNotification } = await import("./terminal-utils.js");
+    await sendTerminalNotification(this.terminal, agent.config.terminalSession, message);
   }
 
   /** Change agent model (restarts the agent) */
