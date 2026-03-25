@@ -2782,6 +2782,14 @@ export function createApiRouter(deps: {
         }
       }
 
+      // Clear stale task nudges when status changes (auto-dismiss alerts)
+      if (body.status && body.status !== oldTask.status) {
+        const orch_clear = orchestrators.get(sid);
+        if (orch_clear) {
+          try { orch_clear.staleTaskWatchdog.clearNudgesForTask(tid); } catch { /* non-fatal */ }
+        }
+      }
+
       // Broadcast task-updated event via WebSocket
       broadcastEvent({ event: "task-updated", sessionId: sid, taskId: tid });
       taskMetricsDebouncer.schedule(sid, () => broadcastEvent({ event: "task-metrics-updated", sessionId: sid }));
