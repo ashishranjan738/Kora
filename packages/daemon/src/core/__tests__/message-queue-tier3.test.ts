@@ -71,7 +71,8 @@ describe("Event Routing Tier 3 - Direct Delivery Channel", () => {
       );
 
       expect(result).toBe(true);
-      expect(mockTmux.sendKeys).toHaveBeenCalledTimes(1);
+      // 1 delivery = 2 sendKeys calls (literal text + Enter for Kiro compat)
+      expect(mockTmux.sendKeys).toHaveBeenCalledTimes(2);
     });
 
     it("should bypass queue and deliver immediately", async () => {
@@ -170,7 +171,8 @@ describe("Event Routing Tier 3 - Direct Delivery Channel", () => {
       const elapsed = Date.now() - startTime;
 
       expect(result).toBe(true);
-      expect(attemptCount).toBe(4); // Initial + 3 retries
+      // 3 failed attempts (1 sendKeys each, Enter skipped on throw) + 1 success (2 sendKeys: text + Enter) = 5
+      expect(attemptCount).toBe(5);
       // Should take at least 1s + 2s + 4s = 7s for retries
       expect(elapsed).toBeGreaterThan(7000);
     }, 15000); // 15s timeout for retry tests
@@ -194,7 +196,8 @@ describe("Event Routing Tier 3 - Direct Delivery Channel", () => {
       );
 
       expect(result).toBe(true);
-      expect(attemptCount).toBe(3); // Initial + 2 retries
+      // 2 failed attempts (1 sendKeys each) + 1 success (2 sendKeys: text + Enter) = 4
+      expect(attemptCount).toBe(4);
     });
 
     it("should NOT retry normal priority messages", async () => {

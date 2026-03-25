@@ -154,7 +154,8 @@ describe("AutoRelay", () => {
       await vi.advanceTimersByTimeAsync(3000);
 
       // Should send to both Frontend and Backend (not self)
-      expect(pty.sendKeys).toHaveBeenCalledTimes(2);
+      // Each delivery = 2 sendKeys calls (literal text + Enter for Kiro compat)
+      expect(pty.sendKeys).toHaveBeenCalledTimes(4);
       expect(pty.sendKeys).toHaveBeenCalledWith(
         agentB.config.terminalSession,
         expect.stringContaining("status update"),
@@ -264,8 +265,8 @@ describe("AutoRelay", () => {
       (pty.capturePane as any).mockResolvedValueOnce(mention);
       await vi.advanceTimersByTimeAsync(3000);
 
-      // Should only deliver once
-      expect(pty.sendKeys).toHaveBeenCalledTimes(1);
+      // Should only deliver once (2 sendKeys calls: literal text + Enter)
+      expect(pty.sendKeys).toHaveBeenCalledTimes(2);
       relay.stopAll();
     });
   });
@@ -284,8 +285,8 @@ describe("AutoRelay", () => {
         await vi.advanceTimersByTimeAsync(3000);
       }
 
-      // Only 3 should have been delivered
-      expect(pty.sendKeys).toHaveBeenCalledTimes(3);
+      // Only 3 should have been delivered (each = 2 sendKeys: text + Enter)
+      expect(pty.sendKeys).toHaveBeenCalledTimes(6);
       relay.stopAll();
     });
 
@@ -301,7 +302,8 @@ describe("AutoRelay", () => {
         (pty.capturePane as any).mockResolvedValueOnce(`@Frontend: msg ${i}`);
         await vi.advanceTimersByTimeAsync(3000);
       }
-      expect(pty.sendKeys).toHaveBeenCalledTimes(3);
+      // 3 deliveries × 2 sendKeys each (text + Enter)
+      expect(pty.sendKeys).toHaveBeenCalledTimes(6);
 
       // Advance past the 60s window
       vi.advanceTimersByTime(61000);
@@ -310,7 +312,8 @@ describe("AutoRelay", () => {
       (pty.capturePane as any).mockResolvedValueOnce("@Frontend: msg after reset");
       await vi.advanceTimersByTimeAsync(3000);
 
-      expect(pty.sendKeys).toHaveBeenCalledTimes(4);
+      // 4 deliveries × 2 sendKeys each
+      expect(pty.sendKeys).toHaveBeenCalledTimes(8);
       relay.stopAll();
     });
   });

@@ -55,8 +55,8 @@ describe("Nudge Visibility Fixes", () => {
 
       expect(success).toBe(true);
 
-      // Find the notification call (last sendKeys call)
-      const notificationCall = sendKeysCallArgs[sendKeysCallArgs.length - 1];
+      // Last call is Enter (literal:false), second-to-last is the notification text (literal:true)
+      const notificationCall = sendKeysCallArgs[sendKeysCallArgs.length - 2];
       expect(notificationCall.options?.literal).toBe(true);
     });
 
@@ -73,7 +73,8 @@ describe("Nudge Visibility Fixes", () => {
       // Wait for async delivery
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      const deliveryCall = sendKeysCallArgs[sendKeysCallArgs.length - 1];
+      // Last call is Enter (literal:false), second-to-last is the message text (literal:true)
+      const deliveryCall = sendKeysCallArgs[sendKeysCallArgs.length - 2];
       expect(deliveryCall.options?.literal).toBe(true);
     });
   });
@@ -256,7 +257,8 @@ describe("Nudge Visibility Fixes", () => {
         "agent-1"
       );
 
-      const notificationCall = sendKeysCallArgs[sendKeysCallArgs.length - 1];
+      // Last call is Enter (literal:false), second-to-last is the notification text (literal:true)
+      const notificationCall = sendKeysCallArgs[sendKeysCallArgs.length - 2];
       // With literal:true, this should be safe - no command execution
       expect(notificationCall.options?.literal).toBe(true);
     });
