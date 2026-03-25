@@ -46,7 +46,7 @@ describe("Terminal API integration", () => {
       expect(res.body).toHaveProperty("projectPath");
 
       // Verify backend session was created
-      const sessions = await ctx.tmux.listSessions();
+      const sessions = await ctx.terminal.listSessions();
       expect(sessions).toContain(res.body.terminalSession);
     });
 
@@ -111,7 +111,7 @@ describe("Terminal API integration", () => {
       expect(deleteRes.body).toHaveProperty("deleted", true);
 
       // Verify backend session was killed
-      const sessions = await ctx.tmux.listSessions();
+      const sessions = await ctx.terminal.listSessions();
       expect(sessions).not.toContain(terminalSession);
 
       // Verify it's removed from list

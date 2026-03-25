@@ -48,7 +48,7 @@ export class AgentManager extends EventEmitter {
   private worktreeInfo = new Map<string, { projectPath: string; runtimeDir: string }>();
 
   constructor(
-    private tmux: IPtyBackend,
+    private terminal: IPtyBackend,
     private healthMonitor: AgentHealthMonitor,
     private worktreeManager: WorktreeManager = new WorktreeManager(),
   ) {
@@ -296,14 +296,14 @@ export class AgentManager extends EventEmitter {
     }
 
     // 4. Create tmux session
-    await this.tmux.newSession(terminalSession);
+    await this.terminal.newSession(terminalSession);
 
     // 5. Wait for shell to be ready by polling capturePane for a prompt character
     const maxWait = 3000; // 3 seconds max (fresh shells start fast)
     const pollInterval = 200; // check every 200ms
     let startTime = Date.now();
     while (Date.now() - startTime < maxWait) {
-      const output = await this.tmux.capturePane(terminalSession, 5, false);
+      const output = await this.terminal.capturePane(terminalSession, 5, false);
       const lines = output.trim().split('\n').filter(l => l.trim());
       const lastLine = lines[lines.length - 1] || '';
       if (lastLine.match(/[$%>#]\s*$/)) break;
@@ -367,22 +367,22 @@ export class AgentManager extends EventEmitter {
     if (envEntries.length > 0) {
       const escapeValue = (v: string) => v.replace(/'/g, "'\\''");
       for (const [k, v] of envEntries) {
-        await this.tmux.sendKeys(terminalSession, `export ${k}='${escapeValue(v)}'`, { literal: false });
+        await this.terminal.sendKeys(terminalSession, `export ${k}='${escapeValue(v)}'`, { literal: false });
       }
       await new Promise(r => setTimeout(r, 300)); // brief pause for shell to process all exports
     }
     // PATH uses double quotes so $PATH expands in the shell
-    await this.tmux.sendKeys(terminalSession, `export PATH="${daemonBinDir}:$PATH"`, { literal: false });
+    await this.terminal.sendKeys(terminalSession, `export PATH="${daemonBinDir}:$PATH"`, { literal: false });
     await new Promise(r => setTimeout(r, 100));
 
     // 7. cd to workingDirectory (use worktree if available)
     const cdTarget = agentWorkDir;
-    await this.tmux.sendKeys(terminalSession, `cd ${cdTarget}`, { literal: false });
+    await this.terminal.sendKeys(terminalSession, `cd ${cdTarget}`, { literal: false });
 
     // Wait for cd to complete — poll for prompt to reappear
     startTime = Date.now();
     while (Date.now() - startTime < maxWait) {
-      const output = await this.tmux.capturePane(terminalSession, 5, false);
+      const output = await this.terminal.capturePane(terminalSession, 5, false);
       const lines = output.trim().split('\n').filter(l => l.trim());
       const lastLine = lines[lines.length - 1] || '';
       if (lastLine.match(/[$%>#]\s*$/)) break;
@@ -392,7 +392,7 @@ export class AgentManager extends EventEmitter {
     // 8. Send the command to tmux via sendKeys (join args with spaces)
     const fullCommand = command.join(" ");
     logger.info(`[agent-manager] Sending CLI command for ${agentId}: ${command[0]} (${command.length} args)`);
-    await this.tmux.sendKeys(terminalSession, fullCommand, { literal: false });
+    await this.terminal.sendKeys(terminalSession, fullCommand, { literal: false });
 
     // 8b. Fire-and-forget verification: after a delay, check if the CLI command
     //     actually reached the terminal. If sendKeys failed silently (e.g. holdpty
@@ -403,13 +403,13 @@ export class AgentManager extends EventEmitter {
     if (!skipRetryProviders.includes(options.provider.id)) {
       setTimeout(async () => {
         try {
-          const verifyOutput = await this.tmux.capturePane(terminalSession, 10, false);
+          const verifyOutput = await this.terminal.capturePane(terminalSession, 10, false);
           const cliBinary = command[0]; // e.g. "claude", "aider", "codex"
           // Only retry if we got real terminal output but the command is missing
           if (verifyOutput.length > 20 && !verifyOutput.includes(cliBinary)) {
             logger.warn(`[agent-manager] CLI command not detected in terminal for ${agentId}, retrying sendKeys...`);
             await new Promise(r => setTimeout(r, 800));
-            await this.tmux.sendKeys(terminalSession, fullCommand, { literal: false });
+            await this.terminal.sendKeys(terminalSession, fullCommand, { literal: false });
           }
         } catch {
           // capturePane may fail for mock backends — skip verification
@@ -421,15 +421,15 @@ export class AgentManager extends EventEmitter {
     //    (Claude Code needs time to fully start up)
     if (options.initialTask) {
       await new Promise((resolve) => setTimeout(resolve, 5000));
-      await this.tmux.sendKeys(terminalSession, options.initialTask, { literal: true });
-      await this.tmux.sendKeys(terminalSession, '', { literal: false }); // Enter
+      await this.terminal.sendKeys(terminalSession, options.initialTask, { literal: true });
+      await this.terminal.sendKeys(terminalSession, '', { literal: false }); // Enter
     }
 
     // 10. Start health monitoring
     this.healthMonitor.startMonitoring(agentId, terminalSession);
 
     // 11. Start pipe-pane for terminal streaming
-    await this.tmux.pipePaneStart(terminalSession, path.join(options.runtimeDir, `${agentId}.log`));
+    await this.terminal.pipePaneStart(terminalSession, path.join(options.runtimeDir, `${agentId}.log`));
 
     // 12. Create AgentState, store in map
     const permissions: AgentPermissions = options.role === "master"
@@ -504,16 +504,16 @@ export class AgentManager extends EventEmitter {
     this.healthMonitor.stopMonitoring(agentId);
 
     // 2. Gracefully stop tmux/holdpty session
-    const sessionExists = await this.tmux.hasSession(terminalSession);
+    const sessionExists = await this.terminal.hasSession(terminalSession);
     if (sessionExists) {
-      try { await this.tmux.pipePaneStop(terminalSession); } catch {}
+      try { await this.terminal.pipePaneStop(terminalSession); } catch {}
 
-      try { await this.tmux.sendKeys(terminalSession, "/exit", { literal: false }); } catch {}
+      try { await this.terminal.sendKeys(terminalSession, "/exit", { literal: false }); } catch {}
 
       // Wait up to timeout for exit
       const deadline = Date.now() + (timeoutMs ?? GRACEFUL_SHUTDOWN_TIMEOUT_MS);
       while (Date.now() < deadline) {
-        const alive = await this.tmux.hasSession(terminalSession);
+        const alive = await this.terminal.hasSession(terminalSession);
         if (!alive) break;
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
@@ -522,7 +522,7 @@ export class AgentManager extends EventEmitter {
     // 3. Always call killSession to clean up socket/metadata files
     // Even if session is already dead, HoldptyController.killSession()
     // cleans up orphaned socket + metadata files on disk.
-    try { await this.tmux.killSession(terminalSession); } catch {}
+    try { await this.terminal.killSession(terminalSession); } catch {}
 
     // 6. Clean up git worktree (if one was created for this agent)
     if (!opts?.skipWorktreeRemoval) {
@@ -589,9 +589,9 @@ export class AgentManager extends EventEmitter {
 
       // Re-create the tmux session and restart the agent process
       const terminalSession = agent.config.terminalSession;
-      await this.tmux.newSession(terminalSession);
+      await this.terminal.newSession(terminalSession);
       // Re-launch requires a resolved CLIProvider; emit event so the caller can handle it
-      await this.tmux.sendKeys(terminalSession, `cd ${agent.config.workingDirectory}`, { literal: false });
+      await this.terminal.sendKeys(terminalSession, `cd ${agent.config.workingDirectory}`, { literal: false });
       this.healthMonitor.startMonitoring(agentId, terminalSession);
 
       this.emit("agent-restarted", agentId, agent.healthCheck.restartCount);
@@ -607,7 +607,7 @@ export class AgentManager extends EventEmitter {
     const agent = this.agents.get(agentId);
     if (!agent) throw new Error(`Agent ${agentId} not found`);
     const terminalSession = agent.config.terminalSession;
-    await this.tmux.sendKeys(terminalSession, message, { literal: false });
+    await this.terminal.sendKeys(terminalSession, message, { literal: false });
   }
 
   /** Change agent model (restarts the agent) */
@@ -617,7 +617,7 @@ export class AgentManager extends EventEmitter {
 
     // If provider supports hot swap, use it. Otherwise, restart.
     if (provider.supportsHotModelSwap) {
-      await this.tmux.sendKeys(agent.config.terminalSession, provider.buildModelSwapCommand!(model), { literal: false });
+      await this.terminal.sendKeys(agent.config.terminalSession, provider.buildModelSwapCommand!(model), { literal: false });
       agent.config.model = model;
       agent.config.cliProvider = provider.id;
     } else {

@@ -27,7 +27,7 @@ export interface WebhookDeps {
   sessionManager: SessionManager;
   orchestrators: Map<string, Orchestrator>;
   providerRegistry: CLIProviderRegistry;
-  tmux: IPtyBackend;
+  terminal: IPtyBackend;
   globalConfigDir: string;
   playbookDb: PlaybookDatabase;
   /** Callback to set up a new orchestrator (mirrors session creation in api-routes) */
