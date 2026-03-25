@@ -458,7 +458,7 @@ export const CLI_META: Record<string, ToolCliMeta> = {
   channel_list: { group: "channel", subcommand: "list" },
   channel_join: { group: "channel", subcommand: "join", positionalArgs: ["channel"] },
   channel_history: { group: "channel", subcommand: "history", positionalArgs: ["channel"] },
-  get_context: { aliases: ["context"] },
+  get_context: {},  // No alias — "context" is manually registered with resource subcommands
 };
 
 /** Get tool definitions enriched with CLI metadata */
