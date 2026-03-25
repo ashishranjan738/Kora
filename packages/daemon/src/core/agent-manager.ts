@@ -682,6 +682,12 @@ export class AgentManager extends EventEmitter {
    * Used after daemon restart to reconnect to still-running tmux sessions.
    */
   restoreAgent(agent: AgentState): void {
+    // Migrate persisted state from old tmuxSession → terminalSession field name
+    const cfg = agent.config as unknown as Record<string, unknown>;
+    if (cfg.tmuxSession && !cfg.terminalSession) {
+      cfg.terminalSession = cfg.tmuxSession;
+      delete cfg.tmuxSession;
+    }
     this.agents.set(agent.id, agent);
     // Resume health monitoring for this agent
     this.healthMonitor.startMonitoring(agent.id, agent.config.terminalSession);
