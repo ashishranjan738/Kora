@@ -6,7 +6,7 @@
  *
  * A session is "orphaned" if:
  * - Its name starts with the kora prefix (kora-- or kora-dev--)
- * - No known agent references it as their tmuxSession
+ * - No known agent references it as their terminalSession
  */
 
 import type { IPtyBackend } from "./pty-backend.js";
@@ -58,7 +58,7 @@ export async function cleanupOrphanedSessions(
     // 3. Build set of known tmux session names from all agents
     const knownTmuxSessions = new Set<string>(
       knownAgents
-        .map((agent) => agent.config.tmuxSession)
+        .map((agent) => agent.config.terminalSession)
         .filter((s): s is string => !!s),
     );
 

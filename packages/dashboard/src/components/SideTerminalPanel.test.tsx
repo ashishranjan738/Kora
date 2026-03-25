@@ -16,7 +16,7 @@ vi.mock('./AgentTerminal', () => ({
 vi.mock('../hooks/useApi', () => ({
   useApi: () => ({
     getTerminals: vi.fn().mockResolvedValue({ terminals: [] }),
-    openTerminal: vi.fn().mockResolvedValue({ id: 'new-term', tmuxSession: 'tmux-123' }),
+    openTerminal: vi.fn().mockResolvedValue({ id: 'new-term', terminalSession: 'tmux-123' }),
   }),
 }));
 

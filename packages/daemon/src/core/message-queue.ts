@@ -32,7 +32,7 @@ const MAX_QUEUE_SIZE = 50;
 
 interface QueuedMessage {
   agentId: string;
-  tmuxSession: string;
+  terminalSession: string;
   message: string;
   timestamp: number;
   priority: MessagePriority;
@@ -268,8 +268,8 @@ export class MessageQueue {
 
   /** Batch-enqueue messages without triggering processQueues for each one.
    *  Call flushQueues() after batch to trigger single delivery pass. */
-  enqueueBatch(agentId: string, tmuxSession: string, message: string, fromAgentId?: string, targetAgentId?: string): boolean {
-    return this._enqueue(agentId, tmuxSession, message, fromAgentId, targetAgentId, false);
+  enqueueBatch(agentId: string, terminalSession: string, message: string, fromAgentId?: string, targetAgentId?: string): boolean {
+    return this._enqueue(agentId, terminalSession, message, fromAgentId, targetAgentId, false);
   }
 
   /** Trigger a single delivery pass for all queues. Call after enqueueBatch(). */
@@ -280,11 +280,11 @@ export class MessageQueue {
   }
 
   /** Queue a message for delivery to an agent. Returns false if dropped (loop). */
-  enqueue(agentId: string, tmuxSession: string, message: string, fromAgentId?: string, targetAgentId?: string, options?: { sqlitePersisted?: boolean }): boolean {
-    return this._enqueue(agentId, tmuxSession, message, fromAgentId, targetAgentId, true, options);
+  enqueue(agentId: string, terminalSession: string, message: string, fromAgentId?: string, targetAgentId?: string, options?: { sqlitePersisted?: boolean }): boolean {
+    return this._enqueue(agentId, terminalSession, message, fromAgentId, targetAgentId, true, options);
   }
 
-  private _enqueue(agentId: string, tmuxSession: string, message: string, fromAgentId: string | undefined, targetAgentId: string | undefined, immediateFlush: boolean, options?: { sqlitePersisted?: boolean }): boolean {
+  private _enqueue(agentId: string, terminalSession: string, message: string, fromAgentId: string | undefined, targetAgentId: string | undefined, immediateFlush: boolean, options?: { sqlitePersisted?: boolean }): boolean {
     // Conversation loop detection — max 8 messages between same pair in 2 minutes
     if (fromAgentId) {
       const pairKey = [fromAgentId, agentId].sort().join(":");
@@ -306,7 +306,7 @@ export class MessageQueue {
 
     // Tier 3: Critical messages bypass queue via direct delivery
     if (priority === "critical") {
-      this.deliverDirect(agentId, tmuxSession, message, fromAgentId, targetAgentId).catch((err) => {
+      this.deliverDirect(agentId, terminalSession, message, fromAgentId, targetAgentId).catch((err) => {
         logger.warn({ agentId, err }, "[MessageQueue] Direct delivery failed for critical message");
       });
       return true;
@@ -335,7 +335,7 @@ export class MessageQueue {
 
     queue.push({
       agentId,
-      tmuxSession,
+      terminalSession,
       message,
       timestamp: now,
       priority,
@@ -467,7 +467,7 @@ export class MessageQueue {
       return;
     }
 
-    const ready = await this.isAgentReady(msg.tmuxSession);
+    const ready = await this.isAgentReady(msg.terminalSession);
     if (ready) {
       queue.shift();
       await this.deliver(msg);
@@ -479,21 +479,21 @@ export class MessageQueue {
   }
 
   /** Check if the agent's terminal is at an input prompt (with caching) */
-  private async isAgentReady(tmuxSession: string): Promise<boolean> {
-    const cached = this.readinessCache.get(tmuxSession);
+  private async isAgentReady(terminalSession: string): Promise<boolean> {
+    const cached = this.readinessCache.get(terminalSession);
     if (cached && Date.now() - cached.checkedAt < this.READINESS_CACHE_TTL) {
       return cached.ready;
     }
 
-    const ready = await this.checkAgentReady(tmuxSession);
-    this.readinessCache.set(tmuxSession, { ready, checkedAt: Date.now() });
+    const ready = await this.checkAgentReady(terminalSession);
+    this.readinessCache.set(terminalSession, { ready, checkedAt: Date.now() });
     return ready;
   }
 
   /** Actually check agent readiness via tmux capture-pane */
-  private async checkAgentReady(tmuxSession: string): Promise<boolean> {
+  private async checkAgentReady(terminalSession: string): Promise<boolean> {
     try {
-      const output = await this.tmux.capturePane(tmuxSession, 5, false);
+      const output = await this.tmux.capturePane(terminalSession, 5, false);
       const lines = output
         .trim()
         .split("\n")
@@ -560,7 +560,7 @@ export class MessageQueue {
    */
   async deliverDirect(
     agentId: string,
-    tmuxSession: string,
+    terminalSession: string,
     message: string,
     fromAgentId?: string,
     targetAgentId?: string,
@@ -594,7 +594,7 @@ export class MessageQueue {
       try {
         const msg: QueuedMessage = {
           agentId,
-          tmuxSession,
+          terminalSession,
           message,
           timestamp: Date.now(),
           priority,
@@ -701,10 +701,10 @@ export class MessageQueue {
     // (broadcasts included — full content is now in SQLite/inbox)
     if (isBroadcast && cleanMsg.length <= 500) {
       // Short broadcasts: send content directly for convenience
-      await this.tmux.sendKeys(msg.tmuxSession, cleanMsg.slice(0, 500), { literal: true });
+      await this.tmux.sendKeys(msg.terminalSession, cleanMsg.slice(0, 500), { literal: true });
     } else {
       const notification = buildNewMessageNotification(senderName, this.messagingMode);
-      await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
+      await this.tmux.sendKeys(msg.terminalSession, notification, { literal: true });
     }
   }
 
@@ -767,10 +767,10 @@ export class MessageQueue {
     // Send tmux notification — short notification pointing to check_messages
     if (isBroadcast && cleanMsg.length <= 500) {
       // Short broadcasts: send content directly for convenience
-      await this.tmux.sendKeys(msg.tmuxSession, cleanMsg.slice(0, 500), { literal: true });
+      await this.tmux.sendKeys(msg.terminalSession, cleanMsg.slice(0, 500), { literal: true });
     } else {
       const notification = buildNewMessageNotification(senderName, this.messagingMode);
-      await this.tmux.sendKeys(msg.tmuxSession, notification, { literal: true });
+      await this.tmux.sendKeys(msg.terminalSession, notification, { literal: true });
     }
   }
 
@@ -796,7 +796,7 @@ export class MessageQueue {
       cleanMsg = cleanMsg.substring(0, 497) + "...";
     }
 
-    await this.tmux.sendKeys(msg.tmuxSession, cleanMsg, { literal: true });
+    await this.tmux.sendKeys(msg.terminalSession, cleanMsg, { literal: true });
   }
 
   /** Classify message type based on content patterns */
@@ -918,7 +918,7 @@ export class MessageQueue {
   }
 
   /** Send an immediate nudge notification to an agent. Returns unread count. */
-  async nudgeAgent(agentId: string, tmuxSession: string): Promise<number> {
+  async nudgeAgent(agentId: string, terminalSession: string): Promise<number> {
     if (!this.getUnreadCountFn) return 0;
     const unread = await this.getUnreadCountFn(agentId);
     if (unread === 0) return 0;
@@ -928,8 +928,8 @@ export class MessageQueue {
     // Deliver nudge directly via tmux — send text then Enter separately
     // (literal mode doesn't interpret \n as Enter)
     try {
-      await this.tmux.sendKeys(tmuxSession, notification, { literal: true });
-      await this.tmux.sendKeys(tmuxSession, '', { literal: false }); // Press Enter
+      await this.tmux.sendKeys(terminalSession, notification, { literal: true });
+      await this.tmux.sendKeys(terminalSession, '', { literal: false }); // Press Enter
     } catch (err) {
       logger.warn({ err, agentId }, "Failed to deliver nudge notification");
     }
@@ -998,8 +998,8 @@ export class MessageQueue {
         const lastTime = this.lastNotificationTime.get(agentId) || 0;
         if (now - lastTime < 10_000) continue;
 
-        const tmuxSession = this.getAgentTmuxSessionFn(agentId);
-        if (!tmuxSession) continue;
+        const terminalSession = this.getAgentTmuxSessionFn(agentId);
+        if (!terminalSession) continue;
 
         const elapsedMs = now - this.firstUnreadTime.get(agentId)!;
         const attempts = this.notificationAttempts.get(agentId) || 0;
@@ -1023,7 +1023,7 @@ export class MessageQueue {
               timestamp: now,
             });
           }
-          await this.tmux.sendKeys(tmuxSession, notification, { literal: false });
+          await this.tmux.sendKeys(terminalSession, notification, { literal: false });
           this.lastNotificationTime.set(agentId, now);
           continue;
         }
@@ -1084,7 +1084,7 @@ export class MessageQueue {
           }
         }
 
-        await this.tmux.sendKeys(tmuxSession, notification, { literal: false });
+        await this.tmux.sendKeys(terminalSession, notification, { literal: false });
         this.notificationAttempts.set(agentId, attempts + 1);
         this.lastNotificationTime.set(agentId, now);
       } catch {

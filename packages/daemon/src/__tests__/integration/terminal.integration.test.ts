@@ -42,12 +42,12 @@ describe("Terminal API integration", () => {
       expect(res.status).toBe(201);
       expect(res.body).toHaveProperty("id");
       expect(res.body.id).toMatch(/^term-/);
-      expect(res.body).toHaveProperty("tmuxSession");
+      expect(res.body).toHaveProperty("terminalSession");
       expect(res.body).toHaveProperty("projectPath");
 
       // Verify backend session was created
       const sessions = await ctx.tmux.listSessions();
-      expect(sessions).toContain(res.body.tmuxSession);
+      expect(sessions).toContain(res.body.terminalSession);
     });
 
     it("returns 404 for non-existent session", async () => {
@@ -100,7 +100,7 @@ describe("Terminal API integration", () => {
         .set("Authorization", `Bearer ${ctx.token}`);
 
       const termId = createRes.body.id;
-      const tmuxSession = createRes.body.tmuxSession;
+      const terminalSession = createRes.body.terminalSession;
 
       // Delete terminal
       const deleteRes = await request(ctx.app)
@@ -112,7 +112,7 @@ describe("Terminal API integration", () => {
 
       // Verify backend session was killed
       const sessions = await ctx.tmux.listSessions();
-      expect(sessions).not.toContain(tmuxSession);
+      expect(sessions).not.toContain(terminalSession);
 
       // Verify it's removed from list
       const listRes = await request(ctx.app)

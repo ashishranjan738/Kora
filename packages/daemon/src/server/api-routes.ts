@@ -1339,7 +1339,7 @@ export function createApiRouter(deps: {
           continue;
         }
         try {
-          orch.messageQueue.enqueueBatch(agent.id, agent.config.tmuxSession, broadcastMsg);
+          orch.messageQueue.enqueueBatch(agent.id, agent.config.terminalSession, broadcastMsg);
           results.push({ agentId: agent.id, name: agent.config.name, sent: true });
         } catch (err) {
           results.push({ agentId: agent.id, name: agent.config.name, sent: false, error: String(err) });
@@ -1551,7 +1551,7 @@ export function createApiRouter(deps: {
         outputLines = cached.lines;
       } else {
         // Cache miss - fetch from terminal
-        rawOutput = await tmux.capturePane(agent.config.tmuxSession, lines);
+        rawOutput = await tmux.capturePane(agent.config.terminalSession, lines);
         outputLines = rawOutput.split("\n");
         outputCache.set(cacheKey, rawOutput, outputLines);
       }
@@ -1613,7 +1613,7 @@ export function createApiRouter(deps: {
       if (cached) {
         outputLines = cached.lines;
       } else {
-        const rawOutput = await tmux.capturePane(agent.config.tmuxSession, lines);
+        const rawOutput = await tmux.capturePane(agent.config.terminalSession, lines);
         outputLines = rawOutput.split("\n");
         outputCache.set(cacheKey, rawOutput, outputLines);
       }
@@ -1870,8 +1870,8 @@ export function createApiRouter(deps: {
       if (customMessage) {
         // Direct custom message via tmux — bypass queue entirely
         try {
-          await tmux.sendKeys(agent.config.tmuxSession, `[Nudge]: ${customMessage}`, { literal: true });
-          await tmux.sendKeys(agent.config.tmuxSession, '', { literal: false }); // Press Enter
+          await tmux.sendKeys(agent.config.terminalSession, `[Nudge]: ${customMessage}`, { literal: true });
+          await tmux.sendKeys(agent.config.terminalSession, '', { literal: false }); // Press Enter
           logger.info({ agentId: aid, customMessage, sessionId: sid }, "[API] Custom nudge sent successfully");
 
           // Track nudge-sent event
@@ -1903,7 +1903,7 @@ export function createApiRouter(deps: {
       } else {
         // Default: nudge with unread count
         try {
-          const unread = await orch.messageQueue.nudgeAgent(String(aid), agent.config.tmuxSession);
+          const unread = await orch.messageQueue.nudgeAgent(String(aid), agent.config.terminalSession);
           logger.info({ agentId: aid, unreadCount: unread, sessionId: sid }, "[API] Default nudge sent successfully");
 
           // Track nudge-sent event
@@ -2591,7 +2591,7 @@ export function createApiRouter(deps: {
             const agent = orch.agentManager.getAgent(task.assignedTo);
             const notifyMsg = `[Task assigned — START NOW] "${task.title}" (${task.priority}). You have been assigned this task. Begin implementation immediately. Use get_task("${task.id}") for details.`;
             if (agent) {
-              orch.messageQueue.enqueue(task.assignedTo, agent.config.tmuxSession,
+              orch.messageQueue.enqueue(task.assignedTo, agent.config.terminalSession,
                 `\x1b[1;36m${notifyMsg}\x1b[0m`);
             }
             // Also persist to SQLite so check_messages picks it up
@@ -2763,7 +2763,7 @@ export function createApiRouter(deps: {
             const agent = orch.agentManager.getAgent(task.assignedTo);
             const notifyMsg = `[Task assigned — START NOW] "${task.title}" (${task.priority || "P2"}). You have been assigned this task. Begin implementation immediately. Use get_task("${tid}") for details.`;
             if (agent) {
-              orch.messageQueue.enqueue(task.assignedTo, agent.config.tmuxSession,
+              orch.messageQueue.enqueue(task.assignedTo, agent.config.terminalSession,
                 `\x1b[1;36m${notifyMsg}\x1b[0m`);
             }
             // Persist to SQLite for check_messages
@@ -2827,7 +2827,7 @@ export function createApiRouter(deps: {
             const agent = orch_notify.agentManager.getAgent(taskBeforeDelete.assignedTo);
             const notifyMsg = `[Task deleted] "${taskBeforeDelete.title}" (${tid}) has been removed. Stop working on it if in progress.`;
             if (agent && agent.status === "running") {
-              orch_notify.messageQueue.enqueue(taskBeforeDelete.assignedTo, agent.config.tmuxSession,
+              orch_notify.messageQueue.enqueue(taskBeforeDelete.assignedTo, agent.config.terminalSession,
                 `\x1b[1;31m${notifyMsg}\x1b[0m`);
             }
             // Persist to SQLite for check_messages
@@ -2970,7 +2970,7 @@ export function createApiRouter(deps: {
         try {
           const agent = orch.agentManager.getAgent(task.assignedTo);
           if (agent) {
-            orch.messageQueue.enqueue(task.assignedTo, agent.config.tmuxSession,
+            orch.messageQueue.enqueue(task.assignedTo, agent.config.terminalSession,
               `\x1b[1;32m[Approved] Task "${task.title}" moved to "${status}". Continue working.\x1b[0m`);
           }
         } catch {}
@@ -3003,7 +3003,7 @@ export function createApiRouter(deps: {
         try {
           const agent = orch.agentManager.getAgent(task.assignedTo);
           if (agent) {
-            orch.messageQueue.enqueue(task.assignedTo, agent.config.tmuxSession,
+            orch.messageQueue.enqueue(task.assignedTo, agent.config.terminalSession,
               `\x1b[1;31m[Rejected] Approval denied for task "${task.title}": ${reason || "no reason given"}. Address feedback and try again.\x1b[0m`);
           }
         } catch {}
@@ -4380,9 +4380,9 @@ export function createApiRouter(deps: {
       }
 
       const termId = `term-${randomUUID().slice(0, 8)}`;
-      const tmuxSessionName = `${getRuntimeTmuxPrefix(process.env.KORA_DEV === "1")}${sid}-${termId}`;
+      const terminalSessionName = `${getRuntimeTmuxPrefix(process.env.KORA_DEV === "1")}${sid}-${termId}`;
 
-      await tmux.newSession(tmuxSessionName);
+      await tmux.newSession(terminalSessionName);
 
       // Wait for shell prompt before sending cd (shell may not be ready yet)
       const maxWait = 3000;
@@ -4390,7 +4390,7 @@ export function createApiRouter(deps: {
       let waited = 0;
       while (waited < maxWait) {
         try {
-          const output = await tmux.capturePane(tmuxSessionName, 5);
+          const output = await tmux.capturePane(terminalSessionName, 5);
           const lastLine = output.trim().split('\n').pop() || '';
           if (lastLine.match(/[$%>❯]\s*$/)) break;
         } catch { /* pane may not be ready */ }
@@ -4399,7 +4399,7 @@ export function createApiRouter(deps: {
       }
 
       // cd to the project directory
-      await tmux.sendKeys(tmuxSessionName, `cd ${session.config.projectPath}`, { literal: false });
+      await tmux.sendKeys(terminalSessionName, `cd ${session.config.projectPath}`, { literal: false });
 
       // Track this standalone terminal
       if (!standaloneTerminals.has(sid)) {
@@ -4407,7 +4407,7 @@ export function createApiRouter(deps: {
       }
       standaloneTerminals.get(sid)!.set(termId, {
         id: termId,
-        tmuxSession: tmuxSessionName,
+        terminalSession: terminalSessionName,
         name: `Terminal ${(standaloneTerminals.get(sid)?.size || 0) + 1}`,
         createdAt: new Date().toISOString(),
         projectPath: session.config.projectPath,
@@ -4416,7 +4416,7 @@ export function createApiRouter(deps: {
       // Persist terminal state to disk (survives daemon restart)
       await persistTerminalsForSession(sid);
 
-      res.status(201).json({ id: termId, tmuxSession: tmuxSessionName, projectPath: session.config.projectPath });
+      res.status(201).json({ id: termId, terminalSession: terminalSessionName, projectPath: session.config.projectPath });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
@@ -4441,7 +4441,7 @@ export function createApiRouter(deps: {
         sessionTerminals.forEach((term) => {
           terminals.push({
             id: term.id,
-            tmuxSession: term.tmuxSession,
+            terminalSession: term.terminalSession,
             name: term.name,
             type: "standalone",
             createdAt: term.createdAt,
@@ -4456,7 +4456,7 @@ export function createApiRouter(deps: {
         agents.forEach((agent: any) => {
           terminals.push({
             id: agent.id,
-            tmuxSession: agent.config.tmuxSession,
+            terminalSession: agent.config.terminalSession,
             name: agent.config.name,
             type: "agent",
             agentName: agent.config.name,
@@ -4486,7 +4486,7 @@ export function createApiRouter(deps: {
       }
 
       // Kill the holdpty session + clean up socket
-      try { await tmux.killSession(termInfo.tmuxSession); } catch { /* may already be dead */ }
+      try { await tmux.killSession(termInfo.terminalSession); } catch { /* may already be dead */ }
 
       // Remove from tracking
       terminals!.delete(tid);
@@ -5149,7 +5149,7 @@ export function createApiRouter(deps: {
       // Batch enqueue all, then flush once
       for (const agent of agents) {
         try {
-          orch.messageQueue.enqueueBatch(agent.id, agent.config.tmuxSession, broadcastMsg);
+          orch.messageQueue.enqueueBatch(agent.id, agent.config.terminalSession, broadcastMsg);
           results.push({ agentId: agent.id, name: agent.config.name, sent: true });
         } catch {
           results.push({ agentId: agent.id, name: agent.config.name, sent: false });

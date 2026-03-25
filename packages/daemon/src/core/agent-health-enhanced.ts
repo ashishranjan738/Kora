@@ -58,15 +58,15 @@ export class AgentHealthMonitor extends EventEmitter {
   }
 
   /** Start monitoring an agent */
-  startMonitoring(agentId: string, tmuxSession: string): void {
+  startMonitoring(agentId: string, terminalSession: string): void {
     const interval = setInterval(async () => {
-      const alive = await this.tmux.hasSession(tmuxSession);
+      const alive = await this.tmux.hasSession(terminalSession);
       if (!alive) {
         this.emit("agent-dead", agentId);
         return;
       }
 
-      const pid = await this.tmux.getPanePID(tmuxSession);
+      const pid = await this.tmux.getPanePID(terminalSession);
       if (pid === null) {
         this.emit("agent-dead", agentId);
         return;
@@ -76,7 +76,7 @@ export class AgentHealthMonitor extends EventEmitter {
 
       // Enhanced idle detection: check terminal output for activity using pattern library
       if (this.agents) {
-        await this.checkIdleState(agentId, tmuxSession);
+        await this.checkIdleState(agentId, terminalSession);
       }
     }, HEALTH_CHECK_INTERVAL_MS);
     this.intervals.set(agentId, interval);
@@ -151,13 +151,13 @@ export class AgentHealthMonitor extends EventEmitter {
    * 4. Map pattern categories to agent activity states
    * 5. Apply time-based heuristics for "idle" state (30s timeout)
    */
-  private async checkIdleState(agentId: string, tmuxSession: string): Promise<void> {
+  private async checkIdleState(agentId: string, terminalSession: string): Promise<void> {
     const agent = this.agents?.get(agentId);
     if (!agent) return;
 
     try {
       // Capture last 10 lines of terminal output
-      const output = await this.tmux.capturePane(tmuxSession, 10, false);
+      const output = await this.tmux.capturePane(terminalSession, 10, false);
       const lastOutput = this.lastOutputCache.get(agentId) || "";
 
       // Phase 1: Analyze output with enhanced pattern matcher

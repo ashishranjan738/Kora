@@ -32,7 +32,7 @@ function createMockPty(sessions: string[]): IPtyBackend {
   };
 }
 
-function createAgent(tmuxSession: string): AgentState {
+function createAgent(terminalSession: string): AgentState {
   return {
     id: `agent-${Math.random().toString(36).slice(2, 8)}`,
     status: "running",
@@ -44,7 +44,7 @@ function createAgent(tmuxSession: string): AgentState {
       model: "claude-sonnet-4-6",
       permissions: { canSpawnAgents: false, canStopAgents: false, canAccessTerminal: true, canEditFiles: true, maxSubAgents: 0 },
       persona: "",
-      tmuxSession,
+      terminalSession,
       worktreeDir: "/tmp",
       extraCliArgs: [],
     },

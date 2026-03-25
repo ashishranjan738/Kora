@@ -109,7 +109,7 @@ describe("Startup Notification (source analysis)", () => {
 
   // Extract from the function definition (not the call site) to ~2000 chars
   const defIdx = orchSrc.indexOf("private buildStartupNotification");
-  const fnBody = defIdx >= 0 ? orchSrc.slice(defIdx, defIdx + 2000) : "";
+  const fnBody = defIdx >= 0 ? orchSrc.slice(defIdx, defIdx + 4000) : "";
 
   it("buildStartupNotification method exists in orchestrator", () => {
     expect(defIdx).toBeGreaterThan(-1);

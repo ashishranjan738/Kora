@@ -36,7 +36,7 @@ describe("Messages SQLite Migration - Integration", () => {
   describe("Dual-Write: SQLite + File Fallback", () => {
     it("should write to both SQLite and file system", async () => {
       const agentId = "test-agent";
-      const tmuxSession = "test-session";
+      const terminalSession = "test-session";
       const message = "[Message from SenderAgent]: Test dual write";
 
       // Create agent directories
@@ -49,7 +49,7 @@ describe("Messages SQLite Migration - Integration", () => {
       messageQueue.registerMcpAgent(agentId);
 
       // Enqueue message
-      messageQueue.enqueue(agentId, tmuxSession, message, "sender-agent");
+      messageQueue.enqueue(agentId, terminalSession, message, "sender-agent");
 
       // Wait for delivery
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -75,7 +75,7 @@ describe("Messages SQLite Migration - Integration", () => {
 
     it("should fall back to file system if SQLite insert fails", async () => {
       const agentId = "test-agent";
-      const tmuxSession = "test-session";
+      const terminalSession = "test-session";
       const message = "[Message from SenderAgent]: Fallback test";
 
       // Create agent directories
@@ -89,7 +89,7 @@ describe("Messages SQLite Migration - Integration", () => {
       db.close();
 
       // Enqueue message (should fall back to files)
-      messageQueue.enqueue(agentId, tmuxSession, message, "sender-agent");
+      messageQueue.enqueue(agentId, terminalSession, message, "sender-agent");
 
       // Wait for delivery
       await new Promise(resolve => setTimeout(resolve, 100));

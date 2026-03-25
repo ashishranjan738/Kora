@@ -46,7 +46,7 @@ export class UsageMonitor {
       if (provider) this.agentProviders.set(agent.id, provider);
     }
 
-    this.agentSessions.set(agent.id, agent.config.tmuxSession);
+    this.agentSessions.set(agent.id, agent.config.terminalSession);
 
     const interval = setInterval(async () => {
       try {
@@ -63,7 +63,7 @@ export class UsageMonitor {
         }
 
         // Tier 2: Terminal output parsing (passive — no commands sent)
-        const output = await this.tmux.capturePane(agent.config.tmuxSession, 200, false);
+        const output = await this.tmux.capturePane(agent.config.terminalSession, 200, false);
 
         if (provider) {
           // Use provider-specific parsing for accurate metrics
@@ -138,10 +138,10 @@ export class UsageMonitor {
   /** Immediately poll all monitored agents and return fresh cost data */
   async pollNow(): Promise<void> {
     const promises: Promise<void>[] = [];
-    for (const [agentId, tmuxSession] of this.agentSessions) {
+    for (const [agentId, terminalSession] of this.agentSessions) {
       promises.push((async () => {
         try {
-          const output = await this.tmux.capturePane(tmuxSession, 200, false);
+          const output = await this.tmux.capturePane(terminalSession, 200, false);
           const provider = this.agentProviders.get(agentId);
           if (provider) {
             this.updateFromProvider(agentId, output, provider);
@@ -195,7 +195,7 @@ export class UsageMonitor {
    * Poll `/cost` command on an idle Claude Code agent to get cumulative token usage.
    * Only runs when: agent is idle, provider is claude-code, last poll >60s ago.
    */
-  private async pollCostCommand(agentId: string, tmuxSession: string, provider: CLIProvider): Promise<void> {
+  private async pollCostCommand(agentId: string, terminalSession: string, provider: CLIProvider): Promise<void> {
     const now = Date.now();
     const lastPoll = this.lastCostPollTime.get(agentId) || 0;
     if (now - lastPoll < COST_POLL_MIN_INTERVAL_MS) return;
@@ -204,14 +204,14 @@ export class UsageMonitor {
 
     try {
       // Send /cost command (literal mode to avoid interpretation)
-      await this.tmux.sendKeys(tmuxSession, "/cost", { literal: true });
-      await this.tmux.sendKeys(tmuxSession, "", { literal: false }); // Enter
+      await this.tmux.sendKeys(terminalSession, "/cost", { literal: true });
+      await this.tmux.sendKeys(terminalSession, "", { literal: false }); // Enter
 
       // Wait for output to appear
       await new Promise(resolve => setTimeout(resolve, 2500));
 
       // Capture and parse the output
-      const output = await this.tmux.capturePane(tmuxSession, 30, false);
+      const output = await this.tmux.capturePane(terminalSession, 30, false);
       const parsed = provider.parseOutput(output);
 
       if (parsed.tokenUsage || parsed.costUsd !== undefined) {

@@ -152,7 +152,7 @@ describe("Restart vs Replace agent lifecycle", () => {
         forceAgentId: "preserved-id-12345678",
       }));
 
-      expect(agent.config.tmuxSession).toContain("preserved-id-12345678");
+      expect(agent.config.terminalSession).toContain("preserved-id-12345678");
     });
   });
 

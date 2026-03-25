@@ -15,7 +15,7 @@ function mockAgent(id: string, status: string = "running", activity: string = "w
       provider: "claude-code",
       model: "default",
       role: "worker",
-      tmuxSession: `kora--test-${id}`,
+      terminalSession: `kora--test-${id}`,
     },
     status: status as any,
     activity: activity as any,

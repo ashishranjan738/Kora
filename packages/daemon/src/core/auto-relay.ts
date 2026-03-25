@@ -41,7 +41,7 @@ export class AutoRelay {
 
     const interval = setInterval(async () => {
       try {
-        const output = await this.tmux.capturePane(agent.config.tmuxSession, 30, false);
+        const output = await this.tmux.capturePane(agent.config.terminalSession, 30, false);
         const lastOut = this.lastOutput.get(agent.id) || "";
 
         if (output === lastOut) return;
@@ -164,9 +164,9 @@ export class AutoRelay {
     try {
       // Use message queue for prompt-aware delivery if available, otherwise fall back to direct send
       if (this._messageQueue) {
-        this._messageQueue.enqueue(to.id, to.config.tmuxSession, relayMsg, from.id);
+        this._messageQueue.enqueue(to.id, to.config.terminalSession, relayMsg, from.id);
       } else {
-        await this.tmux.sendKeys(to.config.tmuxSession, relayMsg, { literal: true });
+        await this.tmux.sendKeys(to.config.terminalSession, relayMsg, { literal: true });
       }
 
       await this.eventLog.log({

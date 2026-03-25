@@ -382,13 +382,13 @@ function handleTerminalConnection(
 ): void {
   // Plain terminal tile — tmux session name is "kora--{sessionId}-{termId}" or "kora-dev--..."
   if (agentId.startsWith("term-")) {
-    const tmuxSession = `${getRuntimeTmuxPrefix(process.env.KORA_DEV === "1")}${sessionId}-${agentId}`;
-    deps.tmux.hasSession(tmuxSession).then((exists) => {
+    const terminalSession = `${getRuntimeTmuxPrefix(process.env.KORA_DEV === "1")}${sessionId}-${agentId}`;
+    deps.tmux.hasSession(terminalSession).then((exists) => {
       if (!exists) {
         ws.close(4004, "Terminal session not found");
         return;
       }
-      const attached = ptyManager.attach(tmuxSession, ws);
+      const attached = ptyManager.attach(terminalSession, ws);
       if (!attached) {
         ws.close(4029, "Too many terminal connections or PTY spawn failed");
       }
@@ -410,7 +410,7 @@ function handleTerminalConnection(
   }
 
   // Attach via node-pty: full keyboard, real-time streaming, proper resize
-  const attached = ptyManager.attach(agent.config.tmuxSession, ws);
+  const attached = ptyManager.attach(agent.config.terminalSession, ws);
   if (!attached) {
     ws.close(4029, "Too many terminal connections or PTY spawn failed");
   }

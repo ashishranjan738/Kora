@@ -123,7 +123,7 @@ export class Orchestrator extends EventEmitter {
       (agentId: string) => this.messageBus.getUnreadCount(agentId),
       (agentId: string) => {
         const agent = this.agentManager.getAgent(agentId);
-        return agent?.config.tmuxSession || null;
+        return agent?.config.terminalSession || null;
       },
       // Escalation callback: log event when agent ignores messages for >120s
       (agentId: string, unreadCount: number, elapsedMs: number) => {
@@ -250,7 +250,7 @@ export class Orchestrator extends EventEmitter {
       try {
         this.messageQueue.enqueue(
           agent.id,
-          agent.config.tmuxSession,
+          agent.config.terminalSession,
           `\x1b[1;33m[Reminder] ${r.message}\x1b[0m`,
         );
         this.database.updateReminderFiredAt(r.id);
@@ -739,12 +739,12 @@ export class Orchestrator extends EventEmitter {
       const relayCmd = relayMode === "cli" ? "kora-cli messages" : "check_messages";
       const shortNotification = relayMode === "terminal" ? `[New message from ${senderName}.]` : `[New message from ${senderName}. Use ${relayCmd} tool to read it.]`;
       try {
-        await this.config.tmux.sendKeys(toAgent.config.tmuxSession, shortNotification, { literal: true });
+        await this.config.tmux.sendKeys(toAgent.config.terminalSession, shortNotification, { literal: true });
       } catch { /* non-fatal — agent terminal may be busy */ }
     } else {
       // Queue the message — delivers to terminal when agent is at a prompt
       // sqlitePersisted: true — message was already written to SQLite above, skip duplicate write in delivery
-      this.messageQueue.enqueue(toAgentId, toAgent.config.tmuxSession, relayMsg, fromAgentId, undefined, { sqlitePersisted: true });
+      this.messageQueue.enqueue(toAgentId, toAgent.config.terminalSession, relayMsg, fromAgentId, undefined, { sqlitePersisted: true });
     }
 
     await this.eventLog.log({
@@ -1076,17 +1076,17 @@ RULES:
     let dead = 0;
 
     for (const agent of savedAgents) {
-      const tmuxSession = agent.config.tmuxSession;
+      const terminalSession = agent.config.terminalSession;
       let alive = false;
 
       try {
         // Check if session exists (metadata + process alive)
-        alive = await this.config.tmux.hasSession(tmuxSession);
+        alive = await this.config.tmux.hasSession(terminalSession);
 
         // For holdpty: also verify the socket file exists on disk
         if (alive && this.config.tmux instanceof HoldptyController) {
           try {
-            const socketPath = await this.config.tmux.getSocketPathForSession(tmuxSession);
+            const socketPath = await this.config.tmux.getSocketPathForSession(terminalSession);
             if (!fs.existsSync(socketPath)) {
               alive = false;
               logger.info(`[restore] Agent ${agent.config.name} (${agent.id}): socket file missing — marking as crashed`);
@@ -1098,7 +1098,7 @@ RULES:
 
         // Double-check: verify the pane/socket is actually accessible
         if (alive) {
-          await this.config.tmux.capturePane(tmuxSession, 1, false);
+          await this.config.tmux.capturePane(terminalSession, 1, false);
         }
       } catch {
         // capturePane failed — session metadata exists but socket/pane is dead
@@ -1181,7 +1181,7 @@ RULES:
       let fullOutput = "";
       try {
         fullOutput = await this.config.tmux.capturePane(
-          oldAgent.config.tmuxSession, 500, false,
+          oldAgent.config.terminalSession, 500, false,
         );
       } catch { /* agent may be dead */ }
 
@@ -1227,7 +1227,7 @@ RULES:
       let terminalContext = "";
       try {
         terminalContext = await this.config.tmux.capturePane(
-          oldAgent.config.tmuxSession, contextLines, false,
+          oldAgent.config.terminalSession, contextLines, false,
         );
       } catch {
         // Agent may already be dead
@@ -1358,7 +1358,7 @@ RULES:
 
         this.messageQueue.enqueue(
           newAgent.id,
-          newAgent.config.tmuxSession,
+          newAgent.config.terminalSession,
           briefing,
         );
       }
@@ -1434,9 +1434,9 @@ RULES:
     const agents = this.agentManager.listAgents();
     for (const agent of agents) {
       try {
-        const tmuxSession = agent.config.tmuxSession;
-        if (await this.config.tmux.hasSession(tmuxSession)) {
-          await this.config.tmux.killSession(tmuxSession);
+        const terminalSession = agent.config.terminalSession;
+        if (await this.config.tmux.hasSession(terminalSession)) {
+          await this.config.tmux.killSession(terminalSession);
         }
       } catch (err) {
         logger.error({ err: err }, `[orchestrator] Failed to kill tmux session for agent ${agent.id}:`);
@@ -1461,7 +1461,7 @@ RULES:
 
       // Get active agents from this orchestrator's session
       const activeAgents = this.agentManager.listAgents();
-      const activeSessionNames = new Set(activeAgents.map(a => a.config.tmuxSession));
+      const activeSessionNames = new Set(activeAgents.map(a => a.config.terminalSession));
 
       // Find orphaned sessions that belong to this orchestrator
       const sessionPrefix = `${getRuntimeTmuxPrefix(process.env.KORA_DEV === "1")}${this.config.sessionId}-`;

@@ -367,7 +367,7 @@ export function MultiAgentView() {
         serverTerminals.forEach((term: any) => {
           addTerminalSession({
             id: term.id,
-            tmuxSession: term.tmuxSession,
+            terminalSession: term.terminalSession,
             name: term.name || `Terminal`,
             type: term.type || "standalone",
             agentName: term.agentName,
@@ -670,7 +670,7 @@ export function MultiAgentView() {
       // Add to shared Zustand store so other views can see it
       addTerminalSession({
         id: result.id,
-        tmuxSession: result.tmuxSession,
+        terminalSession: result.terminalSession,
         name: `Terminal`,
         type: "standalone",
         createdAt: new Date().toISOString(),

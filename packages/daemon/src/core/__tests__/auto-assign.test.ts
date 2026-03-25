@@ -16,7 +16,7 @@ function createMockConfig(overrides: any = {}) {
     agentManager: {
       getAgent: vi.fn().mockReturnValue(overrides.agent || {
         id: "worker-1",
-        config: { name: "Worker 1", role: "worker", tmuxSession: "tmux-1", persona: "backend developer" },
+        config: { name: "Worker 1", role: "worker", terminalSession: "tmux-1", persona: "backend developer" },
         status: "running",
         activity: "idle",
       }),
@@ -56,7 +56,7 @@ describe("AutoAssigner", () => {
       const config = createMockConfig({
         agent: {
           id: "master-1",
-          config: { name: "Architect", role: "master", tmuxSession: "tmux-m" },
+          config: { name: "Architect", role: "master", terminalSession: "tmux-m" },
           status: "running",
         },
         tasks: [
@@ -166,7 +166,7 @@ describe("AutoAssigner", () => {
       const config = createMockConfig({
         agent: {
           id: "worker-1",
-          config: { name: "Frontend Dev", role: "worker", tmuxSession: "tmux-1", persona: "React frontend developer", skills: ["frontend"] },
+          config: { name: "Frontend Dev", role: "worker", terminalSession: "tmux-1", persona: "React frontend developer", skills: ["frontend"] },
           status: "running",
           activity: "idle",
         },
@@ -187,7 +187,7 @@ describe("AutoAssigner", () => {
       const config = createMockConfig({
         agent: {
           id: "worker-1",
-          config: { name: "Tester", role: "worker", tmuxSession: "tmux-1", persona: "QA tester", skills: ["testing"] },
+          config: { name: "Tester", role: "worker", terminalSession: "tmux-1", persona: "QA tester", skills: ["testing"] },
           status: "running",
           activity: "idle",
         },
@@ -213,10 +213,10 @@ describe("AutoAssigner", () => {
           { id: "dep2", title: "Also Done", status: "done", dependencies: [] },
           { id: "t1", title: "Was Blocked", status: "pending", assignedTo: "worker-1", dependencies: ["dep1", "dep2"] },
         ],
-        agents: [{ id: "worker-1", config: { name: "Worker 1", tmuxSession: "tmux-1" }, status: "running" }],
+        agents: [{ id: "worker-1", config: { name: "Worker 1", terminalSession: "tmux-1" }, status: "running" }],
       });
       config.agentManager.getAgent.mockReturnValue({
-        id: "worker-1", config: { name: "Worker 1", tmuxSession: "tmux-1" }, status: "running",
+        id: "worker-1", config: { name: "Worker 1", terminalSession: "tmux-1" }, status: "running",
       });
 
       const assigner = new AutoAssigner(config);
