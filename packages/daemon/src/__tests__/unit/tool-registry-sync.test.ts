@@ -189,19 +189,14 @@ describe("Tool Registry Sync Validation", () => {
     const mcpAllTools = extractMcpAllTools(mcpServerSrc);
     const mcpWorkerTools = extractMcpWorkerTools(mcpServerSrc);
 
-    it("MCP ALL_TOOLS matches registry ALL_TOOL_NAMES", () => {
-      const registrySet = new Set(ALL_TOOL_NAMES);
-      const mcpSet = new Set(mcpAllTools);
-
-      // Check for tools in registry but missing from MCP
-      for (const tool of ALL_TOOL_NAMES) {
-        expect(mcpSet.has(tool), `Registry tool "${tool}" missing from MCP ALL_TOOLS`).toBe(true);
-      }
-
-      // Check for tools in MCP but missing from registry
-      for (const tool of mcpAllTools) {
-        expect(registrySet.has(tool), `MCP tool "${tool}" not in registry ALL_TOOL_NAMES`).toBe(true);
-      }
+    it("MCP server imports TOOL_DEFINITIONS from shared registry (no local copy)", () => {
+      // After PR #445, MCP server imports directly from tool-registry.ts.
+      // No local ALL_TOOLS or TOOL_DEFINITIONS — single source of truth.
+      expect(
+        mcpServerSrc.includes('from "../tools/tool-registry.js"'),
+        "MCP server should import from tool-registry.ts",
+      ).toBe(true);
+      expect(mcpAllTools.length, "Local ALL_TOOLS should be removed (0 entries parsed)").toBe(0);
     });
 
     it("every registry tool has a case handler in MCP server OR shared TOOL_HANDLER_MAP", () => {
@@ -220,16 +215,13 @@ describe("Tool Registry Sync Validation", () => {
       }
     });
 
-    it("MCP worker role access matches registry", () => {
-      const registryWorker = ROLE_TOOL_ACCESS.worker;
-
-      for (const tool of registryWorker) {
-        expect(mcpWorkerTools.has(tool), `Registry worker tool "${tool}" missing from MCP worker set`).toBe(true);
-      }
-
-      for (const tool of mcpWorkerTools) {
-        expect(registryWorker.has(tool), `MCP worker tool "${tool}" not in registry worker set`).toBe(true);
-      }
+    it("MCP server imports isToolAllowed from shared registry (no local ROLE_TOOL_ACCESS)", () => {
+      // After PR #445, MCP uses shared isToolAllowed(role, toolName) — no local copy.
+      expect(
+        mcpServerSrc.includes("isToolAllowed"),
+        "MCP server should use isToolAllowed from tool-registry",
+      ).toBe(true);
+      expect(mcpWorkerTools.size, "Local ROLE_TOOL_ACCESS should be removed (0 entries parsed)").toBe(0);
     });
   });
 
