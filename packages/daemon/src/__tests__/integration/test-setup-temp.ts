@@ -19,7 +19,7 @@ export interface TestContext {
   app: Application;
   token: string;
   sessionManager: SessionManager;
-  tmux: MockPtyBackend;
+  terminal: MockPtyBackend;
   testDir: string;
   orchestrators: Map<string, any>;
   cleanup: () => void;
@@ -35,7 +35,7 @@ export function setupTestApp(): TestContext {
 
   const token = `test-token-${testId}`;
   const sessionManager = new SessionManager(testDir);
-  const tmux = new MockPtyBackend();
+  const terminal = new MockPtyBackend();
   const orchestrators = new Map();
 
   const suggestionsDb = new SuggestionsDatabase(true);
@@ -47,7 +47,7 @@ export function setupTestApp(): TestContext {
       sessionManager,
       orchestrators,
       providerRegistry: registry,
-      tmux,
+      terminal,
       startTime: Date.now(),
       globalConfigDir: testDir,
       suggestionsDb,
@@ -69,7 +69,7 @@ export function setupTestApp(): TestContext {
     app,
     token,
     sessionManager,
-    tmux,
+    terminal,
     testDir,
     orchestrators,
     cleanup,
