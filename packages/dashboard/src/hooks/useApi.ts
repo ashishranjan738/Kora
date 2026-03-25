@@ -365,11 +365,14 @@ export function useApi() {
     getChannelMessages: (sid: string, channelId: string, limit?: number) =>
       apiFetch<{ messages: any[] }>(`/sessions/${sid}/channels/${encodeURIComponent(channelId)}/messages?limit=${limit || 50}`),
     addChannelMember: (sid: string, channelId: string, agentId: string) =>
-      apiFetch<{ joined: boolean }>(`/sessions/${sid}/channels/${encodeURIComponent(channelId)}/members`, {
+      apiFetch<{ joined: boolean }>(`/sessions/${sid}/channels/${encodeURIComponent(channelId)}/join`, {
         method: "POST",
         body: JSON.stringify({ agentId }),
       }),
     removeChannelMember: (sid: string, channelId: string, agentId: string) =>
-      apiFetch<{ removed: boolean }>(`/sessions/${sid}/channels/${encodeURIComponent(channelId)}/members/${encodeURIComponent(agentId)}`, { method: "DELETE" }),
+      apiFetch<{ left: boolean }>(`/sessions/${sid}/channels/${encodeURIComponent(channelId)}/leave`, {
+        method: "POST",
+        body: JSON.stringify({ agentId }),
+      }),
   };
 }
