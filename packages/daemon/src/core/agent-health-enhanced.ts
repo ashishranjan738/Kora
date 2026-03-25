@@ -43,7 +43,7 @@ export class AgentHealthMonitor extends EventEmitter {
   private stateHistories = new Map<string, string[]>(); // Last 10 states
 
   constructor(
-    private tmux: IPtyBackend,
+    private terminal: IPtyBackend,
     agents?: Map<string, AgentState>
   ) {
     super();
@@ -60,13 +60,13 @@ export class AgentHealthMonitor extends EventEmitter {
   /** Start monitoring an agent */
   startMonitoring(agentId: string, terminalSession: string): void {
     const interval = setInterval(async () => {
-      const alive = await this.tmux.hasSession(terminalSession);
+      const alive = await this.terminal.hasSession(terminalSession);
       if (!alive) {
         this.emit("agent-dead", agentId);
         return;
       }
 
-      const pid = await this.tmux.getPanePID(terminalSession);
+      const pid = await this.terminal.getPanePID(terminalSession);
       if (pid === null) {
         this.emit("agent-dead", agentId);
         return;
@@ -157,7 +157,7 @@ export class AgentHealthMonitor extends EventEmitter {
 
     try {
       // Capture last 10 lines of terminal output
-      const output = await this.tmux.capturePane(terminalSession, 10, false);
+      const output = await this.terminal.capturePane(terminalSession, 10, false);
       const lastOutput = this.lastOutputCache.get(agentId) || "";
 
       // Phase 1: Analyze output with enhanced pattern matcher

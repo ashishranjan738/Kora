@@ -12,7 +12,7 @@ describe("Messages SQLite Migration - Integration", () => {
   let db: AppDatabase;
   let testDir: string;
   let messageQueue: MessageQueue;
-  let tmux: HoldptyController;
+  let terminal: HoldptyController;
 
   beforeEach(async () => {
     testDir = fs.mkdtempSync(path.join(os.tmpdir(), "kora-test-migration-"));
@@ -21,9 +21,9 @@ describe("Messages SQLite Migration - Integration", () => {
     // Create holdpty controller with test socket dir
     const socketDir = path.join(testDir, "holdpty-sockets");
     fs.mkdirSync(socketDir, { recursive: true });
-    tmux = new HoldptyController(socketDir);
+    terminal = new HoldptyController(socketDir);
 
-    messageQueue = new MessageQueue(tmux, testDir, "mcp");
+    messageQueue = new MessageQueue(terminal, testDir, "mcp");
     messageQueue.setDeliveryTracking(db, "test-session");
   });
 

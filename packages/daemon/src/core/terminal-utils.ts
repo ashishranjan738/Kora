@@ -12,10 +12,10 @@ import type { IPtyBackend } from "./pty-backend.js";
  * Uses literal mode (text injected without interpretation) + Enter press.
  */
 export async function sendTerminalNotification(
-  tmux: IPtyBackend,
+  terminal: IPtyBackend,
   session: string,
   text: string,
 ): Promise<void> {
-  await tmux.sendKeys(session, text, { literal: true });
-  await tmux.sendKeys(session, '', { literal: false }); // Press Enter
+  await terminal.sendKeys(session, text, { literal: true });
+  await terminal.sendKeys(session, '', { literal: false }); // Press Enter
 }

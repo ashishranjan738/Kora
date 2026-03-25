@@ -103,13 +103,14 @@ export function createApiRouter(deps: {
   sessionManager: SessionManager;
   orchestrators: Map<string, Orchestrator>;  // sessionId -> Orchestrator
   providerRegistry: CLIProviderRegistry;
-  tmux: IPtyBackend;
+  terminal: IPtyBackend;
   startTime: number;  // Date.now() at daemon start
   globalConfigDir: string;
   suggestionsDb: SuggestionsDatabase;
   playbookDb: PlaybookDatabase;
 }, wss: WebSocketServer): Router {
-  const { sessionManager, orchestrators, providerRegistry, tmux, startTime, globalConfigDir, suggestionsDb, playbookDb } = deps;
+  const { sessionManager, orchestrators, providerRegistry, terminal, startTime, globalConfigDir, suggestionsDb, playbookDb } = deps;
+  const tmux = terminal; // backward-compat alias for remaining usages
   const router = Router();
 
   // Track standalone terminal sessions per session (id → terminal info)
@@ -321,7 +322,7 @@ export function createApiRouter(deps: {
         projectPath: config.projectPath,
         runtimeDir: session!.runtimeDir,
         defaultProvider: config.defaultProvider,
-        tmux,
+        terminal,
         providerRegistry,
         messagingMode: config.messagingMode || "mcp",
         worktreeMode: config.worktreeMode,

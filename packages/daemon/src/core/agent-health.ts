@@ -195,7 +195,7 @@ export class AgentHealthMonitor extends EventEmitter {
   private lastMcpCallTimestamps = new Map<string, number>();
 
   constructor(
-    private tmux: IPtyBackend,
+    private terminal: IPtyBackend,
     agents?: Map<string, AgentState>
   ) {
     super();
@@ -347,13 +347,13 @@ export class AgentHealthMonitor extends EventEmitter {
   /** Start monitoring an agent */
   startMonitoring(agentId: string, terminalSession: string): void {
     const interval = setInterval(async () => {
-      const alive = await this.tmux.hasSession(terminalSession);
+      const alive = await this.terminal.hasSession(terminalSession);
       if (!alive) {
         this.emit("agent-dead", agentId);
         return;
       }
 
-      const pid = await this.tmux.getPanePID(terminalSession);
+      const pid = await this.terminal.getPanePID(terminalSession);
       if (pid === null) {
         this.emit("agent-dead", agentId);
         return;
@@ -394,7 +394,7 @@ export class AgentHealthMonitor extends EventEmitter {
     try {
       // Capture last 10 lines of terminal output.
       // capturePane(escapeSequences=false) strips ANSI in holdpty mode.
-      const rawOutput = await this.tmux.capturePane(terminalSession, 10, false);
+      const rawOutput = await this.terminal.capturePane(terminalSession, 10, false);
       // Normalize output to prevent false "changed" detections from cursor movement,
       // trailing whitespace variations, shell status line updates, and system-injected
       // messages (notifications, nudges, broadcasts) that pollute the activity hash.

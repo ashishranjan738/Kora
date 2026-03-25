@@ -24,7 +24,7 @@ export interface ServerDeps {
   sessionManager: SessionManager;
   orchestrators: Map<string, Orchestrator>;  // sessionId -> Orchestrator
   providerRegistry: CLIProviderRegistry;
-  tmux: IPtyBackend;
+  terminal: IPtyBackend;
   startTime: number;
   globalConfigDir: string;
   suggestionsDb: SuggestionsDatabase;
@@ -140,11 +140,11 @@ export function createServer(options: ServerOptions) {
   });
 
   // Configure PTY manager with the active terminal backend
-  ptyManager.setBackend(deps.tmux);
+  ptyManager.setBackend(deps.terminal);
 
   // Wire PtyManager into HoldptyController for sendKeys routing
-  if (deps.tmux instanceof HoldptyController) {
-    deps.tmux.setPtyManager(ptyManager);
+  if (deps.terminal instanceof HoldptyController) {
+    deps.terminal.setPtyManager(ptyManager);
   }
 
   // Serve the built React dashboard
@@ -179,7 +179,7 @@ export function createServer(options: ServerOptions) {
     sessionManager: deps.sessionManager,
     orchestrators: deps.orchestrators,
     providerRegistry: deps.providerRegistry,
-    tmux: deps.tmux,
+    terminal: deps.terminal,
     globalConfigDir: deps.globalConfigDir,
     playbookDb: deps.playbookDb,
     createOrchestrator: async (sessionId, projectPath, runtimeDir) => {
@@ -189,7 +189,7 @@ export function createServer(options: ServerOptions) {
         projectPath,
         runtimeDir,
         defaultProvider: "claude-code",
-        tmux: deps.tmux,
+        terminal: deps.terminal,
         providerRegistry: deps.providerRegistry,
         messagingMode: "mcp",
       });
@@ -383,7 +383,7 @@ function handleTerminalConnection(
   // Plain terminal tile — tmux session name is "kora--{sessionId}-{termId}" or "kora-dev--..."
   if (agentId.startsWith("term-")) {
     const terminalSession = `${getRuntimeTmuxPrefix(process.env.KORA_DEV === "1")}${sessionId}-${agentId}`;
-    deps.tmux.hasSession(terminalSession).then((exists) => {
+    deps.terminal.hasSession(terminalSession).then((exists) => {
       if (!exists) {
         ws.close(4004, "Terminal session not found");
         return;

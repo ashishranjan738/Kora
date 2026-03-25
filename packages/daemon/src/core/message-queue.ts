@@ -158,7 +158,7 @@ export class MessageQueue {
   private enableSqliteMessages = true;
 
   constructor(
-    private tmux: IPtyBackend,
+    private terminal: IPtyBackend,
     private runtimeDir: string = "",
     private messagingMode: MessagingMode = "mcp",
   ) {}
@@ -493,7 +493,7 @@ export class MessageQueue {
   /** Actually check agent readiness via tmux capture-pane */
   private async checkAgentReady(terminalSession: string): Promise<boolean> {
     try {
-      const output = await this.tmux.capturePane(terminalSession, 5, false);
+      const output = await this.terminal.capturePane(terminalSession, 5, false);
       const lines = output
         .trim()
         .split("\n")
@@ -701,12 +701,12 @@ export class MessageQueue {
     // (broadcasts included — full content is now in SQLite/inbox)
     if (isBroadcast && cleanMsg.length <= 500) {
       // Short broadcasts: send content directly for convenience
-      await this.tmux.sendKeys(msg.terminalSession, cleanMsg.slice(0, 500), { literal: true });
-      await this.tmux.sendKeys(msg.terminalSession, '', { literal: false });
+      await this.terminal.sendKeys(msg.terminalSession, cleanMsg.slice(0, 500), { literal: true });
+      await this.terminal.sendKeys(msg.terminalSession, '', { literal: false });
     } else {
       const notification = buildNewMessageNotification(senderName, this.messagingMode);
-      await this.tmux.sendKeys(msg.terminalSession, notification, { literal: true });
-      await this.tmux.sendKeys(msg.terminalSession, '', { literal: false });
+      await this.terminal.sendKeys(msg.terminalSession, notification, { literal: true });
+      await this.terminal.sendKeys(msg.terminalSession, '', { literal: false });
     }
   }
 
@@ -769,12 +769,12 @@ export class MessageQueue {
     // Send tmux notification — short notification pointing to check_messages
     if (isBroadcast && cleanMsg.length <= 500) {
       // Short broadcasts: send content directly for convenience
-      await this.tmux.sendKeys(msg.terminalSession, cleanMsg.slice(0, 500), { literal: true });
-      await this.tmux.sendKeys(msg.terminalSession, '', { literal: false });
+      await this.terminal.sendKeys(msg.terminalSession, cleanMsg.slice(0, 500), { literal: true });
+      await this.terminal.sendKeys(msg.terminalSession, '', { literal: false });
     } else {
       const notification = buildNewMessageNotification(senderName, this.messagingMode);
-      await this.tmux.sendKeys(msg.terminalSession, notification, { literal: true });
-      await this.tmux.sendKeys(msg.terminalSession, '', { literal: false });
+      await this.terminal.sendKeys(msg.terminalSession, notification, { literal: true });
+      await this.terminal.sendKeys(msg.terminalSession, '', { literal: false });
     }
   }
 
@@ -800,8 +800,8 @@ export class MessageQueue {
       cleanMsg = cleanMsg.substring(0, 497) + "...";
     }
 
-    await this.tmux.sendKeys(msg.terminalSession, cleanMsg, { literal: true });
-    await this.tmux.sendKeys(msg.terminalSession, '', { literal: false });
+    await this.terminal.sendKeys(msg.terminalSession, cleanMsg, { literal: true });
+    await this.terminal.sendKeys(msg.terminalSession, '', { literal: false });
   }
 
   /** Classify message type based on content patterns */
@@ -933,8 +933,8 @@ export class MessageQueue {
     // Deliver nudge directly via tmux — send text then Enter separately
     // (literal mode doesn't interpret \n as Enter)
     try {
-      await this.tmux.sendKeys(terminalSession, notification, { literal: true });
-      await this.tmux.sendKeys(terminalSession, '', { literal: false }); // Press Enter
+      await this.terminal.sendKeys(terminalSession, notification, { literal: true });
+      await this.terminal.sendKeys(terminalSession, '', { literal: false }); // Press Enter
     } catch (err) {
       logger.warn({ err, agentId }, "Failed to deliver nudge notification");
     }
@@ -1028,7 +1028,7 @@ export class MessageQueue {
               timestamp: now,
             });
           }
-          await this.tmux.sendKeys(terminalSession, notification, { literal: false });
+          await this.terminal.sendKeys(terminalSession, notification, { literal: false });
           this.lastNotificationTime.set(agentId, now);
           continue;
         }
@@ -1089,7 +1089,7 @@ export class MessageQueue {
           }
         }
 
-        await this.tmux.sendKeys(terminalSession, notification, { literal: false });
+        await this.terminal.sendKeys(terminalSession, notification, { literal: false });
         this.notificationAttempts.set(agentId, attempts + 1);
         this.lastNotificationTime.set(agentId, now);
       } catch {

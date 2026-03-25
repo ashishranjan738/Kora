@@ -22,7 +22,7 @@ export class AutoRelay {
   private _messageQueue: MessageQueue | null = null;
 
   constructor(
-    private tmux: IPtyBackend,
+    private terminal: IPtyBackend,
     private agentManager: AgentManager,
     private eventLog: EventLog,
     private sessionId: string,
@@ -41,7 +41,7 @@ export class AutoRelay {
 
     const interval = setInterval(async () => {
       try {
-        const output = await this.tmux.capturePane(agent.config.terminalSession, 30, false);
+        const output = await this.terminal.capturePane(agent.config.terminalSession, 30, false);
         const lastOut = this.lastOutput.get(agent.id) || "";
 
         if (output === lastOut) return;
@@ -166,8 +166,8 @@ export class AutoRelay {
       if (this._messageQueue) {
         this._messageQueue.enqueue(to.id, to.config.terminalSession, relayMsg, from.id);
       } else {
-        await this.tmux.sendKeys(to.config.terminalSession, relayMsg, { literal: true });
-        await this.tmux.sendKeys(to.config.terminalSession, '', { literal: false });
+        await this.terminal.sendKeys(to.config.terminalSession, relayMsg, { literal: true });
+        await this.terminal.sendKeys(to.config.terminalSession, '', { literal: false });
       }
 
       await this.eventLog.log({

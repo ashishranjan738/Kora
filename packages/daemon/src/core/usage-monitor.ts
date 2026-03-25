@@ -25,7 +25,7 @@ export class UsageMonitor {
   private jsonlInitAttempted = new Set<string>();
 
   constructor(
-    private tmux: IPtyBackend,
+    private terminal: IPtyBackend,
     private costTracker: CostTracker,
     private providerRegistry?: { get(id: string): CLIProvider | undefined },
   ) {}
@@ -63,7 +63,7 @@ export class UsageMonitor {
         }
 
         // Tier 2: Terminal output parsing (passive — no commands sent)
-        const output = await this.tmux.capturePane(agent.config.terminalSession, 200, false);
+        const output = await this.terminal.capturePane(agent.config.terminalSession, 200, false);
 
         if (provider) {
           // Use provider-specific parsing for accurate metrics
@@ -141,7 +141,7 @@ export class UsageMonitor {
     for (const [agentId, terminalSession] of this.agentSessions) {
       promises.push((async () => {
         try {
-          const output = await this.tmux.capturePane(terminalSession, 200, false);
+          const output = await this.terminal.capturePane(terminalSession, 200, false);
           const provider = this.agentProviders.get(agentId);
           if (provider) {
             this.updateFromProvider(agentId, output, provider);
@@ -204,14 +204,14 @@ export class UsageMonitor {
 
     try {
       // Send /cost command (literal mode to avoid interpretation)
-      await this.tmux.sendKeys(terminalSession, "/cost", { literal: true });
-      await this.tmux.sendKeys(terminalSession, "", { literal: false }); // Enter
+      await this.terminal.sendKeys(terminalSession, "/cost", { literal: true });
+      await this.terminal.sendKeys(terminalSession, "", { literal: false }); // Enter
 
       // Wait for output to appear
       await new Promise(resolve => setTimeout(resolve, 2500));
 
       // Capture and parse the output
-      const output = await this.tmux.capturePane(terminalSession, 30, false);
+      const output = await this.terminal.capturePane(terminalSession, 30, false);
       const parsed = provider.parseOutput(output);
 
       if (parsed.tokenUsage || parsed.costUsd !== undefined) {
