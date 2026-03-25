@@ -167,6 +167,7 @@ export class AutoRelay {
         this._messageQueue.enqueue(to.id, to.config.terminalSession, relayMsg, from.id);
       } else {
         await this.tmux.sendKeys(to.config.terminalSession, relayMsg, { literal: true });
+        await this.tmux.sendKeys(to.config.terminalSession, '', { literal: false });
       }
 
       await this.eventLog.log({

@@ -740,6 +740,7 @@ export class Orchestrator extends EventEmitter {
       const shortNotification = relayMode === "terminal" ? `[New message from ${senderName}.]` : `[New message from ${senderName}. Use ${relayCmd} tool to read it.]`;
       try {
         await this.config.tmux.sendKeys(toAgent.config.terminalSession, shortNotification, { literal: true });
+        await this.config.tmux.sendKeys(toAgent.config.terminalSession, '', { literal: false });
       } catch { /* non-fatal — agent terminal may be busy */ }
     } else {
       // Queue the message — delivers to terminal when agent is at a prompt
