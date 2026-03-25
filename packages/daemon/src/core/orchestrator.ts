@@ -18,6 +18,7 @@ import { AppDatabase } from "./database.js";
 import { CostTracker } from "./cost-tracker.js";
 import { AgentHealthMonitor } from "./agent-health.js";
 import type { IPtyBackend } from "./pty-backend.js";
+import { sendTerminalNotification } from "./terminal-utils.js";
 import type { CLIProviderRegistry } from "../cli-providers/provider-registry.js";
 import { UsageMonitor } from "./usage-monitor.js";
 import { AutoRelay } from "./auto-relay.js";
@@ -355,22 +356,15 @@ export class Orchestrator extends EventEmitter {
         } catch { /* non-fatal — agent may not be ready */ }
       }
 
-      // Send welcome notification directly to the agent's terminal.
-      // Uses sendKeys (not inbox) so the agent sees the full initialization
-      // text immediately, not "You have 1 unread message".
+      // Send welcome notification directly to the agent's terminal via
+      // sendTerminalNotification — single path for all notifications.
       const welcomeMsg = this.buildStartupNotification(agent);
       setTimeout(async () => {
         try {
-          await this.config.terminal.sendKeys(
+          await sendTerminalNotification(
+            this.config.terminal,
             agent.config.terminalSession,
             welcomeMsg,
-            { literal: true },
-          );
-          // Press Enter to ensure the notification is visible
-          await this.config.terminal.sendKeys(
-            agent.config.terminalSession,
-            '',
-            { literal: false },
           );
         } catch { /* non-fatal — agent terminal may not be ready */ }
       }, 2000); // Delay to ensure agent's CLI has initialized
@@ -744,8 +738,7 @@ export class Orchestrator extends EventEmitter {
       const relayCmd = relayMode === "cli" ? "kora-cli messages" : "check_messages";
       const shortNotification = relayMode === "terminal" ? `[New message from ${senderName}.]` : `[New message from ${senderName}. Use ${relayCmd} tool to read it.]`;
       try {
-        await this.config.terminal.sendKeys(toAgent.config.terminalSession, shortNotification, { literal: true });
-        await this.config.terminal.sendKeys(toAgent.config.terminalSession, '', { literal: false });
+        await sendTerminalNotification(this.config.terminal, toAgent.config.terminalSession, shortNotification);
       } catch { /* non-fatal — agent terminal may be busy */ }
     } else {
       // Queue the message — delivers to terminal when agent is at a prompt
