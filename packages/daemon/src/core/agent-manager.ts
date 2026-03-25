@@ -422,6 +422,7 @@ export class AgentManager extends EventEmitter {
     if (options.initialTask) {
       await new Promise((resolve) => setTimeout(resolve, 5000));
       await this.tmux.sendKeys(terminalSession, options.initialTask, { literal: true });
+      await this.tmux.sendKeys(terminalSession, '', { literal: false }); // Enter
     }
 
     // 10. Start health monitoring

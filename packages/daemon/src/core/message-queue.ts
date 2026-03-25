@@ -702,9 +702,11 @@ export class MessageQueue {
     if (isBroadcast && cleanMsg.length <= 500) {
       // Short broadcasts: send content directly for convenience
       await this.tmux.sendKeys(msg.terminalSession, cleanMsg.slice(0, 500), { literal: true });
+      await this.tmux.sendKeys(msg.terminalSession, '', { literal: false });
     } else {
       const notification = buildNewMessageNotification(senderName, this.messagingMode);
       await this.tmux.sendKeys(msg.terminalSession, notification, { literal: true });
+      await this.tmux.sendKeys(msg.terminalSession, '', { literal: false });
     }
   }
 
@@ -768,9 +770,11 @@ export class MessageQueue {
     if (isBroadcast && cleanMsg.length <= 500) {
       // Short broadcasts: send content directly for convenience
       await this.tmux.sendKeys(msg.terminalSession, cleanMsg.slice(0, 500), { literal: true });
+      await this.tmux.sendKeys(msg.terminalSession, '', { literal: false });
     } else {
       const notification = buildNewMessageNotification(senderName, this.messagingMode);
       await this.tmux.sendKeys(msg.terminalSession, notification, { literal: true });
+      await this.tmux.sendKeys(msg.terminalSession, '', { literal: false });
     }
   }
 
@@ -797,6 +801,7 @@ export class MessageQueue {
     }
 
     await this.tmux.sendKeys(msg.terminalSession, cleanMsg, { literal: true });
+    await this.tmux.sendKeys(msg.terminalSession, '', { literal: false });
   }
 
   /** Classify message type based on content patterns */
