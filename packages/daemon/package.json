@@ -15,7 +15,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "rm -f tsconfig.tsbuildinfo && tsc -p tsconfig.json",
     "build:dashboard": "cd ../dashboard && npm run build",
     "bundle:shared": "node scripts/bundle-shared.mjs",
     "bundle:dashboard": "node scripts/bundle-dashboard.mjs",
