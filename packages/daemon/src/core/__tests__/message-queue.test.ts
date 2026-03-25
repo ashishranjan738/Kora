@@ -96,8 +96,8 @@ describe("MessageQueue", () => {
       await vi.advanceTimersByTimeAsync(100);
     }
 
-    // All 10 should have been delivered (sendKeys called)
-    expect(mockSendKeys.mock.calls.length).toBeLessThanOrEqual(10);
+    // All 10 should have been delivered (each delivery = 2 sendKeys: text + Enter)
+    expect(mockSendKeys.mock.calls.length).toBeLessThanOrEqual(20);
   });
 
   it("rate limits delivery after 10 messages per agent in 60 seconds", async () => {
