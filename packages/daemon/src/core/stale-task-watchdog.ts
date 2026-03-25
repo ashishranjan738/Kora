@@ -170,6 +170,11 @@ export class StaleTaskWatchdog extends EventEmitter {
       const agentTasks = new Map<string, any[]>();
 
       for (const task of staleTasks) {
+        // Re-check current task status before nudging — task may have been
+        // updated (e.g. marked "done") since getStaleTasks() was called.
+        const currentTask = this.database.getTask(task.id);
+        if (currentTask && currentTask.status !== task.status) continue;
+
         const policy = this.nudgePolicies[task.status];
         if (!policy?.enabled) continue;
 
@@ -253,6 +258,26 @@ export class StaleTaskWatchdog extends EventEmitter {
   /** Backward-compat alias */
   async checkStaleTasks(): Promise<void> {
     return this.check();
+  }
+
+  /**
+   * Clear pending nudge records for a task when its status changes.
+   * Call this from task update handlers to auto-dismiss stale alerts.
+   */
+  clearNudgesForTask(taskId: string): number {
+    try {
+      const result = this.database.db.prepare(
+        `DELETE FROM task_nudges WHERE task_id = ?`
+      ).run(taskId);
+      if (result.changes > 0) {
+        this.emit("nudges-cleared", { taskId, cleared: result.changes });
+        logger.info({ taskId, cleared: result.changes }, "[StaleTaskWatchdog] Cleared nudges for task on status change");
+      }
+      return result.changes;
+    } catch (err) {
+      logger.warn({ err, taskId }, "[StaleTaskWatchdog] Failed to clear nudges for task");
+      return 0;
+    }
   }
 
   /**
