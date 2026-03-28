@@ -13,6 +13,7 @@ describe("Idle Detection API", () => {
   let app: Application;
   let token: string;
   let cleanup: () => void;
+  let testDir: string;
   let sessionId: string;
   let agentId: string;
 
@@ -21,14 +22,15 @@ describe("Idle Detection API", () => {
     app = setup.app;
     token = setup.token;
     cleanup = setup.cleanup;
+    testDir = setup.testDir;
 
-    // Create a session
+    // Create a session — use testDir as projectPath (must be a real directory)
     const sessionRes = await request(app)
       .post("/api/v1/sessions")
       .set("Authorization", `Bearer ${token}`)
       .send({
         name: "Idle Test Session",
-        projectPath: "/tmp/idle-test",
+        projectPath: testDir,
         defaultProvider: "claude-code",
       });
     sessionId = sessionRes.body.id;
@@ -238,13 +240,13 @@ describe("Idle Detection API", () => {
     let testAgentId: string;
 
     beforeAll(async () => {
-      // Create fresh session for algorithm tests
+      // Create fresh session for algorithm tests — use testDir as projectPath (must be a real directory)
       const sessionRes = await request(app)
         .post("/api/v1/sessions")
         .set("Authorization", `Bearer ${token}`)
         .send({
           name: "Algorithm Test Session",
-          projectPath: "/tmp/algo-test",
+          projectPath: testDir,
           defaultProvider: "claude-code",
         });
       testSessionId = sessionRes.body.id;
