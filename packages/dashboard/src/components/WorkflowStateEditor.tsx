@@ -138,11 +138,12 @@ const RUNBOOK_PLACEHOLDER = `1. Review the code changes for correctness
 4. Approve or request changes with specific feedback`;
 
 const RUNBOOK_VARIABLES = [
-  { name: "{agentName}", desc: "Name of the assigned agent" },
-  { name: "{taskTitle}", desc: "Title of the current task" },
-  { name: "{taskId}", desc: "ID of the current task" },
-  { name: "{stateLabel}", desc: "Current workflow state name" },
-  { name: "{prevState}", desc: "Previous workflow state" },
+  { name: "{agent.name}", desc: "Name of the assigned agent" },
+  { name: "{task.title}", desc: "Title of the current task" },
+  { name: "{task.id}", desc: "ID of the current task" },
+  { name: "{newState.label}", desc: "Current workflow state name" },
+  { name: "{oldState.label}", desc: "Previous workflow state" },
+  { name: "{baseBranch}", desc: "Base git branch (e.g. main)" },
 ];
 
 function RunbookEditor({ value, onChange, stateLabel, routeTo, onRouteToChange, agents }: {
