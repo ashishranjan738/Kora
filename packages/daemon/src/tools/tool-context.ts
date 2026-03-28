@@ -7,6 +7,10 @@ export interface ToolContext {
   agentId: string; sessionId: string; agentRole: string; projectPath: string;
   apiCall: (method: string, urlPath: string, body?: unknown) => Promise<unknown>;
   sendRateLimiter?: RateLimiter; nudgeRateLimiter?: NudgeLimiter;
+  /** Shell execution for tools that need git/make commands (prepare_pr, verify_work, create_pr) */
+  execFileAsync?: (cmd: string, args: string[], opts?: { cwd?: string; timeout?: number }) => Promise<{ stdout: string; stderr: string }>;
+  /** Returns the runtime dir name (".kora" or ".kora-dev") based on environment */
+  getRuntimeDir?: () => string;
 }
 export type ToolArgs = Record<string, unknown>;
 export interface AgentInfo {
