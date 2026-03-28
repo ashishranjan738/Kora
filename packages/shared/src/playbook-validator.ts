@@ -1,7 +1,18 @@
-import Ajv, { ErrorObject } from "ajv";
+import Ajv from "ajv";
 import playbookSchema from "./playbook-schema.json";
 
-const ajv = new Ajv({ allErrors: true, strict: false });
+// Ajv v8 is installed in packages/shared/node_modules but tsc resolves
+// root node_modules/ajv v6 types in worktrees. Use generic ErrorObject type.
+type AjvErrorObject = {
+  keyword: string;
+  instancePath?: string;
+  dataPath?: string;
+  schemaPath: string;
+  params: Record<string, any>;
+  message?: string;
+};
+
+const ajv = new Ajv({ allErrors: true, strict: false } as any);
 const validateSchema = ajv.compile(playbookSchema);
 
 export interface ValidationResult {
@@ -102,8 +113,8 @@ export function validatePlaybook(playbook: unknown): ValidationResult {
 /**
  * Format Ajv validation error into human-readable message.
  */
-function formatAjvError(error: ErrorObject): string {
-  const path = error.instancePath || "root";
+function formatAjvError(error: AjvErrorObject): string {
+  const path = error.instancePath || error.dataPath || "root";
 
   switch (error.keyword) {
     case "required":
