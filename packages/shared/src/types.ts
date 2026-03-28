@@ -330,6 +330,8 @@ export interface WorkflowState {
   instructions?: string;
   /** If true, moving a task INTO this state requires human approval via dashboard */
   requiresApproval?: boolean;
+  /** Auto-reassign to an idle agent with this role when a task enters this state */
+  routeTo?: string;
 }
 
 /** Default workflow states for new sessions */

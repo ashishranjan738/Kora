@@ -10,6 +10,8 @@ import {
 } from "@kora/shared";
 import { computeTaskMetrics, TaskMetricsDebouncer } from "../../core/task-metrics.js";
 import { logger } from "../../core/logger.js";
+import { buildTransitionNotification, buildBackwardNotification, buildCancellationNotification, buildReassignmentNotification } from "../../core/variable-resolver.js";
+import type { WorkflowState } from "@kora/shared";
 
 export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
   const { sessionManager, orchestrators, broadcastEvent } = deps;
@@ -303,7 +305,7 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
         return;
       }
 
-      const task = db.updateTask(tid, {
+      let task = db.updateTask(tid, {
         title: body.title,
         description: body.description,
         status: body.status,
@@ -354,6 +356,98 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
         const orch_clear = orchestrators.get(sid);
         if (orch_clear) {
           try { orch_clear.staleTaskWatchdog.clearNudgesForTask(tid); } catch { /* non-fatal */ }
+        }
+      }
+
+      // State transition notification — send runbook + context to assigned agent
+      if (body.status && body.status !== oldTask.status && task.assignedTo) {
+        const orch_notify = orchestrators.get(sid);
+        if (orch_notify) {
+          try {
+            const session_notify = sessionManager.getSession(sid);
+            const ws_notify = session_notify?.config.workflowStates || DEFAULT_WORKFLOW_STATES;
+            const newState = ws_notify.find((s: WorkflowState) => s.id === body.status);
+            const oldState_ws = ws_notify.find((s: WorkflowState) => s.id === oldTask.status);
+            const agent_notify = orch_notify.agentManager.getAgent(task.assignedTo);
+
+            const resolverCtx = {
+              task: { id: String(tid), title: task.title, priority: task.priority || "P2", status: task.status, assignedTo: task.assignedTo },
+              newState: newState ? { id: newState.id, label: newState.label } : { id: body.status, label: body.status },
+              oldState: oldState_ws ? { id: oldState_ws.id, label: oldState_ws.label } : { id: oldTask.status, label: oldTask.status },
+              agent: agent_notify ? { id: agent_notify.id, name: agent_notify.config.name } : { id: task.assignedTo, name: task.assignedTo },
+              baseBranch: "main",
+              sessionId: sid,
+            };
+
+            let notifyMsg: string;
+            // Determine notification type
+            const isClosed = newState?.category === "closed";
+            const oldIdx = ws_notify.indexOf(oldState_ws as WorkflowState);
+            const newIdx = ws_notify.indexOf(newState as WorkflowState);
+            const isBackward = oldIdx >= 0 && newIdx >= 0 && oldIdx > newIdx && !isClosed;
+
+            if (isClosed) {
+              notifyMsg = buildCancellationNotification(resolverCtx);
+            } else if (isBackward) {
+              notifyMsg = buildBackwardNotification(resolverCtx);
+            } else {
+              notifyMsg = buildTransitionNotification(resolverCtx, newState?.instructions);
+            }
+
+            // Deliver notification via message queue
+            if (agent_notify) {
+              orch_notify.messageQueue.enqueue(task.assignedTo, agent_notify.config.terminalSession,
+                `\x1b[1;36m${notifyMsg}\x1b[0m`);
+            }
+            // Persist to SQLite for check_messages
+            orch_notify.database.insertMessage({
+              id: randomUUID(),
+              sessionId: sid,
+              fromAgentId: "system",
+              toAgentId: task.assignedTo,
+              messageType: "text",
+              content: notifyMsg,
+              priority: "normal",
+              createdAt: Date.now(),
+              expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+            });
+
+            // routeTo: auto-reassign to matching role agent if specified
+            if (newState?.routeTo && !isClosed) {
+              const agents = orch_notify.agentManager.listAgents();
+              const candidate = agents.find(a =>
+                a.config.role === newState.routeTo &&
+                a.activity === "idle" &&
+                a.status === "running" &&
+                a.id !== task.assignedTo
+              );
+              if (candidate) {
+                db.updateTask(String(tid), { assignedTo: candidate.id });
+                const reassignMsg = buildReassignmentNotification({
+                  ...resolverCtx,
+                  agent: { id: candidate.id, name: candidate.config.name },
+                }, agent_notify?.config.name || task.assignedTo);
+                orch_notify.messageQueue.enqueue(candidate.id, candidate.config.terminalSession,
+                  `\x1b[1;36m${reassignMsg}\x1b[0m`);
+                orch_notify.database.insertMessage({
+                  id: randomUUID(),
+                  sessionId: sid,
+                  fromAgentId: "system",
+                  toAgentId: candidate.id,
+                  messageType: "task-assignment",
+                  content: reassignMsg,
+                  priority: "normal",
+                  createdAt: Date.now(),
+                  expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+                });
+              }
+            }
+            // Re-read task after routeTo reassignment so response reflects current state
+            const refreshed = db.getTask(String(tid));
+            if (refreshed) task = refreshed;
+          } catch (err) {
+            logger.warn({ err }, "Failed to send state transition notification");
+          }
         }
       }
 
