@@ -121,7 +121,7 @@ function formatAjvError(error: ErrorObject): string {
     case "pattern":
       return `${path}: should match pattern ${error.params.pattern}`;
     case "const":
-      return `${path}: should be equal to constant ${error.params.allowedValue}`;
+      return `${path}: should be equal to constant ${(error.params as Record<string, unknown>).allowedValue}`;
     default:
       return `${path}: ${error.message}`;
   }
