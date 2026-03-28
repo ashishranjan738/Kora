@@ -351,9 +351,9 @@ export function SessionDetail() {
       loadData();
     }
 
-    // Forward channel-message events to ChatTab
+    // Forward channel-message events to ChatTab (capped to prevent memory leak)
     if (event.type === "channel-message") {
-      setChatWsEvents((prev) => [...prev, event]);
+      setChatWsEvents((prev) => [...prev, event].slice(-500));
     }
   }, [sessionId, loadData]);
 
