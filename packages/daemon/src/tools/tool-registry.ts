@@ -30,6 +30,7 @@ export const ALL_TOOL_NAMES = [
   "prepare_pr", "report_idle", "request_task",
   "list_personas", "save_persona", "get_workflow_states",
   "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
+  "update_knowledge", "delete_knowledge",
   "verify_work", "create_pr", "whoami", "get_context", "delete_task",
   "channel_list", "channel_join", "channel_history",
 ] as const;
@@ -45,6 +46,7 @@ export const ROLE_TOOL_ACCESS: Record<string, Set<string>> = {
     "prepare_pr", "report_idle", "request_task",
     "list_personas", "save_persona", "get_workflow_states",
     "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
+    "update_knowledge", "delete_knowledge",
     "verify_work", "create_pr", "whoami", "get_context",
     "channel_list", "channel_join", "channel_history",
   ]),
@@ -356,6 +358,29 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "update_knowledge",
+    description: "Update an existing knowledge entry by key. The key must already exist (use save_knowledge to create new entries).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "The knowledge key to update" },
+        value: { type: "string", description: "New value for the entry" },
+      },
+      required: ["key", "value"],
+    },
+  },
+  {
+    name: "delete_knowledge",
+    description: "Delete a knowledge entry by key. Returns success if deleted, error if key not found.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "The knowledge key to delete" },
+      },
+      required: ["key"],
+    },
+  },
+  {
     name: "whoami",
     description: "Show your agent identity, team, workflow pipeline, and persona. Use this to understand who you are, what team you're on, and what workflow to follow.",
     inputSchema: {
@@ -454,6 +479,8 @@ export const CLI_META: Record<string, ToolCliMeta> = {
   save_knowledge: { group: "knowledge", subcommand: "save", positionalArgs: ["entry"] },
   get_knowledge: { group: "knowledge", subcommand: "get", positionalArgs: ["key"] },
   search_knowledge: { group: "knowledge", subcommand: "search", positionalArgs: ["query"] },
+  update_knowledge: { group: "knowledge", subcommand: "update", positionalArgs: ["key", "value"] },
+  delete_knowledge: { group: "knowledge", subcommand: "delete", positionalArgs: ["key"] },
   save_persona: { group: "persona", subcommand: "save" },
   channel_list: { group: "channel", subcommand: "list" },
   channel_join: { group: "channel", subcommand: "join", positionalArgs: ["channel"] },
