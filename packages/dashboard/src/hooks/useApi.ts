@@ -167,10 +167,10 @@ export function useApi() {
       }),
     broadcastMessage: (sid: string, message: string) =>
       apiFetch<any>(`/sessions/${sid}/broadcast`, { method: "POST", body: JSON.stringify({ message }) }),
-    relayMessage: (sid: string, from: string, to: string, message: string) =>
+    relayMessage: (sid: string, from: string, to: string, message: string, channel?: string) =>
       apiFetch<any>(`/sessions/${sid}/relay`, {
         method: "POST",
-        body: JSON.stringify({ from, to, message }),
+        body: JSON.stringify({ from, to, message, ...(channel && { channel }) }),
       }),
     addCustomModel: (sid: string, model: { id: string; label: string; provider: string }) =>
       apiFetch(`/sessions/${sid}/models`, { method: "POST", body: JSON.stringify(model) }),

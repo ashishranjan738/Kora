@@ -212,7 +212,27 @@ export function ChatTab({ sessionId, wsEvents }: ChatTabProps) {
     setTimeout(scrollToBottom, 50);
 
     try {
-      await api.relayMessage(sessionId, "user", `channel:${activeChannel}`, content);
+      // Determine target agents: channel members, or all running agents for #all
+      const targets = activeChannel === "#all"
+        ? sessionAgents.filter((a) => a.status === "running").map((a) => a.id)
+        : activeChannelObj?.members || [];
+
+      if (targets.length === 0) {
+        throw new Error("No agents in this channel to deliver to");
+      }
+
+      // Send to each channel member individually with channel metadata
+      const results = await Promise.allSettled(
+        targets.map((agentId) =>
+          api.relayMessage(sessionId, "user", agentId, content, activeChannel)
+        )
+      );
+      const failures = results.filter((r) => r.status === "rejected");
+      if (failures.length === targets.length) {
+        throw new Error("Failed to deliver message to any channel member");
+      } else if (failures.length > 0) {
+        setError(`Message delivered to ${targets.length - failures.length}/${targets.length} agents`);
+      }
     } catch (err: any) {
       setError(err.message || "Failed to send message");
       // Remove optimistic message on failure
