@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useThemeStore } from "../stores/themeStore";
-import { getOrCreateTerminal, detachTerminal } from "../stores/terminalRegistry";
+import { getOrCreateTerminal, detachTerminal, safeFit } from "../stores/terminalRegistry";
 import "@xterm/xterm/css/xterm.css";
 
 interface AgentTerminalProps {
@@ -21,7 +21,7 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
   const handleResize = useCallback((entry: ReturnType<typeof getOrCreateTerminal>) => {
     if (resizeTimer.current) clearTimeout(resizeTimer.current);
     resizeTimer.current = setTimeout(() => {
-      entry.fitAddon.fit();
+      safeFit(entry);
       if (entry.ws?.readyState === WebSocket.OPEN) {
         entry.ws.send(JSON.stringify({
           type: "resize",
@@ -61,7 +61,7 @@ export const AgentTerminal = React.memo(function AgentTerminal({ sessionId, agen
 
     // Fit after attaching
     requestAnimationFrame(() => {
-      entry.fitAddon.fit();
+      safeFit(entry);
     });
 
     // Resize observer
