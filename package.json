@@ -30,7 +30,8 @@
     "@types/supertest": "^7.2.0",
     "eslint": "^9.0.0",
     "supertest": "^7.2.2",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.57.2"
   },
   "dependencies": {
     "cloudflared": "^0.7.1",
