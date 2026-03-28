@@ -34,7 +34,12 @@ export const claudeCodeProvider: CLIProvider = {
     }
 
     if (config.systemPromptFile) {
-      cmd.push("--system-prompt-file", config.systemPromptFile);
+      // Use --append-system-prompt-file to ADD our boot prompt to Claude Code's
+      // built-in system prompt rather than replacing it. The built-in prompt contains
+      // tool usage instructions, safety guidelines, and code quality preferences
+      // that we want to preserve. Our boot prompt (Kora agent identity + get_context
+      // instructions) is appended after the defaults.
+      cmd.push("--append-system-prompt-file", config.systemPromptFile);
     }
 
     if (config.extraArgs?.length) {
