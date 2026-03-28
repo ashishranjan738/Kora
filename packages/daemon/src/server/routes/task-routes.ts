@@ -305,7 +305,7 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
         return;
       }
 
-      const task = db.updateTask(tid, {
+      let task = db.updateTask(tid, {
         title: body.title,
         description: body.description,
         status: body.status,
@@ -382,7 +382,9 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
             let notifyMsg: string;
             // Determine notification type
             const isClosed = newState?.category === "closed";
-            const isBackward = ws_notify.indexOf(oldState_ws as WorkflowState) > ws_notify.indexOf(newState as WorkflowState) && !isClosed;
+            const oldIdx = ws_notify.indexOf(oldState_ws as WorkflowState);
+            const newIdx = ws_notify.indexOf(newState as WorkflowState);
+            const isBackward = oldIdx >= 0 && newIdx >= 0 && oldIdx > newIdx && !isClosed;
 
             if (isClosed) {
               notifyMsg = buildCancellationNotification(resolverCtx);
@@ -440,6 +442,9 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
                 });
               }
             }
+            // Re-read task after routeTo reassignment so response reflects current state
+            const refreshed = db.getTask(String(tid));
+            if (refreshed) task = refreshed;
           } catch (err) {
             logger.warn({ err }, "Failed to send state transition notification");
           }
