@@ -67,6 +67,70 @@ export async function handleListAgents(
   };
 }
 
+/**
+ * Resolve knowledge references: validate explicit knowledgeKeys, auto-detect
+ * `knowledge:key-name` patterns in message text, deduplicate, and build a
+ * reference footer to append to the message.
+ *
+ * Returns { message, validKeys, invalidKeys } or { error } on failure.
+ */
+async function resolveKnowledgeRefs(
+  ctx: ToolContext,
+  message: string,
+  explicitKeys?: string[],
+): Promise<{ message: string; validKeys: string[]; invalidKeys: string[] } | { error: string }> {
+  // Collect explicit keys
+  const explicit = (explicitKeys || []).map(k => k.trim()).filter(Boolean);
+
+  // Auto-detect knowledge:key-name patterns in message text
+  const autoDetected: string[] = [];
+  const pattern = /knowledge:([\w-]+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(message)) !== null) {
+    autoDetected.push(match[1]);
+  }
+
+  // Deduplicate
+  const allKeys = [...new Set([...explicit, ...autoDetected])];
+  if (allKeys.length === 0) {
+    return { message, validKeys: [], invalidKeys: [] };
+  }
+
+  // Validate each key exists
+  const validKeys: string[] = [];
+  const invalidKeys: string[] = [];
+  for (const key of allKeys) {
+    try {
+      const resp = (await ctx.apiCall(
+        "GET",
+        `/api/v1/sessions/${ctx.sessionId}/knowledge-db/${encodeURIComponent(key)}`,
+      )) as any;
+      if (resp && !resp.error) {
+        validKeys.push(key);
+      } else {
+        invalidKeys.push(key);
+      }
+    } catch {
+      invalidKeys.push(key);
+    }
+  }
+
+  // If explicit keys were provided and any are invalid, return error
+  if (explicit.length > 0 && invalidKeys.some(k => explicit.includes(k))) {
+    const missing = invalidKeys.filter(k => explicit.includes(k));
+    return { error: `Knowledge key(s) not found: ${missing.join(", ")}. Use save_knowledge to create them first.` };
+  }
+
+  // Build footer if we have valid keys
+  if (validKeys.length > 0) {
+    const refs = validKeys.map(k => `  → ${k}`).join("\n");
+    const footer = `\n\n📎 Attached knowledge (use get_knowledge to read):\n${refs}`;
+    return { message: message + footer, validKeys, invalidKeys };
+  }
+
+  return { message, validKeys, invalidKeys };
+}
+
 export async function handleBroadcast(
   ctx: ToolContext,
   args: Record<string, string>,
@@ -79,12 +143,19 @@ export async function handleBroadcast(
     };
   }
 
+  // Resolve knowledge references
+  const knowledgeKeys = (args as any).knowledgeKeys as string[] | undefined;
+  const resolved = await resolveKnowledgeRefs(ctx, args.message, knowledgeKeys);
+  if ("error" in resolved) {
+    return { success: false, error: resolved.error };
+  }
+
   await ctx.apiCall("POST", `/api/v1/sessions/${ctx.sessionId}/broadcast`, {
-    message: `[From ${ctx.agentId}]: ${args.message}`,
+    message: `[From ${ctx.agentId}]: ${resolved.message}`,
     from: ctx.agentId,
   });
   ctx.sendRateLimiter?.record();
-  return { success: true, broadcast: true };
+  return { success: true, broadcast: true, knowledgeRefs: resolved.validKeys.length > 0 ? resolved.validKeys : undefined };
 }
 
 export async function handleGetTask(
@@ -358,6 +429,14 @@ export async function handleSendMessage(
     };
   }
 
+  // Resolve knowledge references (explicit + auto-detected)
+  const knowledgeKeys = (args as any).knowledgeKeys as string[] | undefined;
+  const resolved = await resolveKnowledgeRefs(ctx, args.message, knowledgeKeys);
+  if ("error" in resolved) {
+    return { success: false, error: resolved.error };
+  }
+  const resolvedMessage = resolved.message;
+
   const agents = (await ctx.apiCall(
     "GET",
     `/api/v1/sessions/${ctx.sessionId}/agents`,
@@ -378,14 +457,14 @@ export async function handleSendMessage(
       await ctx.apiCall("POST", `/api/v1/sessions/${ctx.sessionId}/relay`, {
         from: ctx.agentId,
         to: sub.id,
-        message: `[${args.channel}] ${args.message}`,
+        message: `[${args.channel}] ${resolvedMessage}`,
         messageType: args.messageType || "text",
         channel: args.channel,
       });
     }
 
     ctx.sendRateLimiter?.record();
-    return { success: true, sentTo: subscribers.map(s => s.config?.name || s.id), channel: args.channel };
+    return { success: true, sentTo: subscribers.map(s => s.config?.name || s.id), channel: args.channel, knowledgeRefs: resolved.validKeys.length > 0 ? resolved.validKeys : undefined };
   }
 
   // Direct message routing
@@ -412,7 +491,7 @@ export async function handleSendMessage(
   await ctx.apiCall("POST", `/api/v1/sessions/${ctx.sessionId}/relay`, {
     from: ctx.agentId,
     to: target.id,
-    message: args.message,
+    message: resolvedMessage,
     messageType: isCompletion ? "completion" : messageType,
   });
   ctx.sendRateLimiter?.record();
@@ -435,7 +514,7 @@ export async function handleSendMessage(
     } catch { /* non-fatal */ }
   }
 
-  return { success: true, sentTo: target.config?.name || target.id };
+  return { success: true, sentTo: target.config?.name || target.id, knowledgeRefs: resolved.validKeys.length > 0 ? resolved.validKeys : undefined };
 }
 
 export async function handleListTasks(
