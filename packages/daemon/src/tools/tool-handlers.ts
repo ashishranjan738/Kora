@@ -321,6 +321,25 @@ export async function handleSearchKnowledge(
   return await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/knowledge-db?q=${encodeURIComponent(args.query.trim())}&limit=${limit}`);
 }
 
+export async function handleUpdateKnowledge(
+  ctx: ToolContext,
+  args: Record<string, string>,
+): Promise<unknown> {
+  if (!args.key?.trim()) return { error: "key is required" };
+  if (!args.value?.trim()) return { error: "value is required" };
+  return await ctx.apiCall("PUT", `/api/v1/sessions/${ctx.sessionId}/knowledge-db/${encodeURIComponent(args.key.trim())}`, {
+    value: args.value, savedBy: ctx.agentId,
+  });
+}
+
+export async function handleDeleteKnowledge(
+  ctx: ToolContext,
+  args: Record<string, string>,
+): Promise<unknown> {
+  if (!args.key?.trim()) return { error: "key is required" };
+  return await ctx.apiCall("DELETE", `/api/v1/sessions/${ctx.sessionId}/knowledge-db/${encodeURIComponent(args.key.trim())}`);
+}
+
 // ── Medium Complexity ──────────────────────────────────────────
 
 export async function handleSendMessage(
@@ -1110,6 +1129,8 @@ export const TOOL_HANDLER_MAP: Record<string, (ctx: ToolContext, args: Record<st
   save_knowledge: handleSaveKnowledge,
   get_knowledge: handleGetKnowledge,
   search_knowledge: handleSearchKnowledge,
+  update_knowledge: handleUpdateKnowledge,
+  delete_knowledge: handleDeleteKnowledge,
   send_message: handleSendMessage,
   list_tasks: handleListTasks,
   update_task: handleUpdateTask,
