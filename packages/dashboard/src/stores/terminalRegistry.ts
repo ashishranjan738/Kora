@@ -25,6 +25,15 @@ export interface TerminalEntry {
 const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_BASE_DELAY = 2000;
 
+/** Fit terminal without resetting scroll position.
+ *  fit() reflows the buffer which resets viewportY to 0.
+ *  Save before, restore after. */
+export function safeFit(entry: TerminalEntry): void {
+  const savedY = entry.term.buffer.active.viewportY;
+  entry.fitAddon.fit();
+  entry.term.scrollToLine(savedY);
+}
+
 const registry = new Map<string, TerminalEntry>();
 
 function getToken(): string {
@@ -55,7 +64,7 @@ function connectWs(entry: TerminalEntry): void {
     // Delay initial resize to avoid racing with first data
     setTimeout(() => {
       if (ws.readyState === WebSocket.OPEN) {
-        entry.fitAddon.fit();
+        safeFit(entry);
         ws.send(JSON.stringify({
           type: "resize",
           cols: entry.term.cols,
