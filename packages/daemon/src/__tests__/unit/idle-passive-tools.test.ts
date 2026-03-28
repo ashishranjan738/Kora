@@ -47,8 +47,8 @@ describe("Idle Detection — Passive Tools", () => {
 
   it("active tools not in passive set DO reset timer", () => {
     const activeTools = ["send_message", "broadcast", "update_task", "create_task",
-      "spawn_agent", "remove_agent", "nudge_agent", "prepare_pr", "verify_work",
-      "create_pr", "save_knowledge", "share_file", "delete_task", "channel_join"];
+      "spawn_agent", "remove_agent", "nudge_agent",
+      "save_knowledge", "share_file", "delete_task", "channel_join"];
     for (const tool of activeTools) {
       expect(shouldResetTimer(tool), `${tool} should be active`).toBe(true);
     }

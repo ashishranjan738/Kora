@@ -173,7 +173,6 @@ describe("buildBootPrompt — worker protocol", () => {
     const prompt = buildBootPrompt({ agentName: "Dev", agentRole: "worker" });
     expect(prompt).toContain("PROTOCOL:");
     expect(prompt).toContain("Acknowledge task");
-    expect(prompt).toContain("verify_work");
     expect(prompt).toContain("STOP");
   });
 

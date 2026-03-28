@@ -30,10 +30,13 @@ function formatTeamMarkdown(agents: AgentInfo[], selfId: string): string {
   return lines.join("\n");
 }
 
-function formatWorkflowMarkdown(states: Array<{ id: string; label: string; transitions?: string[] }>): string {
+function formatWorkflowMarkdown(states: Array<{ id: string; label: string; transitions?: string[]; instructions?: string }>): string {
   if (!states.length) return "No custom workflow configured (using defaults).";
   const pipeline = states.map(s => s.label || s.id).join(" → ");
-  const details = states.map(s => `- **${s.label || s.id}** (${s.id}) → ${(s.transitions || []).join(", ") || "none"}`);
+  const details = states.map(s => {
+    const line = `- **${s.label || s.id}** (${s.id}) → ${(s.transitions || []).join(", ") || "none"}`;
+    return s.instructions ? `${line}\n  ${s.instructions}` : line;
+  });
   return `Pipeline: ${pipeline}\n\n${details.join("\n")}`;
 }
 

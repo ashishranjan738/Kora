@@ -27,11 +27,11 @@ export const ALL_TOOL_NAMES = [
   "send_message", "check_messages", "list_agents", "broadcast",
   "list_tasks", "get_task", "update_task", "create_task",
   "spawn_agent", "remove_agent", "peek_agent", "nudge_agent",
-  "prepare_pr", "report_idle", "request_task",
+  "report_idle", "request_task",
   "list_personas", "save_persona", "get_workflow_states",
   "share_file", "save_knowledge", "get_knowledge", "search_knowledge",
   "update_knowledge", "delete_knowledge",
-  "verify_work", "create_pr", "whoami", "get_context", "delete_task",
+  "whoami", "get_context", "delete_task",
   "channel_list", "channel_join", "channel_history",
 ] as const;
 
@@ -43,11 +43,11 @@ export const ROLE_TOOL_ACCESS: Record<string, Set<string>> = {
   worker: new Set([
     "send_message", "check_messages", "list_agents", "broadcast",
     "list_tasks", "get_task", "update_task", "create_task",
-    "prepare_pr", "report_idle", "request_task",
+    "report_idle", "request_task",
     "list_personas", "save_persona", "get_workflow_states",
     "share_file", "save_knowledge", "get_knowledge", "search_knowledge",
     "update_knowledge", "delete_knowledge",
-    "verify_work", "create_pr", "whoami", "get_context",
+    "whoami", "get_context",
     "channel_list", "channel_join", "channel_history",
   ]),
 };
@@ -260,21 +260,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
-    name: "prepare_pr",
-    description: "Prepare your branch for PR: fetch latest main, rebase onto it, and force-push. Run this BEFORE creating a PR to prevent stale branch issues and merge conflicts.",
-    inputSchema: { type: "object", properties: {} },
-  },
-  {
-    name: "verify_work",
-    description: "Verify your work before reporting a task as done. Runs build, tests, and checks for unintended file changes. Call this BEFORE setting task status to 'done' or sending a completion message. If verification fails, fix the issues first.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        skipTests: { type: "boolean", description: "Skip running tests (default: false). Only use for docs-only changes." },
-      },
-    },
-  },
-  {
     name: "report_idle",
     description: "Report that you are idle and available for new work. The orchestrator will update your activity status to 'idle'. Use this when you've completed your current task and are ready for more work.",
     inputSchema: {
@@ -293,20 +278,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         skills: { type: "array", items: { type: "string" }, description: "Your skills/specialties (e.g. ['frontend', 'react', 'css']). Used to match tasks with relevant labels." },
         priority: { type: "string", description: "Preferred task priority: 'P0' (critical), 'P1' (high), 'P2' (normal), 'P3' (low). Defaults to highest available." },
       },
-    },
-  },
-  {
-    name: "create_pr",
-    description: "Create a GitHub pull request from your current branch. Automatically detects head branch, base branch defaults to main. Requires GITHUB_TOKEN env var or github.token in .kora.yml.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        title: { type: "string", description: "PR title (required)" },
-        body: { type: "string", description: "PR description/body (required)" },
-        baseBranch: { type: "string", description: "Base branch to merge into (default: main)" },
-        headBranch: { type: "string", description: "Head branch to merge from (default: current branch)" },
-      },
-      required: ["title", "body"],
     },
   },
   {
@@ -463,7 +434,6 @@ export const CLI_META: Record<string, ToolCliMeta> = {
   list_tasks: { aliases: ["tasks"] },
   get_workflow_states: { aliases: ["workflow"] },
   list_personas: { aliases: ["personas"] },
-  verify_work: { aliases: ["verify"] },
   report_idle: { aliases: ["idle"] },
   request_task: { aliases: ["request-task"] },
   whoami: {},
@@ -476,8 +446,6 @@ export const CLI_META: Record<string, ToolCliMeta> = {
   remove_agent: { group: "agent", subcommand: "remove", positionalArgs: ["agentId"], aliases: ["stop"] },
   peek_agent: { group: "agent", subcommand: "peek", positionalArgs: ["agentId"] },
   nudge_agent: { group: "agent", subcommand: "nudge", positionalArgs: ["agentId"] },
-  prepare_pr: { group: "pr", subcommand: "prepare" },
-  create_pr: { group: "pr", subcommand: "create" },
   save_knowledge: { group: "knowledge", subcommand: "save", positionalArgs: ["entry"] },
   get_knowledge: { group: "knowledge", subcommand: "get", positionalArgs: ["key"] },
   search_knowledge: { group: "knowledge", subcommand: "search", positionalArgs: ["query"] },

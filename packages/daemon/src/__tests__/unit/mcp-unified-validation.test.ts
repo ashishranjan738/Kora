@@ -55,13 +55,6 @@ describe("Unified validation: missing required params", () => {
     expect(errors.some(e => e.field === "fullText")).toBe(true);
   });
 
-  it("create_pr: rejects without title and body", () => {
-    const schema = getToolDefinition("create_pr")!.inputSchema;
-    const errors = validateTool("create_pr", {}, schema);
-    expect(errors.some(e => e.field === "title")).toBe(true);
-    expect(errors.some(e => e.field === "body")).toBe(true);
-  });
-
   it("save_knowledge: rejects without entry", () => {
     const schema = getToolDefinition("save_knowledge")!.inputSchema;
     const errors = validateTool("save_knowledge", {}, schema);

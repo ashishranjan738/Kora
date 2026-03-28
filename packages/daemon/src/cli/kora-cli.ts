@@ -151,9 +151,6 @@ async function toolHandler(toolName: string, args: Record<string, unknown>): Pro
     case "remove_agent": return api(cfg, "DELETE", `/api/v1/sessions/${sid}/agents/${args.agentId}${args.reason ? `?reason=${encodeURIComponent(args.reason as string)}` : ""}`);
     case "peek_agent": return api(cfg, "GET", `/api/v1/sessions/${sid}/agents/${args.agentId}/output?lines=${Math.min(parseInt(String(args.lines || 15)), 50)}`);
     case "nudge_agent": return api(cfg, "POST", `/api/v1/sessions/${sid}/agents/${args.agentId}/nudge`, args.message ? { message: args.message } : {});
-    case "prepare_pr": return api(cfg, "POST", `/api/v1/sessions/${sid}/agents/${aid}/message`, { content: "Please run prepare_pr." });
-    case "create_pr": return api(cfg, "POST", `/api/v1/sessions/${sid}/agents/${aid}/message`, { content: `Create PR: title="${args.title}", body="${args.body}", base="${args.baseBranch || "main"}"` });
-    case "verify_work": return api(cfg, "POST", `/api/v1/sessions/${sid}/agents/${aid}/message`, { content: args.skipTests ? "Run verify_work skipTests=true." : "Run verify_work." });
     case "report_idle": return api(cfg, "POST", `/api/v1/sessions/${sid}/agents/${aid}/report-idle`, args.reason ? { reason: args.reason } : {});
     case "request_task": return api(cfg, "POST", `/api/v1/sessions/${sid}/agents/${aid}/request-task`, args);
     case "get_workflow_states": return api(cfg, "GET", `/api/v1/sessions/${sid}/workflow-states`);

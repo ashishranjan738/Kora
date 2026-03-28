@@ -82,7 +82,7 @@ function buildGuardrailSection(opts: BootPromptOptions): string {
 
   // Worker protocol essentials (worker-only)
   if (opts.agentRole === "worker") {
-    lines.push("PROTOCOL: Acknowledge task → set in-progress → work silently → verify_work → ONE completion message → set done → STOP.");
+    lines.push("PROTOCOL: Acknowledge task → set in-progress → work silently → ONE completion message → set done → STOP.");
   }
 
   return lines.join("\n");

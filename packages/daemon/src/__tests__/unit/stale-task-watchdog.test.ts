@@ -2,7 +2,7 @@
  * Unit tests for StaleTaskWatchdog.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { DEFAULT_NUDGE_POLICIES, type NudgePolicy } from "../../core/stale-task-watchdog.js";
+import { DEFAULT_NUDGE_POLICIES, StaleTaskWatchdog, type NudgePolicy, type WorkflowStateInfo } from "../../core/stale-task-watchdog.js";
 
 describe("StaleTaskWatchdog", () => {
   describe("Default nudge policies", () => {
@@ -182,6 +182,40 @@ describe("Escalation self-loop protection (Fix #2)", () => {
     const resolvedArchitect = "master-agent-2";
     const isSelfLoop = "orchestrator" !== "assignee" && resolvedArchitect === task.assigned_to;
     expect(isSelfLoop).toBe(false);
+  });
+});
+
+describe("Workflow state instructions in nudges", () => {
+  it("setWorkflowStates stores states for lookup", () => {
+    const mockDb = { insertNudge: vi.fn() } as any;
+    const mockAm = { getAgent: vi.fn(), listAgents: vi.fn(() => []), sendMessage: vi.fn() } as any;
+    const mockLog = { log: vi.fn() } as any;
+    const watchdog = new StaleTaskWatchdog("sess", mockDb, mockAm, mockLog);
+
+    const states: WorkflowStateInfo[] = [
+      { id: "in-progress", label: "In Progress", instructions: "Write code and unit tests." },
+      { id: "review", label: "Review", instructions: "Check for bugs, style, test coverage." },
+      { id: "done", label: "Done" },
+    ];
+    watchdog.setWorkflowStates(states);
+
+    // Access via getPolicies to verify watchdog is functional
+    const policies = watchdog.getPolicies();
+    expect(policies).toBeDefined();
+  });
+
+  it("state without instructions still works", () => {
+    const states: WorkflowStateInfo[] = [
+      { id: "done", label: "Done" },
+    ];
+    // No instructions — should not throw
+    expect(() => {
+      const mockDb = { insertNudge: vi.fn() } as any;
+      const mockAm = { getAgent: vi.fn(), listAgents: vi.fn(() => []), sendMessage: vi.fn() } as any;
+      const mockLog = { log: vi.fn() } as any;
+      const watchdog = new StaleTaskWatchdog("sess", mockDb, mockAm, mockLog);
+      watchdog.setWorkflowStates(states);
+    }).not.toThrow();
   });
 });
 

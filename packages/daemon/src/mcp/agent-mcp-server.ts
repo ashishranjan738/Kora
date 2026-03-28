@@ -974,21 +974,6 @@ async function handleToolCall(
       return { success: true, nudged: target2.config?.name || target2.id };
     }
 
-    case "prepare_pr": {
-      const ctx = { agentId: AGENT_ID, sessionId: SESSION_ID, agentRole: AGENT_ROLE, projectPath: PROJECT_PATH, apiCall, execFileAsync, getRuntimeDir };
-      return await TOOL_HANDLER_MAP["prepare_pr"](ctx, toolArgs);
-    }
-
-    case "verify_work": {
-      const ctx = { agentId: AGENT_ID, sessionId: SESSION_ID, agentRole: AGENT_ROLE, projectPath: PROJECT_PATH, apiCall, execFileAsync, getRuntimeDir };
-      return await TOOL_HANDLER_MAP["verify_work"](ctx, toolArgs);
-    }
-
-    case "create_pr": {
-      const ctx = { agentId: AGENT_ID, sessionId: SESSION_ID, agentRole: AGENT_ROLE, projectPath: PROJECT_PATH, apiCall, execFileAsync, getRuntimeDir };
-      return await TOOL_HANDLER_MAP["create_pr"](ctx, toolArgs);
-    }
-
     case "report_idle": {
       const reason = toolArgs.reason || "task completed";
 

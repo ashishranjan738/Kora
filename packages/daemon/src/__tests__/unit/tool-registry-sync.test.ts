@@ -113,9 +113,6 @@ const TOOL_TO_CLI_MAP: Record<string, string[]> = {
   remove_agent: ["agent", "remove"],
   peek_agent: ["agent", "peek"],
   nudge_agent: ["agent", "nudge"],
-  prepare_pr: ["pr", "prepare"],
-  verify_work: ["verify"],
-  create_pr: ["pr", "create"],
   report_idle: ["idle"],
   request_task: ["request-task"],
   list_personas: ["personas"],
@@ -143,8 +140,8 @@ describe("Tool Registry Sync Validation", () => {
   // ── Registry integrity ──────────────────────────────────────────────────
 
   describe("Registry integrity", () => {
-    it("ALL_TOOL_NAMES has 32 tools", () => {
-      expect(ALL_TOOL_NAMES.length).toBe(32);
+    it("ALL_TOOL_NAMES has 29 tools", () => {
+      expect(ALL_TOOL_NAMES.length).toBe(29);
     });
 
     it("TOOL_DEFINITIONS matches ALL_TOOL_NAMES", () => {
