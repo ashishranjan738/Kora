@@ -26,6 +26,11 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newEntryText, setNewEntryText] = useState("");
   const [adding, setAdding] = useState(false);
+  const [editIndex, setEditIndex] = useState<number | null>(null);
+  const [editText, setEditText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [deleteIndex, setDeleteIndex] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchKnowledge = useCallback(async () => {
     try {
@@ -77,6 +82,45 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
       showError(err.message || "Failed to add knowledge entry", "Add Entry Failed");
     } finally {
       setAdding(false);
+    }
+  }
+
+  function isEditable(entry: KnowledgeEntry): boolean {
+    // Only knowledge-db entries are editable — .kora.yml config is read-only
+    return entry.source !== ".kora.yml";
+  }
+
+  function openEditModal(index: number, entry: KnowledgeEntry) {
+    setEditIndex(index);
+    setEditText(entry.text);
+  }
+
+  async function handleSaveEdit() {
+    if (editIndex === null || !editText.trim()) return;
+    setSaving(true);
+    try {
+      await api.updateKnowledgeEntry(sessionId, editIndex, editText.trim());
+      setEditIndex(null);
+      setEditText("");
+      fetchKnowledge();
+    } catch (err: any) {
+      showError(err.message || "Failed to update knowledge entry", "Update Failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (deleteIndex === null) return;
+    setDeleting(true);
+    try {
+      await api.deleteKnowledgeEntry(sessionId, deleteIndex);
+      setDeleteIndex(null);
+      fetchKnowledge();
+    } catch (err: any) {
+      showError(err.message || "Failed to delete knowledge entry", "Delete Failed");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -212,9 +256,33 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
                       </Text>
                     </Tooltip>
                   )}
-                  <Text size="xs" c="blue" style={{ marginLeft: "auto" }}>
-                    {isExpanded ? "\u25BC collapse" : "\u25B6 expand"}
-                  </Text>
+                  <Group gap={4} style={{ marginLeft: "auto" }}>
+                    {isEditable(entry) && (
+                      <>
+                        <Text
+                          size="xs"
+                          c="teal"
+                          style={{ cursor: "pointer" }}
+                          onClick={(e: React.MouseEvent) => { e.stopPropagation(); openEditModal(i, entry); }}
+                        >
+                          Edit
+                        </Text>
+                        <Text size="xs" c="dimmed">|</Text>
+                        <Text
+                          size="xs"
+                          c="red"
+                          style={{ cursor: "pointer" }}
+                          onClick={(e: React.MouseEvent) => { e.stopPropagation(); setDeleteIndex(i); }}
+                        >
+                          Delete
+                        </Text>
+                        <Text size="xs" c="dimmed">|</Text>
+                      </>
+                    )}
+                    <Text size="xs" c="blue">
+                      {isExpanded ? "\u25BC collapse" : "\u25B6 expand"}
+                    </Text>
+                  </Group>
                 </Group>
                 {/* Collapsed: truncated preview */}
                 {!isExpanded && (
@@ -289,6 +357,82 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
             </Button>
           </Group>
         </Stack>
+      </Modal>
+
+      {/* Edit Entry Modal */}
+      <Modal
+        opened={editIndex !== null}
+        onClose={() => { setEditIndex(null); setEditText(""); }}
+        title="Edit Knowledge Entry"
+        size="md"
+        styles={{
+          header: { backgroundColor: "var(--bg-secondary)" },
+          body: { backgroundColor: "var(--bg-secondary)" },
+        }}
+      >
+        <Stack gap="sm">
+          <Text size="xs" c="dimmed">
+            Edit this knowledge entry. Changes will be visible to all agents.
+          </Text>
+          <Textarea
+            value={editText}
+            onChange={(e) => setEditText(e.currentTarget.value)}
+            autosize
+            minRows={3}
+            maxRows={15}
+            styles={{
+              input: {
+                backgroundColor: "var(--bg-primary)",
+                borderColor: "var(--border-color)",
+                color: "var(--text-primary)",
+              },
+            }}
+          />
+          <Group justify="flex-end" gap={8}>
+            <Button variant="default" size="sm" onClick={() => { setEditIndex(null); setEditText(""); }}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSaveEdit}
+              loading={saving}
+              disabled={!editText.trim()}
+            >
+              Save Changes
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        opened={deleteIndex !== null}
+        onClose={() => setDeleteIndex(null)}
+        title="Delete Knowledge Entry"
+        size="sm"
+        styles={{
+          header: { backgroundColor: "var(--bg-secondary)" },
+          body: { backgroundColor: "var(--bg-secondary)" },
+        }}
+      >
+        <Text size="sm" c="var(--text-secondary)" mb={16}>
+          Are you sure you want to delete this knowledge entry? This action cannot be undone.
+        </Text>
+        {deleteIndex !== null && entries[deleteIndex] && (
+          <Paper p="xs" mb={16} withBorder style={{ backgroundColor: "var(--bg-primary)", borderColor: "var(--border-color)" }}>
+            <Text size="xs" c="dimmed" lineClamp={3}>
+              {entries[deleteIndex].text}
+            </Text>
+          </Paper>
+        )}
+        <Group justify="flex-end" gap={8}>
+          <Button variant="default" size="sm" onClick={() => setDeleteIndex(null)}>
+            Cancel
+          </Button>
+          <Button color="red" size="sm" onClick={handleDelete} loading={deleting}>
+            Delete Entry
+          </Button>
+        </Group>
       </Modal>
 
       {/* Clear confirmation modal */}

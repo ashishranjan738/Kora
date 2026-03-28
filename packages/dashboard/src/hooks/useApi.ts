@@ -263,6 +263,15 @@ export function useApi() {
       }),
     clearKnowledge: (sid: string) =>
       apiFetch<{ cleared: boolean }>(`/sessions/${sid}/knowledge`, { method: "DELETE" }),
+    updateKnowledgeEntry: (sid: string, entryIndex: number, text: string) =>
+      apiFetch<{ updated: boolean }>(`/sessions/${sid}/knowledge/${entryIndex}`, {
+        method: "PUT",
+        body: JSON.stringify({ text }),
+      }),
+    deleteKnowledgeEntry: (sid: string, entryIndex: number) =>
+      apiFetch<{ deleted: boolean }>(`/sessions/${sid}/knowledge/${entryIndex}`, {
+        method: "DELETE",
+      }),
     approveRequest: (sid: string, aid: string, requestId: string) =>
       apiFetch<{ approved: boolean }>(`/sessions/${sid}/agents/${aid}/approve`, {
         method: "POST",
