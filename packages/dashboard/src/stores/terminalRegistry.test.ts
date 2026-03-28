@@ -13,6 +13,7 @@ function createMockTerminal() {
   return {
     write: vi.fn((text: string, callback?: () => void) => callback?.()),
     scrollToBottom: vi.fn(),
+    scrollToLine: vi.fn(),
     dispose: vi.fn(),
     onData: vi.fn(),
     onScroll: vi.fn(),
