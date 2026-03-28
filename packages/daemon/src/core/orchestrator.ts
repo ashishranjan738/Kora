@@ -1251,7 +1251,21 @@ RULES:
 
     // Save old agent config and working directory BEFORE stopping
     const oldConfig = { ...oldAgent.config };
-    const oldWorkingDirectory = oldAgent.config.workingDirectory;
+    let oldWorkingDirectory = oldAgent.config.workingDirectory;
+
+    // Verify the old working directory still exists on disk.
+    // After daemon restart, worktrees may have been pruned — if the directory is
+    // missing, fall back to the project root and let spawnAgent recreate the worktree.
+    let reuseWorktree = true;
+    try {
+      await import("fs/promises").then(fsp => fsp.access(oldWorkingDirectory));
+    } catch {
+      logger.warn(
+        `[orchestrator] Working directory missing for restart: ${oldWorkingDirectory} — will recreate worktree`,
+      );
+      oldWorkingDirectory = this.config.projectPath;
+      reuseWorktree = false;
+    }
 
     // Kill old agent process but preserve worktree (restart mode)
     await this.agentManager.stopAgent(agentId, "restarted by user", options?.shutdownTimeoutMs, { skipWorktreeRemoval: true });
@@ -1259,7 +1273,7 @@ RULES:
     const provider = this.config.providerRegistry.get(oldConfig.cliProvider);
     if (!provider) return null;
 
-    // Spawn with same agent ID and same worktree
+    // Spawn with same agent ID and same worktree (or recreate if missing)
     const newAgent = await this.agentManager.spawnAgent({
       sessionId: this.config.sessionId,
       name: oldConfig.name,
@@ -1275,7 +1289,7 @@ RULES:
       envVars: oldConfig.envVars,
       initialTask,
       messagingMode: this.config.messagingMode,
-      worktreeMode: "shared", // Reuse existing worktree
+      worktreeMode: reuseWorktree ? "shared" : this.config.worktreeMode, // Reuse or recreate
       forceAgentId: agentId,  // Preserve same agent ID
     });
 

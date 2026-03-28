@@ -2,6 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import fs from "fs/promises";
+import { logger } from "./logger.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -112,8 +113,19 @@ export class WorktreeManager {
     const worktreesDir = path.join(runtimeDir, "worktrees");
     try {
       const entries = await fs.readdir(worktreesDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
+      const dirEntries = entries.filter(e => e.isDirectory());
+
+      // Safety guard: if activeAgentIds is empty but worktrees exist, skip pruning.
+      // This prevents a race condition where orchestrators haven't registered yet,
+      // causing all worktrees to be incorrectly pruned.
+      if (activeAgentIds.size === 0 && dirEntries.length > 0) {
+        logger.warn(
+          `[worktree] Skipping worktree prune — activeIds empty but ${dirEntries.length} worktrees exist (possible race)`,
+        );
+        return result;
+      }
+
+      for (const entry of dirEntries) {
         const agentId = entry.name;
 
         // Skip active agents

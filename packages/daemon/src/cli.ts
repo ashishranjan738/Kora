@@ -199,7 +199,21 @@ async function handleStart(): Promise<void> {
     if (cleaned > 0) logger.info(`  Cleaned up ${cleaned} orphaned tmux sessions`);
   } catch {}
 
-  // 5a-2. Prune orphaned git worktrees and stale agent branches on startup
+  // 5b. Set up periodic cleanup of orphaned tmux sessions (every 5 minutes)
+  const cleanupInterval = setInterval(async () => {
+    for (const [sid, orch] of orchestrators) {
+      try {
+        await orch.cleanup();
+      } catch (err) {
+        logger.error({ err: err }, `  Failed to cleanup session "${sid}":`);
+      }
+    }
+  }, 5 * 60 * 1000); // 5 minutes
+
+  // 5b-2. Prune orphaned git worktrees and stale agent branches on startup
+  // IMPORTANT: This runs AFTER all orchestrators are restored and registered in the map,
+  // so activeAgentIds is correctly populated. Previously this ran before registration,
+  // causing activeIds to be empty and all worktrees to be incorrectly pruned.
   try {
     const { worktreeManager } = await import("./core/worktree.js");
     for (const sessionConfig of sessionManager.listSessions()) {
@@ -211,7 +225,7 @@ async function handleStart(): Promise<void> {
           SESSIONS_SUBDIR,
           sessionConfig.id,
         );
-        // Get active agent IDs from the orchestrator (if restored)
+        // Get active agent IDs from the orchestrator (now guaranteed to be registered)
         const orch = orchestrators.get(sessionConfig.id);
         const activeIds = new Set(
           orch ? orch.getAgents().filter(a => a.status === "running").map(a => a.id) : [],
@@ -228,17 +242,6 @@ async function handleStart(): Promise<void> {
       }
     }
   } catch {}
-
-  // 5b. Set up periodic cleanup of orphaned tmux sessions (every 5 minutes)
-  const cleanupInterval = setInterval(async () => {
-    for (const [sid, orch] of orchestrators) {
-      try {
-        await orch.cleanup();
-      } catch (err) {
-        logger.error({ err: err }, `  Failed to cleanup session "${sid}":`);
-      }
-    }
-  }, 5 * 60 * 1000); // 5 minutes
 
   // 5c. Start auto-checkpointing for each session (every 5 minutes)
   const checkpoints: AutoCheckpoint[] = [];

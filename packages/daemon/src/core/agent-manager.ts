@@ -376,7 +376,28 @@ export class AgentManager extends EventEmitter {
     await new Promise(r => setTimeout(r, 100));
 
     // 7. cd to workingDirectory (use worktree if available)
+    // Verify the target directory exists first — silent cd failures cause agents
+    // to run in the wrong directory (e.g. main repo instead of their worktree)
     const cdTarget = agentWorkDir;
+    try {
+      const fsStat = await import("fs/promises");
+      await fsStat.access(cdTarget);
+    } catch {
+      logger.error(`[agent-manager] Working directory does not exist: ${cdTarget} — agent ${agentId} may run in wrong directory`);
+      // Attempt to recreate worktree if this was supposed to be an isolated worktree
+      if (cdTarget.includes("/worktrees/") && options.worktreeMode !== "shared") {
+        try {
+          const recreated = await this.worktreeManager.createWorktree(
+            options.workingDirectory,
+            options.runtimeDir,
+            agentId,
+          );
+          logger.info(`[agent-manager] Recreated missing worktree for ${agentId}: ${recreated}`);
+        } catch (recreateErr) {
+          logger.error({ err: recreateErr }, `[agent-manager] Failed to recreate worktree for ${agentId}`);
+        }
+      }
+    }
     await this.terminal.sendKeys(terminalSession, `cd ${cdTarget}`, { literal: false });
 
     // Wait for cd to complete — poll for prompt to reappear
@@ -690,6 +711,23 @@ export class AgentManager extends EventEmitter {
       delete cfg.tmuxSession;
     }
     this.agents.set(agent.id, agent);
+
+    // Restore worktreeInfo from agent config — daemon restart loses the in-memory map
+    // but the agent's workingDirectory still contains the worktree path.
+    if (agent.config.workingDirectory && agent.config.workingDirectory.includes('/worktrees/')) {
+      const path = require('path');
+      // workingDirectory = .../{runtimeDir}/worktrees/{agentId}
+      // runtimeDir = parent of worktrees/
+      const worktreesDir = path.dirname(agent.config.workingDirectory);
+      const runtimeDir = path.dirname(worktreesDir);
+      // projectPath = the git root (where the session's project lives)
+      const projectPath = agent.config.projectPath || agent.config.workingDirectory;
+      this.worktreeInfo.set(agent.id, {
+        projectPath,
+        runtimeDir,
+      });
+    }
+
     // Resume health monitoring for this agent
     this.healthMonitor.startMonitoring(agent.id, agent.config.terminalSession);
   }
