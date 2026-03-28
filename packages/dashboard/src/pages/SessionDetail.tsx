@@ -228,6 +228,7 @@ export function SessionDetail() {
   const [showReport, setShowReport] = useState(false);
   const [confirmRemoveAgentId, setConfirmRemoveAgentId] = useState<string | null>(null);
   const [confirmCloseTerminal, setConfirmCloseTerminal] = useState<{ id: string; name: string } | null>(null);
+  const [chatWsEvents, setChatWsEvents] = useState<any[]>([]);
 
   // Use terminal session store for tabs
   const terminalSessionsMap = useTerminalSessionStore((state) => state.sessions);
@@ -348,6 +349,11 @@ export function SessionDetail() {
         event.type === "agent-spawned" || event.type === "agent-crashed" ||
         event.type === "message-sent") {
       loadData();
+    }
+
+    // Forward channel-message events to ChatTab
+    if (event.type === "channel-message") {
+      setChatWsEvents((prev) => [...prev, event]);
     }
   }, [sessionId, loadData]);
 
@@ -1031,7 +1037,7 @@ export function SessionDetail() {
       )}
 
       {activeTab === "chat" && sessionId && (
-        <ChatTab sessionId={sessionId} />
+        <ChatTab sessionId={sessionId} wsEvents={chatWsEvents} />
       )}
 
       {/* Close Terminal Confirm Dialog */}
