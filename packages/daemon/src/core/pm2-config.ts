@@ -39,6 +39,7 @@ export interface PM2EcosystemConfig {
     kill_timeout: number;
     listen_timeout: number;
     autorestart: boolean;
+    max_size?: string;
   }>;
 }
 
@@ -82,6 +83,7 @@ export function generatePM2Config(opts: {
         kill_timeout: 10000,   // 10s grace period for shutdown
         listen_timeout: 15000, // 15s to wait for app to be ready
         autorestart: true,
+        max_size: "50M", // Rotate PM2 logs at 50 MB to prevent disk exhaustion
       },
     ],
   };

@@ -25,6 +25,7 @@ import { logger } from "./core/logger.js";
 import { SuggestionsDatabase } from "./core/suggestions-db.js";
 import { PlaybookDatabase } from "./core/playbook-database.js";
 import { AutoCheckpoint } from "./core/auto-checkpoint.js";
+import { rotateFileBySizeSync, pruneLogsOnStartup, CRASH_LOG_MAX_BYTES, CRASH_LOG_KEEP_BYTES } from "./core/log-rotation.js";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -87,6 +88,11 @@ async function handleStart(): Promise<void> {
 
   // 2. Create SessionManager and load persisted sessions
   const globalConfigDir = getGlobalConfigDir();
+
+  // Prune oversized/stale log files on startup (crash.log, PM2 logs, old JSONL events)
+  await pruneLogsOnStartup(globalConfigDir).catch((err: unknown) => {
+    logger.warn({ err }, "[daemon] Startup log pruning failed (non-fatal)");
+  });
 
   // Load plugin providers from ~/.kora/providers/ (or ~/.kora-dev/providers/)
   loadPluginProviders(registry, globalConfigDir);
@@ -316,22 +322,24 @@ async function handleStart(): Promise<void> {
   // Crash resilience — catch unhandled errors and keep daemon alive
   process.on("uncaughtException", (err) => {
     logger.error({ err }, "[daemon] UNCAUGHT EXCEPTION — daemon staying alive");
-    // Write to crash log for forensics
+    // Write to crash log for forensics (with size-based rotation to prevent disk exhaustion)
     try {
       const crashLog = path.join(getGlobalConfigDir(), "crash.log");
+      rotateFileBySizeSync(crashLog, CRASH_LOG_MAX_BYTES, CRASH_LOG_KEEP_BYTES);
       const entry = `[${new Date().toISOString()}] uncaughtException: ${err.stack || err.message}\n`;
-      require("fs").appendFileSync(crashLog, entry);
+      fs.appendFileSync(crashLog, entry);
     } catch { /* best effort */ }
   });
 
   process.on("unhandledRejection", (reason, promise) => {
     const err = reason instanceof Error ? reason : new Error(String(reason));
     logger.error({ err }, "[daemon] UNHANDLED REJECTION — daemon staying alive");
-    // Write to crash log for forensics
+    // Write to crash log for forensics (with size-based rotation to prevent disk exhaustion)
     try {
       const crashLog = path.join(getGlobalConfigDir(), "crash.log");
+      rotateFileBySizeSync(crashLog, CRASH_LOG_MAX_BYTES, CRASH_LOG_KEEP_BYTES);
       const entry = `[${new Date().toISOString()}] unhandledRejection: ${err.stack || err.message}\n`;
-      require("fs").appendFileSync(crashLog, entry);
+      fs.appendFileSync(crashLog, entry);
     } catch { /* best effort */ }
   });
 
