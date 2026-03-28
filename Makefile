@@ -11,6 +11,7 @@ build: build-shared build-daemon build-dashboard ## Build all packages
 
 build-shared: ## Build shared types
 	npm run build -w packages/shared
+	node packages/daemon/scripts/bundle-shared.mjs
 
 build-daemon: build-shared ## Build daemon (depends on shared)
 	npx tsc -p packages/daemon/tsconfig.json
