@@ -178,27 +178,19 @@ describe("Share Image / Attachments API", () => {
       expect(res.body.error).toContain("Unsupported");
     });
 
-    it("rejects unsupported file extension (.sh)", async () => {
-      const res = await request(ctx.app)
-        .post(`/api/v1/sessions/${sessionId}/attachments`)
-        .set(auth())
-        .send({ filename: "script.sh", base64Data: "abc123" });
+    it("rejects binary/executable extensions (.exe, .bin, .dmg)", async () => {
+      for (const ext of [".exe", ".bin", ".dmg", ".app", ".msi", ".deb", ".rpm"]) {
+        const res = await request(ctx.app)
+          .post(`/api/v1/sessions/${sessionId}/attachments`)
+          .set(auth())
+          .send({ filename: `file${ext}`, base64Data: "abc123" });
 
-      expect(res.status).toBe(400);
-      expect(res.body.error).toContain("Unsupported");
+        expect(res.status).toBe(400);
+        expect(res.body.error).toContain("Unsupported");
+      }
     });
 
-    it("rejects unsupported file extension (.html)", async () => {
-      const res = await request(ctx.app)
-        .post(`/api/v1/sessions/${sessionId}/attachments`)
-        .set(auth())
-        .send({ filename: "xss.html", base64Data: "abc123" });
-
-      expect(res.status).toBe(400);
-      expect(res.body.error).toContain("Unsupported");
-    });
-
-    it("accepts all allowed extensions", async () => {
+    it("accepts all allowed image extensions", async () => {
       const base64Data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
       const allowedExts = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
 
@@ -207,6 +199,20 @@ describe("Share Image / Attachments API", () => {
           .post(`/api/v1/sessions/${sessionId}/attachments`)
           .set(auth())
           .send({ filename: `test${ext}`, base64Data });
+
+        expect(res.status).toBe(201);
+      }
+    });
+
+    it("accepts text/code/config file extensions", async () => {
+      const base64Text = Buffer.from("hello world").toString("base64");
+      const textExts = [".md", ".txt", ".log", ".json", ".yaml", ".ts", ".js", ".py", ".diff", ".csv"];
+
+      for (const ext of textExts) {
+        const res = await request(ctx.app)
+          .post(`/api/v1/sessions/${sessionId}/attachments`)
+          .set(auth())
+          .send({ filename: `test${ext}`, base64Data: base64Text });
 
         expect(res.status).toBe(201);
       }
@@ -223,6 +229,37 @@ describe("Share Image / Attachments API", () => {
 
       // Either 400 (our validation) or 413 (Express body-parser limit)
       expect([400, 413]).toContain(res.status);
+    });
+
+    it("rejects non-image file exceeding 1MB size limit via sourcePath", async () => {
+      const session = ctx.sessionManager.getSession(sessionId);
+      const projectPath = session!.config.projectPath;
+      const bigFile = join(projectPath, "big-file.log");
+      // Create a 1.1MB file
+      writeFileSync(bigFile, "x".repeat(1.1 * 1024 * 1024));
+
+      const res = await request(ctx.app)
+        .post(`/api/v1/sessions/${sessionId}/attachments`)
+        .set(auth())
+        .send({ filename: "big-file.log", sourcePath: "big-file.log" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("size limit");
+    });
+
+    it("allows image file larger than 1MB via sourcePath", async () => {
+      const session = ctx.sessionManager.getSession(sessionId);
+      const projectPath = session!.config.projectPath;
+      const bigImage = join(projectPath, "big-image.png");
+      // Create a 1.5MB file (within 10MB image limit)
+      writeFileSync(bigImage, "x".repeat(1.5 * 1024 * 1024));
+
+      const res = await request(ctx.app)
+        .post(`/api/v1/sessions/${sessionId}/attachments`)
+        .set(auth())
+        .send({ filename: "big-image.png", sourcePath: "big-image.png" });
+
+      expect(res.status).toBe(201);
     });
 
     it("returns 404 for nonexistent session", async () => {
@@ -281,7 +318,7 @@ describe("Share Image / Attachments API", () => {
 
     it("rejects unsupported extension in retrieval", async () => {
       const res = await request(ctx.app)
-        .get(`/api/v1/sessions/${sessionId}/attachments/test.txt`)
+        .get(`/api/v1/sessions/${sessionId}/attachments/test.exe`)
         .set(auth());
 
       expect(res.status).toBe(400);
