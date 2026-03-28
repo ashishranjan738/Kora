@@ -84,7 +84,7 @@ async function resolveKnowledgeRefs(
 
   // Auto-detect knowledge:key-name patterns in message text
   const autoDetected: string[] = [];
-  const pattern = /knowledge:(\S+)/g;
+  const pattern = /knowledge:([\w-]+)/g;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(message)) !== null) {
     autoDetected.push(match[1]);

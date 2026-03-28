@@ -150,6 +150,34 @@ describe("knowledge references in send_message", () => {
       expect(result.knowledgeRefs).toBeUndefined();
     });
 
+    it("should not capture trailing punctuation in knowledge:key patterns", async () => {
+      const apiCall = vi.fn();
+      // Key without trailing period
+      apiCall.mockResolvedValueOnce({ key: "api-spec", value: "..." });
+      // GET agents
+      apiCall.mockResolvedValueOnce({
+        agents: [
+          { id: "agent-1", config: { name: "Dev 1" } },
+          { id: "agent-2", config: { name: "Dev 2" } },
+        ],
+      });
+      // POST relay
+      apiCall.mockResolvedValueOnce({ success: true });
+
+      const ctx = makeCtx({ apiCall });
+      const result = (await handleSendMessage(ctx, {
+        to: "Dev 2",
+        message: "See knowledge:api-spec.",
+      } as any)) as any;
+
+      expect(result.success).toBe(true);
+      expect(result.knowledgeRefs).toEqual(["api-spec"]);
+      // Verify the key validated was "api-spec" not "api-spec."
+      const knowledgeCall = apiCall.mock.calls.find(c => c[1].includes("/knowledge-db/"));
+      expect(knowledgeCall![1]).toContain("api-spec");
+      expect(knowledgeCall![1]).not.toContain("api-spec.");
+    });
+
     it("should detect multiple knowledge:key patterns", async () => {
       const apiCall = vi.fn();
       // Key 1 valid
