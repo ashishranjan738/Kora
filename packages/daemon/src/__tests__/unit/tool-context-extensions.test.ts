@@ -14,8 +14,8 @@ import { TOOL_DEFINITIONS, ALL_TOOL_NAMES, getToolDefinition } from "../../tools
 // ── TOOL_HANDLER_MAP completeness ───────────────────────────
 
 describe("TOOL_HANDLER_MAP completeness", () => {
-  it("has exactly 32 entries", () => {
-    expect(Object.keys(TOOL_HANDLER_MAP).length).toBe(32);
+  it("has exactly 29 entries", () => {
+    expect(Object.keys(TOOL_HANDLER_MAP).length).toBe(29);
   });
 
   it("every TOOL_DEFINITION has a corresponding handler", () => {
@@ -39,15 +39,12 @@ describe("TOOL_HANDLER_MAP completeness", () => {
     }
   });
 
-  it("includes the 4 newly extracted handlers", () => {
-    const extractedHandlers = ["check_messages", "prepare_pr", "verify_work", "create_pr"];
-    for (const name of extractedHandlers) {
-      expect(TOOL_HANDLER_MAP).toHaveProperty(name);
-      expect(typeof TOOL_HANDLER_MAP[name]).toBe("function");
-    }
+  it("includes the extracted handler check_messages", () => {
+    expect(TOOL_HANDLER_MAP).toHaveProperty("check_messages");
+    expect(typeof TOOL_HANDLER_MAP["check_messages"]).toBe("function");
   });
 
-  it("includes all original handlers that were NOT extracted", () => {
+  it("includes all original handlers", () => {
     const originalHandlers = [
       "send_message", "list_agents", "broadcast", "list_tasks",
       "get_task", "update_task", "create_task", "spawn_agent",
@@ -56,7 +53,7 @@ describe("TOOL_HANDLER_MAP completeness", () => {
       "get_context", "get_workflow_states", "save_knowledge",
       "search_knowledge", "get_knowledge",
       "channel_list", "channel_join", "channel_history",
-      "share_file", "verify_work", "whoami",
+      "share_file", "whoami",
     ];
     for (const name of originalHandlers) {
       expect(TOOL_HANDLER_MAP).toHaveProperty(name);
@@ -67,33 +64,6 @@ describe("TOOL_HANDLER_MAP completeness", () => {
 // ── ToolContext.execFileAsync usage ──────────────────────────
 
 describe("ToolContext.execFileAsync", () => {
-  it("handlers gracefully handle missing execFileAsync", async () => {
-    const ctx: ToolContext = {
-      agentId: "test-agent",
-      sessionId: "test-session",
-      agentRole: "worker",
-      projectPath: "/tmp/test",
-      apiCall: vi.fn().mockResolvedValue({}),
-      // execFileAsync intentionally NOT provided
-    };
-
-    // Import the handlers that need execFileAsync
-    const { handlePreparePr, handleVerifyWork, handleCreatePr } = await import("../../tools/tool-handlers.js");
-
-    // Each should return an error, not throw
-    const prResult = (await handlePreparePr(ctx, {})) as any;
-    expect(prResult.success).toBe(false);
-    expect(prResult.error).toContain("Shell execution not available");
-
-    const verifyResult = (await handleVerifyWork(ctx, {})) as any;
-    expect(verifyResult.passed).toBe(false);
-    expect(verifyResult.error).toContain("Shell execution not available");
-
-    const createPrResult = (await handleCreatePr(ctx, { title: "Test" })) as any;
-    expect(createPrResult.success).toBe(false);
-    expect(createPrResult.error).toContain("Shell execution not available");
-  });
-
   it("execFileAsync mock provides expected interface", () => {
     const mockExec = vi.fn().mockResolvedValue({ stdout: "output", stderr: "" });
     const ctx: ToolContext = {

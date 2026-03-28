@@ -10,7 +10,7 @@ describe("MCP Persona Tool Access Control", () => {
     const workerTools = new Set([
       "send_message", "check_messages", "list_agents", "broadcast",
       "list_tasks", "get_task", "update_task", "create_task",
-      "prepare_pr", "report_idle", "request_task",
+      "report_idle", "request_task",
       "list_personas", "save_persona",
     ]);
     expect(workerTools.has("list_personas")).toBe(true);
@@ -21,7 +21,7 @@ describe("MCP Persona Tool Access Control", () => {
     const workerTools = new Set([
       "send_message", "check_messages", "list_agents", "broadcast",
       "list_tasks", "get_task", "update_task", "create_task",
-      "prepare_pr", "report_idle", "request_task",
+      "report_idle", "request_task",
       "list_personas", "save_persona",
     ]);
     expect(workerTools.has("spawn_agent")).toBe(false);

@@ -14,8 +14,8 @@ import { findAgentByNameOrId } from "../../tools/tool-context.js";
 import { TOOL_HANDLER_MAP } from "../../tools/tool-handlers.js";
 
 describe("Tool Registry", () => {
-  it("has exactly 32 tool definitions", () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(32);
+  it("has exactly 29 tool definitions", () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(29);
   });
 
   it("ALL_TOOL_NAMES matches TOOL_DEFINITIONS", () => {
@@ -74,7 +74,7 @@ describe("Role-Based Access Control", () => {
     expect(isToolAllowed("worker", "check_messages")).toBe(true);
     expect(isToolAllowed("worker", "list_tasks")).toBe(true);
     expect(isToolAllowed("worker", "update_task")).toBe(true);
-    expect(isToolAllowed("worker", "create_pr")).toBe(true);
+    expect(isToolAllowed("worker", "share_file")).toBe(true);
   });
 
   it("unknown role defaults to worker permissions", () => {
@@ -85,7 +85,7 @@ describe("Role-Based Access Control", () => {
   it("getToolsForRole returns filtered list", () => {
     const masterTools = getToolsForRole("master");
     const workerTools = getToolsForRole("worker");
-    expect(masterTools.length).toBe(32);
+    expect(masterTools.length).toBe(29);
     expect(workerTools.length).toBeLessThan(masterTools.length);
     expect(workerTools.every(t => isToolAllowed("worker", t.name))).toBe(true);
   });
@@ -132,7 +132,7 @@ describe("findAgentByNameOrId", () => {
 describe("Tool Handler Map", () => {
   it("has handlers for all tools", () => {
     // All tools go through TOOL_HANDLER_MAP (30 original + update_knowledge + delete_knowledge)
-    expect(Object.keys(TOOL_HANDLER_MAP).length).toBe(32);
+    expect(Object.keys(TOOL_HANDLER_MAP).length).toBe(29);
   });
 
   it("every handler is a function", () => {

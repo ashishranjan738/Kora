@@ -13,9 +13,6 @@ export interface ProjectConfig {
     master?: { model?: string; persona?: string; autonomy?: number };
     default_worker?: { model?: string; persona?: string; autonomy?: number };
   };
-  github?: {
-    token?: string;            // GitHub personal access token for API operations
-  };
 }
 
 /**

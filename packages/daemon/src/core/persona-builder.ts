@@ -207,7 +207,7 @@ function buildWorkflowPipelineInstructions(states: import("@kora/shared").Workfl
       const transitionInfo = s.transitions?.length
         ? ` → can move to: ${s.transitions.join(", ")}`
         : "";
-      const instrInfo = s.instructions ? `\n  _${s.instructions}_` : "";
+      const instrInfo = s.instructions ? `\n  ${s.instructions}` : "";
       return `- **${s.label}** (\`${s.id}\`)${transitionInfo}${instrInfo}`;
     }),
     "",
@@ -494,9 +494,6 @@ function buildMasterInstructions(useCli = false): string {
   const updateTask = useCli ? "`kora-cli task update`" : "`update_task`";
   const createTask = useCli ? "`kora-cli task create`" : "`create_task`";
   const sendMessage = useCli ? "`kora-cli send`" : "`send_message`";
-  const verifyWork = useCli ? "`kora-cli verify`" : "`verify_work`";
-  // Unused but ready:
-  void verifyWork;
   return `## Master Orchestrator Protocol
 
 You are a COORDINATOR ONLY. You delegate work to workers and report results to the user.
@@ -554,7 +551,6 @@ You are a COORDINATOR ONLY. You delegate work to workers and report results to t
 function buildWorkerInstructions(useCli = false): string {
   const updateTask = useCli ? "`kora-cli task update`" : "`update_task`";
   const listTasks = useCli ? "`kora-cli tasks`" : "`list_tasks`";
-  const verifyWork = useCli ? "`kora-cli verify`" : "`verify_work`";
   return `## Worker Protocol
 
 You are a worker agent. Follow this protocol:
@@ -565,9 +561,8 @@ You are a worker agent. Follow this protocol:
 4. Work silently — do NOT send progress updates unless you hit a blocker
 5. If the orchestrator tells you to STOP or WAIT, you MUST comply immediately. Do not continue working until explicitly told to proceed. Acknowledge with "Standing by".
 6. Before starting a task, check ${listTasks} — if your task shows as "blocked", do NOT start. Wait until the blocking tasks are done.
-7. Before reporting task done, call ${verifyWork} to validate your changes (build passes, tests pass, no unintended changes). If verification fails, fix the issues first.
-8. When done, send ONE completion message with a summary of what you did
-9. Use ${updateTask} to set your task status to "done"
-10. After sending the completion message, STOP — do not send any more messages
+7. When done, send ONE completion message with a summary of what you did
+8. Use ${updateTask} to set your task status to "done"
+9. After sending the completion message, STOP — do not send any more messages
 `;
 }
