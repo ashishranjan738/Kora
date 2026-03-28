@@ -1246,7 +1246,6 @@ export const TOOL_HANDLER_MAP: Record<string, (ctx: ToolContext, args: Record<st
   peek_agent: handlePeekAgent,
   nudge_agent: handleNudgeAgent,
   share_file: handleShareFile,
-  share_image: handleShareFile, // backward-compatible alias
   whoami: handleWhoami,
   get_context: handleGetContext,
   delete_task: handleDeleteTask,

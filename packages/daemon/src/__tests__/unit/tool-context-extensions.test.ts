@@ -14,8 +14,8 @@ import { TOOL_DEFINITIONS, ALL_TOOL_NAMES, getToolDefinition } from "../../tools
 // ── TOOL_HANDLER_MAP completeness ───────────────────────────
 
 describe("TOOL_HANDLER_MAP completeness", () => {
-  it("has exactly 33 entries", () => {
-    expect(Object.keys(TOOL_HANDLER_MAP).length).toBe(33);
+  it("has exactly 32 entries", () => {
+    expect(Object.keys(TOOL_HANDLER_MAP).length).toBe(32);
   });
 
   it("every TOOL_DEFINITION has a corresponding handler", () => {
@@ -56,7 +56,7 @@ describe("TOOL_HANDLER_MAP completeness", () => {
       "get_context", "get_workflow_states", "save_knowledge",
       "search_knowledge", "get_knowledge",
       "channel_list", "channel_join", "channel_history",
-      "share_image", "verify_work", "whoami",
+      "share_file", "verify_work", "whoami",
     ];
     for (const name of originalHandlers) {
       expect(TOOL_HANDLER_MAP).toHaveProperty(name);
