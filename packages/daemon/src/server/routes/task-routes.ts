@@ -219,8 +219,8 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
         if (callerAgentId) {
           const orch = orchestrators.get(sid);
           const callerAgent = orch?.agentManager.getAgent(callerAgentId);
-          // Workers can never force
-          if (callerAgent && callerAgent.config.role !== "master") {
+          // Unknown or non-master agents can never force
+          if (!callerAgent || callerAgent.config.role !== "master") {
             res.status(403).json({ error: "Force transitions are restricted to humans. Enable 'Allow master force transitions' in session settings to permit master agents." });
             return;
           }
