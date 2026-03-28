@@ -2144,6 +2144,7 @@ export function createApiRouter(deps: {
       if (!key || !value) { res.status(400).json({ error: "key and value are required" }); return; }
       const { randomUUID } = require("crypto");
       db.saveKnowledge({ id: randomUUID().slice(0, 8), sessionId: sid, key, value, savedBy });
+      broadcastEvent({ event: "knowledge-saved", sessionId: sid, key });
       res.status(201).json({ success: true, key });
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
@@ -2157,6 +2158,35 @@ export function createApiRouter(deps: {
       const entry = db.getKnowledge(sid, key);
       if (!entry) { res.status(404).json({ error: `Knowledge key "${key}" not found` }); return; }
       res.json(entry);
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.put("/sessions/:sid/knowledge-db/:key", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const key = decodeURIComponent(String(req.params.key));
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+      const existing = db.getKnowledge(sid, key);
+      if (!existing) { res.status(404).json({ error: `Knowledge key "${key}" not found` }); return; }
+      const { value, savedBy } = req.body;
+      if (!value) { res.status(400).json({ error: "value is required" }); return; }
+      db.saveKnowledge({ id: key, sessionId: sid, key, value, savedBy });
+      broadcastEvent({ event: "knowledge-updated", sessionId: sid, key });
+      res.json({ success: true, key });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.delete("/sessions/:sid/knowledge-db/:key", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const key = decodeURIComponent(String(req.params.key));
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+      const deleted = db.deleteKnowledge(sid, key);
+      if (!deleted) { res.status(404).json({ error: `Knowledge key "${key}" not found` }); return; }
+      broadcastEvent({ event: "knowledge-deleted", sessionId: sid, key });
+      res.json({ success: true, key });
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
 
