@@ -3,8 +3,9 @@
  * with templates, per-state transition config, and validation.
  */
 import { useState } from "react";
-import { MultiSelect } from "@mantine/core";
+import { MultiSelect, Select } from "@mantine/core";
 import { PipelinePreview } from "./PipelinePreview";
+import { MarkdownText } from "./MarkdownText";
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor,
   useSensor, useSensors, type DragEndEvent,
@@ -21,10 +22,16 @@ import {
   type WorkflowState,
 } from "@kora/shared";
 
+interface AgentOption {
+  id: string;
+  name: string;
+}
+
 interface WorkflowStateEditorProps {
   states: WorkflowState[];
   onChange: (states: any[]) => void;
   compact?: boolean;
+  agents?: AgentOption[];
 }
 
 /* ─── Sortable State Row ─────────────────────────────── */
@@ -123,11 +130,174 @@ function SortableStateRow({
   );
 }
 
+/* ─── Runbook Editor ───────────────────────────────────── */
+
+const RUNBOOK_PLACEHOLDER = `1. Review the code changes for correctness
+2. Check test coverage — ensure new code has unit tests
+3. Verify no regressions in existing tests
+4. Approve or request changes with specific feedback`;
+
+const RUNBOOK_VARIABLES = [
+  { name: "{agent.name}", desc: "Name of the assigned agent" },
+  { name: "{task.title}", desc: "Title of the current task" },
+  { name: "{task.id}", desc: "ID of the current task" },
+  { name: "{newState.label}", desc: "Current workflow state name" },
+  { name: "{oldState.label}", desc: "Previous workflow state" },
+  { name: "{baseBranch}", desc: "Base git branch (e.g. main)" },
+];
+
+function RunbookEditor({ value, onChange, stateLabel, routeTo, onRouteToChange, agents }: {
+  value: string;
+  onChange: (v: string) => void;
+  stateLabel: string;
+  routeTo?: string;
+  onRouteToChange: (v: string | undefined) => void;
+  agents?: AgentOption[];
+}) {
+  const [previewMode, setPreviewMode] = useState<"edit" | "preview" | "split">("edit");
+  const [showVarHints, setShowVarHints] = useState(false);
+
+  const charCount = value.length;
+  const lineCount = value ? value.split("\n").length : 0;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
+          Runbook for &ldquo;{stateLabel}&rdquo;
+        </span>
+        <div style={{ display: "flex", gap: 2 }}>
+          {(["edit", "preview", "split"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setPreviewMode(mode)}
+              style={{
+                fontSize: 10, padding: "2px 8px", borderRadius: 3,
+                border: "1px solid var(--border-color)", cursor: "pointer",
+                background: previewMode === mode ? "var(--accent-blue)" : "var(--bg-primary)",
+                color: previewMode === mode ? "white" : "var(--text-secondary)",
+              }}
+            >
+              {mode === "edit" ? "Edit" : mode === "preview" ? "Preview" : "Split"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Editor / Preview area */}
+      <div style={{
+        display: "flex", gap: 8,
+        minHeight: previewMode === "preview" ? undefined : 160,
+      }}>
+        {/* Textarea */}
+        {previewMode !== "preview" && (
+          <textarea
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={RUNBOOK_PLACEHOLDER}
+            rows={8}
+            style={{
+              flex: 1, fontSize: 12, padding: "8px 10px", lineHeight: 1.6,
+              background: "var(--bg-primary)", border: "1px solid var(--border-color)",
+              borderRadius: 4, color: "var(--text-primary)", resize: "vertical",
+              fontFamily: "inherit", minHeight: 160,
+            }}
+          />
+        )}
+
+        {/* Markdown preview */}
+        {previewMode !== "edit" && (
+          <div style={{
+            flex: 1, padding: "8px 10px", fontSize: 12, lineHeight: 1.6,
+            background: "var(--bg-primary)", border: "1px solid var(--border-color)",
+            borderRadius: 4, overflowY: "auto", minHeight: 160, maxHeight: 300,
+          }}>
+            {value ? (
+              <MarkdownText>{value}</MarkdownText>
+            ) : (
+              <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
+                No instructions yet. Write markdown in the editor.
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Footer: guidance + variable hints */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+          <span style={{ fontStyle: "italic" }}>
+            Recommended: 3-8 numbered steps per state.
+          </span>
+          {" "}
+          <span>{charCount} chars, {lineCount} line{lineCount !== 1 ? "s" : ""}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowVarHints(!showVarHints)}
+          style={{
+            fontSize: 10, color: "var(--accent-blue)", background: "none",
+            border: "none", cursor: "pointer", textDecoration: "underline", padding: 0,
+            flexShrink: 0,
+          }}
+        >
+          {showVarHints ? "Hide variables" : "Show variables"}
+        </button>
+      </div>
+
+      {/* Variable hints */}
+      {showVarHints && (
+        <div style={{
+          padding: "6px 10px", background: "var(--bg-tertiary)",
+          border: "1px solid var(--border-color)", borderRadius: 4,
+          display: "flex", flexWrap: "wrap", gap: 8,
+        }}>
+          {RUNBOOK_VARIABLES.map((v) => (
+            <span key={v.name} style={{ fontSize: 10, color: "var(--text-secondary)" }}>
+              <code style={{ color: "var(--accent-blue)", fontSize: 10 }}>{v.name}</code>
+              {" — "}{v.desc}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Route-to agent dropdown */}
+      {agents && agents.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 11, color: "var(--text-secondary)", flexShrink: 0 }}>
+            Route to agent:
+          </span>
+          <Select
+            size="xs"
+            placeholder="Auto (any available)"
+            data={agents.map((a) => ({ value: a.id, label: a.name }))}
+            value={routeTo || null}
+            onChange={(v) => onRouteToChange(v || undefined)}
+            clearable
+            styles={{
+              input: { background: "var(--bg-primary)", borderColor: "var(--border-color)", color: "var(--text-primary)", minHeight: 28, fontSize: 11 },
+              dropdown: { backgroundColor: "var(--bg-secondary)", borderColor: "var(--border-color)" },
+              option: { color: "var(--text-primary)", fontSize: 11 },
+            }}
+            style={{ flex: 1, maxWidth: 200 }}
+          />
+        </div>
+      )}
+
+      <span style={{ fontSize: 10, color: "var(--text-muted)", fontStyle: "italic" }}>
+        This runbook is included in every agent&apos;s prompt so they know what to do in this state.
+      </span>
+    </div>
+  );
+}
+
 /* ─── Transition Configurator (expandable panel) ─────── */
 
-function TransitionConfigurator({ state, stateIndex, allStates, onUpdate }: {
+function TransitionConfigurator({ state, stateIndex, allStates, onUpdate, agents }: {
   state: WorkflowState; stateIndex: number; allStates: WorkflowState[];
   onUpdate: (u: Partial<WorkflowState>) => void;
+  agents?: AgentOption[];
 }) {
   const isLast = stateIndex === allStates.length - 1;
   const options = allStates.filter(s => s.id !== state.id).map(s => ({ value: s.id, label: s.label }));
@@ -178,34 +348,22 @@ function TransitionConfigurator({ state, stateIndex, allStates, onUpdate }: {
           : `${state.label} → ${currentTransitions.map(id => allStates.find(s => s.id === id)?.label ?? id).join(", ")}`}
       </div>
 
-      {/* Instructions — tell agents what this state means */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
-          Instructions for agents
-        </span>
-        <textarea
-          value={state.instructions || ""}
-          onChange={(e) => onUpdate({ instructions: e.target.value })}
-          placeholder={`What should agents do when a task enters "${state.label}"? e.g., "Run all unit tests and verify no regressions"`}
-          rows={2}
-          style={{
-            fontSize: 12, padding: "6px 8px", lineHeight: 1.5,
-            background: "var(--bg-primary)", border: "1px solid var(--border-color)",
-            borderRadius: 4, color: "var(--text-primary)", resize: "vertical",
-            fontFamily: "inherit",
-          }}
-        />
-        <span style={{ fontSize: 10, color: "var(--text-muted)", fontStyle: "italic" }}>
-          This text is included in every agent's system prompt so they know exactly what each state means.
-        </span>
-      </div>
+      {/* Runbook Editor — instructions for agents */}
+      <RunbookEditor
+        value={state.instructions || ""}
+        onChange={(v) => onUpdate({ instructions: v })}
+        stateLabel={state.label}
+        routeTo={(state as any).routeTo}
+        onRouteToChange={(v) => onUpdate({ routeTo: v } as any)}
+        agents={agents}
+      />
     </div>
   );
 }
 
 /* ─── Main Editor ─────────────────────────────────────── */
 
-export function WorkflowStateEditor({ states, onChange, compact }: WorkflowStateEditorProps) {
+export function WorkflowStateEditor({ states, onChange, compact, agents }: WorkflowStateEditorProps) {
   const [expandedStateId, setExpandedStateId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -288,7 +446,7 @@ export function WorkflowStateEditor({ states, onChange, compact }: WorkflowState
                   isExpanded={expandedStateId === state.id}
                 />
                 {expandedStateId === state.id && (
-                  <TransitionConfigurator state={state} stateIndex={i} allStates={states} onUpdate={(u) => updateState(i, u)} />
+                  <TransitionConfigurator state={state} stateIndex={i} allStates={states} onUpdate={(u) => updateState(i, u)} agents={agents} />
                 )}
               </div>
             ))}
