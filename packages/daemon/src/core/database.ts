@@ -401,6 +401,21 @@ export class AppDatabase extends EventEmitter {
         PRAGMA user_version = 16;
       `);
     }
+
+    if (version < 17) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS channel_members (
+          channel_id TEXT NOT NULL,
+          agent_id TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          joined_at INTEGER NOT NULL,
+          PRIMARY KEY (channel_id, agent_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_channel_members_session ON channel_members(session_id);
+        CREATE INDEX IF NOT EXISTS idx_channel_members_agent ON channel_members(agent_id);
+        PRAGMA user_version = 17;
+      `);
+    }
   }
 
   // ─── Channels ──────────────────────────────────────────────
@@ -418,6 +433,35 @@ export class AppDatabase extends EventEmitter {
   deleteChannel(channelId: string): boolean {
     const result = this.db.prepare(`DELETE FROM channels WHERE id = ? AND is_default = 0`).run(channelId);
     return result.changes > 0;
+  }
+
+  // ─── Channel Memberships ────────────────────────────────
+
+  joinChannel(sessionId: string, channelId: string, agentId: string): void {
+    this.db.prepare(
+      `INSERT OR IGNORE INTO channel_members (channel_id, agent_id, session_id, joined_at) VALUES (?, ?, ?, ?)`
+    ).run(channelId, agentId, sessionId, Date.now());
+  }
+
+  leaveChannel(channelId: string, agentId: string): boolean {
+    const result = this.db.prepare(
+      `DELETE FROM channel_members WHERE channel_id = ? AND agent_id = ?`
+    ).run(channelId, agentId);
+    return result.changes > 0;
+  }
+
+  getChannelMembers(channelId: string): string[] {
+    const rows = this.db.prepare(
+      `SELECT agent_id FROM channel_members WHERE channel_id = ? ORDER BY joined_at ASC`
+    ).all(channelId) as any[];
+    return rows.map(r => r.agent_id);
+  }
+
+  getAgentChannels(agentId: string): string[] {
+    const rows = this.db.prepare(
+      `SELECT channel_id FROM channel_members WHERE agent_id = ? ORDER BY joined_at ASC`
+    ).all(agentId) as any[];
+    return rows.map(r => r.channel_id);
   }
 
   getChannelMessages(channel: string, limit = 50, before?: string): Array<{ id: string; from: string; content: string; timestamp: string; channel: string }> {

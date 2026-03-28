@@ -75,6 +75,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         message: { type: "string", description: "Message content to send" },
         messageType: { type: "string", description: "Optional message type: text, task-assignment, question, completion, stop, ack. Defaults to text." },
         channel: { type: "string", description: "Optional channel to broadcast to (e.g. #frontend, #backend). Alternative to 'to'." },
+        knowledgeKeys: { type: "array", items: { type: "string" }, description: "Optional knowledge keys to attach as references. Recipient can use get_knowledge to read them." },
       },
       required: ["message"],
     },
@@ -96,6 +97,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       type: "object",
       properties: {
         message: { type: "string", description: "Message to broadcast to all agents" },
+        knowledgeKeys: { type: "array", items: { type: "string" }, description: "Optional knowledge keys to attach as references." },
       },
       required: ["message"],
     },
