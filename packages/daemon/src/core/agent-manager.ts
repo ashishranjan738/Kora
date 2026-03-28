@@ -378,7 +378,7 @@ export class AgentManager extends EventEmitter {
     // 7. cd to workingDirectory (use worktree if available)
     // Verify the target directory exists first — silent cd failures cause agents
     // to run in the wrong directory (e.g. main repo instead of their worktree)
-    const cdTarget = agentWorkDir;
+    let cdTarget = agentWorkDir;
     try {
       const fsStat = await import("fs/promises");
       await fsStat.access(cdTarget);
@@ -392,6 +392,7 @@ export class AgentManager extends EventEmitter {
             options.runtimeDir,
             agentId,
           );
+          cdTarget = recreated;
           logger.info(`[agent-manager] Recreated missing worktree for ${agentId}: ${recreated}`);
         } catch (recreateErr) {
           logger.error({ err: recreateErr }, `[agent-manager] Failed to recreate worktree for ${agentId}`);

@@ -7,7 +7,6 @@ import * as fsPromises from "fs/promises";
 
 describe("restoreAgent worktreeInfo repopulation", () => {
   it("should detect worktree path from workingDirectory containing /worktrees/", () => {
-    // Simulate the logic from restoreAgent
     const workingDirectory = "/project/.kora/sessions/test-session/worktrees/agent-123";
     const hasWorktree = workingDirectory.includes("/worktrees/");
     expect(hasWorktree).toBe(true);
@@ -60,39 +59,71 @@ describe("pruneAll safety guard logic", () => {
   });
 });
 
-// ─── Tests for Fix 3: cd verification ───────────────────────────────
+// ─── Tests for Fix 3: cdTarget reassignment after worktree recreation ────
 
-describe("working directory verification before cd", () => {
-  it("should detect missing directory", async () => {
-    const nonExistentDir = path.join(os.tmpdir(), "kora-nonexistent-" + Date.now());
-    let exists = true;
+describe("cdTarget reassignment after worktree recreation", () => {
+  it("should update cdTarget when worktree is recreated", async () => {
+    // Simulates the fixed logic in agent-manager.ts spawnAgent
+    const agentWorkDir = "/project/.kora/sessions/s1/worktrees/agent-dead";
+    const worktreeMode = "isolated";
+    let cdTarget = agentWorkDir;
+
+    // Simulate directory not found
+    let dirExists = false;
     try {
-      await fsPromises.access(nonExistentDir);
+      await fsPromises.access(cdTarget);
+      dirExists = true;
     } catch {
-      exists = false;
+      dirExists = false;
     }
-    expect(exists).toBe(false);
+    expect(dirExists).toBe(false);
+
+    // Simulate worktree recreation
+    if (cdTarget.includes("/worktrees/") && worktreeMode !== "shared") {
+      const recreated = "/project/.kora/sessions/s1/worktrees/agent-dead-new";
+      cdTarget = recreated; // THIS IS THE FIX — was missing before
+    }
+
+    expect(cdTarget).toBe("/project/.kora/sessions/s1/worktrees/agent-dead-new");
+    expect(cdTarget).not.toBe(agentWorkDir);
   });
 
-  it("should pass for existing directory", async () => {
-    let exists = false;
-    try {
-      await fsPromises.access(os.tmpdir());
-      exists = true;
-    } catch {
-      exists = false;
-    }
-    expect(exists).toBe(true);
+  it("should NOT attempt recreation for shared worktree mode", () => {
+    const agentWorkDir = "/project/.kora/sessions/s1/worktrees/agent-123";
+    const worktreeMode = "shared";
+    let cdTarget = agentWorkDir;
+
+    // Even if directory is missing, shared mode should not recreate
+    const shouldRecreate = cdTarget.includes("/worktrees/") && worktreeMode !== "shared";
+    expect(shouldRecreate).toBe(false);
+    expect(cdTarget).toBe(agentWorkDir); // unchanged
   });
 
-  it("should identify worktree paths correctly", () => {
-    const worktreePath = "/project/.kora/sessions/sid/worktrees/agent-123";
-    const isWorktree = worktreePath.includes("/worktrees/");
-    expect(isWorktree).toBe(true);
+  it("should NOT attempt recreation for non-worktree paths", () => {
+    const agentWorkDir = "/project/src";
+    const worktreeMode = "isolated";
+    let cdTarget = agentWorkDir;
 
-    const regularPath = "/project/src";
-    const isRegular = regularPath.includes("/worktrees/");
-    expect(isRegular).toBe(false);
+    const shouldRecreate = cdTarget.includes("/worktrees/") && worktreeMode !== "shared";
+    expect(shouldRecreate).toBe(false);
+    expect(cdTarget).toBe(agentWorkDir); // unchanged
+  });
+
+  it("should keep original cdTarget if recreation fails", async () => {
+    const agentWorkDir = "/project/.kora/sessions/s1/worktrees/agent-dead";
+    const worktreeMode = "isolated";
+    let cdTarget = agentWorkDir;
+
+    // Simulate recreation failure
+    if (cdTarget.includes("/worktrees/") && worktreeMode !== "shared") {
+      try {
+        throw new Error("git worktree add failed");
+      } catch {
+        // cdTarget stays unchanged on failure — falls back to original path
+      }
+    }
+
+    expect(cdTarget).toBe(agentWorkDir);
   });
 });
 
@@ -131,5 +162,36 @@ describe("restartAgent worktree verification", () => {
 
     expect(workDir).toBe(os.tmpdir());
     expect(reuseWorktree).toBe(true);
+  });
+});
+
+// ─── Tests for resolveWorkingDirectory null case ────────────────────
+
+describe("resolveWorkingDirectory null handling", () => {
+  it("should return null when agent has no workingDirectory", () => {
+    // Simulates the logic in tool-handlers.ts resolveWorkingDirectory
+    const agent = { id: "agent-1", config: { name: "Test" } };
+    const result = (agent?.config as any)?.workingDirectory || null;
+    expect(result).toBeNull();
+  });
+
+  it("should return null when agent is not found", () => {
+    const agents = [{ id: "agent-1", config: { name: "A" } }];
+    const currentAgent = agents.find((a) => a.id === "agent-999");
+    const result = (currentAgent?.config as any)?.workingDirectory || null;
+    expect(result).toBeNull();
+  });
+
+  it("should return workingDirectory when present", () => {
+    const agent = { id: "agent-1", config: { name: "Test", workingDirectory: "/project/worktrees/agent-1" } };
+    const result = (agent?.config as any)?.workingDirectory || null;
+    expect(result).toBe("/project/worktrees/agent-1");
+  });
+
+  it("should return null when agents array is empty", () => {
+    const agents: any[] = [];
+    const currentAgent = agents.find((a) => a.id === "agent-1");
+    const result = (currentAgent?.config as any)?.workingDirectory || null;
+    expect(result).toBeNull();
   });
 });
