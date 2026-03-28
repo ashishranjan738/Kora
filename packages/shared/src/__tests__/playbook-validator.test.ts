@@ -507,6 +507,41 @@ describe("validatePlaybook", () => {
     });
   });
 
+  describe("error path formatting", () => {
+    it("should include path in error messages for nested fields", () => {
+      const playbook = {
+        name: "Test",
+        description: "Test",
+        agents: [
+          {
+            name: "Agent1",
+            role: "master",
+            model: "test",
+            channels: ["invalid-no-hash"],
+          },
+        ],
+      };
+
+      const result = validatePlaybook(playbook);
+
+      expect(result.valid).toBe(false);
+      // Error should contain path info (instancePath or dataPath depending on ajv version)
+      expect(result.errors.some((e) => e.includes("channels") || e.includes("pattern"))).toBe(true);
+    });
+
+    it("should show 'root' path for top-level errors", () => {
+      const playbook = {
+        description: "Missing name",
+        agents: [{ name: "Agent1", role: "master", model: "test" }],
+      };
+
+      const result = validatePlaybook(playbook);
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => e.includes("root") && e.includes("name"))).toBe(true);
+    });
+  });
+
   describe("additional properties", () => {
     it("should reject unknown properties at root level", () => {
       const playbook = {
