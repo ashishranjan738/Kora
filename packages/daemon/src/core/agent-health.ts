@@ -29,7 +29,7 @@ export function stripAnsi(text: string): string {
   // Replace cursor-forward (ESC[nC) with n spaces BEFORE stripping other ANSI.
   // Claude Code uses ESC[1C instead of literal spaces — without this,
   // stripAnsi collapses all spacing, breaking spinner parsing and activity detection.
-  let result = text.replace(/\x1b\[(\d*)C/g, (_, n) => ' '.repeat(parseInt(n || '1', 10)));
+  const result = text.replace(/\x1b\[(\d*)C/g, (_, n) => ' '.repeat(parseInt(n || '1', 10)));
   return result.replace(ANSI_REGEX, '');
 }
 

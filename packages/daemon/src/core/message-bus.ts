@@ -252,7 +252,6 @@ export class MessageBus extends EventEmitter {
     try {
       // Use the synchronous fs.watch (from the 'fs' module, not fs/promises)
       // We import it dynamically to keep the top-level import using fs/promises.
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const nodeFs = require("fs");
       const watcher = nodeFs.watch(dir, (eventType: string, filename: string | null) => {
         if (!filename) return;
