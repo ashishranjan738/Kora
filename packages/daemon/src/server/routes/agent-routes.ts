@@ -142,6 +142,14 @@ export function registerAgentRoutes(router: Router, deps: RouteDeps): void {
         worktreeMode: session.config.worktreeMode,
       });
 
+      // Auto-join #all channel (and restore any persisted memberships)
+      const orchForChannels = orchestrators.get(sid);
+      if (orchForChannels) {
+        orchForChannels.database.joinChannel(sid, "#all", agentState.id);
+        const persistedChannels = orchForChannels.database.getAgentChannels(agentState.id);
+        agentState.config.channels = persistedChannels.length > 0 ? persistedChannels : ["#all"];
+      }
+
       // Record CLI flags and provider/model for autocomplete suggestions
       if (body.extraCliArgs && body.extraCliArgs.length > 0) {
         suggestionsDb.recordFlags(body.extraCliArgs.join(" "));

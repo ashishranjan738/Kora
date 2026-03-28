@@ -149,6 +149,17 @@ export function registerSessionRoutes(router: Router, deps: RouteDeps): void {
         worktreeMode: config.worktreeMode,
       });
       await orch.start();
+
+      // Auto-create default #all channel
+      orch.database.createChannel({
+        id: "#all",
+        sessionId: config.id,
+        name: "all",
+        description: "Default channel for all agents",
+        createdBy: "system",
+        isDefault: true,
+      });
+
       // Configure workflow-aware status sets for task-completed events and stale task detection
       if (config.workflowStates && config.workflowStates.length > 0) {
         orch.database.setWorkflowStatuses(config.workflowStates);

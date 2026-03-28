@@ -129,6 +129,17 @@ async function handleStart(): Promise<void> {
         worktreeMode: config.worktreeMode,
       });
       await orch.start();
+
+      // Ensure default #all channel exists (idempotent — INSERT OR IGNORE)
+      orch.database.createChannel({
+        id: "#all",
+        sessionId: config.id,
+        name: "all",
+        description: "Default channel for all agents",
+        createdBy: "system",
+        isDefault: true,
+      });
+
       // Configure workflow-aware status sets for restored sessions
       if (config.workflowStates && config.workflowStates.length > 0) {
         orch.database.setWorkflowStatuses(config.workflowStates);
