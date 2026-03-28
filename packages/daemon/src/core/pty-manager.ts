@@ -95,7 +95,7 @@ export class PtyManager {
     // We need to differentiate resize from regular input
     // Convention: if the message starts with '\x01' (SOH), it's a control message
     // Actually, let's use a simpler approach: check if it parses as JSON with a resize type
-    const originalOnMessage = ws.listeners("message").pop() as Function;
+    const originalOnMessage = ws.listeners("message").pop() as (...args: unknown[]) => void;
     ws.removeAllListeners("message");
     ws.on("message", (raw) => {
       const str = typeof raw === "string" ? raw : raw.toString();
