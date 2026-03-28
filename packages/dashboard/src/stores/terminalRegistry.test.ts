@@ -6,6 +6,7 @@ import {
   destroyTerminal,
   setMessageNotificationCallback,
   destroyAllTerminals,
+  safeFit,
 } from './terminalRegistry';
 
 // Mock xterm.js
@@ -297,6 +298,40 @@ describe('terminalRegistry - Notification Preview Extraction', () => {
     mockWs.onmessage?.({ data: '"test message"' });
 
     expect(mockCallback).not.toHaveBeenCalled();
+  });
+
+  describe('safeFit - viewportY preservation', () => {
+    it('should save and restore viewportY around fit()', () => {
+      const entry = getOrCreateTerminal(sessionId, agentId, theme);
+      const mockTerm = entry.term as any;
+      const mockFitAddon = entry.fitAddon as any;
+
+      // Simulate user scrolled to line 30
+      mockTerm.buffer.active.viewportY = 30;
+
+      // Make fit() reset viewportY to 0 (simulates xterm reflow behavior)
+      mockFitAddon.fit.mockImplementation(() => {
+        mockTerm.buffer.active.viewportY = 0;
+      });
+
+      safeFit(entry);
+
+      // fit() should have been called
+      expect(mockFitAddon.fit).toHaveBeenCalled();
+      // scrollToLine should restore to saved position
+      expect(mockTerm.scrollToLine).toHaveBeenCalledWith(30);
+    });
+
+    it('should handle viewportY at 0 (already at top)', () => {
+      const entry = getOrCreateTerminal(sessionId, agentId, theme);
+      const mockTerm = entry.term as any;
+
+      mockTerm.buffer.active.viewportY = 0;
+
+      safeFit(entry);
+
+      expect(mockTerm.scrollToLine).toHaveBeenCalledWith(0);
+    });
   });
 
   it('should detect case-insensitive message patterns', () => {
