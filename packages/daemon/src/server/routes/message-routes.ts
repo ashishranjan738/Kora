@@ -376,11 +376,9 @@ export function registerMessageRoutes(router: Router, deps: RouteDeps): void {
       const sid = String(req.params.sid);
       const db = getDb(sid);
       if (!db) { res.status(404).json({ error: "Session not found" }); return; }
-      const orch = orchestrators.get(sid);
-      const agents = orch ? orch.agentManager.listAgents() : [];
       const channels = db.getChannels(sid).map(ch => ({
         ...ch,
-        memberCount: agents.filter(a => (a.config.channels || []).includes(ch.id)).length,
+        memberCount: db.getChannelMembers(ch.id).length,
       }));
       res.json({ channels });
     } catch (err) { res.status(500).json({ error: "Internal server error" }); }
@@ -427,8 +425,7 @@ export function registerMessageRoutes(router: Router, deps: RouteDeps): void {
   });
 
   // NOTE: join/leave modify in-memory agent config only. Channel memberships
-  // are not persisted to DB — they reset on daemon restart. Agents are re-assigned
-  // default channels (#all, #orchestration) on spawn/restore.
+  // Channel memberships are persisted to the channel_members DB table.
   router.post("/sessions/:sid/channels/:channelId/join", (req: Request, res: Response) => {
     try {
       const sid = String(req.params.sid);
@@ -440,9 +437,12 @@ export function registerMessageRoutes(router: Router, deps: RouteDeps): void {
       if (!agentId) { res.status(400).json({ error: "agentId required" }); return; }
       const agent = orch.agentManager.getAgent(agentId);
       if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+      // Update in-memory
       const channels = new Set(agent.config.channels || []);
       channels.add(channelId);
       agent.config.channels = [...channels];
+      // Persist to DB
+      orch.database.joinChannel(sid, channelId, agentId);
       res.json({ success: true, agentId, channel: channelId, channels: agent.config.channels });
     } catch (err) { res.status(500).json({ error: "Internal server error" }); }
   });
@@ -459,7 +459,10 @@ export function registerMessageRoutes(router: Router, deps: RouteDeps): void {
       if (!agentId) { res.status(400).json({ error: "agentId required" }); return; }
       const agent = orch.agentManager.getAgent(agentId);
       if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+      // Update in-memory
       agent.config.channels = (agent.config.channels || []).filter(c => c !== channelId);
+      // Persist to DB
+      orch.database.leaveChannel(channelId, agentId);
       res.json({ success: true, agentId, channel: channelId, channels: agent.config.channels });
     } catch (err) { res.status(500).json({ error: "Internal server error" }); }
   });

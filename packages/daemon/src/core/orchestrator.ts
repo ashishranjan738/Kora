@@ -1114,6 +1114,12 @@ RULES:
         // Re-register in agent manager (direct injection — no new tmux session)
         this.agentManager.restoreAgent(agent);
 
+        // Restore channel memberships from DB
+        const persistedChannels = this.database.getAgentChannels(agent.id);
+        if (persistedChannels.length > 0) {
+          agent.config.channels = persistedChannels;
+        }
+
         // Re-setup message bus + control plane watchers
         await this.messageBus.setupAgent(agent.id);
         await this.controlPlane.setupAgent(agent.id);
