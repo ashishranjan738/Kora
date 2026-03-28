@@ -4,7 +4,23 @@ import * as fs from "fs";
 import * as path from "path";
 
 describe("Makefile validation", () => {
-  const repoRoot = path.resolve(__dirname, "../../../../");
+  // In git worktrees, __dirname points to the worktree which may not have node_modules.
+  // Find the main repo root where node_modules actually lives.
+  const worktreeRoot = path.resolve(__dirname, "../../../../");
+  const repoRoot = (() => {
+    // Check if worktree root has real npm packages (not just .vite cache)
+    if (fs.existsSync(path.join(worktreeRoot, "node_modules", "vitest"))) return worktreeRoot;
+    try {
+      // In a git worktree, git-common-dir points to the main repo's .git
+      const commonDir = execSync("git rev-parse --git-common-dir", {
+        cwd: worktreeRoot,
+        encoding: "utf-8",
+      }).trim();
+      const mainRoot = path.resolve(worktreeRoot, commonDir, "..");
+      if (fs.existsSync(path.join(mainRoot, "node_modules"))) return mainRoot;
+    } catch { /* ignore */ }
+    return worktreeRoot;
+  })();
 
   // Test 1: Verify make install removes holdpty bundled node-pty
   it("removes holdpty bundled node-pty after make install", { timeout: 10000 }, () => {
