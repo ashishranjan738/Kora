@@ -102,9 +102,16 @@ export class AgentManager extends EventEmitter {
       await fs.writeFile(personaFile, personaWithId, "utf-8");
     }
 
-    // 2b. Write tiny boot prompt as system prompt file (instructs agent to call get_context)
+    // 2b. Write boot prompt with role-specific guardrails as system prompt file
     const { buildBootPrompt } = await import("./boot-prompt-builder.js");
-    const bootPrompt = buildBootPrompt(options.messagingMode);
+    const bootPrompt = buildBootPrompt({
+      messagingMode: options.messagingMode,
+      agentName: options.name,
+      agentRole: options.role as "master" | "worker",
+      roleName: options.name, // Name often reflects role (e.g. "Reviewer", "Product Manager")
+      worktreeMode: options.worktreeMode as "isolated" | "shared" | undefined,
+      sessionName: options.sessionId,
+    });
     const systemPromptFile = path.join(personasDir, `${agentId}-boot.md`);
     await fs.writeFile(systemPromptFile, bootPrompt, "utf-8");
 
@@ -132,7 +139,14 @@ export class AgentManager extends EventEmitter {
     // Full persona available via get_context("persona") API.
     if (options.provider.id === "kiro") {
       const { buildBootPrompt } = await import("./boot-prompt-builder.js");
-      const kiroBootPrompt = buildBootPrompt(options.messagingMode);
+      const kiroBootPrompt = buildBootPrompt({
+        messagingMode: options.messagingMode,
+        agentName: options.name,
+        agentRole: options.role as "master" | "worker",
+        roleName: options.name,
+        worktreeMode: options.worktreeMode as "isolated" | "shared" | undefined,
+        sessionName: options.sessionId,
+      });
 
       const kiroSteeringDir = path.join(agentWorkDir, ".kiro", "steering");
       await fs.mkdir(kiroSteeringDir, { recursive: true });
