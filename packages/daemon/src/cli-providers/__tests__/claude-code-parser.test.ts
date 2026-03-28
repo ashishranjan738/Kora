@@ -1,6 +1,91 @@
 import { describe, it, expect } from "vitest";
 import { claudeCodeProvider } from "../claude-code.js";
 
+/* ================================================================== */
+/*  Claude Code Provider: buildCommand                                 */
+/* ================================================================== */
+
+describe("Claude Code Provider — buildCommand", () => {
+  it("builds basic command: claude", () => {
+    const cmd = claudeCodeProvider.buildCommand({
+      model: "default",
+      workingDirectory: "/tmp",
+    });
+    expect(cmd).toEqual(["claude"]);
+  });
+
+  it("adds --model when non-default", () => {
+    const cmd = claudeCodeProvider.buildCommand({
+      model: "claude-sonnet-4-6",
+      workingDirectory: "/tmp",
+    });
+    expect(cmd).toContain("--model");
+    expect(cmd).toContain("claude-sonnet-4-6");
+  });
+
+  it("does NOT add --model for 'default'", () => {
+    const cmd = claudeCodeProvider.buildCommand({
+      model: "default",
+      workingDirectory: "/tmp",
+    });
+    expect(cmd).not.toContain("--model");
+  });
+
+  it("does NOT add --model for empty string", () => {
+    const cmd = claudeCodeProvider.buildCommand({
+      model: "",
+      workingDirectory: "/tmp",
+    });
+    expect(cmd).not.toContain("--model");
+  });
+
+  it("uses --append-system-prompt-file (NOT --system-prompt-file) to preserve built-in prompt", () => {
+    const cmd = claudeCodeProvider.buildCommand({
+      model: "default",
+      workingDirectory: "/tmp",
+      systemPromptFile: "/path/to/boot-prompt.md",
+    });
+    expect(cmd).toContain("--append-system-prompt-file");
+    expect(cmd).toContain("/path/to/boot-prompt.md");
+    // Must NOT use --system-prompt-file which replaces the built-in prompt
+    expect(cmd).not.toContain("--system-prompt-file");
+  });
+
+  it("does NOT add system prompt flag when systemPromptFile is undefined", () => {
+    const cmd = claudeCodeProvider.buildCommand({
+      model: "default",
+      workingDirectory: "/tmp",
+    });
+    expect(cmd).not.toContain("--append-system-prompt-file");
+    expect(cmd).not.toContain("--system-prompt-file");
+  });
+
+  it("passes through extraArgs", () => {
+    const cmd = claudeCodeProvider.buildCommand({
+      model: "default",
+      workingDirectory: "/tmp",
+      extraArgs: ["--dangerously-skip-permissions", "--verbose"],
+    });
+    expect(cmd).toContain("--dangerously-skip-permissions");
+    expect(cmd).toContain("--verbose");
+  });
+
+  it("orders flags: claude, model, system-prompt, extraArgs", () => {
+    const cmd = claudeCodeProvider.buildCommand({
+      model: "claude-sonnet-4-6",
+      workingDirectory: "/tmp",
+      systemPromptFile: "/path/to/prompt.md",
+      extraArgs: ["--verbose"],
+    });
+    expect(cmd[0]).toBe("claude");
+    const modelIdx = cmd.indexOf("--model");
+    const appendIdx = cmd.indexOf("--append-system-prompt-file");
+    const verboseIdx = cmd.indexOf("--verbose");
+    expect(modelIdx).toBeLessThan(appendIdx);
+    expect(appendIdx).toBeLessThan(verboseIdx);
+  });
+});
+
 describe("Claude Code parseOutput", () => {
   describe("Token usage parsing", () => {
     it("parses standard token format with commas", () => {
