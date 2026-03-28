@@ -33,6 +33,8 @@ export interface SessionConfig {
   autoAssign?: boolean;
   /** Session-level max budget in USD. When exceeded, all agents are auto-paused. */
   maxBudget?: number;
+  /** Allow master agents to force task state transitions, bypassing pipeline validation. Default: false */
+  allowMasterForceTransition?: boolean;
 }
 
 export interface WebhookConfig {

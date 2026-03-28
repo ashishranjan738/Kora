@@ -163,6 +163,95 @@ describe("Session CRUD integration", () => {
       expect(updateRes.status).toBe(200);
       expect(updateRes.body).toHaveProperty("name", "New Name");
     });
+
+    it("updates allowMasterForceTransition flag", async () => {
+      const projectPath = join(ctx.testDir, "test-project-force");
+      mkdirSync(projectPath, { recursive: true });
+
+      const createRes = await request(ctx.app)
+        .post("/api/v1/sessions")
+        .set("Authorization", `Bearer ${ctx.token}`)
+        .send({ name: "Force Test", projectPath, provider: "claude-code" });
+
+      const sessionId = createRes.body.id;
+
+      // Default should be undefined/false
+      expect(createRes.body.allowMasterForceTransition).toBeFalsy();
+
+      // Enable the flag
+      const updateRes = await request(ctx.app)
+        .put(`/api/v1/sessions/${sessionId}`)
+        .set("Authorization", `Bearer ${ctx.token}`)
+        .send({ allowMasterForceTransition: true });
+
+      expect(updateRes.status).toBe(200);
+      expect(updateRes.body).toHaveProperty("allowMasterForceTransition", true);
+
+      // Verify it persists on GET
+      const getRes = await request(ctx.app)
+        .get(`/api/v1/sessions/${sessionId}`)
+        .set("Authorization", `Bearer ${ctx.token}`);
+
+      expect(getRes.body).toHaveProperty("allowMasterForceTransition", true);
+    });
+  });
+
+  describe("allowMasterForceTransition", () => {
+    it("defaults to falsy when not provided at creation", async () => {
+      const projectPath = join(ctx.testDir, "test-project-default");
+      mkdirSync(projectPath, { recursive: true });
+
+      const res = await request(ctx.app)
+        .post("/api/v1/sessions")
+        .set("Authorization", `Bearer ${ctx.token}`)
+        .send({ name: "Default Test", projectPath, provider: "claude-code" });
+
+      expect(res.status).toBe(201);
+      expect(res.body.allowMasterForceTransition).toBeFalsy();
+    });
+
+    it("can be set to true at session creation", async () => {
+      const projectPath = join(ctx.testDir, "test-project-create-flag");
+      mkdirSync(projectPath, { recursive: true });
+
+      const res = await request(ctx.app)
+        .post("/api/v1/sessions")
+        .set("Authorization", `Bearer ${ctx.token}`)
+        .send({
+          name: "Flag Test",
+          projectPath,
+          provider: "claude-code",
+          allowMasterForceTransition: true,
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body).toHaveProperty("allowMasterForceTransition", true);
+    });
+
+    it("can be toggled from true to false", async () => {
+      const projectPath = join(ctx.testDir, "test-project-toggle");
+      mkdirSync(projectPath, { recursive: true });
+
+      const createRes = await request(ctx.app)
+        .post("/api/v1/sessions")
+        .set("Authorization", `Bearer ${ctx.token}`)
+        .send({
+          name: "Toggle Test",
+          projectPath,
+          provider: "claude-code",
+          allowMasterForceTransition: true,
+        });
+
+      const sessionId = createRes.body.id;
+
+      const updateRes = await request(ctx.app)
+        .put(`/api/v1/sessions/${sessionId}`)
+        .set("Authorization", `Bearer ${ctx.token}`)
+        .send({ allowMasterForceTransition: false });
+
+      expect(updateRes.status).toBe(200);
+      expect(updateRes.body).toHaveProperty("allowMasterForceTransition", false);
+    });
   });
 
   describe("DELETE /api/v1/sessions/:sid", () => {

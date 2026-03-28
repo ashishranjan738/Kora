@@ -38,11 +38,15 @@ export interface CreateSessionRequest {
   messagingMode?: MessagingMode; // defaults to "mcp"
   worktreeMode?: WorktreeMode;   // defaults to "isolated"
   workflowStates?: import("./types.js").WorkflowState[]; // Custom pipeline states (frozen at creation)
+  /** Allow master agents to force task state transitions. Default: false */
+  allowMasterForceTransition?: boolean;
 }
 
 export interface UpdateSessionRequest {
   name?: string;
   defaultProvider?: string;
+  /** Allow master agents to force task state transitions. Default: false */
+  allowMasterForceTransition?: boolean;
 }
 
 export interface SessionResponse extends SessionConfig {

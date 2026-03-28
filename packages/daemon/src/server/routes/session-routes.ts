@@ -130,6 +130,7 @@ export function registerSessionRoutes(router: Router, deps: RouteDeps): void {
         messagingMode: body.messagingMode,
         worktreeMode: body.worktreeMode,
         workflowStates: body.workflowStates,
+        allowMasterForceTransition: body.allowMasterForceTransition,
       });
 
       // Record the working directory for autocomplete suggestions
