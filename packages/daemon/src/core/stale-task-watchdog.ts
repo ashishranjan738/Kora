@@ -97,11 +97,18 @@ const REASSIGNMENT_GRACE_MINUTES = 5;
 const NUDGE_TTL_DAYS = 7;
 const ALSO_NOTIFY_RATE_LIMIT_MS = 5 * 60 * 1000; // 1 batch per 5 minutes to orchestrator
 
+export interface WorkflowStateInfo {
+  id: string;
+  label: string;
+  instructions?: string;
+}
+
 export class StaleTaskWatchdog extends EventEmitter {
   private checkInterval?: NodeJS.Timeout;
   private nudgePolicies: Record<string, NudgePolicy>;
   private agentNudgeCounts = new Map<string, { count: number; windowStart: number }>();
   private lastAlsoNotifyTime = 0; // Rate limit for orchestrator batch summaries
+  private workflowStates: Map<string, WorkflowStateInfo> = new Map();
 
   constructor(
     private sessionId: string,
@@ -112,6 +119,14 @@ export class StaleTaskWatchdog extends EventEmitter {
   ) {
     super();
     this.nudgePolicies = policies || { ...DEFAULT_NUDGE_POLICIES };
+  }
+
+  /** Set workflow states so nudges can include per-state runbook instructions. */
+  setWorkflowStates(states: WorkflowStateInfo[]): void {
+    this.workflowStates.clear();
+    for (const s of states) {
+      this.workflowStates.set(s.id, s);
+    }
   }
 
   /** Start the watchdog — wraps check() in setInterval for backward compat. */
@@ -511,10 +526,18 @@ export class StaleTaskWatchdog extends EventEmitter {
     const { task, nudgeCount, isEscalation, targetType, targetAgentId, minutesInStatus, policy } = info;
 
     const prefix = isEscalation ? "[ESCALATION]" : "[Stale Task Alert]";
-    const message = `${prefix} Task "${task.title}" has been in "${task.status}" for ${minutesInStatus}min. ` +
+    const stateInfo = this.workflowStates.get(task.status);
+    const stateLabel = stateInfo?.label || task.status;
+
+    let message = `${prefix} Task "${task.title}" has been in "${stateLabel}" for ${minutesInStatus}min. ` +
       `Nudge #${nudgeCount} of ${policy.maxNudges || "\u221e"}. ` +
-      `Assigned to: ${task.assigned_to || "(unassigned)"}. ` +
-      `Action needed: update status or reassign.`;
+      `Assigned to: ${task.assigned_to || "(unassigned)"}.`;
+
+    if (stateInfo?.instructions) {
+      message += `\n\nReminder — your instructions for ${stateLabel}:\n${stateInfo.instructions}`;
+    }
+
+    message += `\n\nIf you're blocked, message your orchestrator immediately.`;
 
     this.database.insertNudge({
       id: randomUUID(),

@@ -163,6 +163,7 @@ export function registerSessionRoutes(router: Router, deps: RouteDeps): void {
       // Configure workflow-aware status sets for task-completed events and stale task detection
       if (config.workflowStates && config.workflowStates.length > 0) {
         orch.database.setWorkflowStatuses(config.workflowStates);
+        orch.staleTaskWatchdog.setWorkflowStates(config.workflowStates);
         const firstState = config.workflowStates[0];
         const secondState = config.workflowStates.length > 1 ? config.workflowStates[1] : undefined;
         if (firstState) orch.autoAssigner = new AutoAssigner({
