@@ -801,7 +801,7 @@ export function SessionDetail() {
           <div style={{
             position: "fixed", top: 0, left: 0, right: 0,
             bottom: terminalTabs.length > 0 ? terminalHeight + 40 : 0,
-            zIndex: 40, background: "var(--bg-primary)",
+            zIndex: 1000, background: "var(--bg-primary)",
             display: "flex", flexDirection: "column",
           }}>
             <div style={{
