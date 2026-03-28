@@ -14,6 +14,9 @@ export interface TerminalEntry {
   reconnectAttempts: number;
   userScrolledUp: boolean;
   manuallyPaused: boolean;
+  /** Guard flag: true while term.write() is in progress. Prevents onScroll
+   *  from resetting userScrolledUp due to xterm's internal auto-scroll. */
+  _isWriting: boolean;
   onConnectedChange?: (connected: boolean) => void;
   onMessageNotification?: (from: string) => void;
   onScrollStateChange?: (scrolledUp: boolean) => void;
@@ -72,10 +75,25 @@ function connectWs(entry: TerminalEntry): void {
       }
 
       // Capture scroll state BEFORE write — xterm's internal auto-scroll
-      // can change viewportY during write, making post-write check unreliable
+      // can change viewportY during write, making post-write check unreliable.
+      // Also save the viewport position so we can restore it if the user was
+      // scrolled up (prevents both scroll-to-top and scroll-to-bottom jumps).
       const wasScrolledUp = entry.userScrolledUp || entry.manuallyPaused;
+      const savedViewportY = entry.term.buffer.active.viewportY;
+
+      // Set _isWriting guard to prevent onScroll from clearing userScrolledUp
+      // during xterm's internal buffer updates triggered by write()
+      entry._isWriting = true;
       entry.term.write(text, () => {
-        if (!wasScrolledUp) {
+        entry._isWriting = false;
+        if (wasScrolledUp) {
+          // Restore viewport to where the user was reading — xterm may have
+          // moved it during write (either to top or bottom). The saved position
+          // is clamped to the new baseY to handle buffer growth.
+          const maxY = entry.term.buffer.active.baseY;
+          const targetY = Math.min(savedViewportY, maxY);
+          entry.term.scrollToLine(targetY);
+        } else {
           entry.term.scrollToBottom();
         }
       });
@@ -92,13 +110,17 @@ function connectWs(entry: TerminalEntry): void {
           }
         }, 100);
       }
-      // Debounced refresh after rapid output bursts
+      // Debounced refresh after rapid output bursts — only when tailing
+      // (at bottom). Skipped entirely when user is scrolled up to avoid
+      // any viewport position interference from refresh(0, ...).
       if (refreshTimer) clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(() => {
-        if (!entry.userScrolledUp && !entry.manuallyPaused) {
-          entry.term.refresh(0, entry.term.rows - 1);
-        }
-      }, 150);
+      if (!entry.userScrolledUp && !entry.manuallyPaused) {
+        refreshTimer = setTimeout(() => {
+          if (!entry.userScrolledUp && !entry.manuallyPaused) {
+            entry.term.refresh(0, entry.term.rows - 1);
+          }
+        }, 150);
+      }
     };
 
     if (typeof event.data === "string") {
@@ -212,10 +234,19 @@ export function getOrCreateTerminal(
     reconnectAttempts: 0,
     userScrolledUp: false,
     manuallyPaused: false,
+    _isWriting: false,
   };
 
-  // Track scroll state — detect when user scrolls away from bottom
+  // Track scroll state — detect when user scrolls away from bottom.
+  // The _isWriting guard prevents xterm's internal auto-scroll (triggered
+  // by term.write()) from incorrectly clearing userScrolledUp. Without this,
+  // write() would fire onScroll → set userScrolledUp=false → next write
+  // would scrollToBottom, causing viewport jumps.
   term.onScroll(() => {
+    // Ignore scroll events fired during programmatic writes — these are
+    // xterm internals, not user actions
+    if (entry._isWriting) return;
+
     const atBottom = term.buffer.active.viewportY >= term.buffer.active.baseY;
     const wasScrolledUp = entry.userScrolledUp;
     entry.userScrolledUp = !atBottom;
