@@ -654,6 +654,7 @@ export function SessionSettingsDialog({
             <Text size="xs" c="dimmed">When enabled, master/orchestrator agents can bypass pipeline transitions. When disabled (default), only humans can.</Text>
           </div>
           <Switch
+            aria-label="Allow master agents to force task transitions"
             checked={allowMasterForceTransition}
             onChange={async (e) => {
               const newVal = e.currentTarget.checked;
