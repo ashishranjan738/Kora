@@ -130,9 +130,9 @@ describe("findAgentByNameOrId", () => {
 });
 
 describe("Tool Handler Map", () => {
-  it("has handlers for 20 extracted tools", () => {
-    // 25 total - 5 MCP-specific (check_messages, prepare_pr, verify_work, create_pr, + check_messages file I/O)
-    expect(Object.keys(TOOL_HANDLER_MAP).length).toBe(26);
+  it("has handlers for all tools", () => {
+    // All tools now go through TOOL_HANDLER_MAP (including check_messages, prepare_pr, verify_work, create_pr)
+    expect(Object.keys(TOOL_HANDLER_MAP).length).toBe(30);
   });
 
   it("every handler is a function", () => {

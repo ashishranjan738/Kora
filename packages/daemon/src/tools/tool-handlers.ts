@@ -4,6 +4,8 @@
  * No MCP-specific logic (no JSON-RPC, no stdio, no unread notifications).
  */
 
+import * as fs from "fs";
+import * as nodePath from "path";
 import type { ToolContext, AgentsResponse } from "./tool-context.js";
 import { findAgentByNameOrId } from "./tool-context.js";
 import { RESOURCE_DEFINITIONS, getResourceDefinition } from "./resource-registry.js";
@@ -872,6 +874,225 @@ async function handleChannelHistory(ctx: ToolContext, args: Record<string, strin
   };
 }
 
+// ── Git / Shell Tools ──────────────────────────────────────────
+
+/** Helper: resolve the calling agent's working directory from the daemon API. */
+async function resolveWorkingDirectory(ctx: ToolContext): Promise<string | null> {
+  const agentsResp = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/agents`)) as AgentsResponse;
+  const currentAgent = (agentsResp.agents || []).find((a) => a.id === ctx.agentId);
+  return (currentAgent?.config as any)?.workingDirectory || null;
+}
+
+export async function handleCheckMessages(ctx: ToolContext, _args: Record<string, string>): Promise<unknown> {
+  // Tier 1: Read from SQLite (primary source)
+  let sqliteMessages: Array<{ id: string; from: string; content: string; timestamp: string; channel?: string | null }> = [];
+  try {
+    const response = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/agents/${ctx.agentId}/messages?status=pending&status=delivered`)) as any;
+    if (response.messages && Array.isArray(response.messages)) {
+      const messageIds = response.messages.map((m: any) => m.id);
+      if (messageIds.length > 0) {
+        await ctx.apiCall("POST", `/api/v1/sessions/${ctx.sessionId}/agents/${ctx.agentId}/messages/mark-read`, { messageIds });
+      }
+      sqliteMessages = response.messages.map((m: any) => ({
+        id: m.id, from: m.fromName || m.fromAgentId || "system", content: m.content,
+        timestamp: new Date(m.createdAt).toISOString(), channel: m.channel || null,
+      }));
+    }
+  } catch { /* SQLite not available */ }
+
+  const runtimeDir = ctx.getRuntimeDir?.() || ".kora";
+
+  // Tier 2: Read from mcp-pending (backward compat)
+  const pendingMessages: Array<{ from: string; content: string; timestamp: string }> = [];
+  if (ctx.projectPath) {
+    const pendingDir = nodePath.join(ctx.projectPath, runtimeDir, "mcp-pending", ctx.agentId);
+    try {
+      const files = fs.readdirSync(pendingDir);
+      const jsonFiles = files.filter((f: string) => f.endsWith(".json"));
+      if (jsonFiles.length > 0) {
+        const processedDir = nodePath.join(pendingDir, "processed");
+        fs.mkdirSync(processedDir, { recursive: true });
+        for (const file of jsonFiles) {
+          const filePath = nodePath.join(pendingDir, file);
+          try {
+            const raw = fs.readFileSync(filePath, "utf-8");
+            const msg = JSON.parse(raw);
+            pendingMessages.push(msg);
+            fs.renameSync(filePath, nodePath.join(processedDir, file));
+          } catch { /* Skip malformed files */ }
+        }
+      }
+    } catch { /* pending dir may not exist */ }
+  }
+
+  // Tier 3: Read from inbox files (backward compat)
+  const inboxMessages: Array<{ from: string; content: string; timestamp: string }> = [];
+  if (ctx.projectPath) {
+    const inboxDir = nodePath.join(ctx.projectPath, runtimeDir, "messages", `inbox-${ctx.agentId}`);
+    try {
+      const files = fs.readdirSync(inboxDir);
+      const messageFiles = files.filter((f: string) => f.endsWith(".md"));
+      for (const file of messageFiles) {
+        const filePath = nodePath.join(inboxDir, file);
+        const content = fs.readFileSync(filePath, "utf-8");
+        const timestamp = file.split("-")[0];
+        const cleanContent = content.replace(/\x1b\[[0-9;]*m/g, "");
+        const senderMatch = cleanContent.match(/\[(?:Message|Task|DONE|Question|Broadcast|System)[^\]]*from (.+?)\]/)
+          || cleanContent.match(/\[From (.+?)\]/);
+        const from = senderMatch?.[1] || "system";
+        inboxMessages.push({ from, content, timestamp });
+        const processedDir = nodePath.join(inboxDir, "processed");
+        try { fs.mkdirSync(processedDir, { recursive: true }); fs.renameSync(filePath, nodePath.join(processedDir, file)); } catch { /* best effort */ }
+      }
+    } catch { /* inbox may not exist */ }
+  }
+
+  // Combine and deduplicate
+  const seen = new Set<string>();
+  const allMessages: Array<{ from: string; content: string; timestamp: string; channel?: string | null }> = [];
+  for (const sm of sqliteMessages) { const key = `${sm.from}:${sm.content.substring(0, 100)}`; if (!seen.has(key)) { seen.add(key); allMessages.push(sm); } }
+  for (const pm of pendingMessages) { const key = `${pm.from}:${pm.content.substring(0, 100)}`; if (!seen.has(key)) { seen.add(key); allMessages.push(pm); } }
+  for (const im of inboxMessages) { const key = `${im.from}:${im.content.substring(0, 100)}`; if (!seen.has(key)) { seen.add(key); allMessages.push(im); } }
+
+  if (allMessages.length > 0 || pendingMessages.length > 0 || inboxMessages.length > 0 || sqliteMessages.length > 0) {
+    ctx.apiCall("POST", `/api/v1/sessions/${ctx.sessionId}/agents/${ctx.agentId}/ack-read`).catch(() => {});
+  }
+  return { messages: allMessages, count: allMessages.length };
+}
+
+export async function handlePreparePr(ctx: ToolContext, _args: Record<string, string>): Promise<unknown> {
+  if (!ctx.execFileAsync) return { success: false, error: "Shell execution not available in this context" };
+  const workDir = await resolveWorkingDirectory(ctx);
+  if (!workDir) return { success: false, error: "Could not determine your working directory" };
+
+  try {
+    const { stdout: fetchOut, stderr: fetchErr } = await ctx.execFileAsync("git", ["fetch", "origin", "main"], { cwd: workDir });
+    let commitsBehind = 0;
+    try { const { stdout: revListOut } = await ctx.execFileAsync("git", ["rev-list", "--count", "HEAD..origin/main"], { cwd: workDir }); commitsBehind = parseInt(revListOut.trim(), 10) || 0; } catch { /* detached HEAD */ }
+    const { stdout: rebaseOut, stderr: rebaseErr } = await ctx.execFileAsync("git", ["rebase", "origin/main"], { cwd: workDir });
+    const { stdout: pushOut, stderr: pushErr } = await ctx.execFileAsync("git", ["push", "origin", "HEAD", "--force-with-lease"], { cwd: workDir });
+
+    const autoTransitioned: string[] = [];
+    try {
+      const tasksResp = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/tasks?assignedTo=${ctx.agentId}&status=in-progress&summary=true`)) as any;
+      for (const task of (tasksResp.tasks || [])) {
+        try { await ctx.apiCall("PUT", `/api/v1/sessions/${ctx.sessionId}/tasks/${task.id}`, { status: "review" }); autoTransitioned.push(task.title || task.id); } catch { /* non-fatal */ }
+      }
+    } catch { /* non-fatal */ }
+
+    return {
+      success: true, commitsBehind,
+      message: commitsBehind > 0 ? `Rebased successfully! Your branch was ${commitsBehind} commit(s) behind main.` : "Already up to date with main. Branch pushed.",
+      autoTransitioned: autoTransitioned.length > 0 ? `Moved ${autoTransitioned.length} task(s) to review: ${autoTransitioned.join(", ")}` : undefined,
+      reminder: "MANDATORY: Update your task status now. Call update_task(taskId, status: 'done') after PR is merged. Never go idle with a completed task still in-progress.",
+      output: { fetch: fetchOut + fetchErr, rebase: rebaseOut + rebaseErr, push: pushOut + pushErr },
+    };
+  } catch (err: unknown) {
+    const error = err as { stdout?: string; stderr?: string; message?: string };
+    const stderr = error.stderr || ""; const stdout = error.stdout || "";
+    if (stderr.includes("CONFLICT") || stdout.includes("CONFLICT") || stderr.includes("could not apply")) {
+      try { await ctx.execFileAsync("git", ["rebase", "--abort"], { cwd: workDir }); } catch { /* may not be in rebase state */ }
+      return { success: false, error: "Rebase conflict detected. Rebase aborted to keep worktree clean. Resolve conflicts manually: git fetch origin main && git rebase origin/main, fix conflicts, then git rebase --continue && git push --force-with-lease.", conflicts: true, output: stdout + "\n" + stderr };
+    }
+    return { success: false, error: error.message || "Git operation failed", output: stdout + "\n" + stderr };
+  }
+}
+
+export async function handleVerifyWork(ctx: ToolContext, args: Record<string, string>): Promise<unknown> {
+  if (!ctx.execFileAsync) return { passed: false, error: "Shell execution not available in this context" };
+  const workDir = await resolveWorkingDirectory(ctx);
+  if (!workDir) return { passed: false, error: "Could not determine your working directory" };
+
+  const skipTests = args?.skipTests === "true";
+  const results: { passed: boolean; build: "pass" | "fail" | "skipped"; tests: "pass" | "fail" | "skipped"; buildOutput?: string; testOutput?: string; unintendedChanges: string[] } = {
+    passed: true, build: "skipped", tests: "skipped", unintendedChanges: [],
+  };
+
+  try {
+    const { stdout: buildOut, stderr: buildErr } = await ctx.execFileAsync("make", ["build"], { cwd: workDir, timeout: 120_000 });
+    results.build = "pass"; results.buildOutput = (buildOut + buildErr).slice(-500);
+  } catch (err: unknown) {
+    const error = err as { stdout?: string; stderr?: string };
+    results.build = "fail"; results.passed = false; results.buildOutput = ((error.stdout || "") + (error.stderr || "")).slice(-1000);
+  }
+
+  if (!skipTests) {
+    try {
+      const { stdout: testOut, stderr: testErr } = await ctx.execFileAsync("make", ["test"], { cwd: workDir, timeout: 300_000 });
+      results.tests = "pass"; results.testOutput = (testOut + testErr).slice(-500);
+    } catch (err: unknown) {
+      const error = err as { stdout?: string; stderr?: string };
+      results.tests = "fail"; results.passed = false; results.testOutput = ((error.stdout || "") + (error.stderr || "")).slice(-1000);
+    }
+  }
+
+  try {
+    const { stdout: diffOut } = await ctx.execFileAsync("git", ["diff", "--stat"], { cwd: workDir });
+    if (diffOut.trim()) {
+      results.unintendedChanges = diffOut.trim().split("\n").filter(line => line.includes("|")).map(line => line.split("|")[0].trim());
+    }
+  } catch { /* ignore git errors */ }
+
+  return results;
+}
+
+export async function handleCreatePr(ctx: ToolContext, args: Record<string, string>): Promise<unknown> {
+  if (!ctx.execFileAsync) return { success: false, error: "Shell execution not available in this context" };
+  const workDir = await resolveWorkingDirectory(ctx);
+  if (!workDir) return { success: false, error: "Could not determine your working directory" };
+
+  try {
+    let headBranch = args.headBranch;
+    if (!headBranch) {
+      const { stdout: branchOut } = await ctx.execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: workDir });
+      headBranch = branchOut.trim();
+    }
+
+    const { stdout: remoteOut } = await ctx.execFileAsync("git", ["remote", "get-url", "origin"], { cwd: workDir });
+    const remoteUrl = remoteOut.trim();
+    let owner: string; let repo: string;
+
+    if (remoteUrl.startsWith("git@github.com:")) {
+      const match = remoteUrl.match(/git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/);
+      if (!match) return { success: false, error: `Could not parse GitHub remote URL: ${remoteUrl}` };
+      owner = match[1]; repo = match[2];
+    } else if (remoteUrl.includes("github.com")) {
+      const match = remoteUrl.match(/github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/);
+      if (!match) return { success: false, error: `Could not parse GitHub remote URL: ${remoteUrl}` };
+      owner = match[1]; repo = match[2];
+    } else {
+      return { success: false, error: `Remote URL is not a GitHub repository: ${remoteUrl}` };
+    }
+
+    let githubToken = process.env.GITHUB_TOKEN;
+    if (!githubToken && ctx.projectPath) {
+      try {
+        const configRaw = fs.readFileSync(nodePath.join(ctx.projectPath, ".kora.yml"), "utf-8");
+        const tokenMatch = configRaw.match(/github:\s*\n\s*token:\s*['"]?([^\s'"]+)['"]?/);
+        if (tokenMatch) githubToken = tokenMatch[1];
+      } catch { /* config not found */ }
+    }
+    if (!githubToken) return { success: false, error: "GitHub token not found. Set GITHUB_TOKEN env var or add github.token to .kora.yml" };
+
+    const baseBranch = args.baseBranch || "main";
+    const prResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls`, {
+      method: "POST",
+      headers: { "Accept": "application/vnd.github+json", "Authorization": `Bearer ${githubToken}`, "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json" },
+      body: JSON.stringify({ title: args.title, body: args.body, head: headBranch, base: baseBranch }),
+    });
+
+    if (!prResponse.ok) {
+      const errorBody = await prResponse.text();
+      return { success: false, error: `GitHub API error (${prResponse.status}): ${errorBody}`, statusCode: prResponse.status };
+    }
+    const prData = await prResponse.json() as { html_url: string; number: number };
+    return { success: true, prUrl: prData.html_url, prNumber: prData.number, head: headBranch, base: baseBranch, repository: `${owner}/${repo}` };
+  } catch (err: unknown) {
+    const error = err as { message?: string };
+    return { success: false, error: error.message || "Failed to create PR" };
+  }
+}
+
 // ── Dispatcher ──────────────────────────────────────────
 
 /** Map of tool name → handler function for all extracted tools */
@@ -902,12 +1123,15 @@ export const TOOL_HANDLER_MAP: Record<string, (ctx: ToolContext, args: Record<st
   channel_list: handleChannelList,
   channel_join: handleChannelJoin,
   channel_history: handleChannelHistory,
+  check_messages: handleCheckMessages,
+  prepare_pr: handlePreparePr,
+  verify_work: handleVerifyWork,
+  create_pr: handleCreatePr,
 };
 
 /**
  * Dispatch a tool call to the appropriate handler.
- * Returns undefined if the tool is not in the shared handler map
- * (caller should handle MCP-specific tools like check_messages, prepare_pr, etc.)
+ * Returns undefined if the tool is not in the shared handler map.
  */
 export function getToolHandler(
   toolName: string,
