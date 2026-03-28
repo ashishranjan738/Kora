@@ -16,11 +16,11 @@ import * as fs from "fs";
 import * as nodePath from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { getPromptDefinition, getPromptsForRole } from "../tools/prompt-registry.js";
 import { RESOURCE_DEFINITIONS, getResourceDefinition } from "../tools/resource-registry.js";
 import { TOOL_HANDLER_MAP } from "../tools/tool-handlers.js";
 import { TOOL_DEFINITIONS, isToolAllowed, getToolDefinition } from "../tools/tool-registry.js";
 import { validateTool } from "../cli/mcp-cli-bridge.js";
+import { findAgentByNameOrId, AgentInfo } from "../tools/tool-context.js";
 
 // Track resource subscriptions for live update notifications
 const resourceSubscriptions = new Set<string>();
@@ -114,18 +114,6 @@ function getRuntimeDir(): string {
 // ---------------------------------------------------------------------------
 
 
-/** Send MCP notification for a subscribed resource change */
-function notifyResourceChanged(uri: string): void {
-  if (resourceSubscriptions.has(uri)) {
-    const notification = JSON.stringify({
-      jsonrpc: "2.0",
-      method: "notifications/resources/updated",
-      params: { uri },
-    });
-    process.stdout.write(notification + "\n");
-  }
-}
-
 // If called with no identity (no args AND no env vars), print usage and exit
 if (!AGENT_ID && !SESSION_ID) {
   process.stderr.write(
@@ -197,22 +185,6 @@ async function readSqliteMessages(): Promise<Array<{ id: string; from: string; c
   } catch {
     // SQLite not available, fall back to files
     return [];
-  }
-}
-
-/**
- * Non-destructive count of pending messages. Used for piggyback notifications
- * ("You have N unread messages") without consuming the actual content.
- * Only check_messages should consume messages via readAndConsumePendingMessages().
- */
-function countPendingMessages(): number {
-  if (!PROJECT_PATH) return 0;
-  const pendingDir = nodePath.join(PROJECT_PATH, getRuntimeDir(), "mcp-pending", AGENT_ID);
-  try {
-    const files = fs.readdirSync(pendingDir);
-    return files.filter((f: string) => f.endsWith(".json")).length;
-  } catch {
-    return 0;
   }
 }
 
@@ -319,50 +291,7 @@ async function apiCall(method: string, urlPath: string, body?: unknown): Promise
   throw lastError;
 }
 
-/**
- * Find an agent by name or ID with prioritized matching to avoid ambiguity.
- *
- * Priority order:
- * 1. Exact name match (case-insensitive) - "Backend" matches "Backend", not "Backend2"
- * 2. Exact ID match (case-insensitive) - "backend-0b927a3d" matches agent by ID
- * 3. Substring match (fallback) - "Back" matches "Backend" as partial name
- *
- * @param agents - Array of agent objects to search
- * @param search - Name or ID to search for
- * @returns Matching agent or undefined if not found
- */
-function findAgentByNameOrId(
-  agents: AgentInfo[],
-  search: string
-): AgentInfo | undefined {
-  // Return undefined for empty search string
-  if (!search || search.trim() === "") {
-    return undefined;
-  }
-
-  const searchLower = search.toLowerCase();
-
-  // Priority 1: Exact name match
-  let target = agents.find(a =>
-    (a.config?.name || "").toLowerCase() === searchLower
-  );
-  if (target) return target;
-
-  // Priority 2: Exact ID match
-  target = agents.find(a =>
-    a.id.toLowerCase() === searchLower
-  );
-  if (target) return target;
-
-  // Priority 3: Substring match (fallback)
-  target = agents.find(a => {
-    const name = (a.config?.name || "").toLowerCase();
-    return name.includes(searchLower) ||
-           a.id.toLowerCase().includes(searchLower);
-  });
-
-  return target;
-}
+// findAgentByNameOrId imported from tools/tool-context.ts (single source of truth)
 
 // ---------------------------------------------------------------------------
 // MCP Protocol — JSON-RPC over stdio
@@ -392,17 +321,7 @@ function sendError(id: string | number | null, code: number, message: string): v
 // Handle individual tool calls
 // ---------------------------------------------------------------------------
 
-interface AgentInfo {
-  id: string;
-  config?: {
-    name?: string;
-    role?: string;
-    cliProvider?: string;
-    model?: string;
-  };
-  status?: string;
-}
-
+// AgentInfo imported from tools/tool-context.ts (single source of truth)
 interface AgentsResponse {
   agents?: AgentInfo[];
 }

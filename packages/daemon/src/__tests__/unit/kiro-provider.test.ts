@@ -368,30 +368,7 @@ describe("Kiro MCP workspace config", () => {
     expect(args[args.indexOf("--agent-role") + 1]).toBe("master");
   });
 
-  // Simulate the workspace path resolution
-  function resolveKiroWorkspace(agentWorkDir: string, projectWorkDir: string, runtimeDir: string, agentId: string): string {
-    return agentWorkDir === projectWorkDir
-      ? `${runtimeDir}/kiro-workspaces/${agentId}`  // shared: per-agent dir
-      : agentWorkDir;                                 // isolated: worktree is unique
-  }
-
-  it("shared worktree: uses per-agent kiro-workspaces dir", () => {
-    const result = resolveKiroWorkspace("/tmp", "/tmp", "/tmp/.kora-dev/sessions/s1", "agent-a");
-    expect(result).toBe("/tmp/.kora-dev/sessions/s1/kiro-workspaces/agent-a");
-  });
-
-  it("isolated worktree: uses the worktree dir directly", () => {
-    const result = resolveKiroWorkspace("/project/worktrees/agent-a", "/project", "/project/.kora-dev/sessions/s1", "agent-a");
-    expect(result).toBe("/project/worktrees/agent-a");
-  });
-
-  it("shared worktree: two agents get different paths", () => {
-    const pathA = resolveKiroWorkspace("/tmp", "/tmp", "/tmp/.kora-dev/sessions/s1", "agent-a");
-    const pathB = resolveKiroWorkspace("/tmp", "/tmp", "/tmp/.kora-dev/sessions/s1", "agent-b");
-    expect(pathA).not.toBe(pathB);
-    expect(pathA).toContain("agent-a");
-    expect(pathB).toContain("agent-b");
-  });
+  // resolveKiroWorkspace tests removed — kiro-workspaces hack was deleted in PR #438
 });
 
 /* ================================================================== */
