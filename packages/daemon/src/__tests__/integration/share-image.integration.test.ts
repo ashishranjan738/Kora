@@ -1,5 +1,5 @@
 /**
- * E2E tests for share_image attachment API endpoints.
+ * E2E tests for share_file attachment API endpoints.
  * Tests base64 upload, file path sharing, security checks, and retrieval.
  */
 

@@ -464,7 +464,7 @@ export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
     }
   });
 
-  /** Upload attachment (used by share_file / share_image MCP tools) */
+  /** Upload attachment (used by share_file MCP tool) */
   router.post("/sessions/:sid/attachments", (req: Request, res: Response) => {
     try {
       const sid = String(req.params.sid);

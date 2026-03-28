@@ -1078,8 +1078,7 @@ async function handleToolCall(
       return results;
     }
 
-    case "share_file":
-    case "share_image": {
+    case "share_file": {
       if (!toolArgs.to) return { error: "to is required" };
       if (!toolArgs.filePath && !toolArgs.base64Data) return { error: "Either filePath or base64Data is required" };
 
