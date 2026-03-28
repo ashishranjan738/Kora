@@ -1221,6 +1221,13 @@ export class AppDatabase extends EventEmitter {
     return rows.map(r => ({ key: r.key, value: r.value, savedBy: r.saved_by, updatedAt: r.updated_at }));
   }
 
+  deleteKnowledge(sessionId: string, key: string): boolean {
+    const result = this.db.prepare(
+      `DELETE FROM knowledge_entries WHERE session_id = ? AND key = ?`
+    ).run(sessionId, key);
+    return result.changes > 0;
+  }
+
   listKnowledge(sessionId: string, limit = 50): Array<{ key: string; value: string; savedBy: string | null; updatedAt: string }> {
     const rows = this.db.prepare(
       `SELECT key, value, saved_by, updated_at FROM knowledge_entries WHERE session_id = ? ORDER BY updated_at DESC LIMIT ?`
