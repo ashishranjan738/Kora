@@ -378,7 +378,7 @@ export class AgentManager extends EventEmitter {
     // 7. cd to workingDirectory (use worktree if available)
     // Verify the target directory exists first — silent cd failures cause agents
     // to run in the wrong directory (e.g. main repo instead of their worktree)
-    const cdTarget = agentWorkDir;
+    let cdTarget = agentWorkDir;
     try {
       const fsStat = await import("fs/promises");
       await fsStat.access(cdTarget);
@@ -392,6 +392,7 @@ export class AgentManager extends EventEmitter {
             options.runtimeDir,
             agentId,
           );
+          cdTarget = recreated; // Use the newly created worktree path
           logger.info(`[agent-manager] Recreated missing worktree for ${agentId}: ${recreated}`);
         } catch (recreateErr) {
           logger.error({ err: recreateErr }, `[agent-manager] Failed to recreate worktree for ${agentId}`);
@@ -715,13 +716,12 @@ export class AgentManager extends EventEmitter {
     // Restore worktreeInfo from agent config — daemon restart loses the in-memory map
     // but the agent's workingDirectory still contains the worktree path.
     if (agent.config.workingDirectory && agent.config.workingDirectory.includes('/worktrees/')) {
-      const path = require('path');
       // workingDirectory = .../{runtimeDir}/worktrees/{agentId}
       // runtimeDir = parent of worktrees/
       const worktreesDir = path.dirname(agent.config.workingDirectory);
       const runtimeDir = path.dirname(worktreesDir);
       // projectPath = the git root (where the session's project lives)
-      const projectPath = agent.config.projectPath || agent.config.workingDirectory;
+      const projectPath = (agent.config as any).projectPath || agent.config.workingDirectory;
       this.worktreeInfo.set(agent.id, {
         projectPath,
         runtimeDir,
