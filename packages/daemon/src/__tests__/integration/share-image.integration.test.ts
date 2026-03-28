@@ -359,8 +359,8 @@ describe("Share Image / Attachments API", () => {
         .set(auth())
         .send({ filename: "same-name.png", base64Data });
 
-      // Small delay to ensure different timestamp prefix (ms resolution)
-      await new Promise(r => setTimeout(r, 5));
+      // Delay to ensure different timestamp prefix (ms resolution)
+      await new Promise(r => setTimeout(r, 50));
 
       const res2 = await request(ctx.app)
         .post(`/api/v1/sessions/${sessionId}/attachments`)
