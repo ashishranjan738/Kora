@@ -567,6 +567,34 @@ export async function handleUpdateTask(
     }
   }
 
+  // Force-transition restriction: agents cannot force by default.
+  // Workers can NEVER force. Masters can force only if session allows it.
+  if (force) {
+    if (ctx.agentRole !== "master") {
+      return {
+        success: false,
+        error: "Force transitions are restricted to humans. Enable 'Allow master force transitions' in session settings to permit master agents.",
+      };
+    }
+    // Master agent — check session config
+    try {
+      const sessionRes = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}`)) as any;
+      const allowForce = sessionRes?.config?.allowMasterForceTransition ?? sessionRes?.allowMasterForceTransition ?? false;
+      if (!allowForce) {
+        return {
+          success: false,
+          error: "Force transitions are restricted to humans. Enable 'Allow master force transitions' in session settings to permit master agents.",
+        };
+      }
+    } catch {
+      // If we can't read session config, deny force for safety
+      return {
+        success: false,
+        error: "Force transitions are restricted to humans. Enable 'Allow master force transitions' in session settings to permit master agents.",
+      };
+    }
+  }
+
   // Workflow transition enforcement
   if (status && !force) {
     try {

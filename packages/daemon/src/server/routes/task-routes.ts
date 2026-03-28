@@ -210,16 +210,24 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
         res.status(400).json({ error: `status must be one of: ${validStatuses.join(", ")}` });
         return;
       }
-      // Force mode: master agents or dashboard users can bypass pipeline validation
-      // Security: MCP callers identify via X-Agent-Id header — verify role if present
+      // Force mode: by default only humans (no X-Agent-Id header) can force-transition.
+      // If session has allowMasterForceTransition: true, master agents can also force.
+      // Workers can NEVER force regardless of session config.
       const forceMode = (body as any).force === true;
       if (forceMode) {
         const callerAgentId = req.headers["x-agent-id"] as string | undefined;
         if (callerAgentId) {
           const orch = orchestrators.get(sid);
           const callerAgent = orch?.agentManager.getAgent(callerAgentId);
+          // Workers can never force
           if (callerAgent && callerAgent.config.role !== "master") {
-            res.status(403).json({ error: "force mode requires master role" });
+            res.status(403).json({ error: "Force transitions are restricted to humans. Enable 'Allow master force transitions' in session settings to permit master agents." });
+            return;
+          }
+          // Master agents can only force if session flag is enabled
+          const sessionForForce = sessionManager.getSession(sid);
+          if (!sessionForForce?.config.allowMasterForceTransition) {
+            res.status(403).json({ error: "Force transitions are restricted to humans. Enable 'Allow master force transitions' in session settings to permit master agents." });
             return;
           }
         }
