@@ -19,6 +19,8 @@ function escapeLike(str: string): string {
 export class AppDatabase extends EventEmitter {
   public db: Database.Database;
   private _open = true;
+  /** Whether FTS5 extension is available for knowledge search */
+  private _fts5Available = false;
   /** Closed-category status IDs from workflow states. Used for task-completed events. Default: ["done"] */
   private closedStatuses = new Set<string>(["done"]);
   /** First (initial) status ID from workflow states. Used for stale task exclusion. Default: "pending" */
@@ -62,6 +64,16 @@ export class AppDatabase extends EventEmitter {
     this.db.pragma("foreign_keys = ON");     // Enable cascade deletes (tasks → comments)
 
     this.migrate();
+
+    // Detect FTS5 availability for databases that already migrated
+    if (!this._fts5Available) {
+      try {
+        this.db.prepare("SELECT * FROM knowledge_fts LIMIT 0").run();
+        this._fts5Available = true;
+      } catch {
+        // FTS5 table doesn't exist — stay with LIKE fallback
+      }
+    }
   }
 
   private migrate(): void {
@@ -415,6 +427,41 @@ export class AppDatabase extends EventEmitter {
         CREATE INDEX IF NOT EXISTS idx_channel_members_agent ON channel_members(agent_id);
         PRAGMA user_version = 17;
       `);
+    }
+
+    if (version < 18) {
+      // FTS5 full-text search index for knowledge entries
+      try {
+        this.db.exec(`
+          CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
+            key, value, content='knowledge_entries', content_rowid='rowid'
+          );
+
+          -- Populate FTS from existing data
+          INSERT INTO knowledge_fts(knowledge_fts) VALUES('rebuild');
+
+          -- Keep FTS in sync: triggers on knowledge_entries
+          CREATE TRIGGER IF NOT EXISTS knowledge_fts_insert AFTER INSERT ON knowledge_entries BEGIN
+            INSERT INTO knowledge_fts(rowid, key, value) VALUES (new.rowid, new.key, new.value);
+          END;
+
+          CREATE TRIGGER IF NOT EXISTS knowledge_fts_update AFTER UPDATE ON knowledge_entries BEGIN
+            INSERT INTO knowledge_fts(knowledge_fts, rowid, key, value) VALUES ('delete', old.rowid, old.key, old.value);
+            INSERT INTO knowledge_fts(rowid, key, value) VALUES (new.rowid, new.key, new.value);
+          END;
+
+          CREATE TRIGGER IF NOT EXISTS knowledge_fts_delete AFTER DELETE ON knowledge_entries BEGIN
+            INSERT INTO knowledge_fts(knowledge_fts, rowid, key, value) VALUES ('delete', old.rowid, old.key, old.value);
+          END;
+
+          PRAGMA user_version = 18;
+        `);
+        this._fts5Available = true;
+      } catch {
+        // FTS5 extension not available — fall back to LIKE search
+        this._fts5Available = false;
+        this.db.exec(`PRAGMA user_version = 18;`);
+      }
     }
   }
 
@@ -1258,11 +1305,45 @@ export class AppDatabase extends EventEmitter {
   }
 
   searchKnowledge(sessionId: string, query: string, limit = 20): Array<{ key: string; value: string; savedBy: string | null; updatedAt: string }> {
+    // Try FTS5 first for BM25-ranked results
+    if (this._fts5Available) {
+      try {
+        return this.searchKnowledgeFTS(sessionId, query, limit);
+      } catch {
+        // FTS5 query failed — fall back to LIKE
+      }
+    }
+    // Fallback: LIKE search
     const pattern = `%${escapeLike(query)}%`;
     const rows = this.db.prepare(
       `SELECT key, value, saved_by, updated_at FROM knowledge_entries WHERE session_id = ? AND (key LIKE ? ESCAPE '\\' OR value LIKE ? ESCAPE '\\') ORDER BY updated_at DESC LIMIT ?`
     ).all(sessionId, pattern, pattern, limit) as any[];
     return rows.map(r => ({ key: r.key, value: r.value, savedBy: r.saved_by, updatedAt: r.updated_at }));
+  }
+
+  /**
+   * Full-text search using FTS5 with BM25 ranking.
+   * Returns results ordered by relevance (best match first).
+   */
+  searchKnowledgeFTS(sessionId: string, query: string, limit = 20): Array<{ key: string; value: string; savedBy: string | null; updatedAt: string }> {
+    // Sanitize query: strip special FTS5 syntax characters to prevent injection
+    const sanitized = query.replace(/['"*(){}^\-:]/g, " ").trim();
+    if (!sanitized) return [];
+    // Add implicit prefix matching for better partial results
+    const ftsQuery = sanitized.split(/\s+/).filter(Boolean).map(w => `"${w}"*`).join(" ");
+    const rows = this.db.prepare(
+      `SELECT ke.key, ke.value, ke.saved_by, ke.updated_at
+       FROM knowledge_fts fts
+       JOIN knowledge_entries ke ON ke.rowid = fts.rowid
+       WHERE knowledge_fts MATCH ? AND ke.session_id = ?
+       ORDER BY bm25(knowledge_fts) LIMIT ?`
+    ).all(ftsQuery, sessionId, limit) as any[];
+    return rows.map(r => ({ key: r.key, value: r.value, savedBy: r.saved_by, updatedAt: r.updated_at }));
+  }
+
+  /** Check if FTS5 is available for knowledge search */
+  get fts5Available(): boolean {
+    return this._fts5Available;
   }
 
   deleteKnowledge(sessionId: string, key: string): boolean {
