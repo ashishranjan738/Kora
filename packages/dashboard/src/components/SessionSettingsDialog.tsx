@@ -69,6 +69,7 @@ export function SessionSettingsDialog({
   const [defaultModel, setDefaultModel] = useState("");
   const [worktreeMode, setWorktreeMode] = useState<string>("");
   const [autoAssign, setAutoAssign] = useState(true);
+  const [allowMasterForceTransition, setAllowMasterForceTransition] = useState(false);
   const [budgetLimit, setBudgetLimit] = useState<string>("");
   const budgetSaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // TODO Sprint 5: Wire to session settings API, apply to new agent spawns
@@ -118,6 +119,9 @@ export function SessionSettingsDialog({
           }
           if (sessionData?.autoAssign !== undefined) {
             setAutoAssign(sessionData.autoAssign);
+          }
+          if (sessionData?.allowMasterForceTransition !== undefined) {
+            setAllowMasterForceTransition(sessionData.allowMasterForceTransition);
           }
           if (sessionData?.budgetLimit) {
             setBudgetLimit(String(sessionData.budgetLimit));
@@ -636,6 +640,29 @@ export function SessionSettingsDialog({
               } catch {
                 // Revert on failure
                 setAutoAssign(!newVal);
+              }
+            }}
+            size="md"
+          />
+        </Group>
+
+        {/* Allow master force transitions */}
+        <Divider my="md" />
+        <Group justify="space-between" align="center">
+          <div>
+            <Text size="sm" fw={600}>Allow master agents to force task transitions</Text>
+            <Text size="xs" c="dimmed">When enabled, master/orchestrator agents can bypass pipeline transitions. When disabled (default), only humans can.</Text>
+          </div>
+          <Switch
+            aria-label="Allow master agents to force task transitions"
+            checked={allowMasterForceTransition}
+            onChange={async (e) => {
+              const newVal = e.currentTarget.checked;
+              setAllowMasterForceTransition(newVal);
+              try {
+                await api.updateSessionConfig(sessionId, { allowMasterForceTransition: newVal });
+              } catch {
+                setAllowMasterForceTransition(!newVal);
               }
             }}
             size="md"
