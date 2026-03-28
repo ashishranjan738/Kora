@@ -28,6 +28,7 @@ import { notificationService } from "./notification-service.js";
 import { saveAgentStates, loadAgentStates } from "./state-persistence.js";
 import fs from "fs";
 import { HoldptyController } from "./holdpty-controller.js";
+import { rotateFileBySize, AGENT_LOG_MAX_BYTES, AGENT_LOG_KEEP_BYTES } from "./log-rotation.js";
 import { logger } from "./logger.js";
 import { StaleTaskWatchdog } from "./stale-task-watchdog.js";
 import { WatchdogDeliveryManager } from "./watchdog-delivery.js";
@@ -1488,35 +1489,10 @@ RULES:
 
   /**
    * Rotate log file if it exceeds the maximum size.
-   * Keeps only the last 1MB of the file to prevent unbounded growth.
+   * Delegates to the shared log-rotation utility.
    */
-  private async rotateLogFile(logPath: string, maxSizeBytes: number = 2 * 1024 * 1024): Promise<void> {
-    try {
-      const fs = await import("fs/promises");
-      const stats = await fs.stat(logPath);
-      if (stats.size > maxSizeBytes) {
-        // Keep only the last 1MB — read from offset instead of loading entire file
-        const keepBytes = 1024 * 1024;
-        const readOffset = stats.size - keepBytes;
-        const fh = await fs.open(logPath, "r");
-        try {
-          const buf = Buffer.alloc(keepBytes);
-          await fh.read(buf, 0, keepBytes, readOffset);
-          await fh.close();
-          await fs.writeFile(logPath, buf);
-          logger.info(`[orchestrator] Rotated log file: ${logPath} (was ${Math.round(stats.size / 1024 / 1024)}MB)`);
-        } catch (readErr) {
-          await fh.close().catch(() => {});
-          throw readErr;
-        }
-      }
-    } catch (err) {
-      // Catch ALL errors — never let log rotation crash the daemon
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT") {
-        logger.warn({ err, logPath }, "[orchestrator] Log rotation failed (non-fatal)");
-      }
-    }
+  private async rotateLogFile(logPath: string, maxSizeBytes: number = AGENT_LOG_MAX_BYTES): Promise<void> {
+    await rotateFileBySize(logPath, maxSizeBytes, AGENT_LOG_KEEP_BYTES);
   }
 
   /**
