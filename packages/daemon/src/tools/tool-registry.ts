@@ -29,7 +29,7 @@ export const ALL_TOOL_NAMES = [
   "spawn_agent", "remove_agent", "peek_agent", "nudge_agent",
   "prepare_pr", "report_idle", "request_task",
   "list_personas", "save_persona", "get_workflow_states",
-  "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
+  "share_file", "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
   "update_knowledge", "delete_knowledge",
   "verify_work", "create_pr", "whoami", "get_context", "delete_task",
   "channel_list", "channel_join", "channel_history",
@@ -45,7 +45,7 @@ export const ROLE_TOOL_ACCESS: Record<string, Set<string>> = {
     "list_tasks", "get_task", "update_task", "create_task",
     "prepare_pr", "report_idle", "request_task",
     "list_personas", "save_persona", "get_workflow_states",
-    "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
+    "share_file", "share_image", "save_knowledge", "get_knowledge", "search_knowledge",
     "update_knowledge", "delete_knowledge",
     "verify_work", "create_pr", "whoami", "get_context",
     "channel_list", "channel_join", "channel_history",
@@ -322,8 +322,23 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "share_file",
+    description: "Share a file with another agent. Supports code, markdown, JSON, logs, diffs, configs, and images. The file is stored server-side and a message is sent to the recipient with the file URL. 1MB limit for non-image files.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        to: { type: "string", description: "Agent name or ID to share with" },
+        filePath: { type: "string", description: "Path to file on disk (.md, .ts, .json, .log, .diff, .py, .png, etc.)" },
+        base64Data: { type: "string", description: "Base64-encoded file data. Mutually exclusive with filePath." },
+        filename: { type: "string", description: "Filename for base64 data (e.g. 'output.log'). Required when using base64Data." },
+        caption: { type: "string", description: "Optional caption/description for the file" },
+      },
+      required: ["to"],
+    },
+  },
+  {
     name: "share_image",
-    description: "Share an image or screenshot with another agent. Accepts a file path or base64 data. The image is stored server-side and a message is sent to the recipient with the image URL.",
+    description: "Share an image or screenshot with another agent. Alias for share_file with image types. Accepts a file path or base64 data.",
     inputSchema: {
       type: "object",
       properties: {
@@ -467,6 +482,7 @@ export const CLI_META: Record<string, ToolCliMeta> = {
   report_idle: { aliases: ["idle"] },
   request_task: { aliases: ["request-task"] },
   whoami: {},
+  share_file: { positionalArgs: ["to"], aliases: ["share-file", "share"] },
   share_image: { positionalArgs: ["to"], aliases: ["share-image"] },
   get_task: { group: "task", subcommand: "get", positionalArgs: ["taskId"], aliases: ["show"] },
   update_task: { group: "task", subcommand: "update", positionalArgs: ["taskId"] },

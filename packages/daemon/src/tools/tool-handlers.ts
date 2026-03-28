@@ -874,7 +874,7 @@ export async function handleNudgeAgent(
   return result;
 }
 
-export async function handleShareImage(
+export async function handleShareFile(
   ctx: ToolContext,
   args: Record<string, string>,
 ): Promise<unknown> {
@@ -892,11 +892,12 @@ export async function handleShareImage(
     return { error: `Agent "${args.to}" not found` };
   }
 
-  // Upload the image
+  // Upload the file
+  const filename = args.filename || (args.filePath ? nodePath.basename(args.filePath) : undefined);
   const attachmentResult = (await ctx.apiCall("POST", `/api/v1/sessions/${ctx.sessionId}/attachments`, {
-    filePath: args.filePath || undefined,
+    sourcePath: args.filePath || undefined,
     base64Data: args.base64Data || undefined,
-    filename: args.filename || undefined,
+    filename,
   })) as any;
 
   if (attachmentResult.error) {
@@ -908,7 +909,7 @@ export async function handleShareImage(
   await ctx.apiCall("POST", `/api/v1/sessions/${ctx.sessionId}/relay`, {
     from: ctx.agentId,
     to: target.id,
-    message: `[Image shared: ${attachmentResult.filename || "image"}${caption}] ${attachmentResult.url || ""}`,
+    message: `[File shared: ${attachmentResult.filename || "file"}${caption}] ${attachmentResult.url || ""}`,
     messageType: "text",
   });
 
@@ -1244,7 +1245,8 @@ export const TOOL_HANDLER_MAP: Record<string, (ctx: ToolContext, args: Record<st
   spawn_agent: handleSpawnAgent,
   peek_agent: handlePeekAgent,
   nudge_agent: handleNudgeAgent,
-  share_image: handleShareImage,
+  share_file: handleShareFile,
+  share_image: handleShareFile, // backward-compatible alias
   whoami: handleWhoami,
   get_context: handleGetContext,
   delete_task: handleDeleteTask,

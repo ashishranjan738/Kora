@@ -1078,6 +1078,7 @@ async function handleToolCall(
       return results;
     }
 
+    case "share_file":
     case "share_image": {
       if (!toolArgs.to) return { error: "to is required" };
       if (!toolArgs.filePath && !toolArgs.base64Data) return { error: "Either filePath or base64Data is required" };
@@ -1088,7 +1089,7 @@ async function handleToolCall(
       if (!targetImg) return { error: `Agent "${toolArgs.to}" not found` };
 
       // Determine filename
-      const imgFilename = toolArgs.filename || (toolArgs.filePath ? nodePath.basename(toolArgs.filePath) : "screenshot.png");
+      const imgFilename = toolArgs.filename || (toolArgs.filePath ? nodePath.basename(toolArgs.filePath) : "file");
 
       // Upload attachment
       const uploadResult = (await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/attachments`, {
@@ -1100,13 +1101,13 @@ async function handleToolCall(
 
       if (uploadResult.error) return { error: uploadResult.error };
 
-      // Send message with image reference
-      const caption = toolArgs.caption || `Shared image: ${imgFilename}`;
+      // Send message with file reference
+      const caption = toolArgs.caption || `Shared file: ${imgFilename}`;
       await apiCall("POST", `/api/v1/sessions/${SESSION_ID}/relay`, {
         from: AGENT_ID,
         to: targetImg.id,
-        message: `[Image] ${caption}\nView: ${uploadResult.url}`,
-        messageType: "image",
+        message: `[File] ${caption}\nView: ${uploadResult.url}`,
+        messageType: "text",
       });
 
       recordSendMessage();

@@ -397,7 +397,21 @@ export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
   // ─── Attachments (Image Sharing) ──────────────────────────────────
 
   const ALLOWED_IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
-  const MAX_BASE64_SIZE = 10 * 1024 * 1024; // 10MB cap
+  const ALLOWED_FILE_EXTS = new Set([
+    // Images
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
+    // Text / docs
+    ".md", ".txt", ".log", ".csv", ".rst",
+    // Config / data
+    ".json", ".yaml", ".yml", ".toml", ".xml", ".env.example",
+    // Code
+    ".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs", ".java", ".rb", ".sh", ".bash", ".zsh",
+    ".c", ".cpp", ".h", ".hpp", ".css", ".html", ".sql",
+    // Diffs / patches
+    ".diff", ".patch",
+  ]);
+  const MAX_BASE64_SIZE = 10 * 1024 * 1024; // 10MB cap for base64 (images)
+  const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB cap for non-image files
 
   /** Serve attachment files with auth + security headers */
   router.get("/sessions/:sid/attachments/:filename", (req: Request, res: Response) => {
@@ -416,8 +430,8 @@ export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
 
       const safeFilename = path.basename(filename);
       const ext = path.extname(safeFilename).toLowerCase();
-      if (!ALLOWED_IMAGE_EXTS.has(ext)) {
-        res.status(400).json({ error: `Unsupported format: ${ext}. Allowed: ${[...ALLOWED_IMAGE_EXTS].join(", ")}` });
+      if (!ALLOWED_FILE_EXTS.has(ext)) {
+        res.status(400).json({ error: `Unsupported format: ${ext}. Allowed: ${[...ALLOWED_FILE_EXTS].join(", ")}` });
         return;
       }
 
@@ -436,16 +450,21 @@ export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
         return;
       }
 
-      // Security headers
-      res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}"`);
+      // Security headers — force download for non-image files to prevent XSS via .html/.svg
+      const isServableImage = ALLOWED_IMAGE_EXTS.has(ext) && ext !== ".svg";
+      const disposition = isServableImage ? "inline" : "attachment";
+      res.setHeader("Content-Disposition", `${disposition}; filename="${safeFilename}"`);
       res.setHeader("X-Content-Type-Options", "nosniff");
+      if (!isServableImage) {
+        res.setHeader("Content-Security-Policy", "default-src 'none'");
+      }
       res.sendFile(filePath);
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
   });
 
-  /** Upload attachment (used by share_image MCP tool) */
+  /** Upload attachment (used by share_file / share_image MCP tools) */
   router.post("/sessions/:sid/attachments", (req: Request, res: Response) => {
     try {
       const sid = String(req.params.sid);
@@ -456,8 +475,8 @@ export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
       if (!filename) { res.status(400).json({ error: "filename required" }); return; }
 
       const ext = path.extname(filename).toLowerCase();
-      if (!ALLOWED_IMAGE_EXTS.has(ext)) {
-        res.status(400).json({ error: `Unsupported format. Allowed: ${[...ALLOWED_IMAGE_EXTS].join(", ")}` });
+      if (!ALLOWED_FILE_EXTS.has(ext)) {
+        res.status(400).json({ error: `Unsupported format: ${ext}. Allowed: ${[...ALLOWED_FILE_EXTS].join(", ")}` });
         return;
       }
 
@@ -496,6 +515,15 @@ export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
         }
         if (!fsSync.existsSync(resolvedSource)) {
           res.status(404).json({ error: `Source file not found: ${sourcePath}` });
+          return;
+        }
+        // Enforce size limit: 1MB for non-image files, 10MB for images
+        const sourceSize = fsSync.statSync(resolvedSource).size;
+        const isImage = ALLOWED_IMAGE_EXTS.has(ext);
+        const sizeLimit = isImage ? MAX_BASE64_SIZE : MAX_FILE_SIZE;
+        if (sourceSize > sizeLimit) {
+          const limitMB = sizeLimit / 1024 / 1024;
+          res.status(400).json({ error: `File exceeds ${limitMB}MB size limit (${(sourceSize / 1024 / 1024).toFixed(1)}MB)` });
           return;
         }
         fsSync.copyFileSync(resolvedSource, destPath);
