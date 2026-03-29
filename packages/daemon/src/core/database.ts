@@ -463,6 +463,23 @@ export class AppDatabase extends EventEmitter {
         this.db.exec(`PRAGMA user_version = 18;`);
       }
     }
+
+    if (version < 19) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS knowledge_edges (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          from_key TEXT NOT NULL,
+          to_key TEXT NOT NULL,
+          edge_type TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_knowledge_edges_session ON knowledge_edges(session_id);
+        CREATE INDEX IF NOT EXISTS idx_knowledge_edges_from ON knowledge_edges(session_id, from_key);
+        CREATE INDEX IF NOT EXISTS idx_knowledge_edges_to ON knowledge_edges(session_id, to_key);
+        PRAGMA user_version = 19;
+      `);
+    }
   }
 
   // ─── Channels ──────────────────────────────────────────────
@@ -1358,6 +1375,42 @@ export class AppDatabase extends EventEmitter {
       `SELECT key, value, saved_by, updated_at FROM knowledge_entries WHERE session_id = ? ORDER BY updated_at DESC LIMIT ?`
     ).all(sessionId, limit) as any[];
     return rows.map(r => ({ key: r.key, value: r.value, savedBy: r.saved_by, updatedAt: r.updated_at }));
+  }
+
+  // ─── Knowledge Edges ─────────────────────────────────────────
+
+  addKnowledgeEdge(edge: { id: string; sessionId: string; fromKey: string; toKey: string; edgeType: string }): void {
+    this.db.prepare(
+      `INSERT OR IGNORE INTO knowledge_edges (id, session_id, from_key, to_key, edge_type, created_at) VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(edge.id, edge.sessionId, edge.fromKey, edge.toKey, edge.edgeType, new Date().toISOString());
+  }
+
+  removeKnowledgeEdge(sessionId: string, fromKey: string, toKey: string): boolean {
+    const result = this.db.prepare(
+      `DELETE FROM knowledge_edges WHERE session_id = ? AND from_key = ? AND to_key = ?`
+    ).run(sessionId, fromKey, toKey);
+    return result.changes > 0;
+  }
+
+  getKnowledgeEdges(sessionId: string, key: string): Array<{ id: string; fromKey: string; toKey: string; edgeType: string; createdAt: string }> {
+    const rows = this.db.prepare(
+      `SELECT id, from_key, to_key, edge_type, created_at FROM knowledge_edges WHERE session_id = ? AND (from_key = ? OR to_key = ?) ORDER BY created_at DESC`
+    ).all(sessionId, key, key) as any[];
+    return rows.map(r => ({ id: r.id, fromKey: r.from_key, toKey: r.to_key, edgeType: r.edge_type, createdAt: r.created_at }));
+  }
+
+  getRelatedKnowledge(sessionId: string, key: string): Array<{ key: string; value: string; edgeType: string; direction: "from" | "to" }> {
+    const edges = this.getKnowledgeEdges(sessionId, key);
+    const related: Array<{ key: string; value: string; edgeType: string; direction: "from" | "to" }> = [];
+    for (const edge of edges) {
+      const relatedKey = edge.fromKey === key ? edge.toKey : edge.fromKey;
+      const direction = edge.fromKey === key ? "from" : "to";
+      const entry = this.getKnowledge(sessionId, relatedKey);
+      if (entry) {
+        related.push({ key: entry.key, value: entry.value, edgeType: edge.edgeType, direction });
+      }
+    }
+    return related;
   }
 
   // ─── Task Archival ────────────────────────────────────────────
