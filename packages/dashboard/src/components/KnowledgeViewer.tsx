@@ -1,14 +1,22 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Badge, Button, Group, Paper, Text, TextInput, Textarea, Tooltip, Modal, Stack, Collapse } from "@mantine/core";
+import { Badge, Button, Group, Paper, Text, TextInput, Textarea, Tooltip, Modal, Stack, Collapse, SegmentedControl, ActionIcon } from "@mantine/core";
 import { useApi } from "../hooks/useApi";
 import { formatLastSeen } from "../utils/formatters";
-import { showError } from "../utils/notifications";
+import { showError, showSuccess } from "../utils/notifications";
 
 interface KnowledgeEntry {
   text: string;
   source: string;
   timestamp?: string;
   savedBy?: string; // agent name/ID that saved this entry
+}
+
+interface GlobalKnowledgeEntry {
+  id: string;
+  text: string;
+  source: string;
+  timestamp?: string;
+  sourceSessionId?: string;
 }
 
 interface KnowledgeViewerProps {
@@ -31,6 +39,55 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
   const [saving, setSaving] = useState(false);
   const [deleteIndex, setDeleteIndex] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [viewMode, setViewMode] = useState<"session" | "global">("session");
+  const [globalEntries, setGlobalEntries] = useState<GlobalKnowledgeEntry[]>([]);
+  const [loadingGlobal, setLoadingGlobal] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [promotingIndex, setPromotingIndex] = useState<number | null>(null);
+  const [deletingGlobalId, setDeletingGlobalId] = useState<string | null>(null);
+
+  const fetchGlobalKnowledge = useCallback(async () => {
+    setLoadingGlobal(true);
+    try {
+      const data = await api.getGlobalKnowledge();
+      setGlobalEntries(data.entries || []);
+    } catch {
+      // Endpoint may not exist yet
+    } finally {
+      setLoadingGlobal(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handlePromoteToGlobal(index: number) {
+    setPromotingIndex(index);
+    try {
+      await api.promoteToGlobal(sessionId, index);
+      showSuccess("Entry promoted to global knowledge");
+      fetchGlobalKnowledge();
+    } catch (err: any) {
+      showError(err.message || "Failed to promote entry", "Promote Failed");
+    } finally {
+      setPromotingIndex(null);
+    }
+  }
+
+  async function handleDeleteGlobal(entryId: string) {
+    setDeletingGlobalId(entryId);
+    try {
+      await api.deleteGlobalKnowledge(entryId);
+      setGlobalEntries(prev => prev.filter(e => e.id !== entryId));
+    } catch (err: any) {
+      showError(err.message || "Failed to delete global entry", "Delete Failed");
+    } finally {
+      setDeletingGlobalId(null);
+    }
+  }
+
+  const filteredGlobalEntries = useMemo(() => {
+    if (!globalSearch.trim()) return globalEntries;
+    const q = globalSearch.toLowerCase();
+    return globalEntries.filter(e => e.text.toLowerCase().includes(q) || e.source.toLowerCase().includes(q));
+  }, [globalEntries, globalSearch]);
 
   const fetchKnowledge = useCallback(async () => {
     try {
@@ -48,6 +105,11 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
     const interval = setInterval(fetchKnowledge, 10000);
     return () => clearInterval(interval);
   }, [fetchKnowledge]);
+
+  // Lazy-fetch global knowledge only when tab selected
+  useEffect(() => {
+    if (viewMode === "global") fetchGlobalKnowledge();
+  }, [viewMode, fetchGlobalKnowledge]);
 
   const filteredEntries = useMemo(() => {
     if (!search.trim()) return entries;
@@ -143,16 +205,26 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
           <Text size="lg" fw={700} c="var(--text-primary)">
             Knowledge Base
           </Text>
-          <Badge variant="light" color="blue" size="sm">
-            {filteredEntries.length} entr{filteredEntries.length !== 1 ? "ies" : "y"}
-          </Badge>
+          <SegmentedControl
+            value={viewMode}
+            onChange={(v) => { setViewMode(v as "session" | "global"); if (v === "global") fetchGlobalKnowledge(); }}
+            data={[
+              { value: "session", label: `Session (${entries.length})` },
+              { value: "global", label: `Global (${globalEntries.length})` },
+            ]}
+            size="xs"
+            styles={{
+              root: { backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border-color)" },
+              label: { color: "var(--text-primary)", fontWeight: 500, fontSize: 11, padding: "4px 10px" },
+            }}
+          />
         </Group>
         <Group gap={8}>
           <TextInput
             size="xs"
-            placeholder="Search knowledge..."
-            value={search}
-            onChange={(e) => setSearch(e.currentTarget.value)}
+            placeholder={viewMode === "session" ? "Search session knowledge..." : "Search global knowledge..."}
+            value={viewMode === "session" ? search : globalSearch}
+            onChange={(e) => viewMode === "session" ? setSearch(e.currentTarget.value) : setGlobalSearch(e.currentTarget.value)}
             styles={{
               input: {
                 backgroundColor: "var(--bg-primary)",
@@ -162,34 +234,38 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
               },
             }}
           />
-          <Button
-            size="xs"
-            variant="light"
-            color="blue"
-            onClick={() => setShowAddModal(true)}
-          >
-            + Add Entry
-          </Button>
-          {entries.length > 0 && (
-            <Button
-              size="xs"
-              variant="light"
-              color="red"
-              onClick={() => setShowClearConfirm(true)}
-            >
-              Clear all
-            </Button>
+          {viewMode === "session" && (
+            <>
+              <Button
+                size="xs"
+                variant="light"
+                color="blue"
+                onClick={() => setShowAddModal(true)}
+              >
+                + Add Entry
+              </Button>
+              {entries.length > 0 && (
+                <Button
+                  size="xs"
+                  variant="light"
+                  color="red"
+                  onClick={() => setShowClearConfirm(true)}
+                >
+                  Clear all
+                </Button>
+              )}
+            </>
           )}
         </Group>
       </Group>
 
-      {loading && (
+      {viewMode === "session" && loading && (
         <Text size="sm" c="dimmed" ta="center" py={24}>
           Loading knowledge entries...
         </Text>
       )}
 
-      {!loading && entries.length === 0 && (
+      {viewMode === "session" && !loading && entries.length === 0 && (
         <Paper
           p="xl"
           withBorder
@@ -206,13 +282,13 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
         </Paper>
       )}
 
-      {!loading && filteredEntries.length === 0 && entries.length > 0 && (
+      {viewMode === "session" && !loading && filteredEntries.length === 0 && entries.length > 0 && (
         <Text size="sm" c="dimmed" ta="center" py={16}>
           No entries matching &ldquo;{search}&rdquo;
         </Text>
       )}
 
-      {filteredEntries.length > 0 && (
+      {viewMode === "session" && filteredEntries.length > 0 && (
         <Stack gap={8}>
           {filteredEntries.map((entry, i) => {
             const isLong = entry.text.length > PREVIEW_LENGTH;
@@ -259,6 +335,16 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
                   <Group gap={4} style={{ marginLeft: "auto" }}>
                     {isEditable(entry) && (
                       <>
+                        <Text
+                          size="xs"
+                          c="grape"
+                          fw={500}
+                          style={{ cursor: "pointer" }}
+                          onClick={(e: React.MouseEvent) => { e.stopPropagation(); handlePromoteToGlobal(i); }}
+                        >
+                          {promotingIndex === i ? "Promoting..." : "Promote to Global"}
+                        </Text>
+                        <Text size="xs" c="dimmed">|</Text>
                         <Text
                           size="xs"
                           c="teal"
@@ -309,6 +395,54 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
             );
           })}
         </Stack>
+      )}
+
+      {/* Global Knowledge View */}
+      {viewMode === "global" && (
+        <>
+          {loadingGlobal && (
+            <Text size="sm" c="dimmed" ta="center" py={24}>Loading global knowledge...</Text>
+          )}
+          {!loadingGlobal && globalEntries.length === 0 && (
+            <Paper p="xl" withBorder style={{ backgroundColor: "var(--bg-secondary)", borderColor: "var(--border-color)", textAlign: "center" }}>
+              <Text size="sm" c="dimmed">
+                No global knowledge entries yet. Promote session entries using the &ldquo;Promote to Global&rdquo; button.
+              </Text>
+            </Paper>
+          )}
+          {!loadingGlobal && filteredGlobalEntries.length === 0 && globalEntries.length > 0 && (
+            <Text size="sm" c="dimmed" ta="center" py={16}>No entries matching &ldquo;{globalSearch}&rdquo;</Text>
+          )}
+          {filteredGlobalEntries.length > 0 && (
+            <Stack gap={8}>
+              {filteredGlobalEntries.map((entry) => (
+                <Paper key={entry.id} p="sm" withBorder style={{ backgroundColor: "var(--bg-secondary)", borderColor: "var(--border-color)" }}>
+                  <Group gap={8} mb={4} wrap="wrap">
+                    <Badge variant="filled" color="grape" size="xs">Global</Badge>
+                    <Badge variant="light" color={getSourceColor(entry.source)} size="xs">{entry.source}</Badge>
+                    {entry.sourceSessionId && (
+                      <Text size="xs" c="dimmed">from session {entry.sourceSessionId.slice(0, 8)}</Text>
+                    )}
+                    {entry.timestamp && (
+                      <Tooltip label={new Date(entry.timestamp).toLocaleString()} withArrow>
+                        <Text size="xs" c="dimmed">{formatLastSeen(entry.timestamp)}</Text>
+                      </Tooltip>
+                    )}
+                    <Group gap={4} style={{ marginLeft: "auto" }}>
+                      <Text size="xs" c="red" style={{ cursor: "pointer" }}
+                        onClick={() => handleDeleteGlobal(entry.id)}>
+                        {deletingGlobalId === entry.id ? "Deleting..." : "Delete"}
+                      </Text>
+                    </Group>
+                  </Group>
+                  <Text size="sm" c="var(--text-primary)" style={{ lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }} lineClamp={5}>
+                    {entry.text}
+                  </Text>
+                </Paper>
+              ))}
+            </Stack>
+          )}
+        </>
       )}
 
       {/* Add Entry Modal */}
