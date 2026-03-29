@@ -14,6 +14,10 @@ dist/
 # Playwright MCP
 .playwright-mcp/
 
+# Playwright E2E
+packages/dashboard/e2e/test-results/
+packages/dashboard/e2e/playwright-report/
+
 # Claude
 CLAUDE.md
 .claude/
