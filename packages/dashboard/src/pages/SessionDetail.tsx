@@ -18,6 +18,7 @@ import { SessionSummary } from "../components/SessionSummary";
 import { KnowledgeViewer } from "../components/KnowledgeViewer";
 import { WorkloadChart, type TaskMetricsResponse } from "../components/WorkloadChart";
 import { ChatTab } from "../components/ChatTab";
+import { SidebarChat } from "../components/SidebarChat";
 import { BottleneckAlert } from "../components/BottleneckAlert";
 import { CycleTimeChart } from "../components/CycleTimeChart";
 import { TransitionAnalytics } from "../components/TransitionAnalytics";
@@ -607,7 +608,8 @@ export function SessionDetail() {
   }
 
   return (
-    <div className="page">
+    <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
+    <div className="page" style={{ flex: 1, overflow: "auto" }}>
       {/* Breadcrumb */}
       <nav className="breadcrumb">
         <Link to="/">All Sessions</Link>
@@ -1578,6 +1580,20 @@ export function SessionDetail() {
           </Stack>
         </Modal>
       )}
+    </div>
+    {/* Sidebar Chat */}
+    {sessionId && (
+      <SidebarChat
+        sessionId={sessionId}
+        agents={agents.map((a: any) => ({
+          id: a.id,
+          name: a.config?.name || a.name || a.id,
+          role: a.config?.role || a.role,
+          status: a.status,
+        }))}
+        wsEvents={chatWsEvents}
+      />
+    )}
     </div>
   );
 }
