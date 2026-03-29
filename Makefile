@@ -1,7 +1,7 @@
 .PHONY: build build-shared build-daemon build-dashboard \
        dev dev-debug prod stop-dev stop-prod restart-dev restart-prod \
        dev-bg prod-bg logs-dev logs-prod \
-       test typecheck lint check \
+       test test-e2e typecheck lint check \
        clean clean-dev clean-prod clean-dist clean-all \
        install status
 
@@ -99,6 +99,9 @@ typecheck: build-shared ## Type-check all packages
 
 lint: ## Lint all source files
 	npm run lint
+
+test-e2e: ## Run Playwright E2E tests (requires dev daemon on port 7891)
+	cd packages/dashboard && npx playwright test
 
 check: typecheck test lint ## Run all checks (typecheck + test + lint)
 
