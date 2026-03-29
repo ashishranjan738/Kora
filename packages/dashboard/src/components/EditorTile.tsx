@@ -4,7 +4,37 @@ import { useApi } from "../hooks/useApi";
 import { useThemeStore } from "../stores/themeStore";
 import { showError, showSuccess } from "../utils/notifications";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { MarkdownText } from "./MarkdownText";
 import { Modal, TextInput, Textarea, Select, SegmentedControl, Button, Group, Stack, Text, Code } from "@mantine/core";
+
+/* ── File type helpers ─────────────────────────────────── */
+
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp"]);
+const PDF_EXTENSIONS = new Set(["pdf"]);
+const MARKDOWN_EXTENSIONS = new Set(["md", "mdx", "markdown"]);
+const BINARY_EXTENSIONS = new Set([
+  "zip", "tar", "gz", "7z", "rar",
+  "exe", "dll", "so", "dylib",
+  "woff", "woff2", "ttf", "eot",
+  "mp3", "mp4", "wav", "avi", "mov",
+  "db", "sqlite", "sqlite3",
+  "png", "jpg", "jpeg", "gif", "webp", "ico", "bmp", "tiff",
+  "pdf",
+]);
+
+function getFileExtension(path: string): string {
+  return path.split(".").pop()?.toLowerCase() || "";
+}
+
+type FileViewMode = "monaco" | "image" | "pdf" | "binary";
+
+function getFileViewMode(path: string): FileViewMode {
+  const ext = getFileExtension(path);
+  if (IMAGE_EXTENSIONS.has(ext)) return "image";
+  if (PDF_EXTENSIONS.has(ext)) return "pdf";
+  if (BINARY_EXTENSIONS.has(ext)) return "binary";
+  return "monaco";
+}
 
 interface EditorTileProps {
   sessionId: string;
@@ -52,6 +82,7 @@ export function EditorTile({ sessionId }: EditorTileProps) {
     return null;
   });
   const [saving, setSaving] = useState(false);
+  const [mdPreviewMode, setMdPreviewMode] = useState<Record<string, "edit" | "preview" | "split">>({});
   const openTabsRef = useRef(openTabs);
   const activeTabPathRef = useRef(activeTabPath);
 
@@ -166,6 +197,25 @@ export function EditorTile({ sessionId }: EditorTileProps) {
       setActiveTabPath(filePath);
       return;
     }
+
+    const viewMode = getFileViewMode(filePath);
+
+    // Binary files that aren't images/PDFs: show friendly error
+    if (viewMode === "binary") {
+      showError("This file type cannot be previewed in the editor.", "Binary file");
+      return;
+    }
+
+    // Images and PDFs: open as a tab with empty content (rendered via raw endpoint)
+    if (viewMode === "image" || viewMode === "pdf") {
+      const ext = getFileExtension(filePath);
+      const newTab: OpenTab = { path: filePath, content: "", language: ext, modified: false };
+      setOpenTabs(prev => [...prev, newTab]);
+      setActiveTabPath(filePath);
+      return;
+    }
+
+    // Default: read content and open in Monaco
     try {
       const data = await api.readFile(sessionId, filePath);
       const newTab: OpenTab = { path: data.path, content: data.content, language: data.language, modified: false };
@@ -249,6 +299,18 @@ export function EditorTile({ sessionId }: EditorTileProps) {
         // Fetch all files if not cached
         if (allFiles.length === 0) fetchAllFiles();
       }
+      // Ctrl+Shift+V: toggle markdown preview
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "V") {
+        const activePath = activeTabPathRef.current;
+        if (activePath && MARKDOWN_EXTENSIONS.has(getFileExtension(activePath))) {
+          e.preventDefault();
+          setMdPreviewMode(prev => {
+            const current = prev[activePath] || "edit";
+            const next = current === "edit" ? "split" : current === "split" ? "preview" : "edit";
+            return { ...prev, [activePath]: next };
+          });
+        }
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -327,8 +389,14 @@ export function EditorTile({ sessionId }: EditorTileProps) {
             onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-secondary)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = activeTabPath === item.path ? "var(--bg-tertiary)" : "transparent")}
           >
-            <span style={{ marginRight: 4, color: item.type === "directory" ? "var(--text-secondary)" : "var(--accent-blue)" }}>
-              {item.type === "directory" ? "\u25B6" : "\u25CB"}
+            <span style={{ marginRight: 4, color: item.type === "directory" ? "var(--text-secondary)" : "var(--accent-blue)", fontSize: 11 }}>
+              {item.type === "directory" ? "\uD83D\uDCC1" : (() => {
+                const ext = getFileExtension(item.name);
+                if (IMAGE_EXTENSIONS.has(ext)) return "\uD83D\uDDBC";
+                if (PDF_EXTENSIONS.has(ext)) return "\uD83D\uDCD5";
+                if (MARKDOWN_EXTENSIONS.has(ext)) return "\uD83D\uDCDD";
+                return "\uD83D\uDCC4";
+              })()}
             </span>
             {item.name}
           </div>
@@ -452,9 +520,68 @@ export function EditorTile({ sessionId }: EditorTileProps) {
                 {saving ? "Saving..." : `Save ${activeFilename}`}
               </button>
             </div>
-            {/* Monaco Editor */}
+            {/* Editor / Viewer Area */}
             <div style={{ flex: 1, minHeight: 0 }}>
-              {activeTab ? (
+              {activeTab ? (() => {
+                const viewMode = getFileViewMode(activeTab.path);
+                const isMarkdown = MARKDOWN_EXTENSIONS.has(getFileExtension(activeTab.path));
+                const currentMdMode = mdPreviewMode[activeTab.path] || "edit";
+                const rawUrl = `/api/v1/sessions/${sessionId}/editor/raw?path=${encodeURIComponent(activeTab.path)}`;
+
+                // Image viewer
+                if (viewMode === "image") {
+                  return (
+                    <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "repeating-conic-gradient(var(--bg-tertiary) 0% 25%, var(--bg-primary) 0% 50%) 50% / 20px 20px", overflow: "auto" }}>
+                      <div style={{ textAlign: "center", padding: 20 }}>
+                        <img src={rawUrl} alt={activeFilename} style={{ maxWidth: "100%", maxHeight: "calc(100vh - 200px)", borderRadius: 4, boxShadow: "0 2px 12px rgba(0,0,0,0.3)" }}
+                          onLoad={(e) => { const img = e.currentTarget; img.title = `${activeFilename} — ${img.naturalWidth}×${img.naturalHeight}`; }}
+                        />
+                        <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)" }}>{activeFilename}</div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // PDF viewer
+                if (viewMode === "pdf") {
+                  return <iframe src={rawUrl} title={activeFilename} style={{ width: "100%", height: "100%", border: "none" }} />;
+                }
+
+                // Markdown with preview
+                if (isMarkdown) {
+                  return (
+                    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+                      {/* Mode toggle */}
+                      <div style={{ display: "flex", gap: 2, padding: "4px 8px", background: "var(--bg-secondary)", borderBottom: "1px solid var(--border-color)", flexShrink: 0 }}>
+                        {(["edit", "preview", "split"] as const).map((mode) => (
+                          <button key={mode} onClick={() => setMdPreviewMode(prev => ({ ...prev, [activeTab.path]: mode }))}
+                            style={{ fontSize: 10, padding: "2px 10px", borderRadius: 3, border: "1px solid var(--border-color)", cursor: "pointer", background: currentMdMode === mode ? "var(--accent-blue)" : "var(--bg-primary)", color: currentMdMode === mode ? "white" : "var(--text-secondary)" }}>
+                            {mode === "edit" ? "Edit" : mode === "preview" ? "Preview" : "Split"}
+                          </button>
+                        ))}
+                        <span style={{ flex: 1 }} />
+                        <span style={{ fontSize: 10, color: "var(--text-muted)", alignSelf: "center" }}>Ctrl+Shift+V to toggle</span>
+                      </div>
+                      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+                        {currentMdMode !== "preview" && (
+                          <div style={{ flex: 1, minHeight: 0 }}>
+                            <Editor key={activeTab.path + "-md"} height="100%" language="markdown" value={activeTab.content} theme={resolvedEditorTheme}
+                              onChange={(value) => { if (value !== undefined && activeTabPath) { setOpenTabs(prev => prev.map(tab => tab.path === activeTabPath ? { ...tab, content: value, modified: true } : tab)); } }}
+                              options={{ minimap: { enabled: false }, fontSize: 13, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", wordWrap: "on", lineNumbers: "on", scrollBeyondLastLine: false }} />
+                          </div>
+                        )}
+                        {currentMdMode !== "edit" && (
+                          <div style={{ flex: 1, padding: "16px 20px", overflowY: "auto", background: "var(--bg-primary)", borderLeft: currentMdMode === "split" ? "1px solid var(--border-color)" : "none" }}>
+                            {activeTab.content ? <MarkdownText>{activeTab.content}</MarkdownText> : <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>Nothing to preview</span>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Default: Monaco editor
+                return (
                 <Editor
                   key={activeTab.path}
                   height="100%"
@@ -579,7 +706,8 @@ export function EditorTile({ sessionId }: EditorTileProps) {
                     });
                   }}
                 />
-              ) : (
+                );
+              })() : (
                 <div style={{
                   flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
                   color: "var(--text-muted)", fontSize: 14, height: "100%",
