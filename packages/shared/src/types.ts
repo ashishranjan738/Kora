@@ -337,8 +337,10 @@ export interface WorkflowState {
 /** Default workflow states for new sessions */
 export const DEFAULT_WORKFLOW_STATES: WorkflowState[] = [
   { id: "pending",     label: "Pending",     color: "#6b7280", category: "not-started" },
-  { id: "in-progress", label: "In Progress", color: "#3b82f6", category: "active" },
-  { id: "review",      label: "Review",      color: "#f59e0b", category: "active" },
+  { id: "in-progress", label: "In Progress", color: "#3b82f6", category: "active",
+    instructions: "Actively being implemented. Write code and unit tests. Run `npm test` to verify. Move to review when ready." },
+  { id: "review",      label: "Review",      color: "#f59e0b", category: "active",
+    instructions: "Code review — check for bugs, style, test coverage, and architecture. Approve or request changes. Make sure unit tests are there." },
   { id: "done",        label: "Done",        color: "#22c55e", category: "closed" },
 ];
 

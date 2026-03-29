@@ -26,6 +26,7 @@ import {
   PERSONAS_DIR,
   KNOWLEDGE_DIR,
 } from "@kora/shared";
+import { populateDefaultInstructions } from "@kora/shared";
 import { EventLog } from "./event-log.js";
 import { logger } from "./logger.js";
 
@@ -132,7 +133,7 @@ export class SessionManager {
       status: "active" as SessionStatus,
       messagingMode: config.messagingMode ?? "mcp",
       worktreeMode: config.worktreeMode ?? "isolated",
-      workflowStates: config.workflowStates, // Frozen at session creation
+      workflowStates: config.workflowStates ? populateDefaultInstructions(config.workflowStates) : undefined,
       allowMasterForceTransition: config.allowMasterForceTransition ?? false,
     };
 
