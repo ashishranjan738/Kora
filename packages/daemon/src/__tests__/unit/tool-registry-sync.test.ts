@@ -126,6 +126,8 @@ const TOOL_TO_CLI_MAP: Record<string, string[]> = {
   delete_knowledge: ["knowledge", "delete"],
   link_knowledge: ["knowledge", "link"],
   unlink_knowledge: ["knowledge", "unlink"],
+  promote_knowledge: ["knowledge", "promote"],
+  list_global_knowledge: ["knowledge", "global"],
   whoami: ["whoami"],
   get_context: ["context"],
   delete_task: ["task", "delete"],
@@ -142,8 +144,8 @@ describe("Tool Registry Sync Validation", () => {
   // ── Registry integrity ──────────────────────────────────────────────────
 
   describe("Registry integrity", () => {
-    it("ALL_TOOL_NAMES has 31 tools", () => {
-      expect(ALL_TOOL_NAMES.length).toBe(31);
+    it("ALL_TOOL_NAMES has 33 tools", () => {
+      expect(ALL_TOOL_NAMES.length).toBe(33);
     });
 
     it("TOOL_DEFINITIONS matches ALL_TOOL_NAMES", () => {

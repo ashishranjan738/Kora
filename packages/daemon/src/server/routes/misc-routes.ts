@@ -856,4 +856,47 @@ export function registerMiscRoutes(router: Router, deps: RouteDeps): void {
       res.json({ triggered: true, eventId, sessionName, webhookId: wh.id });
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
+
+  // ── Global Knowledge Store ──────────────────────────────────
+
+  router.post("/global/knowledge", (req: Request, res: Response) => {
+    try {
+      const { getGlobalKnowledgeDB } = require("../../core/global-knowledge.js");
+      const globalDb = getGlobalKnowledgeDB(globalConfigDir);
+      const { key, value, sourceSession, promotedBy } = req.body;
+      if (!key || !value) { res.status(400).json({ error: "key and value required" }); return; }
+      globalDb.promote({ key, value, sourceSession: sourceSession || null, promotedBy: promotedBy || null });
+      res.json({ success: true, key, promoted: true });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.get("/global/knowledge", (req: Request, res: Response) => {
+    try {
+      const { getGlobalKnowledgeDB } = require("../../core/global-knowledge.js");
+      const globalDb = getGlobalKnowledgeDB(globalConfigDir);
+      const limit = parseInt(req.query.limit as string) || 50;
+      const entries = globalDb.list(limit);
+      res.json({ entries, count: entries.length });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.get("/global/knowledge/:key", (req: Request, res: Response) => {
+    try {
+      const { getGlobalKnowledgeDB } = require("../../core/global-knowledge.js");
+      const globalDb = getGlobalKnowledgeDB(globalConfigDir);
+      const entry = globalDb.get(decodeURIComponent(String(req.params.key)));
+      if (!entry) { res.status(404).json({ error: "Global knowledge entry not found" }); return; }
+      res.json(entry);
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.delete("/global/knowledge/:key", (req: Request, res: Response) => {
+    try {
+      const { getGlobalKnowledgeDB } = require("../../core/global-knowledge.js");
+      const globalDb = getGlobalKnowledgeDB(globalConfigDir);
+      const removed = globalDb.remove(decodeURIComponent(String(req.params.key)));
+      if (!removed) { res.status(404).json({ error: "Global knowledge entry not found" }); return; }
+      res.json({ success: true, removed: true });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
 }

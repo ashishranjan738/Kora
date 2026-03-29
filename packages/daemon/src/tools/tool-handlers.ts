@@ -456,6 +456,36 @@ async function handleUnlinkKnowledge(
   return await ctx.apiCall("DELETE", `/api/v1/sessions/${ctx.sessionId}/knowledge-db/edges/${encodeURIComponent(args.fromKey.trim())}/${encodeURIComponent(args.toKey.trim())}`);
 }
 
+async function handlePromoteKnowledge(
+  ctx: ToolContext,
+  args: Record<string, string>,
+): Promise<unknown> {
+  if (!args.key?.trim()) return { error: "key is required" };
+  // Master-only check
+  if (ctx.agentRole !== "master") {
+    return { error: "promote_knowledge is restricted to master agents" };
+  }
+  // Get the session entry
+  const entry = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/knowledge-db/${encodeURIComponent(args.key.trim())}`)) as any;
+  if (!entry || entry.error) return { error: `Knowledge key "${args.key}" not found in session` };
+
+  // Promote to global store via API
+  return await ctx.apiCall("POST", `/api/v1/global/knowledge`, {
+    key: args.key.trim(),
+    value: entry.value,
+    sourceSession: ctx.sessionId,
+    promotedBy: ctx.agentId,
+  });
+}
+
+async function handleListGlobalKnowledge(
+  ctx: ToolContext,
+  args: Record<string, string>,
+): Promise<unknown> {
+  const limit = parseInt(args.limit) || 50;
+  return await ctx.apiCall("GET", `/api/v1/global/knowledge?limit=${limit}`);
+}
+
 // ── Medium Complexity ──────────────────────────────────────────
 
 export async function handleSendMessage(
@@ -1158,6 +1188,8 @@ export const TOOL_HANDLER_MAP: Record<string, (ctx: ToolContext, args: Record<st
   delete_knowledge: handleDeleteKnowledge,
   link_knowledge: handleLinkKnowledge,
   unlink_knowledge: handleUnlinkKnowledge,
+  promote_knowledge: handlePromoteKnowledge,
+  list_global_knowledge: handleListGlobalKnowledge,
   send_message: handleSendMessage,
   list_tasks: handleListTasks,
   update_task: handleUpdateTask,
