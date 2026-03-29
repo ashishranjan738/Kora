@@ -150,11 +150,44 @@ export class AgentManager extends EventEmitter {
 
       const kiroSteeringDir = path.join(agentWorkDir, ".kiro", "steering");
       await fs.mkdir(kiroSteeringDir, { recursive: true });
+
+      // In shared mode, use per-agent steering files to avoid conflicts.
+      // In isolated mode (own worktree), kora.md is fine.
+      const isSharedMode = options.worktreeMode === "shared";
+      const steeringFileName = isSharedMode ? `kora-${agentId}.md` : "kora.md";
+
+      // Add YAML front matter for Kiro steering file inclusion
+      const yamlFrontMatter = [
+        "---",
+        `inclusion: auto`,
+        `description: "Kora orchestration instructions for agent ${options.name} (${agentId})"`,
+        "---",
+        "",
+      ].join("\n");
+      const steeringContent = yamlFrontMatter + kiroBootPrompt;
+
       await fs.writeFile(
-        path.join(kiroSteeringDir, "kora.md"),
-        kiroBootPrompt,
+        path.join(kiroSteeringDir, steeringFileName),
+        steeringContent,
         "utf-8",
       );
+
+      // Write fallback steering file with inclusion: always (safety net)
+      const fallbackContent = [
+        "---",
+        "inclusion: always",
+        'description: "Kora orchestration fallback — ensures agents always have basic instructions"',
+        "---",
+        "",
+        "You are a Kora-managed agent. If you haven't loaded your instructions yet, call get_context(\"all\") now.",
+      ].join("\n");
+      const fallbackPath = path.join(kiroSteeringDir, "kora-fallback.md");
+      try {
+        await fs.access(fallbackPath);
+        // Already exists — don't overwrite
+      } catch {
+        await fs.writeFile(fallbackPath, fallbackContent, "utf-8");
+      }
 
       // Also write AGENTS.md which Kiro auto-reads from workspace root
       // AGENTS.md also gets boot prompt (Kiro reads this automatically)
@@ -600,10 +633,21 @@ export class AgentManager extends EventEmitter {
       logger.info(`[agent-manager] Preserving worktree for ${agentId} (restart mode)`);
     }
 
-    // 7. Remove from agents map
+    // 7. Clean up Kiro per-agent steering file (shared mode)
+    if (agent.config.cliProvider === "kiro" && agent.config.workingDirectory) {
+      try {
+        const steeringFile = path.join(agent.config.workingDirectory, ".kiro", "steering", `kora-${agentId}.md`);
+        await fs.unlink(steeringFile);
+        logger.info(`[agent-manager] Cleaned up Kiro steering file for ${agentId}`);
+      } catch {
+        // File may not exist (isolated mode uses kora.md) — non-fatal
+      }
+    }
+
+    // 8. Remove from agents map
     this.agents.delete(agentId);
 
-    // 8. Emit "agent-removed"
+    // 9. Emit "agent-removed"
     this.emit("agent-removed", agentId, reason);
   }
 
