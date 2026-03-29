@@ -14,8 +14,8 @@ import { findAgentByNameOrId } from "../../tools/tool-context.js";
 import { TOOL_HANDLER_MAP } from "../../tools/tool-handlers.js";
 
 describe("Tool Registry", () => {
-  it("has exactly 29 tool definitions", () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(29);
+  it("has exactly 31 tool definitions", () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(31);
   });
 
   it("ALL_TOOL_NAMES matches TOOL_DEFINITIONS", () => {
