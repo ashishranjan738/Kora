@@ -950,8 +950,13 @@ export async function handleGetContext(
   }
 
   if (resource === "all") {
+    // Skip persona and communication — already in system prompt (boot prompt).
+    // This makes the "all" response lighter and avoids redundant data.
+    // Use get_context("persona") or get_context("communication") if needed individually.
+    const skipInAll = new Set(["kora://persona", "kora://communication"]);
     const results: Record<string, unknown> = {};
     for (const res of RESOURCE_DEFINITIONS) {
+      if (skipInAll.has(res.uri)) continue;
       const name = res.uri.replace("kora://", "");
       try { results[name] = await res.fetchData(ctx); } catch { results[name] = { error: "Failed to fetch" }; }
     }
