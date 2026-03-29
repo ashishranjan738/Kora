@@ -14,7 +14,7 @@ import { TOOL_DEFINITIONS, ALL_TOOL_NAMES, getToolDefinition } from "../../tools
 // ── TOOL_HANDLER_MAP completeness ───────────────────────────
 
 describe("TOOL_HANDLER_MAP completeness", () => {
-  it("has exactly 29 entries", () => {
+  it("has exactly 33 entries", () => {
     expect(Object.keys(TOOL_HANDLER_MAP).length).toBe(33);
   });
 
