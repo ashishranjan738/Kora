@@ -372,6 +372,58 @@ export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
     }
   });
 
+  /** Serve raw file content with correct Content-Type (for binary files: images, PDFs, etc.) */
+  router.get("/sessions/:sid/files/raw", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const session = sessionManager.getSession(sid);
+      if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const filePath = String(req.query.path || "");
+      if (!filePath) { res.status(400).json({ error: "path query parameter required" }); return; }
+
+      const projectRoot = path.resolve(session.config.projectPath);
+      const fullPath = path.resolve(projectRoot, filePath);
+
+      // Path traversal protection
+      if (!fullPath.startsWith(projectRoot + path.sep) && fullPath !== projectRoot) {
+        res.status(403).json({ error: "Access denied — path outside project directory" }); return;
+      }
+
+      const fsSync = require("fs");
+      if (!fsSync.existsSync(fullPath) || !fsSync.statSync(fullPath).isFile()) {
+        res.status(404).json({ error: "File not found" }); return;
+      }
+
+      // Determine Content-Type from extension
+      const ext = path.extname(filePath).toLowerCase();
+      const mimeTypes: Record<string, string> = {
+        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+        ".pdf": "application/pdf", ".ico": "image/x-icon",
+        ".json": "application/json", ".xml": "application/xml",
+        ".html": "text/html", ".css": "text/css",
+        ".js": "text/javascript", ".ts": "text/plain",
+        ".md": "text/markdown", ".txt": "text/plain",
+      };
+      const contentType = mimeTypes[ext] || "application/octet-stream";
+
+      // Security: force download for executable/script types, inline for safe types
+      const safeInlineTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"]);
+      const disposition = safeInlineTypes.has(contentType) ? "inline" : "attachment";
+
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Content-Disposition", `${disposition}; filename="${path.basename(filePath)}"`);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      if (!safeInlineTypes.has(contentType)) {
+        res.setHeader("Content-Security-Policy", "default-src 'none'");
+      }
+      res.sendFile(fullPath);
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // Write a file
   router.put("/sessions/:sid/files/write", async (req: Request, res: Response) => {
     try {
