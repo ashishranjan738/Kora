@@ -8,6 +8,7 @@ export default defineConfig({
       "**/.kora/**",
       "**/.kora-dev/**",
       "**/.claude/**",
+      "**/e2e/**",
     ],
   },
 });
