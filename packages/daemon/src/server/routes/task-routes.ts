@@ -1115,6 +1115,12 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
       db.saveKnowledge({ id: randomUUID().slice(0, 8), sessionId: sid, key, value, savedBy });
       broadcastEvent({ event: "knowledge-saved", sessionId: sid, key });
       res.status(201).json({ success: true, key });
+      // Generate embedding in background (fire-and-forget)
+      import("../../core/embeddings.js").then(({ embed, serializeEmbedding }) =>
+        embed(`${key}: ${value}`).then(vec => {
+          if (vec) db.saveEmbedding(sid, key, serializeEmbedding(vec));
+        })
+      ).catch(() => { /* non-fatal — semantic search just won't work for this entry */ });
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
 
@@ -1143,6 +1149,12 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
       db.saveKnowledge({ id: key, sessionId: sid, key, value, savedBy });
       broadcastEvent({ event: "knowledge-updated", sessionId: sid, key });
       res.json({ success: true, key });
+      // Re-generate embedding on update
+      import("../../core/embeddings.js").then(({ embed, serializeEmbedding }) =>
+        embed(`${key}: ${value}`).then(vec => {
+          if (vec) db.saveEmbedding(sid, key, serializeEmbedding(vec));
+        })
+      ).catch(() => {});
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
 
@@ -1159,15 +1171,55 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
 
-  router.get("/sessions/:sid/knowledge-db", (req: Request, res: Response) => {
+  router.get("/sessions/:sid/knowledge-db", async (req: Request, res: Response) => {
     try {
       const sid = String(req.params.sid);
       const db = getDb(sid);
       if (!db) { res.status(404).json({ error: "Session not found" }); return; }
       const query = req.query.q as string | undefined;
       const limit = parseInt(req.query.limit as string) || 20;
-      const entries = query ? db.searchKnowledge(sid, query, limit) : db.listKnowledge(sid, limit);
-      res.json({ entries, count: entries.length });
+      const semantic = req.query.semantic === "true";
+
+      if (!query) {
+        const entries = db.listKnowledge(sid, limit);
+        res.json({ entries, count: entries.length });
+        return;
+      }
+
+      // FTS/LIKE search (always)
+      const ftsResults = db.searchKnowledge(sid, query, limit);
+
+      // Semantic search (if requested and embeddings available)
+      if (semantic) {
+        try {
+          const { embed, deserializeEmbedding, cosineSimilarity } = await import("../../core/embeddings.js");
+          const queryVec = await embed(query);
+          if (queryVec) {
+            const withEmbeddings = db.getKnowledgeWithEmbeddings(sid);
+            const scored = withEmbeddings.map(entry => ({
+              ...entry,
+              similarity: cosineSimilarity(queryVec, deserializeEmbedding(entry.embedding)),
+            })).filter(e => e.similarity > 0.3) // threshold
+              .sort((a, b) => b.similarity - a.similarity)
+              .slice(0, limit);
+
+            // Hybrid merge: combine FTS + semantic, dedup by key, score by rank
+            const seen = new Set<string>();
+            const merged: Array<{ key: string; value: string; savedBy: string | null; updatedAt: string; similarity?: number }> = [];
+            // Interleave: semantic first (relevance), then FTS
+            for (const e of scored) {
+              if (!seen.has(e.key)) { seen.add(e.key); merged.push({ key: e.key, value: e.value, savedBy: e.savedBy, updatedAt: e.updatedAt, similarity: e.similarity }); }
+            }
+            for (const e of ftsResults) {
+              if (!seen.has(e.key)) { seen.add(e.key); merged.push(e); }
+            }
+            res.json({ entries: merged.slice(0, limit), count: merged.length, searchMode: "hybrid" });
+            return;
+          }
+        } catch { /* semantic search failed — fall through to FTS-only */ }
+      }
+
+      res.json({ entries: ftsResults, count: ftsResults.length, searchMode: "fts" });
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
 

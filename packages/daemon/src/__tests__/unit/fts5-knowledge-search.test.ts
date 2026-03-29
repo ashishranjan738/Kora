@@ -27,7 +27,7 @@ describe("FTS5 knowledge search", () => {
   describe("schema migration", () => {
     it("should create FTS5 virtual table (migration 18)", () => {
       const version = db.db.pragma("user_version", { simple: true }) as number;
-      expect(version).toBe(19);
+      expect(version).toBe(20);
     });
 
     it("should report FTS5 as available", () => {
