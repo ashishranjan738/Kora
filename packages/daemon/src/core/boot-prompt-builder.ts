@@ -1,10 +1,9 @@
 /**
- * Boot Prompt Builder — generates a system prompt that instructs agents to
- * load their full context via get_context() or kora-cli at startup, and
- * includes role-specific guardrails enforced at the system prompt level.
+ * Boot Prompt Builder — generates the full system prompt for Kora agents.
  *
- * The boot prompt is intentionally compact (<3KB) — full agent context
- * (persona, team, workflow, tasks, rules) comes from the daemon API.
+ * Combines identity, role constraints, core tools reference, and rules
+ * into the system prompt header. When persona content is provided,
+ * it's appended to create the complete ~8-10KB prompt.
  */
 
 import type { MessagingMode } from "@kora/shared";
@@ -21,6 +20,8 @@ export interface BootPromptOptions {
   pipelineStates?: string[];
   /** Human-authored project rules from .kora.yml rules: array */
   rules?: string[];
+  /** Full persona content (from buildPersona). When provided, merged into the prompt. */
+  personaContent?: string;
 }
 
 /**
@@ -42,27 +43,21 @@ function getRoleConstraint(roleName?: string, agentRole?: string): string {
     if (ROLE_CONSTRAINTS[key]) return ROLE_CONSTRAINTS[key];
   }
   if (agentRole && ROLE_CONSTRAINTS[agentRole]) return ROLE_CONSTRAINTS[agentRole];
-  return ROLE_CONSTRAINTS.worker; // Default to worker constraints
+  return ROLE_CONSTRAINTS.worker;
 }
 
-function buildIdentitySection(opts: BootPromptOptions): string {
-  const parts: string[] = [];
+function buildIdentityBlock(opts: BootPromptOptions): string {
+  const lines: string[] = [];
+
   if (opts.agentName && opts.agentRole) {
     const session = opts.sessionName ? ` in session "${opts.sessionName}"` : "";
     const role = opts.roleName || opts.agentRole;
-    parts.push(`You are ${opts.agentName}, a ${role} agent${session}. Your role: ${opts.agentRole}.`);
+    lines.push(`You are ${opts.agentName}, a ${role} agent${session}. Your role: ${opts.agentRole}.`);
   }
-  return parts.join(" ");
-}
 
-function buildGuardrailSection(opts: BootPromptOptions): string {
-  const lines: string[] = [];
-
-  // Role constraint
   const constraint = getRoleConstraint(opts.roleName, opts.agentRole);
   lines.push(`ROLE CONSTRAINT: ${constraint}`);
 
-  // Workspace rules
   if (opts.worktreeMode === "shared") {
     lines.push("WORKSPACE: Shared repo. ONLY edit files assigned to you. NEVER force-push. Commit frequently to avoid conflicts.");
   } else if (opts.worktreeMode === "isolated") {
@@ -80,7 +75,6 @@ function buildGuardrailSection(opts: BootPromptOptions): string {
     lines.push("PROJECT RULES: " + opts.rules.join(" | "));
   }
 
-  // Worker protocol essentials (worker-only)
   if (opts.agentRole === "worker") {
     lines.push("PROTOCOL: Acknowledge task → set in-progress → work silently → ONE completion message → set done → STOP.");
   }
@@ -88,74 +82,127 @@ function buildGuardrailSection(opts: BootPromptOptions): string {
   return lines.join("\n");
 }
 
+function buildCoreToolsBlock(mode: MessagingMode): string {
+  if (mode === "cli") {
+    return [
+      "Core commands:",
+      "- kora-cli context all — load your full context",
+      "- kora-cli send <name> <message> — message a teammate",
+      "- kora-cli messages — read your inbox",
+      "- kora-cli tasks — see your task assignments",
+      "- kora-cli task update <id> --status <s> — update task progress",
+    ].join("\n");
+  }
+
+  if (mode === "terminal") {
+    return [
+      "Communicate with teammates using @mentions:",
+      "- @AgentName: your message — send to a specific agent",
+      "- @all: your message — broadcast to everyone",
+    ].join("\n");
+  }
+
+  // MCP mode
+  return [
+    "Core tools:",
+    "- get_context(resource) — load your context (\"all\", \"team\", \"tasks\", \"workflow\", \"rules\", \"persona\")",
+    "- send_message(to, message) — message a teammate",
+    "- check_messages() — read your inbox",
+    "- list_tasks() — see your task assignments",
+    "- update_task(taskId, status, comment) — update task progress",
+  ].join("\n");
+}
+
+function buildRulesBlock(mode: MessagingMode): string {
+  if (mode === "cli") {
+    return [
+      "RULES:",
+      "- NEVER read .kora/ files directly — use kora-cli commands only",
+      "- NEVER curl or fetch the daemon API directly — use kora-cli commands only",
+      "- NEVER query SQLite databases directly",
+      "- Use ONLY the kora-cli commands listed above for all Kora interactions",
+    ].join("\n");
+  }
+
+  if (mode === "terminal") {
+    return [
+      "RULES:",
+      "- NEVER read .kora/ files directly",
+      "- NEVER curl or fetch the daemon API directly",
+      "- Use @mentions for all communication",
+    ].join("\n");
+  }
+
+  return [
+    "RULES:",
+    "- NEVER read .kora/ files directly — use MCP tools only",
+    "- NEVER curl or fetch the daemon API directly — use MCP tools only",
+    "- NEVER query SQLite databases directly",
+    "- Use ONLY the MCP tools listed above for all Kora interactions",
+  ].join("\n");
+}
+
 /**
- * Build a boot prompt for an agent with optional role-specific guardrails.
- * Backward-compatible: calling with just messagingMode still works.
+ * Build the system prompt for an agent.
+ *
+ * When personaContent is provided (from buildPersona()), generates a full ~8-10KB
+ * prompt with all sections. Otherwise generates a compact boot prompt for backward compat.
  */
 export function buildBootPrompt(messagingModeOrOptions?: MessagingMode | BootPromptOptions): string {
-  // Backward compatibility: accept string or options object
   const opts: BootPromptOptions = typeof messagingModeOrOptions === "string"
     ? { messagingMode: messagingModeOrOptions }
     : messagingModeOrOptions || {};
 
   const mode = opts.messagingMode || "mcp";
-  const identity = buildIdentitySection(opts);
-  const guardrails = (opts.agentName || opts.agentRole) ? buildGuardrailSection(opts) : "";
+  const header = "You are a Kora agent — part of a multi-agent team managed by the Kora orchestration platform.";
+  const identity = (opts.agentName || opts.agentRole) ? buildIdentityBlock(opts) : "";
+  const coreTools = buildCoreToolsBlock(mode);
+  const rules = buildRulesBlock(mode);
 
+  // Full prompt: header → identity → persona content → tools → rules
+  if (opts.personaContent) {
+    return [
+      header,
+      "",
+      identity,
+      "",
+      opts.personaContent,
+      "",
+      coreTools,
+      "",
+      rules,
+    ].filter(line => line !== undefined).join("\n");
+  }
+
+  // Compact boot prompt (backward compat — no persona data provided)
   if (mode === "cli") {
     return [
-      `You are a Kora agent — part of a multi-agent team managed by the Kora orchestration platform.`,
+      header,
       identity ? `\n${identity}` : "",
-      guardrails ? `\n${guardrails}` : "",
       `\nFIRST ACTION: Run \`kora-cli context all\` to load your complete role, team, tasks, workflow, and rules.`,
-      `\nCore commands:`,
-      `- kora-cli context all — load your full context`,
-      `- kora-cli send <name> <message> — message a teammate`,
-      `- kora-cli messages — read your inbox`,
-      `- kora-cli tasks — see your task assignments`,
-      `- kora-cli task update <id> --status <s> — update task progress`,
-      `\nRULES:`,
-      `- NEVER read .kora/ files directly — use kora-cli commands only`,
-      `- NEVER curl or fetch the daemon API directly — use kora-cli commands only`,
-      `- NEVER query SQLite databases directly`,
-      `- Use ONLY the kora-cli commands listed above for all Kora interactions`,
+      `\n${coreTools}`,
+      `\n${rules}`,
       `\nYou MUST run \`kora-cli context all\` before doing anything else.`,
     ].filter(Boolean).join("\n");
   }
 
   if (mode === "terminal") {
     return [
-      `You are a Kora agent — part of a multi-agent team managed by the Kora orchestration platform.`,
+      header,
       identity ? `\n${identity}` : "",
-      guardrails ? `\n${guardrails}` : "",
-      `\nCommunicate with teammates using @mentions:`,
-      `- @AgentName: your message — send to a specific agent`,
-      `- @all: your message — broadcast to everyone`,
-      `\nRULES:`,
-      `- NEVER read .kora/ files directly`,
-      `- NEVER curl or fetch the daemon API directly`,
-      `- Use @mentions for all communication`,
+      `\n${coreTools}`,
+      `\n${rules}`,
       `\nCheck your system prompt for your full role and team details.`,
     ].filter(Boolean).join("\n");
   }
 
-  // MCP mode (default) — also covers "manual" mode
+  // MCP compact (fallback when no persona content)
   return [
-    `You are a Kora agent — part of a multi-agent team managed by the Kora orchestration platform.`,
+    header,
     identity ? `\n${identity}` : "",
-    guardrails ? `\n${guardrails}` : "",
     `\nFIRST ACTION: Call get_context("all") to load your complete role, team, tasks, workflow, and rules.`,
-    `\nCore tools:`,
-    `- get_context(resource) — load your context ("all", "team", "tasks", "workflow", "rules", "persona")`,
-    `- send_message(to, message) — message a teammate`,
-    `- check_messages() — read your inbox`,
-    `- list_tasks() — see your task assignments`,
-    `- update_task(taskId, status, comment) — update task progress`,
-    `\nRULES:`,
-    `- NEVER read .kora/ files directly — use MCP tools only`,
-    `- NEVER curl or fetch the daemon API directly — use MCP tools only`,
-    `- NEVER query SQLite databases directly`,
-    `- Use ONLY the MCP tools listed above for all Kora interactions`,
+    `\n${coreTools}`,
+    `\n${rules}`,
     `\nYou MUST call get_context("all") before doing anything else.`,
   ].filter(Boolean).join("\n");
 }

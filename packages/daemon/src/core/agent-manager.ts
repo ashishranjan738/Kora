@@ -89,20 +89,20 @@ export class AgentManager extends EventEmitter {
     const personasDir = path.join(options.runtimeDir, PERSONAS_DIR);
     await fs.mkdir(personasDir, { recursive: true });
 
-    // 2a. Write full persona to {agentId}-prompt.md (for get_context("persona") API to serve)
+    // 2a. Resolve agent ID placeholders in persona content
     const personaFile = path.join(personasDir, `${agentId}-prompt.md`);
-    if (options.persona) {
-      const personaWithId = options.persona
+    let resolvedPersona = options.persona || "";
+    if (resolvedPersona) {
+      resolvedPersona = resolvedPersona
         .replace(/inbox-pending\//g, `inbox-${agentId}/`)
         .replace(/outbox-pending\//g, `outbox-${agentId}/`)
         .replace(/commands-pending\//g, `commands-${agentId}/`)
         .replace(/responses-pending\//g, `responses-${agentId}/`)
-        .replace(/"from":"pending"/g, `"from":"${agentId}"`)           // Fix outbox JSON example
-        .replace(/Your ID is `pending`/g, `Your ID is \`${agentId}\``); // Fix team section self-ID
-      await fs.writeFile(personaFile, personaWithId, "utf-8");
+        .replace(/"from":"pending"/g, `"from":"${agentId}"`)
+        .replace(/Your ID is `pending`/g, `Your ID is \`${agentId}\``);
     }
 
-    // 2b. Write boot prompt with role-specific guardrails as system prompt file
+    // 2b. Build full system prompt: identity + guardrails + persona content
     const { buildBootPrompt } = await import("./boot-prompt-builder.js");
     const bootPrompt = buildBootPrompt({
       messagingMode: options.messagingMode,
@@ -111,9 +111,12 @@ export class AgentManager extends EventEmitter {
       roleName: options.name, // Name often reflects role (e.g. "Reviewer", "Product Manager")
       worktreeMode: options.worktreeMode as "isolated" | "shared" | undefined,
       sessionName: options.sessionId,
+      personaContent: resolvedPersona || undefined,
     });
     const systemPromptFile = path.join(personasDir, `${agentId}-boot.md`);
     await fs.writeFile(systemPromptFile, bootPrompt, "utf-8");
+    // Also write full prompt to -prompt.md (used by get_context("persona") API)
+    await fs.writeFile(personaFile, bootPrompt, "utf-8");
 
     // Create git worktree for agent isolation (if in a git repo and not shared mode)
     let agentWorkDir = options.workingDirectory;
@@ -133,20 +136,11 @@ export class AgentManager extends EventEmitter {
       }
     }
 
-    // Kiro-specific: inject boot prompt via steering files instead of CLI flags.
+    // Kiro-specific: inject full prompt via steering files instead of CLI flags.
     // Kiro doesn't support --system-prompt-file; it reads .kiro/steering/*.md
-    // Boot prompt is ~500 bytes — no file conflicts in shared workspaces.
-    // Full persona available via get_context("persona") API.
     if (options.provider.id === "kiro") {
-      const { buildBootPrompt } = await import("./boot-prompt-builder.js");
-      const kiroBootPrompt = buildBootPrompt({
-        messagingMode: options.messagingMode,
-        agentName: options.name,
-        agentRole: options.role as "master" | "worker",
-        roleName: options.name,
-        worktreeMode: options.worktreeMode as "isolated" | "shared" | undefined,
-        sessionName: options.sessionId,
-      });
+      // Reuse the already-built bootPrompt (includes full persona)
+      const kiroBootPrompt = bootPrompt;
 
       const kiroSteeringDir = path.join(agentWorkDir, ".kiro", "steering");
       await fs.mkdir(kiroSteeringDir, { recursive: true });
