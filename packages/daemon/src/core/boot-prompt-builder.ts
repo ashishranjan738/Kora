@@ -154,7 +154,7 @@ export function buildBootPrompt(messagingModeOrOptions?: MessagingMode | BootPro
     : messagingModeOrOptions || {};
 
   const mode = opts.messagingMode || "mcp";
-  const header = " You are a Kora agent — part of a multi-agent team managed by the Kora orchestration platform.";
+  const header = "You are a Kora agent — part of a multi-agent team managed by the Kora orchestration platform.";
   const identity = (opts.agentName || opts.agentRole) ? buildIdentityBlock(opts) : "";
   const coreTools = buildCoreToolsBlock(mode);
   const rules = buildRulesBlock(mode);
