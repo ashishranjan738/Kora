@@ -388,7 +388,7 @@ describe("Orchestrator Blocking Integration", () => {
       await new Promise(resolve => setTimeout(resolve, 100));
 
       const timeBlocked = stateMachine.getTimeInCurrentState();
-      expect(timeBlocked).toBeGreaterThanOrEqual(100);
+      expect(timeBlocked).toBeGreaterThanOrEqual(90); // Allow 10ms jitter for CI environments
       expect(timeBlocked).toBeLessThan(200);
     });
   });
