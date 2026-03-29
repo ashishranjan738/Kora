@@ -117,7 +117,7 @@ export function ChatTab({ sessionId, wsEvents }: ChatTabProps) {
   useEffect(() => {
     if (!wsEvents || wsEvents.length === 0) return;
     const latest = wsEvents[wsEvents.length - 1];
-    if (latest?.type === "channel-message" && latest?.message) {
+    if (latest?.event === "channel-message" && latest?.message) {
       const msg = latest.message as ChatMessage;
       if (msg.channel === activeChannel) {
         setMessages((prev) => [...prev, msg]);
