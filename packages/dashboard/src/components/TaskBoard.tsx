@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useApi } from "../hooks/useApi";
-import { showError, showInfo } from "../utils/notifications";
+import { showError, showInfo, showSuccess } from "../utils/notifications";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { DependencyArrows } from "./DependencyArrows";
 import {
   Modal, Button, TextInput, Textarea, Select, MultiSelect, Stack, Group, Text, Badge, Card, Paper,
   ActionIcon, ScrollArea, Checkbox, Alert, Box, Tooltip, Divider, SegmentedControl, TagsInput,
@@ -42,9 +43,9 @@ function timeAgo(dateStr: string): string { const s = Math.floor((Date.now() - n
 function getTaskAge(c: string): number { return (Date.now() - new Date(c).getTime()) / 3600000; }
 function getTaskAgeBadge(c: string): { label: string; color: string } | null { const h = getTaskAge(c); const t = timeAgo(c); if (h >= 4) return { label: t, color: "red" }; if (h >= 2) return { label: t, color: "orange" }; return null; }
 
-function TaskCard({ task, agents, isDragging, onDragStart, onClick, onDelete }: { task: Task; agents: { id: string; name: string }[]; isDragging: boolean; onDragStart: () => void; onClick: () => void; onDelete: () => void; }) {
+function TaskCard({ task, agents, isDragging, onDragStart, onClick, onDelete, onShiftDragStart, onShiftDragEnd }: { task: Task; agents: { id: string; name: string }[]; isDragging: boolean; onDragStart: () => void; onClick: () => void; onDelete: () => void; onShiftDragStart?: (taskId: string) => void; onShiftDragEnd?: (taskId: string) => void; }) {
   const assignee = resolveAssignee(task.assignedTo, agents); const ds = task.dueDate ? getDueDateStatus(task.dueDate) : null; const isOverdue = ds?.label === "Overdue"; const ab = getTaskAgeBadge(task.createdAt);
-  return (<Card draggable onDragStart={onDragStart} onClick={(e) => { if (!(e.target as HTMLElement).closest("button")) onClick(); }} withBorder padding="sm" style={{ cursor: "pointer", opacity: isDragging ? 0.5 : task.blocked ? 0.7 : 1, borderColor: isDragging ? "var(--accent-blue)" : isOverdue ? "var(--accent-red)" : "var(--border-color)", borderWidth: isOverdue ? 2 : 1, backgroundColor: task.blocked ? "var(--bg-tertiary)" : "var(--bg-primary)", boxShadow: isOverdue ? "0 0 0 1px var(--accent-red), 0 0 8px rgba(255,100,100,0.3)" : undefined, transition: "border-color 0.15s, box-shadow 0.15s, opacity 0.15s", filter: task.blocked ? "grayscale(0.3)" : undefined }} className="task-card-hover">
+  return (<Card data-task-id={task.id} draggable onDragStart={(e) => { if (e.shiftKey && onShiftDragStart) { onShiftDragStart(task.id); } else { onDragStart(); } }} onDragOver={(e) => { if (e.shiftKey) e.preventDefault(); }} onDrop={(e) => { if (e.shiftKey && onShiftDragEnd) { e.stopPropagation(); onShiftDragEnd(task.id); } }} onClick={(e) => { if (!(e.target as HTMLElement).closest("button")) onClick(); }} withBorder padding="sm" style={{ cursor: "pointer", opacity: isDragging ? 0.5 : task.blocked ? 0.7 : 1, borderColor: isDragging ? "var(--accent-blue)" : isOverdue ? "var(--accent-red)" : "var(--border-color)", borderWidth: isOverdue ? 2 : 1, backgroundColor: task.blocked ? "var(--bg-tertiary)" : "var(--bg-primary)", boxShadow: isOverdue ? "0 0 0 1px var(--accent-red), 0 0 8px rgba(255,100,100,0.3)" : undefined, transition: "border-color 0.15s, box-shadow 0.15s, opacity 0.15s", filter: task.blocked ? "grayscale(0.3)" : undefined }} className="task-card-hover">
     <Group justify="space-between" align="flex-start" gap={4} wrap="nowrap"><Text fw={600} size="sm" c="var(--text-primary)" lineClamp={2} style={{ flex: 1 }}>{task.title}</Text><ActionIcon variant="subtle" color="red" size="xs" onClick={(e) => { e.stopPropagation(); onDelete(); }} title="Delete task" style={{ opacity: 0.4, flexShrink: 0 }} className="task-delete-btn"><span style={{ fontSize: 14, lineHeight: 1 }}>&times;</span></ActionIcon></Group>
     {task.blocked && <Badge color="yellow" variant="light" size="xs" mt={4} leftSection={<span style={{ fontSize: 10 }}>&#128279;</span>}>Blocked</Badge>}
     <Group gap={4} mt={4}><Badge color={PRIORITY_COLORS[task.priority]} variant="filled" size="xs">{task.priority}</Badge>{ab && <Badge color={ab.color} variant="light" size="xs" leftSection={<span style={{ fontSize: 10 }}>&#8987;</span>}>{ab.label}</Badge>}</Group>
@@ -58,7 +59,7 @@ function TaskCard({ task, agents, isDragging, onDragStart, onClick, onDelete }: 
 
 const COLLAPSE_THRESHOLD = 20; // Auto-collapse columns with more than this many tasks
 
-function TaskColumn({ column, tasks, agents, draggedTaskId, dragOverColumn, onDragStart, onDragOver, onDragLeave, onDrop, onTaskClick, onTaskDelete, onAddClick, showAddButton, columnLabels, columnColors, columnCssColors }: { column: string; tasks: Task[]; agents: { id: string; name: string }[]; draggedTaskId: string | null; dragOverColumn: string | null; onDragStart: (id: string) => void; onDragOver: (e: React.DragEvent, col: string) => void; onDragLeave: () => void; onDrop: (e: React.DragEvent, col: string) => void; onTaskClick: (id: string) => void; onTaskDelete: (id: string) => void; onAddClick: () => void; showAddButton?: boolean; columnLabels: Record<string, string>; columnColors: Record<string, string>; columnCssColors: Record<string, string>; }) {
+function TaskColumn({ column, tasks, agents, draggedTaskId, dragOverColumn, onDragStart, onDragOver, onDragLeave, onDrop, onTaskClick, onTaskDelete, onAddClick, showAddButton, columnLabels, columnColors, columnCssColors, onShiftDragStart, onShiftDragEnd }: { column: string; tasks: Task[]; agents: { id: string; name: string }[]; draggedTaskId: string | null; dragOverColumn: string | null; onDragStart: (id: string) => void; onDragOver: (e: React.DragEvent, col: string) => void; onDragLeave: () => void; onDrop: (e: React.DragEvent, col: string) => void; onTaskClick: (id: string) => void; onTaskDelete: (id: string) => void; onAddClick: () => void; showAddButton?: boolean; columnLabels: Record<string, string>; columnColors: Record<string, string>; columnCssColors: Record<string, string>; onShiftDragStart?: (id: string) => void; onShiftDragEnd?: (id: string) => void; }) {
   const isDO = dragOverColumn === column;
   const css = columnCssColors[column] || "var(--text-muted)";
   const bc = columnColors[column] || "gray";
@@ -114,7 +115,8 @@ function TaskColumn({ column, tasks, agents, draggedTaskId, dragOverColumn, onDr
                 return (
                   <div style={{ paddingBottom: 8 }}>
                     <TaskCard key={t.id} task={t} agents={agents} isDragging={draggedTaskId === t.id}
-                      onDragStart={() => onDragStart(t.id)} onClick={() => onTaskClick(t.id)} onDelete={() => onTaskDelete(t.id)} />
+                      onDragStart={() => onDragStart(t.id)} onClick={() => onTaskClick(t.id)} onDelete={() => onTaskDelete(t.id)}
+                      onShiftDragStart={onShiftDragStart} onShiftDragEnd={onShiftDragEnd} />
                   </div>
                 );
               }}
@@ -122,7 +124,8 @@ function TaskColumn({ column, tasks, agents, draggedTaskId, dragOverColumn, onDr
           ) : (
             <Stack gap="xs">
               {tasks.map((t) => <TaskCard key={t.id} task={t} agents={agents} isDragging={draggedTaskId === t.id}
-                onDragStart={() => onDragStart(t.id)} onClick={() => onTaskClick(t.id)} onDelete={() => onTaskDelete(t.id)} />)}
+                onDragStart={() => onDragStart(t.id)} onClick={() => onTaskClick(t.id)} onDelete={() => onTaskDelete(t.id)}
+                onShiftDragStart={onShiftDragStart} onShiftDragEnd={onShiftDragEnd} />)}
             </Stack>
           )}
         </div>
@@ -150,6 +153,9 @@ export function TaskBoard({ sessionId, initialTaskId, workflowStates }: TaskBoar
   const [mobileView, setMobileView] = useState<"kanban" | "list">("list");
   const [filterAgent, setFilterAgent] = useState<string | null>(null); const [filterPriorities, setFilterPriorities] = useState<string[]>([]); const [filterLabels, setFilterLabels] = useState<string[]>([]);
   const [showArchived, setShowArchived] = useState(false);
+  const [shiftDragSourceId, setShiftDragSourceId] = useState<string | null>(null);
+  const boardRef = useRef<HTMLDivElement>(null);
+  const closedStatuses = new Set(workflowStates?.filter(s => s.category === "closed").map(s => s.id) || ["done"]);
   const [archivedCount, setArchivedCount] = useState(0);
   const [archiving, setArchiving] = useState(false);
   const fetchTasks = useCallback(async () => { try { const data = await api.getTasks(sessionId, showArchived); setTasks(data.tasks || []); if (data.archivedCount !== undefined) setArchivedCount(data.archivedCount); } catch {} }, [sessionId, showArchived]);
@@ -168,6 +174,25 @@ export function TaskBoard({ sessionId, initialTaskId, workflowStates }: TaskBoar
   };
   const handleAddTask = async () => { if (!newTitle.trim()) return; try { await api.createTask(sessionId, { title: newTitle.trim(), description: newDescription.trim(), assignedTo: newAssignee || undefined, priority: newPriority, labels: newLabels.length > 0 ? newLabels : undefined, dueDate: newDueDate || undefined, dependencies: newDependencies.length > 0 ? newDependencies : undefined }); setNewTitle(""); setNewDescription(""); setNewAssignee(""); setNewPriority("P2"); setNewLabels([]); setNewDueDate(null); setNewDependencies([]); setShowAddDialog(false); fetchTasks(); } catch {} };
   const executeDeleteTask = async () => { if (!confirmDeleteTaskId) return; setTasks(p => p.filter(t => t.id !== confirmDeleteTaskId)); setConfirmDeleteTaskId(null); try { await api.deleteTask(sessionId, confirmDeleteTaskId); } catch { fetchTasks(); } };
+  const handleShiftDragStart = (taskId: string) => { setShiftDragSourceId(taskId); };
+  const handleShiftDragEnd = async (targetId: string) => {
+    if (!shiftDragSourceId || shiftDragSourceId === targetId) { setShiftDragSourceId(null); return; }
+    // Source becomes a dependency of target (source blocks target)
+    const target = tasks.find(t => t.id === targetId);
+    const existingDeps = target?.dependencies || [];
+    if (existingDeps.includes(shiftDragSourceId)) { setShiftDragSourceId(null); return; }
+    const newDeps = [...existingDeps, shiftDragSourceId];
+    setTasks(p => p.map(t => t.id === targetId ? { ...t, dependencies: newDeps } : t));
+    try { await api.updateTask(sessionId, targetId, { dependencies: newDeps }); showSuccess(`Linked: "${tasks.find(t => t.id === shiftDragSourceId)?.title}" blocks "${target?.title}"`); fetchTasks(); } catch { fetchTasks(); }
+    setShiftDragSourceId(null);
+  };
+  const handleRemoveDependency = async (taskId: string, depId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const newDeps = (task.dependencies || []).filter(d => d !== depId);
+    setTasks(p => p.map(t => t.id === taskId ? { ...t, dependencies: newDeps } : t));
+    try { await api.updateTask(sessionId, taskId, { dependencies: newDeps }); fetchTasks(); } catch { fetchTasks(); }
+  };
   const handleAddComment = async (taskId: string) => { if (!commentText.trim()) return; try { await api.addTaskComment(sessionId, taskId, commentText.trim()); setCommentText(""); fetchTasks(); } catch {} };
   const handleChangeStatus = async (taskId: string, newStatus: string) => {
     const task = tasks.find(t => t.id === taskId); if (!task || task.status === newStatus) return;
@@ -217,7 +242,10 @@ export function TaskBoard({ sessionId, initialTaskId, workflowStates }: TaskBoar
     {isMobile ? (<Stack gap="sm">
       <Group justify="space-between" align="center"><SegmentedControl value={mobileView} onChange={v => setMobileView(v as "kanban" | "list")} data={[{ value: "list", label: "List" }, { value: "kanban", label: "Board" }]} size="xs" styles={{ root: { backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border-color)" }, label: { color: "var(--text-primary)", fontWeight: 500, fontSize: 12, padding: "4px 12px" }, indicator: { backgroundColor: "var(--accent-blue)", boxShadow: "none" } }} /><ActionIcon variant="light" color="blue" size="lg" onClick={() => setShowAddDialog(true)}><span style={{ fontSize: 18 }}>+</span></ActionIcon></Group>
       {mobileView === "kanban" ? (<><ScrollArea type="never"><Group gap="xs" wrap="nowrap">{COLUMNS.map(c => <Badge key={c} variant={activeCol === c ? "filled" : "outline"} color={COLUMN_COLORS[c] || "gray"} size="lg" onClick={() => setActiveCol(c)} style={{ cursor: "pointer", minHeight: 36, flexShrink: 0 }}>{COLUMN_LABELS[c] || c} ({tasksByColumn(c).length})</Badge>)}</Group></ScrollArea><Stack gap="xs">{tasksByColumn(activeCol).map(t => <TaskCard key={t.id} task={t} agents={agents} isDragging={false} onDragStart={() => {}} onClick={() => setExpandedTaskId(t.id)} onDelete={() => setConfirmDeleteTaskId(t.id)} />)}{tasksByColumn(activeCol).length === 0 && <Text size="sm" c="var(--text-muted)" ta="center" py="xl" fs="italic">No {(COLUMN_LABELS[activeCol] || activeCol).toLowerCase()} tasks</Text>}</Stack></>) : (<Stack gap="md">{COLUMNS.map(c => { const ct = tasksByColumn(c); const cc = COLUMN_CSS_COLORS[c] || "var(--text-muted)"; return (<Box key={c}><Group gap={8} align="center" mb="xs" pb={6} style={{ borderBottom: `2px solid ${cc}` }}><Box style={{ width: 8, height: 8, borderRadius: "50%", background: cc, flexShrink: 0 }} /><Text fw={600} size="sm" c="var(--text-primary)">{COLUMN_LABELS[c] || c}</Text><Badge size="xs" variant="light" color={COLUMN_COLORS[c] || "gray"}>{ct.length}</Badge></Group>{ct.length > 0 ? <Stack gap={4}>{ct.map(t => { const ta = resolveAssignee(t.assignedTo, agents); return (<Paper key={t.id} withBorder px="sm" py={8} style={{ backgroundColor: t.blocked ? "var(--bg-tertiary)" : "var(--bg-primary)", borderColor: "var(--border-color)", cursor: "pointer", opacity: t.blocked ? 0.7 : 1 }} onClick={() => setExpandedTaskId(t.id)}><Group gap={8} wrap="nowrap" align="center"><Badge color={PRIORITY_COLORS[t.priority]} variant="filled" size="xs" style={{ flexShrink: 0 }}>{t.priority}</Badge><Text size="sm" fw={500} c="var(--text-primary)" lineClamp={1} style={{ flex: 1 }}>{t.title}</Text>{ta && <Badge variant="light" color={ta.isRemoved ? "gray" : "blue"} size="xs" style={{ flexShrink: 0 }}>{ta.name}</Badge>}<ActionIcon variant="subtle" color="red" size="xs" onClick={e => { e.stopPropagation(); setConfirmDeleteTaskId(t.id); }} style={{ opacity: 0.4, flexShrink: 0 }}><span style={{ fontSize: 14, lineHeight: 1 }}>&times;</span></ActionIcon></Group></Paper>); })}</Stack> : <Text size="xs" c="var(--text-muted)" ta="center" py="sm" fs="italic">No tasks</Text>}</Box>); })}</Stack>)}
-    </Stack>) : (<div style={{ display: "flex", flexWrap: "nowrap", gap: 16, overflowX: "auto", overflowY: "hidden", paddingBottom: 8 }}>{COLUMNS.map(c => <div key={c} style={{ minWidth: 280, flex: "1 0 0" }}><TaskColumn column={c} tasks={tasksByColumn(c)} agents={agents} draggedTaskId={draggedTaskId} dragOverColumn={dragOverColumn} onDragStart={id => setDraggedTaskId(id)} onDragOver={(e, col) => { e.preventDefault(); setDragOverColumn(col); }} onDragLeave={() => setDragOverColumn(null)} onDrop={handleDrop} onTaskClick={setExpandedTaskId} onTaskDelete={id => setConfirmDeleteTaskId(id)} onAddClick={() => setShowAddDialog(true)} showAddButton={c === firstCol} columnLabels={COLUMN_LABELS} columnColors={COLUMN_COLORS} columnCssColors={COLUMN_CSS_COLORS} /></div>)}</div>)}
+    </Stack>) : (<div ref={boardRef} style={{ display: "flex", flexWrap: "nowrap", gap: 16, overflowX: "auto", overflowY: "hidden", paddingBottom: 8, position: "relative" }}>
+      <DependencyArrows tasks={tasks} containerRef={boardRef} closedStatuses={closedStatuses} onRemoveDependency={handleRemoveDependency} />
+      {shiftDragSourceId && <div style={{ position: "fixed", top: 8, left: "50%", transform: "translateX(-50%)", zIndex: 100, padding: "4px 12px", borderRadius: 6, background: "var(--accent-blue)", color: "white", fontSize: 11, fontWeight: 600 }}>Drop on a task to create dependency</div>}
+      {COLUMNS.map(c => <div key={c} style={{ minWidth: 280, flex: "1 0 0" }}><TaskColumn column={c} tasks={tasksByColumn(c)} agents={agents} draggedTaskId={draggedTaskId} dragOverColumn={dragOverColumn} onDragStart={id => setDraggedTaskId(id)} onDragOver={(e, col) => { e.preventDefault(); setDragOverColumn(col); }} onDragLeave={() => setDragOverColumn(null)} onDrop={handleDrop} onTaskClick={setExpandedTaskId} onTaskDelete={id => setConfirmDeleteTaskId(id)} onAddClick={() => setShowAddDialog(true)} showAddButton={c === firstCol} columnLabels={COLUMN_LABELS} columnColors={COLUMN_COLORS} columnCssColors={COLUMN_CSS_COLORS} onShiftDragStart={handleShiftDragStart} onShiftDragEnd={handleShiftDragEnd} /></div>)}</div>)}
     <AddTaskModal {...addProps} />
     {expandedTask && <TaskDetailModal task={expandedTask} tasks={tasks} agents={agents} sessionId={sessionId} isMobile={!!isMobile} modalStyles={modalStyles} commentText={commentText} setCommentText={setCommentText} onClose={() => { setExpandedTaskId(null); setCommentText(""); }} onChangeStatus={handleChangeStatus} onAddComment={handleAddComment} onNavigateTask={setExpandedTaskId} inputStyles={inputStyles} fetchTasks={fetchTasks} columns={COLUMNS} columnLabels={COLUMN_LABELS} columnColors={COLUMN_COLORS} columnCssColors={COLUMN_CSS_COLORS} />}
   </div>);
