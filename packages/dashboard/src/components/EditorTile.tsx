@@ -17,9 +17,7 @@ const BINARY_EXTENSIONS = new Set([
   "exe", "dll", "so", "dylib",
   "woff", "woff2", "ttf", "eot",
   "mp3", "mp4", "wav", "avi", "mov",
-  "db", "sqlite", "sqlite3",
-  "png", "jpg", "jpeg", "gif", "webp", "ico", "bmp", "tiff",
-  "pdf",
+  "db", "sqlite", "sqlite3", "tiff",
 ]);
 
 function getFileExtension(path: string): string {
