@@ -187,7 +187,7 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
     }
   });
 
-  router.put("/sessions/:sid/tasks/:tid", (req: Request, res: Response) => {
+  router.put("/sessions/:sid/tasks/:tid", async (req: Request, res: Response) => {
     try {
       const sid = String(req.params.sid);
       const tid = String(req.params.tid);
@@ -393,6 +393,36 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
             } else {
               notifyMsg = buildTransitionNotification(resolverCtx, newState?.instructions);
             }
+
+            // Auto-surface relevant knowledge entries
+            try {
+              const searchQuery = `${task.title} ${task.description || ""}`.trim();
+              if (searchQuery) {
+                const { embed, deserializeEmbedding, cosineSimilarity } = await import("../../core/embeddings.js");
+                const queryVec = await embed(searchQuery);
+                let knowledgeEntries: Array<{ key: string; value: string; similarity?: number }> = [];
+
+                if (queryVec) {
+                  // Semantic search
+                  const withEmbeddings = db.getKnowledgeWithEmbeddings(sid);
+                  knowledgeEntries = withEmbeddings
+                    .map(e => ({ key: e.key, value: e.value, similarity: cosineSimilarity(queryVec, deserializeEmbedding(e.embedding)) }))
+                    .filter(e => e.similarity! > 0.35)
+                    .sort((a, b) => b.similarity! - a.similarity!)
+                    .slice(0, 5);
+                } else {
+                  // Fallback to FTS
+                  knowledgeEntries = db.searchKnowledge(sid, searchQuery, 5);
+                }
+
+                if (knowledgeEntries.length > 0) {
+                  const knowledgeSection = knowledgeEntries
+                    .map(e => `- **${e.key}**: ${e.value.slice(0, 200)}${e.value.length > 200 ? "..." : ""}`)
+                    .join("\n");
+                  notifyMsg += `\n\n**Related knowledge:**\n${knowledgeSection}`;
+                }
+              }
+            } catch { /* non-fatal — notification still goes out without knowledge */ }
 
             // Deliver notification via message queue
             if (agent_notify) {

@@ -23,7 +23,6 @@ async function getEmbeddingPipeline(): Promise<any> {
 
   loadingPromise = (async () => {
     try {
-      // @ts-ignore — @xenova/transformers is an optional dependency
       const { pipeline: createPipeline } = await import("@xenova/transformers");
       logger.info("[embeddings] Loading embedding model (first use)...");
       pipeline = await createPipeline("feature-extraction", MODEL_NAME, {
