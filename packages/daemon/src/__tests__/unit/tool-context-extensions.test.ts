@@ -15,7 +15,7 @@ import { TOOL_DEFINITIONS, ALL_TOOL_NAMES, getToolDefinition } from "../../tools
 
 describe("TOOL_HANDLER_MAP completeness", () => {
   it("has exactly 29 entries", () => {
-    expect(Object.keys(TOOL_HANDLER_MAP).length).toBe(31);
+    expect(Object.keys(TOOL_HANDLER_MAP).length).toBe(33);
   });
 
   it("every TOOL_DEFINITION has a corresponding handler", () => {

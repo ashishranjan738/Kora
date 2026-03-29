@@ -31,6 +31,7 @@ export const ALL_TOOL_NAMES = [
   "list_personas", "save_persona", "get_workflow_states",
   "share_file", "save_knowledge", "get_knowledge", "search_knowledge",
   "update_knowledge", "delete_knowledge", "link_knowledge", "unlink_knowledge",
+  "promote_knowledge", "list_global_knowledge",
   "whoami", "get_context", "delete_task",
   "channel_list", "channel_join", "channel_history",
 ] as const;
@@ -47,6 +48,7 @@ export const ROLE_TOOL_ACCESS: Record<string, Set<string>> = {
     "list_personas", "save_persona", "get_workflow_states",
     "share_file", "save_knowledge", "get_knowledge", "search_knowledge",
     "update_knowledge", "delete_knowledge", "link_knowledge", "unlink_knowledge",
+    "list_global_knowledge",
     "whoami", "get_context",
     "channel_list", "channel_join", "channel_history",
   ]),
@@ -379,6 +381,27 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "promote_knowledge",
+    description: "Promote a session knowledge entry to the global store. Global entries persist across sessions. Master-only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "Knowledge key to promote to global store" },
+      },
+      required: ["key"],
+    },
+  },
+  {
+    name: "list_global_knowledge",
+    description: "List knowledge entries from the global store (cross-session, persisted across all sessions).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Max entries to return (default: 50)" },
+      },
+    },
+  },
+  {
     name: "whoami",
     description: "Show your agent identity, team, workflow pipeline, and persona. Use this to understand who you are, what team you're on, and what workflow to follow.",
     inputSchema: {
@@ -478,6 +501,8 @@ export const CLI_META: Record<string, ToolCliMeta> = {
   delete_knowledge: { group: "knowledge", subcommand: "delete", positionalArgs: ["key"] },
   link_knowledge: { group: "knowledge", subcommand: "link", positionalArgs: ["fromKey", "toKey"] },
   unlink_knowledge: { group: "knowledge", subcommand: "unlink", positionalArgs: ["fromKey", "toKey"] },
+  promote_knowledge: { group: "knowledge", subcommand: "promote", positionalArgs: ["key"] },
+  list_global_knowledge: { group: "knowledge", subcommand: "global" },
   save_persona: { group: "persona", subcommand: "save" },
   channel_list: { group: "channel", subcommand: "list" },
   channel_join: { group: "channel", subcommand: "join", positionalArgs: ["channel"] },
