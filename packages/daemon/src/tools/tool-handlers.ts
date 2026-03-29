@@ -378,7 +378,19 @@ export async function handleGetKnowledge(
   if (!args.key?.trim()) {
     return { error: "key is required" };
   }
-  return await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/knowledge-db/${encodeURIComponent(args.key.trim())}`);
+  const entry = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/knowledge-db/${encodeURIComponent(args.key.trim())}`)) as any;
+  if (!entry || entry.error) return entry;
+
+  // Fetch related entries via edges
+  try {
+    const edges = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/knowledge-db/${encodeURIComponent(args.key.trim())}/edges`)) as any;
+    if (edges?.edges?.length > 0) {
+      entry.related = edges.edges;
+    }
+  } catch {
+    // Non-fatal — edges endpoint may not exist yet
+  }
+  return entry;
 }
 
 export async function handleSearchKnowledge(
@@ -409,6 +421,39 @@ export async function handleDeleteKnowledge(
 ): Promise<unknown> {
   if (!args.key?.trim()) return { error: "key is required" };
   return await ctx.apiCall("DELETE", `/api/v1/sessions/${ctx.sessionId}/knowledge-db/${encodeURIComponent(args.key.trim())}`);
+}
+
+async function handleLinkKnowledge(
+  ctx: ToolContext,
+  args: Record<string, string>,
+): Promise<unknown> {
+  if (!args.fromKey?.trim()) return { error: "fromKey is required" };
+  if (!args.toKey?.trim()) return { error: "toKey is required" };
+  if (!args.edgeType?.trim()) return { error: "edgeType is required" };
+  const validTypes = ["references", "supersedes", "contradicts", "extends", "related"];
+  if (!validTypes.includes(args.edgeType)) {
+    return { error: `Invalid edgeType "${args.edgeType}". Valid: ${validTypes.join(", ")}` };
+  }
+  // Validate both keys exist
+  const fromEntry = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/knowledge-db/${encodeURIComponent(args.fromKey.trim())}`)) as any;
+  if (!fromEntry || fromEntry.error) return { error: `Knowledge key "${args.fromKey}" not found` };
+  const toEntry = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/knowledge-db/${encodeURIComponent(args.toKey.trim())}`)) as any;
+  if (!toEntry || toEntry.error) return { error: `Knowledge key "${args.toKey}" not found` };
+
+  return await ctx.apiCall("POST", `/api/v1/sessions/${ctx.sessionId}/knowledge-db/edges`, {
+    fromKey: args.fromKey.trim(),
+    toKey: args.toKey.trim(),
+    edgeType: args.edgeType.trim(),
+  });
+}
+
+async function handleUnlinkKnowledge(
+  ctx: ToolContext,
+  args: Record<string, string>,
+): Promise<unknown> {
+  if (!args.fromKey?.trim()) return { error: "fromKey is required" };
+  if (!args.toKey?.trim()) return { error: "toKey is required" };
+  return await ctx.apiCall("DELETE", `/api/v1/sessions/${ctx.sessionId}/knowledge-db/edges/${encodeURIComponent(args.fromKey.trim())}/${encodeURIComponent(args.toKey.trim())}`);
 }
 
 // ── Medium Complexity ──────────────────────────────────────────
@@ -1111,6 +1156,8 @@ export const TOOL_HANDLER_MAP: Record<string, (ctx: ToolContext, args: Record<st
   search_knowledge: handleSearchKnowledge,
   update_knowledge: handleUpdateKnowledge,
   delete_knowledge: handleDeleteKnowledge,
+  link_knowledge: handleLinkKnowledge,
+  unlink_knowledge: handleUnlinkKnowledge,
   send_message: handleSendMessage,
   list_tasks: handleListTasks,
   update_task: handleUpdateTask,

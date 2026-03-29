@@ -1171,6 +1171,46 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
 
+  // ── Knowledge Edges ────────────────────────────────────
+
+  router.post("/sessions/:sid/knowledge-db/edges", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+      const { fromKey, toKey, edgeType } = req.body;
+      if (!fromKey || !toKey || !edgeType) { res.status(400).json({ error: "fromKey, toKey, and edgeType required" }); return; }
+      const validTypes = ["references", "supersedes", "contradicts", "extends", "related"];
+      if (!validTypes.includes(edgeType)) { res.status(400).json({ error: `Invalid edgeType. Valid: ${validTypes.join(", ")}` }); return; }
+      db.addKnowledgeEdge({ id: randomUUID().slice(0, 8), sessionId: sid, fromKey, toKey, edgeType });
+      res.json({ success: true, fromKey, toKey, edgeType });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.delete("/sessions/:sid/knowledge-db/edges/:fromKey/:toKey", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+      const fromKey = decodeURIComponent(String(req.params.fromKey));
+      const toKey = decodeURIComponent(String(req.params.toKey));
+      const removed = db.removeKnowledgeEdge(sid, fromKey, toKey);
+      if (!removed) { res.status(404).json({ error: "Edge not found" }); return; }
+      res.json({ success: true, removed: true });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.get("/sessions/:sid/knowledge-db/:key/edges", (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const db = getDb(sid);
+      if (!db) { res.status(404).json({ error: "Session not found" }); return; }
+      const key = decodeURIComponent(String(req.params.key));
+      const edges = db.getKnowledgeEdges(sid, key);
+      res.json({ edges, count: edges.length });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
   // ── Knowledge Entries ────────────────────────────────────
   // Read knowledge entries from .kora.yml and knowledge.md (reuses readKnowledgeEntries)
   router.get("/sessions/:sid/knowledge", async (req: Request, res: Response) => {

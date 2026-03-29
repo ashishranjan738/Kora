@@ -30,7 +30,7 @@ export const ALL_TOOL_NAMES = [
   "report_idle", "request_task",
   "list_personas", "save_persona", "get_workflow_states",
   "share_file", "save_knowledge", "get_knowledge", "search_knowledge",
-  "update_knowledge", "delete_knowledge",
+  "update_knowledge", "delete_knowledge", "link_knowledge", "unlink_knowledge",
   "whoami", "get_context", "delete_task",
   "channel_list", "channel_join", "channel_history",
 ] as const;
@@ -46,7 +46,7 @@ export const ROLE_TOOL_ACCESS: Record<string, Set<string>> = {
     "report_idle", "request_task",
     "list_personas", "save_persona", "get_workflow_states",
     "share_file", "save_knowledge", "get_knowledge", "search_knowledge",
-    "update_knowledge", "delete_knowledge",
+    "update_knowledge", "delete_knowledge", "link_knowledge", "unlink_knowledge",
     "whoami", "get_context",
     "channel_list", "channel_join", "channel_history",
   ]),
@@ -354,6 +354,31 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "link_knowledge",
+    description: "Create a typed relationship edge between two knowledge entries. Edge types: references, supersedes, contradicts, extends, related.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        fromKey: { type: "string", description: "Source knowledge key" },
+        toKey: { type: "string", description: "Target knowledge key" },
+        edgeType: { type: "string", description: "Edge type: references, supersedes, contradicts, extends, related", enum: ["references", "supersedes", "contradicts", "extends", "related"] },
+      },
+      required: ["fromKey", "toKey", "edgeType"],
+    },
+  },
+  {
+    name: "unlink_knowledge",
+    description: "Remove a relationship edge between two knowledge entries.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        fromKey: { type: "string", description: "Source knowledge key" },
+        toKey: { type: "string", description: "Target knowledge key" },
+      },
+      required: ["fromKey", "toKey"],
+    },
+  },
+  {
     name: "whoami",
     description: "Show your agent identity, team, workflow pipeline, and persona. Use this to understand who you are, what team you're on, and what workflow to follow.",
     inputSchema: {
@@ -451,6 +476,8 @@ export const CLI_META: Record<string, ToolCliMeta> = {
   search_knowledge: { group: "knowledge", subcommand: "search", positionalArgs: ["query"] },
   update_knowledge: { group: "knowledge", subcommand: "update", positionalArgs: ["key", "value"] },
   delete_knowledge: { group: "knowledge", subcommand: "delete", positionalArgs: ["key"] },
+  link_knowledge: { group: "knowledge", subcommand: "link", positionalArgs: ["fromKey", "toKey"] },
+  unlink_knowledge: { group: "knowledge", subcommand: "unlink", positionalArgs: ["fromKey", "toKey"] },
   save_persona: { group: "persona", subcommand: "save" },
   channel_list: { group: "channel", subcommand: "list" },
   channel_join: { group: "channel", subcommand: "join", positionalArgs: ["channel"] },
