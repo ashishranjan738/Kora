@@ -109,7 +109,7 @@ export function SidebarChat({ sessionId, agents, wsEvents }: SidebarChatProps) {
         setMessages((prev) => {
           // Deduplicate by id
           if (prev.some((m) => m.id === msg.id)) return prev;
-          return [...prev, msg];
+          return [...prev, msg].slice(-200);
         });
         scrollToBottom();
       }
@@ -135,7 +135,7 @@ export function SidebarChat({ sessionId, agents, wsEvents }: SidebarChatProps) {
       timestamp: new Date().toISOString(),
       channel: SIDEBAR_CHANNEL,
     };
-    setMessages((prev) => [...prev, optimisticMsg]);
+    setMessages((prev) => [...prev, optimisticMsg].slice(-200));
     setTimeout(scrollToBottom, 50);
 
     try {
