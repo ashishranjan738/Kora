@@ -272,6 +272,17 @@ export function useApi() {
       apiFetch<{ deleted: boolean }>(`/sessions/${sid}/knowledge/${entryIndex}`, {
         method: "DELETE",
       }),
+    // Global knowledge (cross-session)
+    getGlobalKnowledge: () =>
+      apiFetch<{ entries: Array<{ id: string; text: string; source: string; timestamp?: string; sourceSessionId?: string }> }>("/knowledge"),
+    promoteToGlobal: (sid: string, entryIndex: number) =>
+      apiFetch<{ promoted: boolean; id: string }>(`/sessions/${sid}/knowledge/${entryIndex}/promote`, {
+        method: "POST",
+      }),
+    deleteGlobalKnowledge: (entryId: string) =>
+      apiFetch<{ deleted: boolean }>(`/knowledge/${entryId}`, {
+        method: "DELETE",
+      }),
     approveRequest: (sid: string, aid: string, requestId: string) =>
       apiFetch<{ approved: boolean }>(`/sessions/${sid}/agents/${aid}/approve`, {
         method: "POST",

@@ -219,3 +219,121 @@ describe("ChatTab — message sending", () => {
     });
   });
 });
+
+describe("ChatTab — WebSocket real-time messages", () => {
+  it("displays real-time message from WebSocket event (event field, not type)", async () => {
+    // First render without events to let component initialize
+    const { rerender } = render(
+      <MantineProvider>
+        <ChatTab sessionId="test-session" wsEvents={[]} />
+      </MantineProvider>
+    );
+
+    // Wait for channels to load
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/message all/i)).toBeInTheDocument();
+    });
+
+    // Now re-render with a WebSocket event
+    const wsEvents = [
+      {
+        event: "channel-message",  // Backend sends "event", NOT "type"
+        sessionId: "test-session",
+        channel: "#all",
+        message: {
+          from: "agent-1",
+          content: "Hello from agent!",
+          timestamp: new Date().toISOString(),
+          channel: "#all",
+        },
+      },
+    ];
+
+    rerender(
+      <MantineProvider>
+        <ChatTab sessionId="test-session" wsEvents={wsEvents} />
+      </MantineProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Hello from agent!")).toBeInTheDocument();
+    });
+  });
+
+  it("does NOT display message when event uses wrong field name (regression: type vs event)", async () => {
+    const { rerender } = render(
+      <MantineProvider>
+        <ChatTab sessionId="test-session" wsEvents={[]} />
+      </MantineProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/message all/i)).toBeInTheDocument();
+    });
+
+    // Re-render with WRONG field name (the old bug)
+    const wsEvents = [
+      {
+        type: "channel-message",  // WRONG — should be "event"
+        sessionId: "test-session",
+        channel: "#all",
+        message: {
+          from: "agent-1",
+          content: "Should not appear",
+          timestamp: new Date().toISOString(),
+          channel: "#all",
+        },
+      },
+    ];
+
+    rerender(
+      <MantineProvider>
+        <ChatTab sessionId="test-session" wsEvents={wsEvents} />
+      </MantineProvider>
+    );
+
+    // Small delay for effect to process
+    await new Promise(r => setTimeout(r, 50));
+
+    // Message should NOT appear since "type" is the wrong field
+    expect(screen.queryByText("Should not appear")).not.toBeInTheDocument();
+  });
+
+  it("increments unread count for non-active channel messages", async () => {
+    const { rerender } = render(
+      <MantineProvider>
+        <ChatTab sessionId="test-session" wsEvents={[]} />
+      </MantineProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/message all/i)).toBeInTheDocument();
+    });
+
+    const wsEvents = [
+      {
+        event: "channel-message",
+        sessionId: "test-session",
+        channel: "#frontend",  // Not the active channel (#all)
+        message: {
+          from: "agent-1",
+          content: "Frontend message",
+          timestamp: new Date().toISOString(),
+          channel: "#frontend",
+        },
+      },
+    ];
+
+    rerender(
+      <MantineProvider>
+        <ChatTab sessionId="test-session" wsEvents={wsEvents} />
+      </MantineProvider>
+    );
+
+    await waitFor(() => {
+      // Unread badge should appear on #frontend channel
+      const badge = screen.queryByText("1");
+      expect(badge).toBeInTheDocument();
+    });
+  });
+});
