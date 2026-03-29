@@ -6,6 +6,29 @@
 import type { WorkflowState } from "./types.js";
 
 /**
+ * Default runbook instruction templates for common workflow states.
+ * Generic — uses standard dev tooling (npm, git), not Kora-specific commands.
+ */
+export const DEFAULT_STATE_INSTRUCTIONS: Record<string, string> = {
+  "in-progress": "Actively being implemented. Write code and unit tests. Run `npm test` to verify. Move to review when ready.",
+  "review": "Code review — check for bugs, style, test coverage, and architecture. Approve or request changes. Make sure unit tests are there.",
+  "testing": "Run end-to-end and integration tests. Verify the feature works across the full stack. Move back to in-progress if tests fail.",
+  "staging": "Deploy to staging and verify in a production-like environment. Rebase onto main. Run smoke tests and check for regressions.",
+};
+
+/**
+ * Auto-populate instructions on workflow states that don't have them.
+ * Only fills in states whose ID matches a known template. Preserves existing instructions.
+ */
+export function populateDefaultInstructions(states: WorkflowState[]): WorkflowState[] {
+  return states.map(s => {
+    if (s.instructions) return s; // Preserve existing
+    const template = DEFAULT_STATE_INSTRUCTIONS[s.id];
+    return template ? { ...s, instructions: template } : s;
+  });
+}
+
+/**
  * Auto-generate transitions for an ordered pipeline of workflow states.
  *
  * Rules:
@@ -166,6 +189,14 @@ export function validatePipeline(states: WorkflowState[]): PipelineValidationRes
   }
   if (states[0].skippable) warnings.push("First state should not be skippable.");
   if (states[states.length - 1].skippable) warnings.push("Last state should not be skippable.");
+
+  // Empty instructions warning (not blocking — but agents won't get runbook guidance)
+  const activeWithNoInstructions = states.filter(s =>
+    s.category === "active" && !s.instructions?.trim()
+  );
+  if (activeWithNoInstructions.length > 0) {
+    warnings.push(`States with no runbook instructions (agents won't get guidance): ${activeWithNoInstructions.map(s => s.label).join(", ")}`);
+  }
 
   // Empty transitions warning (not an error — means free movement)
   const activeWithNoTransitions = states.filter(s =>

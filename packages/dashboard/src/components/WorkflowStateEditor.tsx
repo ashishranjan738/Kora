@@ -85,12 +85,19 @@ function SortableStateRow({
         background: "var(--bg-primary)", border: "1px solid var(--border-color)", borderRadius: 4,
         color: "var(--text-primary)", minWidth: 0,
       }} />
-      {/* Instructions preview (subtle, only when not expanded) */}
-      {!isExpanded && state.instructions && !compact && (
-        <span style={{ fontSize: 10, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 150, flexShrink: 1 }}
-          title={state.instructions}>
-          {state.instructions.slice(0, 30)}{state.instructions.length > 30 ? "..." : ""}
-        </span>
+      {/* Instructions preview or warning */}
+      {!isExpanded && !compact && (
+        state.instructions ? (
+          <span style={{ fontSize: 10, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 150, flexShrink: 1 }}
+            title={state.instructions}>
+            {state.instructions.slice(0, 30)}{state.instructions.length > 30 ? "..." : ""}
+          </span>
+        ) : state.category === "active" ? (
+          <span style={{ fontSize: 10, color: "var(--accent-yellow)", display: "inline-flex", alignItems: "center", gap: 3 }}
+            title="No runbook instructions — agents won't get guidance for this state">
+            &#9888; No instructions
+          </span>
+        ) : null
       )}
 
       {/* Category */}
