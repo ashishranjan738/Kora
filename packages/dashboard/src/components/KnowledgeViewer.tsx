@@ -102,10 +102,14 @@ export function KnowledgeViewer({ sessionId }: KnowledgeViewerProps) {
 
   useEffect(() => {
     fetchKnowledge();
-    fetchGlobalKnowledge();
     const interval = setInterval(fetchKnowledge, 10000);
     return () => clearInterval(interval);
-  }, [fetchKnowledge, fetchGlobalKnowledge]);
+  }, [fetchKnowledge]);
+
+  // Lazy-fetch global knowledge only when tab selected
+  useEffect(() => {
+    if (viewMode === "global") fetchGlobalKnowledge();
+  }, [viewMode, fetchGlobalKnowledge]);
 
   const filteredEntries = useMemo(() => {
     if (!search.trim()) return entries;
