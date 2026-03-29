@@ -28,7 +28,8 @@ import { notificationService } from "./notification-service.js";
 import { saveAgentStates, loadAgentStates } from "./state-persistence.js";
 import fs from "fs";
 import { HoldptyController } from "./holdpty-controller.js";
-import { rotateFileBySize, AGENT_LOG_MAX_BYTES, AGENT_LOG_KEEP_BYTES } from "./log-rotation.js";
+import { rotateFileBySize, AGENT_LOG_MAX_BYTES, AGENT_LOG_KEEP_BYTES, CRASH_LOG_MAX_BYTES, CRASH_LOG_KEEP_BYTES } from "./log-rotation.js";
+import { getGlobalConfigDir } from "../daemon-lifecycle.js";
 import { logger } from "./logger.js";
 import { StaleTaskWatchdog } from "./stale-task-watchdog.js";
 import { WatchdogDeliveryManager } from "./watchdog-delivery.js";
@@ -1538,6 +1539,11 @@ RULES:
           logger.warn({ err: r.reason }, "[orchestrator] Unexpected log rotation failure (non-fatal)");
         }
       }
+      // Also rotate crash.log and PM2 logs (every 20s check, same as agent logs)
+      const globalDir = getGlobalConfigDir();
+      await rotateFileBySize(path.default.join(globalDir, "crash.log"), CRASH_LOG_MAX_BYTES, CRASH_LOG_KEEP_BYTES);
+      await rotateFileBySize(path.default.join(globalDir, "pm2-out.log"), 50 * 1024 * 1024, 5 * 1024 * 1024);
+      await rotateFileBySize(path.default.join(globalDir, "pm2-error.log"), 50 * 1024 * 1024, 5 * 1024 * 1024);
     } catch (err) {
       // Catch-all — log rotation must NEVER crash the daemon
       logger.warn({ err }, "[orchestrator] rotateAgentLogs failed (non-fatal)");
