@@ -303,4 +303,51 @@ describe("buildBootPrompt — full integration", () => {
     expect(toolsIdx).toBeGreaterThan(protocolIdx);
     expect(neverIdx).toBeGreaterThan(toolsIdx);
   });
+
+  it("includes personaContent when provided (full prompt)", () => {
+    const personaContent = [
+      "Full-stack developer — implements features, fixes bugs.",
+      "## Your Team",
+      "| Name | Role |",
+      "| Dev 1 | worker |",
+      "## Communication Protocol",
+      "Use MCP tools for communication.",
+      "## Task Pipeline",
+      "Tasks follow: backlog → in-progress → review → done",
+    ].join("\n\n");
+
+    const prompt = buildBootPrompt({
+      messagingMode: "mcp",
+      agentName: "Dev 1",
+      agentRole: "worker",
+      sessionName: "test-session",
+      personaContent,
+    });
+
+    // Should contain identity
+    expect(prompt).toContain("You are Dev 1");
+    // Should contain persona content
+    expect(prompt).toContain("Full-stack developer");
+    expect(prompt).toContain("Your Team");
+    expect(prompt).toContain("Communication Protocol");
+    // Should contain core tools after persona
+    expect(prompt).toContain("Core tools:");
+    // Should contain rules
+    expect(prompt).toContain("NEVER read .kora/");
+    // Should NOT contain "FIRST ACTION: Call get_context"
+    expect(prompt).not.toContain("FIRST ACTION");
+    expect(prompt).not.toContain("get_context(\"all\")");
+  });
+
+  it("falls back to compact prompt without personaContent", () => {
+    const prompt = buildBootPrompt({
+      messagingMode: "mcp",
+      agentName: "Dev 1",
+      agentRole: "worker",
+    });
+
+    // Compact mode still has "FIRST ACTION" instruction
+    expect(prompt).toContain("FIRST ACTION");
+    expect(prompt).toContain("get_context");
+  });
 });
