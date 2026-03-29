@@ -480,6 +480,13 @@ export class AppDatabase extends EventEmitter {
         PRAGMA user_version = 19;
       `);
     }
+
+    if (version < 20) {
+      this.db.exec(`
+        ALTER TABLE knowledge_entries ADD COLUMN embedding BLOB;
+        PRAGMA user_version = 20;
+      `);
+    }
   }
 
   // ─── Channels ──────────────────────────────────────────────
@@ -1361,6 +1368,21 @@ export class AppDatabase extends EventEmitter {
   /** Check if FTS5 is available for knowledge search */
   get fts5Available(): boolean {
     return this._fts5Available;
+  }
+
+  /** Store embedding vector for a knowledge entry */
+  saveEmbedding(sessionId: string, key: string, embedding: Buffer): void {
+    this.db.prepare(
+      `UPDATE knowledge_entries SET embedding = ? WHERE session_id = ? AND key = ?`
+    ).run(embedding, sessionId, key);
+  }
+
+  /** Get all knowledge entries with embeddings for semantic search */
+  getKnowledgeWithEmbeddings(sessionId: string): Array<{ key: string; value: string; savedBy: string | null; updatedAt: string; embedding: Buffer }> {
+    const rows = this.db.prepare(
+      `SELECT key, value, saved_by, updated_at, embedding FROM knowledge_entries WHERE session_id = ? AND embedding IS NOT NULL`
+    ).all(sessionId) as any[];
+    return rows.map(r => ({ key: r.key, value: r.value, savedBy: r.saved_by, updatedAt: r.updated_at, embedding: r.embedding }));
   }
 
   deleteKnowledge(sessionId: string, key: string): boolean {
