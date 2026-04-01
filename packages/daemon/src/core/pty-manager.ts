@@ -69,11 +69,14 @@ export class PtyManager {
     });
 
     // Clean up on PTY exit — but don't kill the process (it's owned by the backend)
+    // Guard: only delete if this is still the current session (prevents re-registration edge case)
     ptyProcess.onExit(() => {
-      for (const client of session.clients) {
-        client.close(1000, "PTY exited");
+      if (this.sessions.get(sessionName) === session) {
+        for (const client of session.clients) {
+          client.close(1000, "PTY exited");
+        }
+        this.sessions.delete(sessionName);
       }
-      this.sessions.delete(sessionName);
     });
 
     logger.info(`[pty-manager] Registered agent PTY for ${sessionName}`);
