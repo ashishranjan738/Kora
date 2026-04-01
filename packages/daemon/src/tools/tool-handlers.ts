@@ -1061,7 +1061,7 @@ export async function handleDeleteTask(
 async function checkGroupChatEnabled(ctx: ToolContext): Promise<string | null> {
   try {
     const session = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}`)) as any;
-    if (session?.features?.groupChat === false) {
+    if (!session?.features?.groupChat) {
       return "Group chat is disabled for this session";
     }
   } catch { /* non-fatal — allow if we can't check */ }
