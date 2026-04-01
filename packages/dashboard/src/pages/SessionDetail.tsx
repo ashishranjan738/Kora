@@ -28,7 +28,7 @@ import { BudgetWarning } from "../components/BudgetBar";
 import { ApprovalNotificationBanner } from "../components/TaskApprovalBadge";
 import { DEFAULT_WORKFLOW_STATES } from "@kora/shared";
 import { TimelineView } from "../components/timeline/TimelineView";
-import { ExecutionTracing } from "../components/ExecutionTracing";
+
 import { SideTerminalPanel } from "../components/SideTerminalPanel";
 import { EditorTile } from "../components/EditorTile";
 import { GitChanges } from "../components/GitChanges";
@@ -68,11 +68,11 @@ import type { AgentResponse, SessionResponse, TaskResponse } from "../types/api"
 import type { WorkflowState, OrchestratorEvent } from "@kora/shared";
 import { PROVIDER_IDS } from "../constants/providers";
 
-type TabId = "editor" | "agents" | "tasks" | "execution" | "timeline" | "changes" | "knowledge" | "workload" | "chat";
+type TabId = "editor" | "agents" | "tasks" | "timeline" | "changes" | "knowledge" | "workload" | "chat";
 
 function getInitialTab(): TabId {
   const hash = window.location.hash.replace("#", "");
-  if (["agents", "tasks", "execution", "timeline", "changes", "knowledge", "workload", "chat"].includes(hash)) return hash as TabId;
+  if (["agents", "tasks", "timeline", "changes", "knowledge", "workload", "chat"].includes(hash)) return hash as TabId;
   return "editor";
 }
 
@@ -771,12 +771,6 @@ export function SessionDetail() {
           Tasks
         </button>
         <button
-          className={activeTab === "execution" ? "tab-active" : ""}
-          onClick={() => setActiveTab("execution")}
-        >
-          Execution
-        </button>
-        <button
           className={activeTab === "timeline" ? "tab-active" : ""}
           onClick={() => setActiveTab("timeline")}
         >
@@ -987,10 +981,6 @@ export function SessionDetail() {
             workflowStates={session?.workflowStates}
           />
         </>
-      )}
-
-      {activeTab === "execution" && sessionId && (
-        <ExecutionTracing sessionId={sessionId} />
       )}
 
       {activeTab === "changes" && sessionId && (

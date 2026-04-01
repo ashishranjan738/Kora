@@ -16,7 +16,7 @@ import {
   Box,
 } from "@mantine/core";
 
-interface AgentExecutionStatus {
+export interface AgentExecutionStatus {
   name: string;
   role: "master" | "worker";
   status: "pending" | "spawning" | "spawned" | "failed";
@@ -24,7 +24,7 @@ interface AgentExecutionStatus {
   error?: string;
 }
 
-interface PlaybookExecution {
+export interface PlaybookExecution {
   id: string;
   sessionId: string;
   playbookName: string;
@@ -102,7 +102,7 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
-function ExecutionCard({ execution, onClick }: { execution: PlaybookExecution; onClick: () => void }) {
+export function ExecutionCard({ execution, onClick }: { execution: PlaybookExecution; onClick: () => void }) {
   const isActive = execution.status === "running";
   const spawnedCount = execution.agents.filter((a) => a.status === "spawned").length;
   const totalAgents = execution.agents.length;
@@ -187,7 +187,7 @@ function ExecutionCard({ execution, onClick }: { execution: PlaybookExecution; o
   );
 }
 
-function ExecutionDetail({ execution }: { execution: PlaybookExecution }) {
+export function ExecutionDetail({ execution }: { execution: PlaybookExecution }) {
   return (
     <Stack gap="md" mt="md" p="md" style={{ backgroundColor: "var(--bg-secondary)", borderRadius: 8 }}>
       {/* Execution Info */}
