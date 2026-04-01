@@ -15,6 +15,10 @@ interface PtySession {
   ptyProcess: pty.IPty;
   clients: Set<WebSocket>;
   graceTimer?: ReturnType<typeof setTimeout>;
+  /** True when session was registered directly (node-pty backend) — don't kill PTY on cleanup */
+  registered?: boolean;
+  /** Optional catchup data to send to newly connecting clients */
+  catchupData?: () => string;
 }
 
 export class PtyManager {
@@ -29,55 +33,137 @@ export class PtyManager {
   }
 
   /**
-   * Attach a WebSocket client to a terminal session via node-pty.
-   * Uses the configured backend's getAttachCommand() to spawn the right process.
-   * Returns false if max connections reached or no backend configured.
+   * Register an agent's existing node-pty process for direct WebSocket fan-out.
+   * Used with node-pty backend — the agent's PTY is already a node-pty process,
+   * so we skip spawning a subprocess and fan out directly.
+   *
+   * @param sessionName - The terminal session name (e.g., "kora--session-agentId")
+   * @param ptyProcess - The agent's existing node-pty process
+   * @param getCatchup - Optional function returning catchup data (e.g., ring buffer contents)
    */
-  attach(sessionName: string, ws: WebSocket, cols: number = 120, rows: number = 40): boolean {
-    if (!this.backend) {
-      logger.error("[pty-manager] No backend configured — call setBackend() first");
-      return false;
+  registerAgent(sessionName: string, ptyProcess: pty.IPty, getCatchup?: () => string): void {
+    // Clean up existing session if any
+    const existing = this.sessions.get(sessionName);
+    if (existing) {
+      if (existing.graceTimer) clearTimeout(existing.graceTimer);
+      for (const client of existing.clients) {
+        client.close(1000, "Session re-registered");
+      }
     }
 
-    let session = this.sessions.get(sessionName);
+    const session: PtySession = {
+      ptyProcess,
+      clients: new Set(),
+      registered: true,
+      catchupData: getCatchup,
+    };
+    this.sessions.set(sessionName, session);
 
-    if (!session) {
-      // Get the backend-specific command to attach to the session
-      const { command, args } = this.backend.getAttachCommand(sessionName);
-
-      let ptyProcess: pty.IPty;
-      try {
-        ptyProcess = pty.spawn(command, args, {
-          name: "xterm-256color",
-          cols,
-          rows,
-          cwd: process.env.HOME || "/tmp",
-          env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
-        });
-      } catch (err) {
-        logger.error({ err: err }, `[pty-manager] Failed to spawn PTY for ${sessionName}:`);
-        return false;
-      }
-
-      session = { ptyProcess, clients: new Set() };
-      this.sessions.set(sessionName, session);
-
-      // Fan out PTY output to all connected WebSocket clients
-      ptyProcess.onData((data: string) => {
-        for (const client of session!.clients) {
-          if (client.readyState === 1) { // WebSocket.OPEN
-            client.send(data);
-          }
+    // Fan out PTY output to all connected WebSocket clients
+    ptyProcess.onData((data: string) => {
+      for (const client of session.clients) {
+        if (client.readyState === 1) { // WebSocket.OPEN
+          client.send(data);
         }
-      });
+      }
+    });
 
-      // Clean up when PTY exits
-      ptyProcess.onExit(() => {
-        for (const client of session!.clients) {
+    // Clean up on PTY exit — but don't kill the process (it's owned by the backend)
+    // Guard: only delete if this is still the current session (prevents re-registration edge case)
+    ptyProcess.onExit(() => {
+      if (this.sessions.get(sessionName) === session) {
+        for (const client of session.clients) {
           client.close(1000, "PTY exited");
         }
         this.sessions.delete(sessionName);
-      });
+      }
+    });
+
+    logger.info(`[pty-manager] Registered agent PTY for ${sessionName}`);
+  }
+
+  /**
+   * Unregister an agent's PTY (called when agent is stopped/removed).
+   * Does NOT kill the PTY process — that's the backend's responsibility.
+   */
+  unregisterAgent(sessionName: string): void {
+    const session = this.sessions.get(sessionName);
+    if (!session || !session.registered) return;
+
+    if (session.graceTimer) clearTimeout(session.graceTimer);
+    for (const client of session.clients) {
+      client.close(1000, "Agent removed");
+    }
+    this.sessions.delete(sessionName);
+    logger.info(`[pty-manager] Unregistered agent PTY for ${sessionName}`);
+  }
+
+  /**
+   * Attach a WebSocket client to a terminal session via node-pty.
+   * If the session was registered via registerAgent(), attaches directly.
+   * Otherwise uses the configured backend's getAttachCommand() to spawn a subprocess.
+   * Returns false if max connections reached or no backend configured.
+   */
+  attach(sessionName: string, ws: WebSocket, cols: number = 120, rows: number = 40): boolean {
+    let session = this.sessions.get(sessionName);
+
+    // If session exists (either registered or previously spawned), add the client
+    if (!session) {
+      if (!this.backend) {
+        logger.error("[pty-manager] No backend configured — call setBackend() first");
+        return false;
+      }
+
+      // Check if the backend can provide the PTY process directly (node-pty backend)
+      if (this.backend.getPtyProcess) {
+        const directPty = this.backend.getPtyProcess(sessionName);
+        if (directPty) {
+          const getCatchup = this.backend.getCatchupData
+            ? () => this.backend!.getCatchupData!(sessionName) || ""
+            : undefined;
+          this.registerAgent(sessionName, directPty, getCatchup);
+          session = this.sessions.get(sessionName)!;
+        }
+      }
+
+      if (!session) {
+        // Fall back to spawning a subprocess via the backend's attach command
+        const { command, args } = this.backend.getAttachCommand(sessionName);
+
+        let ptyProcess: pty.IPty;
+        try {
+          ptyProcess = pty.spawn(command, args, {
+            name: "xterm-256color",
+            cols,
+            rows,
+            cwd: process.env.HOME || "/tmp",
+            env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
+          });
+        } catch (err) {
+          logger.error({ err: err }, `[pty-manager] Failed to spawn PTY for ${sessionName}:`);
+          return false;
+        }
+
+        session = { ptyProcess, clients: new Set() };
+        this.sessions.set(sessionName, session);
+
+        // Fan out PTY output to all connected WebSocket clients
+        ptyProcess.onData((data: string) => {
+          for (const client of session!.clients) {
+            if (client.readyState === 1) { // WebSocket.OPEN
+              client.send(data);
+            }
+          }
+        });
+
+        // Clean up when PTY exits
+        ptyProcess.onExit(() => {
+          for (const client of session!.clients) {
+            client.close(1000, "PTY exited");
+          }
+          this.sessions.delete(sessionName);
+        });
+      }
     }
 
     // Enforce max connections
@@ -94,6 +180,18 @@ export class PtyManager {
 
     // Add this client
     session.clients.add(ws);
+
+    // Send catchup data for registered sessions (ring buffer contents)
+    if (session.registered && session.catchupData) {
+      try {
+        const catchup = session.catchupData();
+        if (catchup && ws.readyState === 1) {
+          ws.send(catchup);
+        }
+      } catch {
+        // Non-fatal — catchup is best-effort
+      }
+    }
 
     // Forward WebSocket input to PTY
     ws.on("message", (data) => {
@@ -133,9 +231,15 @@ export class PtyManager {
         session!.graceTimer = setTimeout(() => {
           const s = this.sessions.get(sessionName);
           if (s && s.clients.size === 0) {
-            logger.info(`[pty-manager] Grace period expired for ${sessionName}, killing PTY`);
-            s.ptyProcess.kill();
-            this.sessions.delete(sessionName);
+            if (s.registered) {
+              // Registered sessions: don't kill PTY — it's owned by the backend.
+              // Just log; the session stays in the map for future reconnections.
+              logger.info(`[pty-manager] Grace period expired for registered session ${sessionName} — keeping PTY alive`);
+            } else {
+              logger.info(`[pty-manager] Grace period expired for ${sessionName}, killing PTY`);
+              s.ptyProcess.kill();
+              this.sessions.delete(sessionName);
+            }
           }
         }, PTY_GRACE_PERIOD_MS);
       }
@@ -181,7 +285,10 @@ export class PtyManager {
       for (const client of session.clients) {
         client.close(1000, "Shutting down");
       }
-      session.ptyProcess.kill();
+      // Don't kill registered PTY processes — they're owned by the backend
+      if (!session.registered) {
+        session.ptyProcess.kill();
+      }
       this.sessions.delete(key);
     }
   }
