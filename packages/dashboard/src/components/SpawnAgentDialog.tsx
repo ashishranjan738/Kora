@@ -22,6 +22,7 @@ import { AutonomyLevel } from "@kora/shared";
 import { PersonaLibrary } from "./PersonaLibrary";
 import { DirectoryBrowser } from "./DirectoryBrowser";
 import type { Persona } from "../hooks/usePersonas";
+import { showError } from "../utils/notifications";
 
 const AUTONOMY_LABELS: Record<AutonomyLevel, string> = {
   [AutonomyLevel.SuggestOnly]: "Suggest Only",
@@ -114,7 +115,7 @@ export function SpawnAgentDialog({ sessionId, onClose, onSpawned }: SpawnAgentDi
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      try { const data = await api.getProviders(); if (!cancelled) setProviders(data.providers || []); } catch {} finally { if (!cancelled) setLoadingProviders(false); }
+      try { const data = await api.getProviders(); if (!cancelled) setProviders(data.providers || []); } catch (err) { if (!cancelled) showError("Failed to load providers. Please refresh the page."); } finally { if (!cancelled) setLoadingProviders(false); }
     }
     async function loadRecentFlags() {
       try { const data = await api.getRecentFlags(10); if (!cancelled) setRecentFlags(data.flags || []); } catch {}
@@ -153,7 +154,9 @@ export function SpawnAgentDialog({ sessionId, onClose, onSpawned }: SpawnAgentDi
       setLoadingSessionModels(true);
       api.getSessionModels(sessionId, id).then((data) => {
         setSessionModels((data.models || []).map((m: any) => ({ id: m.id, name: m.label || m.name || m.id, tier: m.tier, pricing: m.pricing, custom: m.custom ?? true })));
-      }).catch(() => {}).finally(() => setLoadingSessionModels(false));
+      }).catch((err) => {
+        showError("Failed to load session models for this provider.");
+      }).finally(() => setLoadingSessionModels(false));
       api.discoverModels(id).then((data) => {
         setDiscoveredModels((data.discoveredModels || []).map((m: any) => ({ id: m.id, name: m.id, discovered: true })));
       }).catch(() => {});

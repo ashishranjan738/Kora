@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useApi } from "../hooks/useApi";
 import { Modal, Button, TextInput, Stack, Group, Text, Badge, Paper, ActionIcon, Switch, Tooltip, Box } from "@mantine/core";
 import { DirectoryBrowser } from "./DirectoryBrowser";
+import { showError } from "../utils/notifications";
 
 interface Schedule {
   id: string;
@@ -65,7 +66,9 @@ export function ScheduleManager() {
     try {
       const data = await api.getSchedules();
       setSchedules(data.schedules || []);
-    } catch {} finally { setLoading(false); }
+    } catch (err: any) {
+      showError(err.message || "Failed to load schedules", "Error");
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchSchedules(); const i = setInterval(fetchSchedules, 30000); return () => clearInterval(i); }, [fetchSchedules]);
@@ -76,19 +79,27 @@ export function ScheduleManager() {
     try {
       await api.createSchedule({ name: name.trim(), cronExpression: cronExpr.trim(), sessionConfig: { name: name.trim(), projectPath: projectPath.trim() } });
       setName(""); setCronExpr("0 */6 * * *"); setProjectPath(""); setShowCreate(false); fetchSchedules();
-    } catch {} finally { setCreating(false); }
+    } catch (err: any) {
+      showError(err.message || "Failed to create schedule", "Error");
+    } finally { setCreating(false); }
   };
 
   const handleToggle = async (id: string, enabled: boolean) => {
-    try { await api.updateSchedule(id, { enabled }); fetchSchedules(); } catch {}
+    try { await api.updateSchedule(id, { enabled }); fetchSchedules(); } catch (err: any) {
+      showError(err.message || "Failed to update schedule", "Error");
+    }
   };
 
   const handleDelete = async (id: string) => {
-    try { await api.deleteSchedule(id); fetchSchedules(); } catch {}
+    try { await api.deleteSchedule(id); fetchSchedules(); } catch (err: any) {
+      showError(err.message || "Failed to delete schedule", "Error");
+    }
   };
 
   const handleTrigger = async (id: string) => {
-    try { await api.triggerSchedule(id); fetchSchedules(); } catch {}
+    try { await api.triggerSchedule(id); fetchSchedules(); } catch (err: any) {
+      showError(err.message || "Failed to trigger schedule", "Error");
+    }
   };
 
   const inputStyles = { input: { backgroundColor: "var(--bg-tertiary)", borderColor: "var(--border-color)", color: "var(--text-primary)" }, label: { color: "var(--text-secondary)", fontSize: 13 } };

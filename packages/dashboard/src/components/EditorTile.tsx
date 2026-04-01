@@ -253,7 +253,7 @@ export function EditorTile({ sessionId }: EditorTileProps) {
     if (saveFirst) {
       const tab = openTabs.find(t => t.path === tabPath);
       if (tab) {
-        api.writeFile(sessionId, tab.path, tab.content).catch(() => {});
+        api.writeFile(sessionId, tab.path, tab.content).catch((err: any) => { showError(err.message || "Failed to save file", "Save Error"); });
       }
     }
     setOpenTabs(prev => {

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Modal, SimpleGrid, Card, Text, Button, Stack, Group, Badge, TextInput, Textarea, ActionIcon, Tooltip, Alert } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { usePersonas, type Persona } from "../hooks/usePersonas";
+import { showError } from "../utils/notifications";
 
 interface PersonaLibraryProps {
   opened: boolean;
@@ -114,7 +115,11 @@ export function PersonaLibrary({ opened, onClose, onSelect, browseOnly }: Person
   };
 
   const handleDelete = async (id: string) => {
-    try { await deletePersona(id); } catch { /* ignore */ }
+    try {
+      await deletePersona(id);
+    } catch {
+      showError("Failed to delete persona");
+    }
   };
 
   const cols = isMobile ? 1 : isTablet ? 2 : 3;
