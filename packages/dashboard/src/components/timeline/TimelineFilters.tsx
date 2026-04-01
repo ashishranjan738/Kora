@@ -1,6 +1,6 @@
 import { SegmentedControl, TextInput, MultiSelect, Switch, Group } from "@mantine/core";
 
-export type EventFilter = "all" | "agents" | "messages" | "tasks" | "system";
+export type EventFilter = "all" | "agents" | "messages" | "tasks" | "system" | "playbook";
 export type DensityMode = "compact" | "normal" | "detailed";
 
 interface TimelineFiltersProps {
@@ -62,6 +62,7 @@ export function TimelineFilters({
             { label: "Messages", value: "messages" },
             { label: "Tasks", value: "tasks" },
             { label: "System", value: "system" },
+            { label: "Playbook", value: "playbook" },
           ]}
           styles={{
             root: { backgroundColor: "transparent", border: "1px solid var(--border-color)" },

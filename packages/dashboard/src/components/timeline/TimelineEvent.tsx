@@ -36,6 +36,9 @@ const EVENT_CONFIG: Record<string, { color: string; bulletClass: string; label: 
   "task-deleted": { color: "gray", bulletClass: "gray", label: "Task Deleted" },
   "user-interaction": { color: "yellow", bulletClass: "yellow", label: "User Input" },
   "cost-threshold-reached": { color: "yellow", bulletClass: "yellow", label: "Cost Alert" },
+  "playbook-progress": { color: "indigo", bulletClass: "blue", label: "Playbook" },
+  "playbook-complete": { color: "green", bulletClass: "green", label: "Playbook Done" },
+  "playbook-failed": { color: "red", bulletClass: "red", label: "Playbook Failed" },
 };
 
 // Message subtype styling
