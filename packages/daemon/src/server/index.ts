@@ -15,7 +15,6 @@ import type { PlaybookDatabase } from "../core/playbook-database.js";
 import type { WSEvent } from "@kora/shared";
 import { getRuntimeTmuxPrefix } from "@kora/shared";
 import { PtyManager } from "../core/pty-manager.js";
-import { HoldptyController } from "../core/holdpty-controller.js";
 import { logger } from "../core/logger.js";
 import { notificationService } from "../core/notification-service.js";
 import pinoHttp from "pino-http";
@@ -162,10 +161,7 @@ export function createServer(options: ServerOptions) {
   // Configure PTY manager with the active terminal backend
   ptyManager.setBackend(deps.terminal);
 
-  // Wire PtyManager into HoldptyController for sendKeys routing
-  if (deps.terminal instanceof HoldptyController) {
-    deps.terminal.setPtyManager(ptyManager);
-  }
+
 
   // Serve the built React dashboard
   const dashboardDistPath = resolveDashboardPath();

@@ -6,9 +6,9 @@ export const DEFAULT_PORT = 7890;
 export const API_VERSION = "v1";
 export const APP_VERSION = "0.1.0";
 
-/** Terminal backend: "tmux" (stable), "holdpty" (experimental), or "node-pty" (direct, no external deps) */
-export type PtyBackendType = "tmux" | "holdpty" | "node-pty";
-export const DEFAULT_PTY_BACKEND: PtyBackendType = "holdpty";
+/** Terminal backend type — node-pty is the only supported backend */
+export type PtyBackendType = "node-pty";
+export const DEFAULT_PTY_BACKEND: PtyBackendType = "node-pty";
 
 export const DAEMON_DIR = ".kora";
 export const GLOBAL_CONFIG_DIR = "~/.kora";

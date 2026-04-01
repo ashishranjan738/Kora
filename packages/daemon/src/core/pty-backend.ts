@@ -1,8 +1,7 @@
 /**
  * IPtyBackend — common interface for terminal session management.
  *
- * Both TmuxController and HoldptyController implement this interface,
- * allowing the daemon to switch backends without changing consumer code.
+ * NodePtyBackend implements this interface for direct node-pty process management.
  */
 
 export interface IPtyBackend {
@@ -16,8 +15,7 @@ export interface IPtyBackend {
   killSession(name: string): Promise<void>;
 
   /** Send keystrokes to a session. Always appends Enter (\r).
-   *  The `literal` option originates from tmux's -l flag (no shell expansion)
-   *  but in holdpty all input is already literal. Enter is always sent. */
+   *  The `literal` option is kept for interface compatibility. Enter is always sent. */
   sendKeys(session: string, keys: string, options?: { literal?: boolean }): Promise<void>;
 
   /** Send raw terminal input (no Enter appended) */
@@ -47,13 +45,10 @@ export interface IPtyBackend {
   /** Get the command + args to spawn for attaching to a session (for terminal streaming via node-pty) */
   getAttachCommand(session: string): { command: string; args: string[] };
 
-  /** Get the Unix socket path for a session (holdpty only, optional) */
-  getSocketPathForSession?(session: string): Promise<string>;
-
-  /** Get the node-pty process for a session (node-pty backend only, optional).
+  /** Get the node-pty process for a session (optional).
    *  When available, PtyManager can fan out directly instead of spawning a subprocess. */
   getPtyProcess?(session: string): import("node-pty").IPty | undefined;
 
-  /** Get catchup data for a session (ring buffer contents, node-pty backend only, optional). */
+  /** Get catchup data for a session (ring buffer contents, optional). */
   getCatchupData?(session: string): string | undefined;
 }

@@ -15,10 +15,7 @@ import { SessionManager } from "./core/session-manager.js";
 import { Orchestrator } from "./core/orchestrator.js";
 import { registry } from "./cli-providers/index.js";
 import { loadPluginProviders } from "./cli-providers/plugin-loader.js";
-import tmuxDefault from "./core/tmux-controller.js";
-import { HoldptyController } from "./core/holdpty-controller.js";
 import type { IPtyBackend } from "./core/pty-backend.js";
-import { cleanupOrphanedSessions } from "./core/holdpty-cleanup.js";
 import { DEFAULT_PORT, APP_VERSION, DEFAULT_PTY_BACKEND, getRuntimeTmuxPrefix, getRuntimeDaemonDir, SESSIONS_SUBDIR } from "@kora/shared";
 import type { PtyBackendType } from "@kora/shared";
 import { logger } from "./core/logger.js";
@@ -113,34 +110,10 @@ async function handleStart(): Promise<void> {
     return;
   }
 
-  // Select PTY backend: "tmux" (default) or "holdpty"
-  let ptyBackend: IPtyBackend;
-  if (backendFlag === "holdpty") {
-    // Use a persistent directory for holdpty sessions instead of /tmp/dt-{uid}
-    // which macOS cleans during sleep/wake cycles, killing all agent sessions.
-    const holdptyDir = path.join(require("os").homedir(), isDev ? ".kora-dev" : ".kora", "holdpty");
-    fs.mkdirSync(holdptyDir, { recursive: true, mode: 0o700 });
-    process.env.HOLDPTY_DIR = holdptyDir;
-
-    // Ensure holdpty's spawn-helper binary has execute permissions.
-    // npm install sometimes strips +x on macOS, causing "posix_spawnp failed".
-    try {
-      const spawnHelper = path.join(require.resolve("holdpty/package.json"), "..", "node_modules", "node-pty", "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper");
-      if (fs.existsSync(spawnHelper)) {
-        fs.chmodSync(spawnHelper, 0o755);
-      }
-    } catch { /* non-fatal — only needed on macOS/Linux */ }
-
-    ptyBackend = new HoldptyController();
-    logger.info(`  [pty backend] holdpty (sessions: ${holdptyDir})`);
-  } else if (backendFlag === "node-pty") {
-    const { NodePtyBackend } = await import("./core/node-pty-backend.js");
-    ptyBackend = new NodePtyBackend();
-    logger.info(`  [pty backend] node-pty (direct, no external deps)`);
-  } else {
-    ptyBackend = tmuxDefault;
-    logger.info(`  [pty backend] tmux`);
-  }
+  // PTY backend: node-pty (direct, no external deps)
+  const { NodePtyBackend } = await import("./core/node-pty-backend.js");
+  const ptyBackend: IPtyBackend = new NodePtyBackend();
+  logger.info(`  [pty backend] node-pty (direct, no external deps)`);
 
   if (isDev) {
     process.env.KORA_DEV = "1"; // Ensure getGlobalConfigDir picks it up
@@ -222,19 +195,6 @@ async function handleStart(): Promise<void> {
     } catch (err) {
       logger.error({ err: err }, `  Failed to restore session "${config.id}":`);
     }
-  }
-
-  // 4b. Cleanup orphaned holdpty sessions that have no matching agent
-  try {
-    const allKnownAgents = Array.from(orchestrators.values())
-      .flatMap((orch) => orch.getAgents());
-    const tmuxPrefix = getRuntimeTmuxPrefix(isDev);
-    const cleanup = await cleanupOrphanedSessions(ptyBackend, allKnownAgents, tmuxPrefix);
-    if (cleanup.orphanedKilled > 0) {
-      logger.info(`  Cleaned up ${cleanup.orphanedKilled} orphaned holdpty session(s)`);
-    }
-  } catch (err) {
-    logger.warn({ err }, "  Holdpty cleanup failed (non-fatal)");
   }
 
   // 5. Create the HTTP + WebSocket server
@@ -373,14 +333,6 @@ async function handleStart(): Promise<void> {
     // Close databases
     suggestionsDb.close();
     playbookDb.close();
-
-    // Clean up holdpty pipe processes (prevents orphaned cat/tail processes)
-    if (ptyBackend && typeof (ptyBackend as any).cleanupAllPipeProcesses === 'function') {
-      try {
-        (ptyBackend as any).cleanupAllPipeProcesses();
-        logger.info("  Cleaned up holdpty pipe processes");
-      } catch {}
-    }
 
     // Close PtyManager connections cleanly (disconnect dashboard terminals)
     ptyManager.destroyAll();
@@ -550,23 +502,8 @@ async function handleRun(): Promise<void> {
   }
 
   // Headless mode: run without dashboard
-  const backendFlag = (parseFlag("--backend") || process.env.KORA_PTY_BACKEND || DEFAULT_PTY_BACKEND) as PtyBackendType;
-  let ptyBackend: IPtyBackend;
-  if (backendFlag === "holdpty") {
-    const holdptyDir = path.join(require("os").homedir(), isDev ? ".kora-dev" : ".kora", "holdpty");
-    fs.mkdirSync(holdptyDir, { recursive: true, mode: 0o700 });
-    process.env.HOLDPTY_DIR = holdptyDir;
-    try {
-      const spawnHelper = path.join(require.resolve("holdpty/package.json"), "..", "node_modules", "node-pty", "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper");
-      if (fs.existsSync(spawnHelper)) fs.chmodSync(spawnHelper, 0o755);
-    } catch { /* non-fatal */ }
-    ptyBackend = new HoldptyController();
-  } else if (backendFlag === "node-pty") {
-    const { NodePtyBackend } = await import("./core/node-pty-backend.js");
-    ptyBackend = new NodePtyBackend();
-  } else {
-    ptyBackend = tmuxDefault;
-  }
+  const { NodePtyBackend } = await import("./core/node-pty-backend.js");
+  const ptyBackend: IPtyBackend = new NodePtyBackend();
 
   if (isDev) {
     process.env.KORA_DEV = "1";

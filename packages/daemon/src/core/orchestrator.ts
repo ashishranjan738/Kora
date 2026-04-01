@@ -27,7 +27,7 @@ import { notifications } from "./notifications.js";
 import { notificationService } from "./notification-service.js";
 import { saveAgentStates, loadAgentStates } from "./state-persistence.js";
 import fs from "fs";
-import { HoldptyController } from "./holdpty-controller.js";
+
 import { rotateFileBySize, AGENT_LOG_MAX_BYTES, AGENT_LOG_KEEP_BYTES, CRASH_LOG_MAX_BYTES, CRASH_LOG_KEEP_BYTES } from "./log-rotation.js";
 import { getGlobalConfigDir } from "../daemon-lifecycle.js";
 import { logger } from "./logger.js";
@@ -1087,20 +1087,7 @@ RULES:
         // Check if session exists (metadata + process alive)
         alive = await this.config.terminal.hasSession(terminalSession);
 
-        // For holdpty: also verify the socket file exists on disk
-        if (alive && this.config.terminal instanceof HoldptyController) {
-          try {
-            const socketPath = await this.config.terminal.getSocketPathForSession(terminalSession);
-            if (!fs.existsSync(socketPath)) {
-              alive = false;
-              logger.info(`[restore] Agent ${agent.config.name} (${agent.id}): socket file missing — marking as crashed`);
-            }
-          } catch {
-            alive = false;
-          }
-        }
-
-        // Double-check: verify the pane/socket is actually accessible
+        // Double-check: verify the session is actually accessible
         if (alive) {
           await this.config.terminal.capturePane(terminalSession, 1, false);
         }
@@ -1560,11 +1547,11 @@ RULES:
   /**
    * Clean up orphaned sessions that no longer have corresponding active agents.
    * This handles stale sessions from crashed agents or incomplete cleanup.
-   * Works with both tmux and holdpty backends (uses listSessions + killSession interface).
+   * Uses the terminal backend's listSessions + killSession interface.
    */
   async cleanup(): Promise<void> {
     try {
-      // Get all sessions from the backend (tmux or holdpty)
+      // Get all sessions from the backend
       const allSessions = await this.config.terminal.listSessions();
 
       // Get active agents from this orchestrator's session
