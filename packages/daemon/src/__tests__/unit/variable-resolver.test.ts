@@ -98,6 +98,25 @@ describe("buildBackwardNotification", () => {
     const msg = buildBackwardNotification(baseCtx, "Tests failed");
     expect(msg).toContain("Reason: Tests failed");
   });
+
+  it("should include instructions when provided", () => {
+    const msg = buildBackwardNotification(baseCtx, undefined, "Fix the issues found in {task.title} and re-submit.");
+    expect(msg).toContain("moved backward");
+    expect(msg).toContain("**Your instructions for Review:**");
+    expect(msg).toContain("Fix the issues found in Fix login bug and re-submit.");
+  });
+
+  it("should include both reason and instructions", () => {
+    const msg = buildBackwardNotification(baseCtx, "Tests failed", "Re-run unit tests before submitting.");
+    expect(msg).toContain("Reason: Tests failed");
+    expect(msg).toContain("**Your instructions for Review:**");
+    expect(msg).toContain("Re-run unit tests before submitting.");
+  });
+
+  it("should work without instructions", () => {
+    const msg = buildBackwardNotification(baseCtx);
+    expect(msg).not.toContain("Your instructions");
+  });
 });
 
 describe("buildCancellationNotification", () => {

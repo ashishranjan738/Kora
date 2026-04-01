@@ -366,6 +366,14 @@ export function useApi() {
         method: "PUT",
         body: JSON.stringify({ instructions }),
       }),
+    // Workflow state instructions
+    getWorkflowStates: (sid: string) =>
+      apiFetch<{ states: Array<{ id: string; label: string; instructions?: string; color: string; category: string }>; frozen: boolean }>(`/sessions/${sid}/workflow-states`),
+    updateWorkflowInstructions: (sid: string, instructions: Array<{ stateId: string; instructions: string }>) =>
+      apiFetch<{ updated: number; total: number }>(`/sessions/${sid}/workflow-instructions`, {
+        method: "PUT",
+        body: JSON.stringify({ instructions }),
+      }),
     // Session config (generic PATCH for settings like budget, autoAssign, watchdogDelivery)
     updateSessionConfig: (sid: string, config: Record<string, unknown>) =>
       apiFetch<any>(`/sessions/${sid}`, {

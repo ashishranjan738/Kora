@@ -389,7 +389,7 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
             if (isClosed) {
               notifyMsg = buildCancellationNotification(resolverCtx);
             } else if (isBackward) {
-              notifyMsg = buildBackwardNotification(resolverCtx);
+              notifyMsg = buildBackwardNotification(resolverCtx, undefined, newState?.instructions);
             } else {
               notifyMsg = buildTransitionNotification(resolverCtx, newState?.instructions);
             }
