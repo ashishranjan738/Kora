@@ -16,8 +16,7 @@ import { Orchestrator } from "./core/orchestrator.js";
 import { registry } from "./cli-providers/index.js";
 import { loadPluginProviders } from "./cli-providers/plugin-loader.js";
 import type { IPtyBackend } from "./core/pty-backend.js";
-import { DEFAULT_PORT, APP_VERSION, DEFAULT_PTY_BACKEND, getRuntimeTmuxPrefix as getSessionPrefix, getRuntimeDaemonDir, SESSIONS_SUBDIR } from "@kora/shared";
-import type { PtyBackendType } from "@kora/shared";
+import { DEFAULT_PORT, APP_VERSION, getRuntimeTmuxPrefix as getSessionPrefix, getRuntimeDaemonDir, SESSIONS_SUBDIR } from "@kora/shared";
 import { logger } from "./core/logger.js";
 import { SuggestionsDatabase } from "./core/suggestions-db.js";
 import { PlaybookDatabase } from "./core/playbook-database.js";
@@ -56,7 +55,6 @@ async function handleStart(): Promise<void> {
   const defaultPort = isDev ? devPort : DEFAULT_PORT;
   const port = parseInt(parseFlag("--port") ?? String(defaultPort), 10);
   const projectPath = parseFlag("--project");
-  const backendFlag = (parseFlag("--backend") || process.env.KORA_PTY_BACKEND || DEFAULT_PTY_BACKEND) as PtyBackendType;
 
   // PM2 mode: generate config and delegate to PM2
   if (usePM2) {
@@ -74,7 +72,7 @@ async function handleStart(): Promise<void> {
       port,
       globalConfigDir,
       daemonScript,
-      backend: backendFlag,
+      backend: "node-pty",
     });
     const configPath = await writePM2Config(globalConfigDir, config);
 
