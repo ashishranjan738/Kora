@@ -122,6 +122,17 @@ export function Navbar() {
     />
   );
 
+  // Knowledge link
+  const knowledgeLink = (
+    <Link
+      to="/knowledge"
+      onClick={closeDrawer}
+      style={{ color: "var(--accent-blue)", textDecoration: "none" }}
+    >
+      Knowledge
+    </Link>
+  );
+
   // Settings link
   const settingsLink = (
     <Link
@@ -183,6 +194,7 @@ export function Navbar() {
             {connectionStatus}
             <NotificationDropdown sessionId={selectedSession || undefined} />
             {themeToggle}
+            {knowledgeLink}
             {settingsLink}
           </Group>
         )}
@@ -255,7 +267,10 @@ export function Navbar() {
           </Box>
 
           <Box pt="sm" style={{ borderTop: "1px solid var(--border-color)" }}>
-            {settingsLink}
+            <Stack gap="sm">
+              {knowledgeLink}
+              {settingsLink}
+            </Stack>
           </Box>
         </Stack>
       </Drawer>

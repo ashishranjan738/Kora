@@ -795,12 +795,14 @@ export function SessionDetail() {
         >
           Workload
         </button>
+        {session?.features?.groupChat && (
         <button
           className={activeTab === "chat" ? "tab-active" : ""}
           onClick={() => setActiveTab("chat")}
         >
           Chat
         </button>
+        )}
       </div>
 
       {/* Tab content */}
@@ -966,6 +968,7 @@ export function SessionDetail() {
           onBroadcast={() => setShowBroadcastModal(true)}
           onCloseTerminal={(id, name) => setConfirmCloseTerminal({ id, name })}
           workflowStates={session?.workflowStates}
+          groupChatEnabled={!!session?.features?.groupChat}
         />
       )}
 
@@ -1038,7 +1041,7 @@ export function SessionDetail() {
         />
       )}
 
-      {activeTab === "chat" && sessionId && (
+      {activeTab === "chat" && sessionId && session?.features?.groupChat && (
         <ChatTab sessionId={sessionId} wsEvents={chatWsEvents} />
       )}
 
@@ -1581,8 +1584,8 @@ export function SessionDetail() {
         </Modal>
       )}
     </div>
-    {/* Sidebar Chat */}
-    {sessionId && (
+    {/* Sidebar Chat — gated behind groupChat feature flag */}
+    {sessionId && session?.features?.groupChat && (
       <SidebarChat
         sessionId={sessionId}
         agents={agents.map((a: any) => ({
@@ -1662,6 +1665,7 @@ interface AgentsTabProps {
   onBroadcast: () => void;
   onCloseTerminal: (id: string, name: string) => void;
   workflowStates?: WorkflowState[];
+  groupChatEnabled?: boolean;
 }
 
 function AgentsTab({
@@ -1689,6 +1693,7 @@ function AgentsTab({
   onBroadcast,
   onCloseTerminal,
   workflowStates,
+  groupChatEnabled,
 }: AgentsTabProps) {
   const api = useApi();
   const [agentActivities, setAgentActivities] = useState<Record<string, AgentActivity>>({});
@@ -1898,7 +1903,7 @@ function AgentsTab({
                 {a.role && (
                   <span className="ac2-role-badge">{a.role}</span>
                 )}
-                <ChannelIndicator channels={(a.config?.channels as string[]) || []} />
+                {groupChatEnabled && <ChannelIndicator channels={(a.config?.channels as string[]) || []} />}
                 <FlagIndicator flags={(a.config?.extraCliArgs as string[]) || []} />
                 <MessageBufferBadge agentId={a.id} />
                 {/* Nudge button */}

@@ -70,6 +70,7 @@ export function SessionSettingsDialog({
   const [worktreeMode, setWorktreeMode] = useState<string>("");
   const [autoAssign, setAutoAssign] = useState(true);
   const [allowMasterForceTransition, setAllowMasterForceTransition] = useState(false);
+  const [groupChatEnabled, setGroupChatEnabled] = useState(false);
   const [budgetLimit, setBudgetLimit] = useState<string>("");
   const budgetSaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // TODO Sprint 5: Wire to session settings API, apply to new agent spawns
@@ -130,6 +131,9 @@ export function SessionSettingsDialog({
           }
           if (sessionData?.allowMasterForceTransition !== undefined) {
             setAllowMasterForceTransition(sessionData.allowMasterForceTransition);
+          }
+          if (sessionData?.features?.groupChat !== undefined) {
+            setGroupChatEnabled(sessionData.features.groupChat);
           }
           if (sessionData?.budgetLimit) {
             setBudgetLimit(String(sessionData.budgetLimit));
@@ -687,6 +691,28 @@ export function SessionSettingsDialog({
                 await api.updateSessionConfig(sessionId, { allowMasterForceTransition: newVal });
               } catch {
                 setAllowMasterForceTransition(!newVal);
+              }
+            }}
+            size="md"
+          />
+        </Group>
+
+        {/* Group Chat */}
+        <Divider my="md" />
+        <Group justify="space-between" align="center">
+          <div>
+            <Text size="sm" fw={600}>Group Chat &amp; Channels</Text>
+            <Text size="xs" c="dimmed">When enabled, agents can use group chat channels. Shows Chat tab and sidebar chat in the dashboard.</Text>
+          </div>
+          <Switch
+            checked={groupChatEnabled}
+            onChange={async (e) => {
+              const newVal = e.currentTarget.checked;
+              setGroupChatEnabled(newVal);
+              try {
+                await api.updateSessionConfig(sessionId, { features: { groupChat: newVal } });
+              } catch {
+                setGroupChatEnabled(!newVal);
               }
             }}
             size="md"
