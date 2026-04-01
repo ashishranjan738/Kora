@@ -487,6 +487,14 @@ export class AppDatabase extends EventEmitter {
         PRAGMA user_version = 20;
       `);
     }
+
+    if (version < 21) {
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_tasks_session_status ON tasks(session_id, status);
+        CREATE INDEX IF NOT EXISTS idx_transitions_session ON task_state_transitions(session_id, changed_at);
+        PRAGMA user_version = 21;
+      `);
+    }
   }
 
   // ─── Channels ──────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import type { IPtyBackend } from "./pty-backend.js";
 import { CostTracker } from "./cost-tracker.js";
 import type { AgentState, ParsedOutput, CLIProvider } from "@kora/shared";
-import { COST_UPDATE_INTERVAL_MS } from "@kora/shared";
+import { COST_UPDATE_INTERVAL_MS, withJitter } from "@kora/shared";
 import { estimateTokens, estimateCost } from "./cost-estimator.js";
 import { ClaudeSessionReader } from "./claude-session-reader.js";
 import { logger } from "./logger.js";
@@ -75,7 +75,7 @@ export class UsageMonitor {
       } catch {
         // Agent may be dead, ignore
       }
-    }, COST_UPDATE_INTERVAL_MS);
+    }, withJitter(COST_UPDATE_INTERVAL_MS));
 
     this.intervals.set(agent.id, interval);
   }
