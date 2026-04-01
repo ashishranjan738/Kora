@@ -30,7 +30,7 @@ afterEach(() => {
 describe("knowledge_edges table", () => {
   it("should be created by migration 19", () => {
     const version = db.db.pragma("user_version", { simple: true }) as number;
-    expect(version).toBe(20);
+    expect(version).toBe(21);
   });
 });
 
