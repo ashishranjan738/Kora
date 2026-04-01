@@ -9,9 +9,12 @@ import { MAX_TERMINAL_CONNECTIONS_PER_AGENT } from "@kora/shared";
 import type { IPtyBackend } from "./pty-backend.js";
 import { logger } from "./logger.js";
 
+const PTY_GRACE_PERIOD_MS = 60_000; // 60s before killing orphaned PTY
+
 interface PtySession {
   ptyProcess: pty.IPty;
   clients: Set<WebSocket>;
+  graceTimer?: ReturnType<typeof setTimeout>;
 }
 
 export class PtyManager {
@@ -82,6 +85,13 @@ export class PtyManager {
       return false;
     }
 
+    // Cancel grace timer if a client is reconnecting to an orphaned PTY
+    if (session.graceTimer) {
+      clearTimeout(session.graceTimer);
+      session.graceTimer = undefined;
+      logger.info(`[pty-manager] Client reconnected to ${sessionName} within grace period`);
+    }
+
     // Add this client
     session.clients.add(ws);
 
@@ -115,13 +125,19 @@ export class PtyManager {
       session!.ptyProcess.write(str);
     });
 
-    // Remove client on close
+    // Remove client on close — start grace period instead of killing immediately
     ws.on("close", () => {
       session!.clients.delete(ws);
-      // If no more clients, kill the PTY (detaches from session, doesn't kill the session itself)
       if (session!.clients.size === 0) {
-        session!.ptyProcess.kill();
-        this.sessions.delete(sessionName);
+        logger.info(`[pty-manager] Last client disconnected from ${sessionName}, starting ${PTY_GRACE_PERIOD_MS / 1000}s grace period`);
+        session!.graceTimer = setTimeout(() => {
+          const s = this.sessions.get(sessionName);
+          if (s && s.clients.size === 0) {
+            logger.info(`[pty-manager] Grace period expired for ${sessionName}, killing PTY`);
+            s.ptyProcess.kill();
+            this.sessions.delete(sessionName);
+          }
+        }, PTY_GRACE_PERIOD_MS);
       }
     });
 
@@ -161,6 +177,7 @@ export class PtyManager {
    */
   destroyAll(): void {
     for (const [key, session] of this.sessions) {
+      if (session.graceTimer) clearTimeout(session.graceTimer);
       for (const client of session.clients) {
         client.close(1000, "Shutting down");
       }
