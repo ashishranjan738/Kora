@@ -66,9 +66,7 @@ export function ScheduleManager() {
     try {
       const data = await api.getSchedules();
       setSchedules(data.schedules || []);
-    } catch (err: any) {
-      showError(err.message || "Failed to load schedules", "Error");
-    } finally { setLoading(false); }
+    } catch { /* silent — called by 30s polling */ } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchSchedules(); const i = setInterval(fetchSchedules, 30000); return () => clearInterval(i); }, [fetchSchedules]);

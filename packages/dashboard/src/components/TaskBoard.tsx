@@ -158,8 +158,8 @@ export function TaskBoard({ sessionId, initialTaskId, workflowStates }: TaskBoar
   const closedStatuses = new Set(workflowStates?.filter(s => s.category === "closed").map(s => s.id) || ["done"]);
   const [archivedCount, setArchivedCount] = useState(0);
   const [archiving, setArchiving] = useState(false);
-  const fetchTasks = useCallback(async () => { try { const data = await api.getTasks(sessionId, showArchived); setTasks(data.tasks || []); if (data.archivedCount !== undefined) setArchivedCount(data.archivedCount); } catch (err: any) { showError(err.message || "Failed to fetch tasks", "Error"); } }, [sessionId, showArchived]);
-  const fetchAgents = useCallback(async () => { try { setAgents(((await api.getAgents(sessionId)).agents || []).map((a: any) => ({ id: a.id, name: a.config?.name || a.name || a.id }))); } catch (err: any) { showError(err.message || "Failed to fetch agents", "Error"); } }, [sessionId]);
+  const fetchTasks = useCallback(async () => { try { const data = await api.getTasks(sessionId, showArchived); setTasks(data.tasks || []); if (data.archivedCount !== undefined) setArchivedCount(data.archivedCount); } catch { /* silent — called by 5s polling */ } }, [sessionId, showArchived]);
+  const fetchAgents = useCallback(async () => { try { setAgents(((await api.getAgents(sessionId)).agents || []).map((a: any) => ({ id: a.id, name: a.config?.name || a.name || a.id }))); } catch { /* silent — called on mount + refresh */ } }, [sessionId]);
   useEffect(() => { fetchTasks(); fetchAgents(); }, [fetchTasks, fetchAgents]);
   useEffect(() => { const i = setInterval(fetchTasks, 5000); return () => clearInterval(i); }, [fetchTasks]);
   useEffect(() => { if (initialTaskId && tasks.length > 0 && tasks.find(t => t.id === initialTaskId)) setExpandedTaskId(initialTaskId); }, [initialTaskId, tasks]);
