@@ -9,6 +9,7 @@ import { TaskBoardPage } from "./pages/TaskBoardPage";
 import { MultiAgentView } from "./pages/MultiAgentView";
 import { PlaybooksPage } from "./pages/PlaybooksPage";
 import { WorkloadPage } from "./pages/WorkloadPage";
+import { GlobalKnowledgePage } from "./pages/GlobalKnowledgePage";
 import { useThemeStore } from "./stores/themeStore";
 import { BottomNav } from "./components/BottomNav";
 
@@ -32,6 +33,7 @@ export function App() {
         <Route path="/session/:sessionId/tasks" element={<TaskBoardPage />} />
         <Route path="/session/:sessionId/workload" element={<WorkloadPage />} />
         <Route path="/playbooks" element={<PlaybooksPage />} />
+        <Route path="/knowledge" element={<GlobalKnowledgePage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Routes>
       <BottomNav />
