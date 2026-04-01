@@ -187,7 +187,7 @@ async function handleStart(): Promise<void> {
       if (config.workflowStates && config.workflowStates.length > 0) {
         orch.database.setWorkflowStatuses(config.workflowStates);
       }
-      const result = await orch.restore({ respawnDead: backendFlag === "node-pty" });
+      const result = await orch.restore({ respawnDead: true });
       orchestrators.set(config.id, orch);
       if (result.restored > 0 || result.dead > 0 || result.respawned > 0) {
         logger.info(`  Restored session "${config.id}": ${result.restored} alive, ${result.dead} dead${result.respawned ? `, ${result.respawned} respawned` : ""}`);
