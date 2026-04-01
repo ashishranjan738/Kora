@@ -6,7 +6,8 @@ import { TimelineFilters, type EventFilter, type DensityMode } from "./TimelineF
 import { TimelineEvent, type TimelineEventData } from "./TimelineEvent";
 import { TimelineGraph } from "./TimelineGraph";
 import { DateDivider, getDateLabel, getDateKey } from "./DateDivider";
-import { Badge, Loader, SegmentedControl, Text } from "@mantine/core";
+import { ExecutionCard, ExecutionDetail, type PlaybookExecution, type AgentExecutionStatus } from "../ExecutionTracing";
+import { Badge, Collapse, Loader, SegmentedControl, Text } from "@mantine/core";
 
 type ViewMode = "list" | "graph";
 
@@ -25,7 +26,10 @@ const FILTER_GROUPS: Record<EventFilter, string[] | null> = {
   messages: ["message-sent", "message-received"],
   tasks: ["task-created", "task-updated", "task-deleted"],
   system: ["session-created", "session-paused", "session-resumed", "session-stopped", "user-interaction", "cost-threshold-reached"],
+  playbook: ["playbook-progress", "playbook-complete", "playbook-failed"],
 };
+
+const PLAYBOOK_EVENT_TYPES = new Set(["playbook-progress", "playbook-complete", "playbook-failed"]);
 
 export function TimelineView({
   sessionId,
@@ -222,23 +226,131 @@ export function TimelineView({
     return result;
   }, [events, filter, agentFilter, debouncedSearch]);
 
-  // Group events by date
-  const groupedEvents = useMemo(() => {
-    const groups: Array<{ dateKey: string; label: string; events: TimelineEventData[] }> = [];
-    const seen = new Map<string, TimelineEventData[]>();
+  // Build playbook executions from playbook events and collect agent-spawned IDs to collapse
+  const { executions, collapsedEventIds } = useMemo(() => {
+    const executionMap = new Map<string, PlaybookExecution>();
+    const collapsed = new Set<string>();
 
     for (const evt of filteredEvents) {
-      const key = getDateKey(evt.timestamp);
-      if (!seen.has(key)) {
-        const group = { dateKey: key, label: getDateLabel(evt.timestamp), events: [] as TimelineEventData[] };
-        groups.push(group);
-        seen.set(key, group.events);
+      if (!PLAYBOOK_EVENT_TYPES.has(evt.type)) continue;
+      const data = (evt.data || {}) as Record<string, any>;
+      const executionId = data.executionId;
+      if (!executionId) continue;
+
+      if (!executionMap.has(executionId)) {
+        executionMap.set(executionId, {
+          id: executionId,
+          sessionId: data.sessionId || sessionId,
+          playbookName: data.playbookName || "Unknown",
+          status: "pending",
+          agents: (data.agents as AgentExecutionStatus[]) || [],
+          startedAt: evt.timestamp,
+          variables: data.variables,
+          phase: data.phase,
+          dryRun: data.dryRun,
+        });
       }
-      seen.get(key)!.push(evt);
+
+      const execution = executionMap.get(executionId)!;
+      if (evt.type === "playbook-progress") {
+        execution.status = "running";
+        execution.phase = data.phase;
+        if (data.agents) execution.agents = data.agents as AgentExecutionStatus[];
+      } else if (evt.type === "playbook-complete") {
+        execution.status = "complete";
+        execution.completedAt = evt.timestamp;
+        if (data.agents) execution.agents = data.agents as AgentExecutionStatus[];
+        if (data.taskIds) execution.taskIds = data.taskIds;
+      } else if (evt.type === "playbook-failed") {
+        execution.status = "failed";
+        execution.completedAt = evt.timestamp;
+        execution.error = data.error;
+        if (data.agents) execution.agents = data.agents as AgentExecutionStatus[];
+      }
+    }
+
+    // Collapse individual agent-spawned events that belong to a playbook execution
+    // Match by: execution has an agent with matching agentId and event timestamp is within execution window
+    if (executionMap.size > 0) {
+      for (const evt of filteredEvents) {
+        if (evt.type !== "agent-spawned") continue;
+        const data = (evt.data || {}) as Record<string, string | undefined>;
+        const agentId = data.agentId;
+        if (!agentId) continue;
+
+        for (const execution of executionMap.values()) {
+          const matchesAgent = execution.agents.some((a) => a.agentId === agentId || a.name === data.name);
+          if (!matchesAgent) continue;
+          const evtTime = new Date(evt.timestamp).getTime();
+          const startTime = new Date(execution.startedAt).getTime();
+          const endTime = execution.completedAt
+            ? new Date(execution.completedAt).getTime()
+            : startTime + 5 * 60 * 1000; // 5 min window for running executions
+          if (evtTime >= startTime - 5000 && evtTime <= endTime + 5000) {
+            collapsed.add(evt.id);
+            break;
+          }
+        }
+      }
+    }
+
+    return { executions: executionMap, collapsedEventIds: collapsed };
+  }, [filteredEvents, sessionId]);
+
+  // Track expanded playbook execution cards
+  const [expandedExecutionId, setExpandedExecutionId] = useState<string | null>(null);
+
+  // Filter out collapsed events and replace first playbook event per execution with a marker
+  const timelineItems = useMemo(() => {
+    const seenExecutions = new Set<string>();
+    const items: Array<{ type: "event"; event: TimelineEventData } | { type: "execution"; execution: PlaybookExecution }> = [];
+
+    for (const evt of filteredEvents) {
+      // Skip collapsed agent-spawned events
+      if (collapsedEventIds.has(evt.id)) continue;
+
+      // Replace first playbook event per execution with an execution card
+      if (PLAYBOOK_EVENT_TYPES.has(evt.type)) {
+        const executionId = (evt.data as any)?.executionId;
+        if (executionId && !seenExecutions.has(executionId)) {
+          seenExecutions.add(executionId);
+          const execution = executions.get(executionId);
+          if (execution) {
+            items.push({ type: "execution", execution });
+            continue;
+          }
+        } else {
+          // Skip duplicate playbook events for the same execution
+          continue;
+        }
+      }
+
+      items.push({ type: "event", event: evt });
+    }
+
+    return items;
+  }, [filteredEvents, executions, collapsedEventIds]);
+
+  type TimelineItem = { type: "event"; event: TimelineEventData } | { type: "execution"; execution: PlaybookExecution };
+
+  // Group timeline items by date
+  const groupedItems = useMemo(() => {
+    const groups: Array<{ dateKey: string; label: string; items: TimelineItem[] }> = [];
+    const seen = new Map<string, TimelineItem[]>();
+
+    for (const item of timelineItems) {
+      const ts = item.type === "event" ? item.event.timestamp : item.execution.startedAt;
+      const key = getDateKey(ts);
+      if (!seen.has(key)) {
+        const group = { dateKey: key, label: getDateLabel(ts), items: [] as TimelineItem[] };
+        groups.push(group);
+        seen.set(key, group.items);
+      }
+      seen.get(key)!.push(item);
     }
 
     return groups;
-  }, [filteredEvents]);
+  }, [timelineItems]);
 
   // Dismiss new events banner
   function dismissNewEvents() {
@@ -325,20 +437,39 @@ export function TimelineView({
       {/* List view */}
       {!loading && filteredEvents.length > 0 && viewMode === "list" && (
         <div ref={scrollRef} className={`tl-timeline ${densityClass}`} style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-          {groupedEvents.map((group) => (
+          {groupedItems.map((group) => (
             <div key={group.dateKey}>
               <DateDivider label={group.label} />
               <div className="tl-events">
-                {group.events.map((evt, idx) => (
-                  <TimelineEvent
-                    key={evt.id || `${group.dateKey}-${idx}`}
-                    event={evt}
-                    density={density}
-                    onJumpToTerminal={onJumpToTerminal}
-                    onJumpToTaskBoard={onJumpToTaskBoard}
-                    onRestart={onRestartAgent}
-                  />
-                ))}
+                {group.items.map((item, idx) => {
+                  if (item.type === "execution") {
+                    return (
+                      <div key={`exec-${item.execution.id}`} style={{ marginBottom: 8 }}>
+                        <ExecutionCard
+                          execution={item.execution}
+                          onClick={() =>
+                            setExpandedExecutionId(
+                              expandedExecutionId === item.execution.id ? null : item.execution.id
+                            )
+                          }
+                        />
+                        <Collapse in={expandedExecutionId === item.execution.id}>
+                          <ExecutionDetail execution={item.execution} />
+                        </Collapse>
+                      </div>
+                    );
+                  }
+                  return (
+                    <TimelineEvent
+                      key={item.event.id || `${group.dateKey}-${idx}`}
+                      event={item.event}
+                      density={density}
+                      onJumpToTerminal={onJumpToTerminal}
+                      onJumpToTaskBoard={onJumpToTaskBoard}
+                      onRestart={onRestartAgent}
+                    />
+                  );
+                })}
               </div>
             </div>
           ))}
