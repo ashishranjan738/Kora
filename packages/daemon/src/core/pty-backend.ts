@@ -49,4 +49,11 @@ export interface IPtyBackend {
 
   /** Get the Unix socket path for a session (holdpty only, optional) */
   getSocketPathForSession?(session: string): Promise<string>;
+
+  /** Get the node-pty process for a session (node-pty backend only, optional).
+   *  When available, PtyManager can fan out directly instead of spawning a subprocess. */
+  getPtyProcess?(session: string): import("node-pty").IPty | undefined;
+
+  /** Get catchup data for a session (ring buffer contents, node-pty backend only, optional). */
+  getCatchupData?(session: string): string | undefined;
 }
