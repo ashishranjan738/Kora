@@ -141,7 +141,6 @@ clean-all: stop-dev stop-prod clean-dist clean-modules ## Full cleanup: stop dae
 
 install: ## Install all dependencies
 	npm install
-	@rm -rf node_modules/holdpty/node_modules/node-pty 2>/dev/null && echo "Cleaned holdpty bundled node-pty" || true
 
 fresh: clean-all install build ## Full clean, install, and build
 

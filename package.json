@@ -17,13 +17,9 @@
     "dev:dashboard": "npm run dev -w packages/dashboard",
     "lint": "eslint packages/*/src/**/*.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "postinstall": "rm -rf node_modules/holdpty/node_modules/node-pty node_modules/pty-manager/node_modules/node-pty && rm -f node_modules/.bin/kora-cli && ln -s ../kora-cli/dist/cli/kora-cli.js node_modules/.bin/kora-cli"
+    "postinstall": "rm -rf node_modules/pty-manager/node_modules/node-pty && rm -f node_modules/.bin/kora-cli && ln -s ../kora-cli/dist/cli/kora-cli.js node_modules/.bin/kora-cli"
   },
-  "overrides": {
-    "holdpty": {
-      "node-pty": "1.2.0-beta.12"
-    }
-  },
+  "overrides": {},
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",
     "@types/node": "^22.0.0",
