@@ -3,6 +3,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import http from "http";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import { createAuthMiddleware, validateWsToken } from "./auth.js";
 import { createApiRouter } from "./api-routes.js";
 import { createWebhookRouter } from "./webhook-routes.js";
@@ -166,15 +167,17 @@ export function createServer(options: ServerOptions) {
   // Serve the built React dashboard
   const dashboardDistPath = resolveDashboardPath();
 
-  // Read index.html once and inject the token so the dashboard can auth API calls
-  let indexHtml = "";
+  // Read index.html template and prepare for per-request nonce injection
+  let indexHtmlTemplate = "";
+  const CSP_NONCE_PLACEHOLDER = "__CSP_NONCE__";
   try {
-    indexHtml = fs.readFileSync(path.join(dashboardDistPath, "index.html"), "utf-8");
+    indexHtmlTemplate = fs.readFileSync(path.join(dashboardDistPath, "index.html"), "utf-8");
     // Inject token BEFORE any other scripts so it's available when React boots
-    const tokenScript = `<script>window.__KORA_TOKEN__="${token}";</script>`;
-    indexHtml = indexHtml.replace("<script", `${tokenScript}\n    <script`);
+    // Use nonce placeholder — replaced per-request with a fresh cryptographic nonce
+    const tokenScript = `<script nonce="${CSP_NONCE_PLACEHOLDER}">window.__KORA_TOKEN__="${token}";</script>`;
+    indexHtmlTemplate = indexHtmlTemplate.replace("<script", `${tokenScript}\n    <script`);
   } catch {
-    indexHtml = "<html><body><h1>Dashboard not built. Run: cd packages/dashboard && npm run build</h1></body></html>";
+    indexHtmlTemplate = "<html><body><h1>Dashboard not built. Run: cd packages/dashboard && npm run build</h1></body></html>";
   }
 
   // Serve static assets (JS, CSS, images) directly
@@ -217,9 +220,13 @@ export function createServer(options: ServerOptions) {
   // SPA fallback: serve the token-injected index.html for all non-API GET routes
   app.use((req, res, next) => {
     if (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/terminal/")) {
+      // Generate per-request nonce for CSP
+      const nonce = crypto.randomBytes(16).toString("base64");
+      const html = indexHtmlTemplate.replace(CSP_NONCE_PLACEHOLDER, nonce);
       res.setHeader("Content-Type", "text/html");
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      res.send(indexHtml);
+      res.setHeader("Content-Security-Policy", `script-src 'self' 'nonce-${nonce}'; object-src 'none'; base-uri 'self'`);
+      res.send(html);
     } else {
       next();
     }

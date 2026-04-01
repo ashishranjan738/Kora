@@ -73,19 +73,24 @@ export function createWebhookRouter(deps: WebhookDeps): Router {
 
   router.post("/webhooks/trigger", async (req: Request, res: Response) => {
     try {
-      // Optional HMAC-SHA256 verification if X-Webhook-Secret is configured
-      // External callers (GitHub, Slack) can authenticate via HMAC instead of bearer token
-      const signature = req.headers["x-webhook-signature"] || req.headers["x-hub-signature-256"];
+      // HMAC-SHA256 verification — required. Reject if secret not configured.
       const webhookSecret = process.env.KORA_WEBHOOK_SECRET;
-      if (webhookSecret && signature) {
-        const { createHmac, timingSafeEqual } = await import("crypto");
-        const body = JSON.stringify(req.body);
-        const expected = "sha256=" + createHmac("sha256", webhookSecret).update(body).digest("hex");
-        if (typeof signature !== "string" || signature.length !== expected.length ||
-            !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
-          res.status(401).json({ error: "Invalid webhook signature" });
-          return;
-        }
+      if (!webhookSecret) {
+        res.status(503).json({ error: "Webhook endpoint disabled — KORA_WEBHOOK_SECRET not configured" });
+        return;
+      }
+      const signature = req.headers["x-webhook-signature"] || req.headers["x-hub-signature-256"];
+      if (!signature) {
+        res.status(401).json({ error: "Missing webhook signature header (X-Webhook-Signature or X-Hub-Signature-256)" });
+        return;
+      }
+      const { createHmac, timingSafeEqual } = await import("crypto");
+      const body = JSON.stringify(req.body);
+      const expected = "sha256=" + createHmac("sha256", webhookSecret).update(body).digest("hex");
+      if (typeof signature !== "string" || signature.length !== expected.length ||
+          !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+        res.status(401).json({ error: "Invalid webhook signature" });
+        return;
       }
 
       // Detect source from headers
