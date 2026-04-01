@@ -865,8 +865,8 @@ export function registerMiscRoutes(router: Router, deps: RouteDeps): void {
       const globalDb = getGlobalKnowledgeDB(globalConfigDir);
       const { key, value, sourceSession, promotedBy } = req.body;
       if (!key || !value) { res.status(400).json({ error: "key and value required" }); return; }
-      globalDb.promote({ key, value, sourceSession: sourceSession || null, promotedBy: promotedBy || null });
-      res.json({ success: true, key, promoted: true });
+      globalDb.create({ key, value, sourceSession: sourceSession || undefined, promotedBy: promotedBy || undefined });
+      res.json({ success: true, key, created: true });
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
 
@@ -875,8 +875,10 @@ export function registerMiscRoutes(router: Router, deps: RouteDeps): void {
       const { getGlobalKnowledgeDB } = require("../../core/global-knowledge.js");
       const globalDb = getGlobalKnowledgeDB(globalConfigDir);
       const limit = parseInt(req.query.limit as string) || 50;
-      const entries = globalDb.list(limit);
-      res.json({ entries, count: entries.length });
+      const q = req.query.q as string | undefined;
+      const entries = q ? globalDb.search(q, limit) : globalDb.list(limit);
+      const total = globalDb.count();
+      res.json({ entries, count: entries.length, total });
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
 
@@ -887,6 +889,19 @@ export function registerMiscRoutes(router: Router, deps: RouteDeps): void {
       const entry = globalDb.get(decodeURIComponent(String(req.params.key)));
       if (!entry) { res.status(404).json({ error: "Global knowledge entry not found" }); return; }
       res.json(entry);
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  router.put("/global/knowledge/:key", (req: Request, res: Response) => {
+    try {
+      const { getGlobalKnowledgeDB } = require("../../core/global-knowledge.js");
+      const globalDb = getGlobalKnowledgeDB(globalConfigDir);
+      const key = decodeURIComponent(String(req.params.key));
+      const { value } = req.body;
+      if (!value) { res.status(400).json({ error: "value is required" }); return; }
+      const updated = globalDb.update(key, value);
+      if (!updated) { res.status(404).json({ error: "Global knowledge entry not found" }); return; }
+      res.json({ success: true, key, updated: true });
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
 

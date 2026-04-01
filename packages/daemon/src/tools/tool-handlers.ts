@@ -483,7 +483,9 @@ async function handleListGlobalKnowledge(
   args: Record<string, string>,
 ): Promise<unknown> {
   const limit = parseInt(args.limit) || 50;
-  return await ctx.apiCall("GET", `/api/v1/global/knowledge?limit=${limit}`);
+  const q = args.query?.trim();
+  const queryParam = q ? `&q=${encodeURIComponent(q)}` : "";
+  return await ctx.apiCall("GET", `/api/v1/global/knowledge?limit=${limit}${queryParam}`);
 }
 
 // ── Medium Complexity ──────────────────────────────────────────
@@ -1056,16 +1058,32 @@ export async function handleDeleteTask(
 
 // ── Channel tools ───────────────────────────────────────
 
+async function checkGroupChatEnabled(ctx: ToolContext): Promise<string | null> {
+  try {
+    const session = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}`)) as any;
+    if (session?.features?.groupChat === false) {
+      return "Group chat is disabled for this session";
+    }
+  } catch { /* non-fatal — allow if we can't check */ }
+  return null;
+}
+
 async function handleChannelList(ctx: ToolContext, _args: Record<string, string>): Promise<unknown> {
+  const err = await checkGroupChatEnabled(ctx);
+  if (err) return { error: err };
   return await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/channels`);
 }
 
 async function handleChannelJoin(ctx: ToolContext, args: Record<string, string>): Promise<unknown> {
+  const err = await checkGroupChatEnabled(ctx);
+  if (err) return { error: err };
   if (!args.channel) return { error: "channel is required" };
   return await ctx.apiCall("POST", `/api/v1/sessions/${ctx.sessionId}/channels/${encodeURIComponent(args.channel)}/join`, { agentId: ctx.agentId });
 }
 
 async function handleChannelHistory(ctx: ToolContext, args: Record<string, string>): Promise<unknown> {
+  const err = await checkGroupChatEnabled(ctx);
+  if (err) return { error: err };
   if (!args.channel) return { error: "channel is required" };
   const limit = Math.min(parseInt(args.limit) || 20, 100);
   const resp = (await ctx.apiCall("GET", `/api/v1/sessions/${ctx.sessionId}/channels/${encodeURIComponent(args.channel)}/messages?limit=${limit}`)) as Record<string, unknown>;

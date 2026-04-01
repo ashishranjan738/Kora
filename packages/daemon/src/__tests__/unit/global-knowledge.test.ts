@@ -105,6 +105,77 @@ describe("GlobalKnowledgeDB", () => {
     });
   });
 
+  describe("create", () => {
+    it("creates entry without source metadata", () => {
+      db.create({ key: "direct", value: "created directly" });
+      const entry = db.get("direct");
+      expect(entry).not.toBeNull();
+      expect(entry!.value).toBe("created directly");
+      expect(entry!.sourceSession).toBeNull();
+      expect(entry!.promotedBy).toBeNull();
+    });
+
+    it("creates entry with source metadata", () => {
+      db.create({ key: "sourced", value: "from session", sourceSession: "s1", promotedBy: "dev-1" });
+      const entry = db.get("sourced");
+      expect(entry!.sourceSession).toBe("s1");
+      expect(entry!.promotedBy).toBe("dev-1");
+    });
+  });
+
+  describe("update", () => {
+    it("updates existing entry value", () => {
+      db.create({ key: "mutable", value: "old" });
+      expect(db.update("mutable", "new")).toBe(true);
+      expect(db.get("mutable")!.value).toBe("new");
+    });
+
+    it("returns false for non-existent key", () => {
+      expect(db.update("ghost", "value")).toBe(false);
+    });
+  });
+
+  describe("count", () => {
+    it("returns 0 when empty", () => {
+      expect(db.count()).toBe(0);
+    });
+
+    it("returns correct count", () => {
+      db.create({ key: "a", value: "1" });
+      db.create({ key: "b", value: "2" });
+      expect(db.count()).toBe(2);
+    });
+  });
+
+  describe("search", () => {
+    beforeEach(() => {
+      db.create({ key: "api-design", value: "RESTful patterns for microservices" });
+      db.create({ key: "db-optimization", value: "Use indexes on frequently queried columns" });
+      db.create({ key: "testing-tips", value: "Unit tests for business logic" });
+    });
+
+    it("finds entries by keyword in key (LIKE fallback)", () => {
+      const results = db.search("api");
+      expect(results.length).toBeGreaterThanOrEqual(1);
+      expect(results.some(r => r.key === "api-design")).toBe(true);
+    });
+
+    it("finds entries by keyword in value", () => {
+      const results = db.search("indexes");
+      expect(results.length).toBeGreaterThanOrEqual(1);
+      expect(results.some(r => r.key === "db-optimization")).toBe(true);
+    });
+
+    it("returns empty for no match", () => {
+      expect(db.search("zzz-nonexistent")).toHaveLength(0);
+    });
+
+    it("respects limit", () => {
+      const results = db.search("tests", 1);
+      expect(results).toHaveLength(1);
+    });
+  });
+
   describe("master-only promote (handler level)", () => {
     it("promote_knowledge handler requires master role", async () => {
       // This is tested at the handler level — the handler checks ctx.agentRole
