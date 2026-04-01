@@ -26,6 +26,8 @@ import { SuggestionsDatabase } from "./core/suggestions-db.js";
 import { PlaybookDatabase } from "./core/playbook-database.js";
 import { AutoCheckpoint } from "./core/auto-checkpoint.js";
 import { rotateFileBySizeSync, pruneLogsOnStartup, CRASH_LOG_MAX_BYTES, CRASH_LOG_KEEP_BYTES } from "./core/log-rotation.js";
+import { generatePM2Config, writePM2Config } from "./core/pm2-config.js";
+import { execSync } from "child_process";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -39,13 +41,77 @@ function parseFlag(flag: string): string | undefined {
   return undefined;
 }
 
+/** Check if PM2 is installed and available in PATH */
+function isPM2Available(): boolean {
+  try {
+    execSync("pm2 --version", { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function handleStart(): Promise<void> {
   const isDev = args.includes("--dev") || process.env.KORA_DEV === "1";
+  const usePM2 = args.includes("--pm2");
+  const useStartup = args.includes("--startup");
   const devPort = 7891;  // Dev mode uses different port
   const defaultPort = isDev ? devPort : DEFAULT_PORT;
   const port = parseInt(parseFlag("--port") ?? String(defaultPort), 10);
   const projectPath = parseFlag("--project");
   const backendFlag = (parseFlag("--backend") || process.env.KORA_PTY_BACKEND || DEFAULT_PTY_BACKEND) as PtyBackendType;
+
+  // PM2 mode: generate config and delegate to PM2
+  if (usePM2) {
+    if (!isPM2Available()) {
+      logger.error("PM2 is not installed. Install it with: npm install -g pm2");
+      process.exit(1);
+    }
+
+    if (isDev) process.env.KORA_DEV = "1";
+    const globalConfigDir = getGlobalConfigDir();
+    const daemonScript = path.resolve(__dirname, "cli.js");
+
+    const config = generatePM2Config({
+      isDev,
+      port,
+      globalConfigDir,
+      daemonScript,
+      backend: backendFlag,
+    });
+    const configPath = await writePM2Config(globalConfigDir, config);
+
+    // Start via PM2
+    try {
+      const appName = isDev ? "kora-daemon-dev" : "kora-daemon";
+      // Stop existing instance if running (ignore errors)
+      try { execSync(`pm2 stop ${appName}`, { stdio: "ignore" }); } catch {}
+      try { execSync(`pm2 delete ${appName}`, { stdio: "ignore" }); } catch {}
+
+      execSync(`pm2 start ${configPath}`, { stdio: "inherit" });
+      logger.info(`Kora daemon started under PM2 (${appName})`);
+      logger.info(`  Config: ${configPath}`);
+      logger.info(`  Logs:   pm2 logs ${appName}`);
+      logger.info(`  Status: pm2 status ${appName}`);
+
+      // Set up system startup if requested
+      if (useStartup) {
+        try {
+          execSync("pm2 startup", { stdio: "inherit" });
+          execSync("pm2 save", { stdio: "inherit" });
+          logger.info("PM2 startup configured — daemon will auto-start on boot");
+        } catch (err) {
+          logger.warn("Failed to configure PM2 startup. You may need to run with sudo:");
+          logger.warn("  sudo env PATH=$PATH pm2 startup");
+          logger.warn("  pm2 save");
+        }
+      }
+    } catch (err) {
+      logger.error({ err }, "Failed to start daemon via PM2");
+      process.exit(1);
+    }
+    return;
+  }
 
   // Select PTY backend: "tmux" (default) or "holdpty"
   let ptyBackend: IPtyBackend;
@@ -376,6 +442,28 @@ async function handleStart(): Promise<void> {
 }
 
 async function handleStop(): Promise<void> {
+  const usePM2 = args.includes("--pm2");
+  const isDev = args.includes("--dev") || process.env.KORA_DEV === "1";
+
+  // PM2 mode: stop via PM2
+  if (usePM2) {
+    if (!isPM2Available()) {
+      logger.error("PM2 is not installed. Install it with: npm install -g pm2");
+      process.exit(1);
+    }
+
+    const appName = isDev ? "kora-daemon-dev" : "kora-daemon";
+    try {
+      execSync(`pm2 stop ${appName}`, { stdio: "inherit" });
+      execSync(`pm2 delete ${appName}`, { stdio: "inherit" });
+      logger.info(`Daemon stopped via PM2 (${appName})`);
+    } catch {
+      logger.info(`No PM2 process "${appName}" found`);
+    }
+    await cleanupDaemonInfo();
+    return;
+  }
+
   const info = await getDaemonInfo();
   if (!info) {
     logger.info("No daemon running");
@@ -789,8 +877,8 @@ if (command === "start") {
 } else {
   logger.info(`Kora v${APP_VERSION}\n`);
   logger.info("Usage:");
-  logger.info("  kora start [--port PORT] [--project PATH] [--dev]");
-  logger.info("  kora stop");
+  logger.info("  kora start [--port PORT] [--project PATH] [--dev] [--pm2] [--startup]");
+  logger.info("  kora stop [--pm2] [--dev]");
   logger.info("  kora status");
   logger.info("  kora tunnel start|stop|status [--dev]");
   logger.info("  kora run <playbook> [task] [--project PATH] [--headless] [--timeout MS]");
