@@ -384,10 +384,10 @@ export function useApi() {
         method: "PUT",
         body: JSON.stringify({ instructions }),
       }),
-    // Session config (generic PATCH for settings like budget, autoAssign, watchdogDelivery)
+    // Session config (PUT for settings like budget, autoAssign, features, watchdogDelivery)
     updateSessionConfig: (sid: string, config: Record<string, unknown>) =>
       apiFetch<any>(`/sessions/${sid}`, {
-        method: "PATCH",
+        method: "PUT",
         body: JSON.stringify(config),
       }),
     // Channels (group chat)
