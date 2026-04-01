@@ -110,7 +110,6 @@ export function createServer(options: ServerOptions) {
 
   // ── WebSocket ping/pong heartbeat ──────────────────────────────
   const WS_PING_INTERVAL_MS = 30_000;
-  const WS_PONG_TIMEOUT_MS = 10_000;
 
   const heartbeatInterval = setInterval(() => {
     wss.clients.forEach((ws) => {
