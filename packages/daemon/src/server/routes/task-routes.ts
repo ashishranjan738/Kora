@@ -145,6 +145,7 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
       }
 
       // Notify assigned agent via terminal + SQLite (so check_messages finds it)
+      const warnings: string[] = [];
       if (task.assignedTo) {
         const orch = orchestrators.get(sid);
         if (orch) {
@@ -167,7 +168,10 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
               createdAt: Date.now(),
               expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
             });
-          } catch {}
+          } catch (err) {
+            logger.warn({ err, taskId: task.id, agentId: task.assignedTo, action: "task-assignment" }, "[task-routes] Failed to notify agent of task assignment");
+            warnings.push("Failed to notify agent of task assignment");
+          }
         }
       }
 
@@ -181,7 +185,8 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
         orch_tc.eventLog.log({ sessionId: sid, type: "task-created" as any, data: { taskId: task.id, title: task.title, description: task.description, priority: task.priority, labels: task.labels, assignedTo: task.assignedTo || null } });
       }
 
-      res.status(201).json(db.getTask(task.id));
+      const result = db.getTask(task.id);
+      res.status(201).json(warnings.length > 0 ? { ...result, warnings } : result);
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -241,7 +246,9 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
         try {
           const { randomUUID } = require("crypto");
           db.addTaskComment({ id: randomUUID().slice(0, 8), taskId: tid, text: commentText, author: "system", authorName: "system", createdAt: new Date().toISOString() });
-        } catch {}
+        } catch (err) {
+          logger.warn({ err, taskId: tid, action: "force-transition-comment" }, "[task-routes] Failed to add force-transition comment");
+        }
       }
 
       // Always allow transition to closed-category states (e.g. "done") — no validation needed
@@ -294,11 +301,15 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
         const now = new Date().toISOString();
         try {
           db.addTaskComment({ id: randomUUID().slice(0, 8), taskId: tid, text: `Approval required to move to "${targetState.label}". Waiting for human sign-off.`, author: "system", authorName: "system", createdAt: now });
-        } catch {}
+        } catch (err) {
+          logger.warn({ err, taskId: tid, action: "approval-gate-comment" }, "[task-routes] Failed to add approval gate comment");
+        }
         // Store pending target status in a comment for verification on /approve
         try {
           db.addTaskComment({ id: randomUUID().slice(0, 8), taskId: tid, text: `__pending_approval__:${body.status}`, author: "system", authorName: "system", createdAt: now });
-        } catch {}
+        } catch (err) {
+          logger.warn({ err, taskId: tid, action: "approval-pending-status" }, "[task-routes] Failed to store pending approval status");
+        }
         // Broadcast approval-needed event
         broadcastEvent({ event: "approval-needed", sessionId: sid, taskId: tid, taskTitle: oldTask.title, targetStatus: body.status, targetLabel: targetState.label, requestedBy: oldTask.assigned_to });
         res.json({ pendingApproval: true, taskId: tid, targetStatus: body.status, message: `Task paused — approval required for "${targetState.label}". Waiting for human sign-off via dashboard.` });
@@ -316,6 +327,7 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
       });
 
       // Notify if assignedTo changed — terminal + SQLite (so check_messages finds it)
+      const updateWarnings: string[] = [];
       if (body.assignedTo && task.assignedTo !== oldTask.assignedTo) {
         // Auto-transition: if task is in first workflow state, move to second on assignment
         const session_update = sessionManager.getSession(sid);
@@ -347,7 +359,10 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
               createdAt: Date.now(),
               expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
             });
-          } catch {}
+          } catch (err) {
+            logger.warn({ err, taskId: tid, agentId: task.assignedTo, action: "task-reassignment" }, "[task-routes] Failed to notify agent of task assignment");
+            updateWarnings.push("Failed to notify agent of task assignment");
+          }
         }
       }
 
@@ -491,7 +506,7 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
         orch_tu.eventLog.log({ sessionId: sid, type: "task-updated" as any, data: { taskId: tid, title: task.title, status: task.status } });
       }
 
-      res.json(task);
+      res.json(updateWarnings.length > 0 ? { ...task, warnings: updateWarnings } : task);
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -541,7 +556,9 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
               createdAt: Date.now(),
               expiresAt: Date.now() + 24 * 60 * 60 * 1000,
             });
-          } catch { /* non-fatal */ }
+          } catch (err) {
+            logger.warn({ err, taskId: tid, agentId: taskBeforeDelete.assignedTo, action: "task-deletion-notify" }, "[task-routes] Failed to notify agent of task deletion");
+          }
         }
       }
 
@@ -672,12 +689,15 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
             orch.messageQueue.enqueue(task.assignedTo, agent.config.terminalSession,
               `\x1b[1;32m[Approved] Task "${task.title}" moved to "${status}". Continue working.\x1b[0m`);
           }
-        } catch {}
+        } catch (err) {
+          logger.warn({ err, taskId: tid, agentId: task.assignedTo, action: "approval-notify" }, "[task-routes] Failed to notify agent of task approval");
+        }
       }
 
       broadcastEvent({ event: "task-updated", sessionId: sid, taskId: tid });
       broadcastEvent({ event: "approval-resolved", sessionId: sid, taskId: tid, status, action: "approved" });
-      res.json({ approved: true, task });
+      const approvalWarnings: string[] = [];
+      res.json(approvalWarnings.length > 0 ? { approved: true, task, warnings: approvalWarnings } : { approved: true, task });
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -705,7 +725,9 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
             orch.messageQueue.enqueue(task.assignedTo, agent.config.terminalSession,
               `\x1b[1;31m[Rejected] Approval denied for task "${task.title}": ${reason || "no reason given"}. Address feedback and try again.\x1b[0m`);
           }
-        } catch {}
+        } catch (err) {
+          logger.warn({ err, taskId: tid, agentId: task.assignedTo, action: "rejection-notify" }, "[task-routes] Failed to notify agent of task rejection");
+        }
       }
 
       broadcastEvent({ event: "approval-resolved", sessionId: sid, taskId: tid, action: "rejected", reason });
