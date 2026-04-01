@@ -76,6 +76,12 @@ export const FORCE_DELIVERY_TIMEOUT_MS = 30_000;
 // Cost tracking
 export const COST_UPDATE_INTERVAL_MS = 15_000;
 
+/** Add ±20% jitter to an interval to prevent thundering herd synchronization. */
+export function withJitter(intervalMs: number, jitterPercent = 0.2): number {
+  const jitter = intervalMs * jitterPercent;
+  return Math.round(intervalMs + (Math.random() * 2 - 1) * jitter);
+}
+
 // Default permissions
 export const DEFAULT_MASTER_PERMISSIONS = {
   canSpawnAgents: true,

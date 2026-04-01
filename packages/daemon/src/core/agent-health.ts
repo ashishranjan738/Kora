@@ -1,5 +1,5 @@
 import type { AgentState, AgentHealthCheck } from "@kora/shared";
-import { HEALTH_CHECK_INTERVAL_MS, MAX_CONSECUTIVE_FAILURES } from "@kora/shared";
+import { HEALTH_CHECK_INTERVAL_MS, MAX_CONSECUTIVE_FAILURES, withJitter } from "@kora/shared";
 import type { IPtyBackend } from "./pty-backend.js";
 import { EventEmitter } from "events";
 import { logger } from "./logger.js";
@@ -365,7 +365,7 @@ export class AgentHealthMonitor extends EventEmitter {
       if (this.agents) {
         await this.checkIdleState(agentId, terminalSession);
       }
-    }, HEALTH_CHECK_INTERVAL_MS);
+    }, withJitter(HEALTH_CHECK_INTERVAL_MS));
     this.intervals.set(agentId, interval);
     this.lastOutputTimestamps.set(agentId, Date.now());
 

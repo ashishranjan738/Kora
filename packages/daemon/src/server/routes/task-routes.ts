@@ -1102,13 +1102,15 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
 
       events.sort((a, b) => a.time - b.time);
 
-      // Generate time buckets
+      // Generate time buckets — single-pass: advance event pointer per bucket
       const cfd: Array<{ timestamp: string; counts: Record<string, number> }> = [];
+      let eventIdx = 0;
 
       for (let t = minTime; t <= maxTime; t += bucketMs) {
-        // Replay events up to this point
-        for (const e of events) {
-          if (e.time <= t) taskStates.set(e.taskId, e.state);
+        // Advance event pointer to consume events up to this bucket's time
+        while (eventIdx < events.length && events[eventIdx].time <= t) {
+          taskStates.set(events[eventIdx].taskId, events[eventIdx].state);
+          eventIdx++;
         }
 
         const counts: Record<string, number> = {};
