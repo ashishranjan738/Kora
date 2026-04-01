@@ -393,11 +393,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "list_global_knowledge",
-    description: "List knowledge entries from the global store (cross-session, persisted across all sessions).",
+    description: "List or search knowledge entries from the global store (cross-session, persisted across all sessions). Supports full-text search.",
     inputSchema: {
       type: "object",
       properties: {
         limit: { type: "number", description: "Max entries to return (default: 50)" },
+        query: { type: "string", description: "Search query — filters entries by keyword match on key and value" },
       },
     },
   },
