@@ -141,7 +141,7 @@ export function ScheduleManager() {
                 <Group gap={6} style={{ flexShrink: 0 }}>
                   <Switch checked={s.enabled} onChange={(e) => handleToggle(s.id, e.currentTarget.checked)} size="sm" />
                   <Tooltip label="Run now"><Button size="xs" variant="light" color="blue" onClick={() => handleTrigger(s.id)}>Run</Button></Tooltip>
-                  <ActionIcon variant="subtle" color="red" size="sm" onClick={() => handleDelete(s.id)}><span style={{ fontSize: 16 }}>&times;</span></ActionIcon>
+                  <ActionIcon variant="subtle" color="red" size="sm" onClick={() => handleDelete(s.id)} aria-label="Delete schedule"><span style={{ fontSize: 16 }}>&times;</span></ActionIcon>
                 </Group>
               </Group>
             </Paper>
