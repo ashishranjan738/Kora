@@ -83,6 +83,7 @@ export function Navbar() {
       variant="default"
       onClick={cycleTheme}
       title={`Theme: ${mode} (${resolved})`}
+      aria-label="Toggle theme"
       size="lg"
       style={{
         border: "1px solid var(--border-color)",

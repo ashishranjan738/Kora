@@ -298,7 +298,7 @@ export function ChatTab({ sessionId, wsEvents }: ChatTabProps) {
           <div className="chat-sidebar-header">
             <Text size="sm" fw={600} c="var(--text-primary)">Channels</Text>
             <Tooltip label="New channel" position="right">
-              <ActionIcon variant="subtle" size="xs" onClick={() => setShowCreateChannel(true)} style={{ color: "var(--accent-blue)" }}>
+              <ActionIcon variant="subtle" size="xs" onClick={() => setShowCreateChannel(true)} aria-label="Create channel" style={{ color: "var(--accent-blue)" }}>
                 <span style={{ fontSize: 16, fontWeight: 700 }}>+</span>
               </ActionIcon>
             </Tooltip>
@@ -336,7 +336,7 @@ export function ChatTab({ sessionId, wsEvents }: ChatTabProps) {
         {/* Channel header */}
         <div className="chat-pane-header">
           {isMobile && (
-            <ActionIcon variant="subtle" size="sm" onClick={() => setShowSidebar(!showSidebar)} style={{ color: "var(--text-secondary)", marginRight: 8 }}>
+            <ActionIcon variant="subtle" size="sm" onClick={() => setShowSidebar(!showSidebar)} aria-label="Toggle channel list" style={{ color: "var(--text-secondary)", marginRight: 8 }}>
               <span style={{ fontSize: 16 }}>&#9776;</span>
             </ActionIcon>
           )}

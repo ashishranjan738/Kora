@@ -46,7 +46,7 @@ function PersonaCard({
             </Badge>
             {isCustom && onDelete && (
               <Tooltip label="Delete persona">
-                <ActionIcon variant="subtle" size="xs" color="red"
+                <ActionIcon variant="subtle" size="xs" color="red" aria-label="Delete persona"
                   onClick={(e) => { e.stopPropagation(); onDelete(); }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                 </ActionIcon>
@@ -146,7 +146,7 @@ export function PersonaLibrary({ opened, onClose, onSelect, browseOnly }: Person
         {previewPersona ? (
           <Stack gap="md">
             <Group gap={8}>
-              <ActionIcon variant="subtle" size="sm" onClick={() => setPreviewPersona(null)}
+              <ActionIcon variant="subtle" size="sm" onClick={() => setPreviewPersona(null)} aria-label="Back to library"
                 style={{ color: "var(--text-secondary)" }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />

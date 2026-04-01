@@ -145,12 +145,21 @@ export function PlaybooksPage() {
         </Group>
       </Group>
 
-      <PlaybookGrid
-        playbooks={playbooks}
-        selectedPlaybook={selected}
-        onSelectPlaybook={setSelected}
-        loading={loading}
-      />
+      {!loading && playbooks.length === 0 ? (
+        <Stack align="center" justify="center" style={{ minHeight: 300, padding: 40 }}>
+          <Text size="lg" c="var(--text-secondary)" fw={500}>No playbooks available</Text>
+          <Text size="sm" c="var(--text-muted)" ta="center" maw={400}>
+            Create a custom playbook or upload a YAML file to get started.
+          </Text>
+        </Stack>
+      ) : (
+        <PlaybookGrid
+          playbooks={playbooks}
+          selectedPlaybook={selected}
+          onSelectPlaybook={setSelected}
+          loading={loading}
+        />
+      )}
 
       {/* Upload Modal */}
       <PlaybookUploadModal
