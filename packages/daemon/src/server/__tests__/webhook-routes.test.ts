@@ -1,10 +1,13 @@
-import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll, afterEach } from "vitest";
 import express from "express";
 import request from "supertest";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { createHmac } from "crypto";
 import { createWebhookRouter } from "../webhook-routes.js";
+
+const TEST_WEBHOOK_SECRET = "test-webhook-secret-12345";
 
 // Use a real temp directory outside system paths — home dir is safe
 const TEST_PROJECT_DIR = mkdtempSync(join(process.env.HOME || tmpdir(), ".kora-webhook-test-"));
@@ -65,27 +68,41 @@ function createMockDeps() {
   };
 }
 
+/** Compute HMAC-SHA256 signature for a request body. */
+function hmacSign(body: object): string {
+  return "sha256=" + createHmac("sha256", TEST_WEBHOOK_SECRET).update(JSON.stringify(body)).digest("hex");
+}
+
 describe("webhook-routes", () => {
   let app: express.Express;
   let deps: ReturnType<typeof createMockDeps>;
+  const origSecret = process.env.KORA_WEBHOOK_SECRET;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.KORA_WEBHOOK_SECRET = TEST_WEBHOOK_SECRET;
     deps = createMockDeps();
     app = express();
     app.use(express.json());
     app.use("/api/v1", createWebhookRouter(deps));
   });
 
+  afterEach(() => {
+    if (origSecret !== undefined) process.env.KORA_WEBHOOK_SECRET = origSecret;
+    else delete process.env.KORA_WEBHOOK_SECRET;
+  });
+
   describe("POST /webhooks/trigger", () => {
     it("creates session from generic webhook", async () => {
+      const body = {
+        playbook: "master-workers",
+        projectPath: TEST_PROJECT_DIR,
+        task: "Fix the login bug",
+      };
       const res = await request(app)
         .post("/api/v1/webhooks/trigger")
-        .send({
-          playbook: "master-workers",
-          projectPath: TEST_PROJECT_DIR,
-          task: "Fix the login bug",
-        });
+        .set("X-Webhook-Signature", hmacSign(body))
+        .send(body);
 
       expect(res.status).toBe(201);
       expect(res.body.sessionId).toBe("test-session");
@@ -97,44 +114,52 @@ describe("webhook-routes", () => {
     });
 
     it("rejects missing playbook", async () => {
+      const body = { projectPath: TEST_PROJECT_DIR };
       const res = await request(app)
         .post("/api/v1/webhooks/trigger")
-        .send({ projectPath: TEST_PROJECT_DIR });
+        .set("X-Webhook-Signature", hmacSign(body))
+        .send(body);
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain("playbook");
     });
 
     it("rejects missing projectPath", async () => {
+      const body = { playbook: "master-workers" };
       const res = await request(app)
         .post("/api/v1/webhooks/trigger")
-        .send({ playbook: "master-workers" });
+        .set("X-Webhook-Signature", hmacSign(body))
+        .send(body);
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain("projectPath");
     });
 
     it("returns 404 for unknown playbook", async () => {
+      const body = { playbook: "nonexistent", projectPath: TEST_PROJECT_DIR };
       const res = await request(app)
         .post("/api/v1/webhooks/trigger")
-        .send({ playbook: "nonexistent", projectPath: TEST_PROJECT_DIR });
+        .set("X-Webhook-Signature", hmacSign(body))
+        .send(body);
 
       expect(res.status).toBe(404);
       expect(res.body.error).toContain("not found");
     });
 
     it("parses GitHub push webhook", async () => {
+      const body = {
+        playbook: "master-workers",
+        projectPath: TEST_PROJECT_DIR,
+        ref: "refs/heads/main",
+        commits: [{ id: "abc123" }],
+        sender: { login: "octocat" },
+        repository: { full_name: "owner/repo", html_url: "https://github.com/owner/repo" },
+      };
       const res = await request(app)
         .post("/api/v1/webhooks/trigger")
         .set("X-GitHub-Event", "push")
-        .send({
-          playbook: "master-workers",
-          projectPath: TEST_PROJECT_DIR,
-          ref: "refs/heads/main",
-          commits: [{ id: "abc123" }],
-          sender: { login: "octocat" },
-          repository: { full_name: "owner/repo", html_url: "https://github.com/owner/repo" },
-        });
+        .set("X-Webhook-Signature", hmacSign(body))
+        .send(body);
 
       expect(res.status).toBe(201);
       expect(res.body.trigger.source).toBe("github");
@@ -143,22 +168,24 @@ describe("webhook-routes", () => {
     });
 
     it("parses GitHub pull_request webhook", async () => {
+      const body = {
+        playbook: "master-workers",
+        projectPath: TEST_PROJECT_DIR,
+        pull_request: {
+          number: 42,
+          title: "Fix auth bug",
+          html_url: "https://github.com/owner/repo/pull/42",
+          head: { ref: "fix-auth" },
+          user: { login: "developer" },
+        },
+        sender: { login: "developer" },
+        repository: { full_name: "owner/repo" },
+      };
       const res = await request(app)
         .post("/api/v1/webhooks/trigger")
         .set("X-GitHub-Event", "pull_request")
-        .send({
-          playbook: "master-workers",
-          projectPath: TEST_PROJECT_DIR,
-          pull_request: {
-            number: 42,
-            title: "Fix auth bug",
-            html_url: "https://github.com/owner/repo/pull/42",
-            head: { ref: "fix-auth" },
-            user: { login: "developer" },
-          },
-          sender: { login: "developer" },
-          repository: { full_name: "owner/repo" },
-        });
+        .set("X-Webhook-Signature", hmacSign(body))
+        .send(body);
 
       expect(res.status).toBe(201);
       expect(res.body.trigger.source).toBe("github");
@@ -166,16 +193,18 @@ describe("webhook-routes", () => {
     });
 
     it("parses Slack slash command", async () => {
+      const body = {
+        command: "/kora",
+        text: "master-workers fix the login page",
+        team_id: "T12345",
+        channel_name: "engineering",
+        user_name: "alice",
+        projectPath: TEST_PROJECT_DIR,
+      };
       const res = await request(app)
         .post("/api/v1/webhooks/trigger")
-        .send({
-          command: "/kora",
-          text: "master-workers fix the login page",
-          team_id: "T12345",
-          channel_name: "engineering",
-          user_name: "alice",
-          projectPath: TEST_PROJECT_DIR,
-        });
+        .set("X-Webhook-Signature", hmacSign(body))
+        .send(body);
 
       expect(res.status).toBe(201);
       expect(res.body.trigger.source).toBe("slack");

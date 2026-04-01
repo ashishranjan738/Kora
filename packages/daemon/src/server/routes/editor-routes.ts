@@ -223,6 +223,12 @@ export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
         if (!agent) { res.status(404).json({ error: `Agent "${agentIdDiff}" not found` }); return; }
         const workDir = agent.config.workingDirectory;
 
+        // Validate filename characters for git safety
+        if (!/^[\w.\/@: -]+$/.test(filePath)) {
+          res.status(400).json({ error: "Invalid file path characters" });
+          return;
+        }
+
         try {
           // Get original from main
           let original = "";
@@ -263,6 +269,12 @@ export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
 
       // Strip repo prefix from file path to get the path relative to the repo
       const repoFile = repo === "." ? filePath : filePath.replace(`${repo}/`, "");
+
+      // Validate filename characters to prevent git from interpreting special chars
+      if (!/^[\w.\/@: -]+$/.test(repoFile)) {
+        res.status(400).json({ error: "Invalid file path characters" });
+        return;
+      }
 
       try {
         // Get original content (from HEAD)
