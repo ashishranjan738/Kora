@@ -138,6 +138,26 @@ Open `http://localhost:7890` in your browser.
 3. Enter your project path and click **"Launch 3 Agents"**
 4. Watch agents initialize in the **Command Center**
 
+### Production Mode (PM2)
+
+For production, use PM2 for automatic restart on crash, log management, and system startup:
+
+```bash
+npm install -g pm2           # Install PM2 globally (one-time)
+make build                   # Build all packages
+kora start --pm2             # Start daemon under PM2
+kora start --pm2 --startup   # + auto-start on boot (launchd/systemd)
+```
+
+PM2 commands:
+
+```bash
+pm2 status kora-daemon       # Check daemon status
+pm2 logs kora-daemon         # View daemon logs
+pm2 restart kora-daemon      # Restart daemon
+kora stop --pm2              # Stop daemon and remove from PM2
+```
+
 ### Dev Mode
 
 ```bash
