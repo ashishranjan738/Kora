@@ -225,7 +225,7 @@ export function createServer(options: ServerOptions) {
       const html = indexHtmlTemplate.replace(CSP_NONCE_PLACEHOLDER, nonce);
       res.setHeader("Content-Type", "text/html");
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      res.setHeader("Content-Security-Policy", `script-src 'self' 'nonce-${nonce}'; object-src 'none'; base-uri 'self'`);
+      res.setHeader("Content-Security-Policy", `script-src 'self' 'nonce-${nonce}' 'unsafe-eval'; object-src 'none'; base-uri 'self'`);
       res.send(html);
     } else {
       next();
