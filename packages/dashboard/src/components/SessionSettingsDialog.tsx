@@ -89,6 +89,14 @@ export function SessionSettingsDialog({
   const [savingInstructions, setSavingInstructions] = useState(false);
   const [instructionsSaved, setInstructionsSaved] = useState(false);
 
+  // Per-state workflow instructions
+  interface WorkflowStateEntry { id: string; label: string; instructions?: string; color: string; category: string }
+  const [workflowStates, setWorkflowStates] = useState<WorkflowStateEntry[]>([]);
+  const [stateInstructionsDraft, setStateInstructionsDraft] = useState<Record<string, string>>({});
+  const [savingStateInstructions, setSavingStateInstructions] = useState(false);
+  const [stateInstructionsSaved, setStateInstructionsSaved] = useState(false);
+  const [expandedState, setExpandedState] = useState<string | null>(null);
+
   // Watchdog delivery config
   type DeliveryMode = "immediate" | "idle-only" | "custom";
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("custom");
@@ -160,9 +168,25 @@ export function SessionSettingsDialog({
         // Config may not exist yet
       }
     }
+    async function loadWorkflowStates() {
+      try {
+        const data = await api.getWorkflowStates(sessionId);
+        if (!cancelled && data?.states) {
+          setWorkflowStates(data.states);
+          const draft: Record<string, string> = {};
+          for (const s of data.states) {
+            draft[s.id] = s.instructions || "";
+          }
+          setStateInstructionsDraft(draft);
+        }
+      } catch {
+        // Endpoint may not exist yet
+      }
+    }
     load();
     loadInstructions();
     loadDeliveryConfig();
+    loadWorkflowStates();
     return () => {
       cancelled = true;
     };
@@ -847,6 +871,111 @@ export function SessionSettingsDialog({
             </Button>
           </Group>
         </Stack>
+
+        {/* Per-State Pipeline Instructions */}
+        {workflowStates.length > 0 && (
+          <>
+            <Divider my="md" />
+            <Stack gap="xs">
+              <Text size="sm" fw={600} c="var(--text-primary)">Pipeline State Instructions</Text>
+              <Text size="xs" c="dimmed">
+                Customize instructions for each pipeline state. Agents see these when a task enters the state.
+              </Text>
+              {workflowStates.filter(s => s.category === "active").map((state) => (
+                <Card
+                  key={state.id}
+                  padding="xs"
+                  radius="sm"
+                  style={{
+                    backgroundColor: "var(--bg-secondary)",
+                    border: "1px solid var(--border-color)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <Group
+                    justify="space-between"
+                    onClick={() => setExpandedState(expandedState === state.id ? null : state.id)}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <Group gap="xs">
+                      <Box
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: "50%",
+                          backgroundColor: state.color,
+                          flexShrink: 0,
+                        }}
+                      />
+                      <Text size="sm" fw={500} c="var(--text-primary)">{state.label}</Text>
+                      {stateInstructionsDraft[state.id] ? (
+                        <Text size="xs" c="dimmed" truncate="end" style={{ maxWidth: 200 }}>
+                          {stateInstructionsDraft[state.id].length > 40
+                            ? stateInstructionsDraft[state.id].slice(0, 40) + "..."
+                            : stateInstructionsDraft[state.id]}
+                        </Text>
+                      ) : (
+                        <Text size="xs" c="yellow" fs="italic">No custom instructions</Text>
+                      )}
+                    </Group>
+                    <Text size="xs" c="dimmed">{expandedState === state.id ? "▼" : "▶"}</Text>
+                  </Group>
+                  {expandedState === state.id && (
+                    <Textarea
+                      mt="xs"
+                      value={stateInstructionsDraft[state.id] || ""}
+                      onChange={(e) => {
+                        setStateInstructionsDraft(prev => ({ ...prev, [state.id]: e.currentTarget.value }));
+                        setStateInstructionsSaved(false);
+                      }}
+                      placeholder={`Instructions for agents when a task enters "${state.label}"...`}
+                      autosize
+                      minRows={3}
+                      maxRows={10}
+                      styles={{
+                        input: {
+                          backgroundColor: "var(--bg-primary)",
+                          borderColor: "var(--border-color)",
+                          color: "var(--text-primary)",
+                          borderRadius: 8,
+                          fontSize: 13,
+                        },
+                      }}
+                    />
+                  )}
+                </Card>
+              ))}
+              <Group justify="space-between">
+                <div>
+                  {stateInstructionsSaved && <Text size="xs" c="green">Saved. Agents will see updated instructions on next task transition.</Text>}
+                </div>
+                <Button
+                  size="xs"
+                  variant="light"
+                  color="blue"
+                  loading={savingStateInstructions}
+                  onClick={async () => {
+                    setSavingStateInstructions(true);
+                    try {
+                      const payload = Object.entries(stateInstructionsDraft).map(([stateId, instructions]) => ({
+                        stateId,
+                        instructions,
+                      }));
+                      await api.updateWorkflowInstructions(sessionId, payload);
+                      setStateInstructionsSaved(true);
+                    } catch (err: any) {
+                      setError(err.message || "Failed to save state instructions");
+                    } finally {
+                      setSavingStateInstructions(false);
+                    }
+                  }}
+                >
+                  Save State Instructions
+                </Button>
+              </Group>
+            </Stack>
+          </>
+        )}
 
         {/* Board Cleanup */}
         <Divider my="md" />

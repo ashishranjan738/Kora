@@ -75,7 +75,7 @@ export function buildTransitionNotification(ctx: ResolverContext, instructions?:
 /**
  * Build a backward movement notification.
  */
-export function buildBackwardNotification(ctx: ResolverContext, reason?: string): string {
+export function buildBackwardNotification(ctx: ResolverContext, reason?: string, instructions?: string): string {
   const taskTitle = ctx.task?.title || "Unknown task";
   const oldLabel = ctx.oldState?.label || ctx.oldState?.id || "unknown";
   const newLabel = ctx.newState?.label || ctx.newState?.id || "unknown";
@@ -84,6 +84,12 @@ export function buildBackwardNotification(ctx: ResolverContext, reason?: string)
   if (reason) {
     message += ` Reason: ${reason}`;
   }
+
+  if (instructions) {
+    const resolved = resolveVariables(instructions, ctx);
+    message += `\n\n**Your instructions for ${newLabel}:**\n${resolved}`;
+  }
+
   message += `\n\nTask ID: ${ctx.task?.id || "?"} | Priority: ${ctx.task?.priority || "P2"}`;
   return message;
 }

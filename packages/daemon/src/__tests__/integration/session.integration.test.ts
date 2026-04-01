@@ -254,6 +254,94 @@ describe("Session CRUD integration", () => {
     });
   });
 
+  describe("PUT /api/v1/sessions/:sid/workflow-instructions", () => {
+    it("updates per-state instructions", async () => {
+      const projectPath = join(ctx.testDir, "test-project-wf");
+      mkdirSync(projectPath, { recursive: true });
+
+      const createRes = await request(ctx.app)
+        .post("/api/v1/sessions")
+        .set("Authorization", `Bearer ${ctx.token}`)
+        .send({ name: "WF Test", projectPath, provider: "claude-code" });
+
+      const sessionId = createRes.body.id;
+
+      const res = await request(ctx.app)
+        .put(`/api/v1/sessions/${sessionId}/workflow-instructions`)
+        .set("Authorization", `Bearer ${ctx.token}`)
+        .send({
+          instructions: [
+            { stateId: "in-progress", instructions: "Write code and unit tests. Use TDD." },
+            { stateId: "review", instructions: "Check OWASP top 10. Verify edge cases." },
+          ],
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty("updated", 2);
+
+      // Verify persistence via GET workflow-states
+      const statesRes = await request(ctx.app)
+        .get(`/api/v1/sessions/${sessionId}/workflow-states`)
+        .set("Authorization", `Bearer ${ctx.token}`);
+
+      expect(statesRes.status).toBe(200);
+      const inProgress = statesRes.body.states.find((s: any) => s.id === "in-progress");
+      const review = statesRes.body.states.find((s: any) => s.id === "review");
+      expect(inProgress?.instructions).toBe("Write code and unit tests. Use TDD.");
+      expect(review?.instructions).toBe("Check OWASP top 10. Verify edge cases.");
+    });
+
+    it("rejects instructions exceeding length limit", async () => {
+      const projectPath = join(ctx.testDir, "test-project-wf-limit");
+      mkdirSync(projectPath, { recursive: true });
+
+      const createRes = await request(ctx.app)
+        .post("/api/v1/sessions")
+        .set("Authorization", `Bearer ${ctx.token}`)
+        .send({ name: "WF Limit Test", projectPath, provider: "claude-code" });
+
+      const sessionId = createRes.body.id;
+
+      const res = await request(ctx.app)
+        .put(`/api/v1/sessions/${sessionId}/workflow-instructions`)
+        .set("Authorization", `Bearer ${ctx.token}`)
+        .send({
+          instructions: [
+            { stateId: "in-progress", instructions: "x".repeat(6000) },
+          ],
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("exceed");
+    });
+
+    it("returns 404 for non-existent session", async () => {
+      const res = await request(ctx.app)
+        .put("/api/v1/sessions/nonexistent/workflow-instructions")
+        .set("Authorization", `Bearer ${ctx.token}`)
+        .send({ instructions: [] });
+
+      expect(res.status).toBe(404);
+    });
+
+    it("rejects invalid payload", async () => {
+      const projectPath = join(ctx.testDir, "test-project-wf-invalid");
+      mkdirSync(projectPath, { recursive: true });
+
+      const createRes = await request(ctx.app)
+        .post("/api/v1/sessions")
+        .set("Authorization", `Bearer ${ctx.token}`)
+        .send({ name: "WF Invalid Test", projectPath, provider: "claude-code" });
+
+      const res = await request(ctx.app)
+        .put(`/api/v1/sessions/${createRes.body.id}/workflow-instructions`)
+        .set("Authorization", `Bearer ${ctx.token}`)
+        .send({ instructions: "not an array" });
+
+      expect(res.status).toBe(400);
+    });
+  });
+
   describe("DELETE /api/v1/sessions/:sid", () => {
     it("deletes a session", async () => {
       const projectPath = join(ctx.testDir, "test-project");

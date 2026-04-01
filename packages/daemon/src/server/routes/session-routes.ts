@@ -552,6 +552,61 @@ export function registerSessionRoutes(router: Router, deps: RouteDeps): void {
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
 
+  // Update per-state instructions (instructions only — does not change states/transitions)
+  router.put("/sessions/:sid/workflow-instructions", async (req: Request, res: Response) => {
+    try {
+      const sid = String(req.params.sid);
+      const session = sessionManager.getSession(sid);
+      if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+      const { instructions } = req.body as { instructions: Array<{ stateId: string; instructions: string }> };
+      if (!Array.isArray(instructions)) {
+        res.status(400).json({ error: "instructions must be an array of { stateId, instructions }" });
+        return;
+      }
+
+      const MAX_INSTRUCTION_LENGTH = 5000;
+      const states = session.config.workflowStates || DEFAULT_WORKFLOW_STATES;
+      let updated = 0;
+      for (const entry of instructions) {
+        if (typeof entry.stateId !== "string" || typeof entry.instructions !== "string") continue;
+        if (entry.instructions.length > MAX_INSTRUCTION_LENGTH) {
+          res.status(400).json({ error: `Instructions for state "${entry.stateId}" exceed ${MAX_INSTRUCTION_LENGTH} character limit` });
+          return;
+        }
+        const state = states.find(s => s.id === entry.stateId);
+        if (state) {
+          state.instructions = entry.instructions || undefined;
+          updated++;
+        }
+      }
+
+      session.config.workflowStates = states;
+      await sessionManager.updateSession(sid, { workflowStates: states } as Partial<import("@kora/shared").SessionConfig>);
+
+      // Notify running agents
+      const orch = orchestrators.get(sid);
+      if (orch) {
+        const agents = orch.agentManager.listAgents().filter(a => a.status === "running");
+        for (const agent of agents) {
+          try {
+            orch.messageQueue.enqueue(agent.id, agent.config.terminalSession, JSON.stringify({
+              from: "system",
+              to: agent.id,
+              type: "status",
+              content: `\x1b[1;33m[System]\x1b[0m Workflow state instructions updated. Run get_context("workflow") to refresh.`,
+              timestamp: new Date().toISOString(),
+            }));
+          } catch { /* non-fatal */ }
+        }
+      }
+
+      res.json({ updated, total: states.length });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // ─── Session Custom Models ──────────────────────────────────────────
 
   router.post("/sessions/:sid/models", async (req: Request, res: Response) => {
