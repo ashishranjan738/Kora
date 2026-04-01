@@ -24,6 +24,7 @@ interface NodePtySession {
   env: Record<string, string>;
   pipeFile?: string;
   pipeStream?: fs.WriteStream;
+  pipeDisposable?: { dispose(): void };
 }
 
 const RING_BUFFER_CAPACITY = 1000;
@@ -120,24 +121,27 @@ export class NodePtyBackend implements IPtyBackend {
     if (!s) throw new Error(`Session "${session}" not found`);
 
     // Stop existing pipe if any
-    if (s.pipeStream) {
-      try { s.pipeStream.end(); } catch {}
-    }
+    await this.pipePaneStop(session);
 
     s.pipeFile = outputFile;
     s.pipeStream = fs.createWriteStream(outputFile, { flags: "a" });
 
-    // Tap into pty output for file logging
-    s.ptyProcess.onData((data: string) => {
+    // Tap into pty output for file logging — store disposable to avoid leaks
+    const disposable = s.ptyProcess.onData((data: string) => {
       if (s.pipeStream && !s.pipeStream.destroyed) {
         s.pipeStream.write(data);
       }
     });
+    s.pipeDisposable = disposable;
   }
 
   async pipePaneStop(session: string): Promise<void> {
     const s = this.sessions.get(session);
     if (!s) return;
+    if (s.pipeDisposable) {
+      try { s.pipeDisposable.dispose(); } catch {}
+      s.pipeDisposable = undefined;
+    }
     if (s.pipeStream) {
       try { s.pipeStream.end(); } catch {}
       s.pipeStream = undefined;
@@ -169,9 +173,8 @@ export class NodePtyBackend implements IPtyBackend {
   }
 
   /** Destroy all sessions (daemon shutdown). */
-  destroyAll(): void {
-    for (const [name] of this.sessions) {
-      try { this.killSession(name); } catch {}
-    }
+  async destroyAll(): Promise<void> {
+    const names = Array.from(this.sessions.keys());
+    await Promise.allSettled(names.map(name => this.killSession(name)));
   }
 }
