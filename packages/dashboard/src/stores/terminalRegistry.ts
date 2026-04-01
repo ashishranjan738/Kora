@@ -20,10 +20,14 @@ export interface TerminalEntry {
   onConnectedChange?: (connected: boolean) => void;
   onMessageNotification?: (from: string) => void;
   onScrollStateChange?: (scrolledUp: boolean) => void;
+  /** Timer that writes a "Connection lost" message to the terminal after 60s of disconnection */
+  connectionLostTimer: ReturnType<typeof setTimeout> | null;
+  /** Whether the "Connection lost" banner has been shown for the current disconnect */
+  connectionLostShown: boolean;
 }
 
-const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_BASE_DELAY = 2000;
+const CONNECTION_LOST_DELAY = 60000; // Show "Connection lost" after 60s
 
 /** Fit terminal without resetting scroll position.
  *  fit() reflows the buffer which resets viewportY to 0.
@@ -60,6 +64,15 @@ function connectWs(entry: TerminalEntry): void {
   ws.onopen = () => {
     entry.connected = true;
     entry.reconnectAttempts = 0; // Reset on successful connection
+    // Clear connection lost state
+    if (entry.connectionLostTimer) {
+      clearTimeout(entry.connectionLostTimer);
+      entry.connectionLostTimer = null;
+    }
+    if (entry.connectionLostShown) {
+      entry.connectionLostShown = false;
+      entry.term.writeln("\r\n\x1b[1;32m● Connection restored\x1b[0m\r");
+    }
     entry.onConnectedChange?.(true);
     // Delay initial resize to avoid racing with first data
     setTimeout(() => {
@@ -142,11 +155,22 @@ function connectWs(entry: TerminalEntry): void {
   ws.onclose = () => {
     entry.connected = false;
     entry.onConnectedChange?.(false);
-    if (!entry.disposed && entry.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+    if (!entry.disposed) {
       entry.reconnectAttempts++;
-      // Exponential backoff: 2s, 4s, 8s, ... capped at 30s
+      // Exponential backoff: 2s, 4s, 8s, ... capped at 30s — retry forever
       const delay = Math.min(RECONNECT_BASE_DELAY * Math.pow(2, entry.reconnectAttempts - 1), 30000);
       entry.reconnectTimer = setTimeout(() => connectWs(entry), delay);
+
+      // Show visual indicator after 60s of continuous disconnection
+      if (!entry.connectionLostTimer && !entry.connectionLostShown) {
+        entry.connectionLostTimer = setTimeout(() => {
+          if (!entry.connected && !entry.disposed) {
+            entry.connectionLostShown = true;
+            entry.term.writeln("\r\n\x1b[1;33m⚠ Connection lost — retrying…\x1b[0m\r");
+          }
+          entry.connectionLostTimer = null;
+        }, CONNECTION_LOST_DELAY);
+      }
     }
   };
 
@@ -244,6 +268,8 @@ export function getOrCreateTerminal(
     userScrolledUp: false,
     manuallyPaused: false,
     _isWriting: false,
+    connectionLostTimer: null,
+    connectionLostShown: false,
   };
 
   // Track scroll state — detect when user scrolls away from bottom.
@@ -309,6 +335,7 @@ export function destroyTerminal(sessionId: string, agentId: string): void {
 
   entry.disposed = true;
   if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
+  if (entry.connectionLostTimer) clearTimeout(entry.connectionLostTimer);
   entry.ws?.close();
   entry.term.dispose();
   if (entry.container.parentElement) {
@@ -333,6 +360,7 @@ export function destroyAllTerminals(): void {
   for (const [key, entry] of registry) {
     entry.disposed = true;
     if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
+    if (entry.connectionLostTimer) clearTimeout(entry.connectionLostTimer);
     entry.ws?.close();
     entry.term.dispose();
     if (entry.container.parentElement) {

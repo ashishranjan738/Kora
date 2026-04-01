@@ -108,6 +108,26 @@ export function createServer(options: ServerOptions) {
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server });
 
+  // ── WebSocket ping/pong heartbeat ──────────────────────────────
+  const WS_PING_INTERVAL_MS = 30_000;
+
+  const heartbeatInterval = setInterval(() => {
+    wss.clients.forEach((ws) => {
+      if ((ws as any).isAlive === false) {
+        logger.debug("[ws-heartbeat] Terminating dead connection (missed pong)");
+        ws.terminate();
+        return;
+      }
+      (ws as any).isAlive = false;
+      ws.ping();
+    });
+  }, WS_PING_INTERVAL_MS);
+
+  // Clean up interval on server close
+  wss.on("close", () => {
+    clearInterval(heartbeatInterval);
+  });
+
   // Set up global notification broadcast
   notificationService.on("notification", (notification) => {
     const event: WSEvent = {
@@ -218,6 +238,10 @@ export function createServer(options: ServerOptions) {
       ws.close(4008, "Too many connections");
       return;
     }
+
+    // Mark connection alive for heartbeat
+    (ws as any).isAlive = true;
+    ws.on("pong", () => { (ws as any).isAlive = true; });
 
     if (!validateWsToken(req.url || "", token)) {
       const sanitizedUrl = req.url?.split('?')[0] || 'unknown';
