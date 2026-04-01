@@ -224,7 +224,7 @@ export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
         const workDir = agent.config.workingDirectory;
 
         // Validate filename characters for git safety
-        if (!/^[\w.\/ -]+$/.test(filePath)) {
+        if (!/^[\w.\/@: -]+$/.test(filePath)) {
           res.status(400).json({ error: "Invalid file path characters" });
           return;
         }
@@ -271,7 +271,7 @@ export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
       const repoFile = repo === "." ? filePath : filePath.replace(`${repo}/`, "");
 
       // Validate filename characters to prevent git from interpreting special chars
-      if (!/^[\w.\/ -]+$/.test(repoFile)) {
+      if (!/^[\w.\/@: -]+$/.test(repoFile)) {
         res.status(400).json({ error: "Invalid file path characters" });
         return;
       }
