@@ -1069,12 +1069,15 @@ RULES:
    * Checks which tmux sessions are still alive and reconnects to them.
    * Dead agents are marked as "stopped".
    */
-  async restore(): Promise<{ restored: number; dead: number }> {
+  async restore(options?: { respawnDead?: boolean }): Promise<{ restored: number; dead: number; respawned: number }> {
     const savedAgents = await loadAgentStates(this.config.runtimeDir);
-    if (savedAgents.length === 0) return { restored: 0, dead: 0 };
+    if (savedAgents.length === 0) return { restored: 0, dead: 0, respawned: 0 };
 
+    const respawnDead = options?.respawnDead ?? false;
     let restored = 0;
     let dead = 0;
+    let respawned = 0;
+    const toRespawn: AgentState[] = [];
 
     for (const agent of savedAgents) {
       const terminalSession = agent.config.terminalSession;
@@ -1139,6 +1142,9 @@ RULES:
         this.messageQueue.registerAgentRole(agent.id, agent.config.role);
 
         restored++;
+      } else if (respawnDead && agent.status !== "stopped") {
+        // Queue for respawn (node-pty backend — sessions don't survive restart)
+        toRespawn.push(agent);
       } else {
         // Tmux session is gone — mark as crashed so dashboard shows restart button
         agent.status = "crashed";
@@ -1148,18 +1154,99 @@ RULES:
       }
     }
 
+    // Respawn dead agents with staggered timing (200ms between spawns)
+    if (toRespawn.length > 0) {
+      logger.info(`[restore] Respawning ${toRespawn.length} agents (node-pty backend, 200ms stagger)...`);
+      for (const agent of toRespawn) {
+        try {
+          const provider = this.config.providerRegistry.get(agent.config.cliProvider);
+          if (!provider) {
+            logger.warn(`[restore] Provider "${agent.config.cliProvider}" not found for agent ${agent.config.name} — skipping respawn`);
+            agent.status = "crashed";
+            this.agentManager.restoreAgent(agent);
+            dead++;
+            continue;
+          }
+
+          // Verify worktree directory exists
+          let workingDirectory = agent.config.workingDirectory;
+          let worktreeMode: WorktreeMode = "shared"; // Reuse existing worktree
+          try {
+            await import("fs/promises").then(fsp => fsp.access(workingDirectory));
+          } catch {
+            logger.warn(`[restore] Worktree missing for ${agent.config.name}: ${workingDirectory} — will recreate`);
+            workingDirectory = this.config.projectPath;
+            worktreeMode = this.config.worktreeMode || "isolated";
+          }
+
+          // Build restart context
+          const agentTasks = this.database.getTasks(this.config.sessionId)
+            .filter((t: any) => t.assignedTo === agent.id && t.status !== "done");
+          const taskContext = agentTasks.length > 0
+            ? `\n### Active Tasks\n${agentTasks.map((t: any) => `- [${t.status.toUpperCase()}] ${t.title}`).join("\n")}`
+            : "";
+
+          const initialTask = [
+            "## Daemon Restart — Session Recovered",
+            "",
+            "The daemon was restarted. Your agent ID, worktree, tasks, and messages are preserved.",
+            "Terminal scrollback and conversation context were lost.",
+            taskContext,
+            "",
+            "**First actions:**",
+            '1. Run `get_context("all")` to reload your full context',
+            "2. Run `check_messages()` to read any pending messages",
+            "3. Run `list_tasks()` to see your current assignments",
+            "4. Continue from where you left off",
+          ].filter(Boolean).join("\n");
+
+          await this.agentManager.spawnAgent({
+            sessionId: this.config.sessionId,
+            name: agent.config.name,
+            role: agent.config.role,
+            provider,
+            model: agent.config.model,
+            persona: agent.config.persona,
+            workingDirectory,
+            runtimeDir: this.config.runtimeDir,
+            autonomyLevel: agent.config.autonomyLevel,
+            spawnedBy: agent.config.spawnedBy,
+            extraCliArgs: agent.config.extraCliArgs,
+            envVars: agent.config.envVars,
+            initialTask,
+            messagingMode: this.config.messagingMode,
+            worktreeMode,
+            forceAgentId: agent.id,
+          });
+
+          respawned++;
+          logger.info(`[restore] Respawned agent ${agent.config.name} (${agent.id})`);
+
+          // Stagger spawns to avoid CPU spike
+          if (toRespawn.indexOf(agent) < toRespawn.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+        } catch (err) {
+          logger.error({ err }, `[restore] Failed to respawn agent ${agent.config.name} (${agent.id})`);
+          agent.status = "crashed";
+          this.agentManager.restoreAgent(agent);
+          dead++;
+        }
+      }
+    }
+
     // Save updated state (with dead agents marked)
     await this.persistState();
 
-    if (restored > 0 || dead > 0) {
+    if (restored > 0 || dead > 0 || respawned > 0) {
       await this.eventLog.log({
         sessionId: this.config.sessionId,
         type: "session-resumed" as any,
-        data: { restored, dead, total: savedAgents.length },
+        data: { restored, dead, respawned, total: savedAgents.length },
       });
     }
 
-    return { restored, dead };
+    return { restored, dead, respawned };
   }
 
   /**
