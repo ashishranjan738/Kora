@@ -105,7 +105,7 @@ export class MessageQueue {
   private messageCountWindow = new Map<string, { count: number; windowStart: number }>();
   /** Track recent messages to detect loops — key: "from:to", value: count in window */
   private conversationWindow = new Map<string, { count: number; windowStart: number }>();
-  /** Cache agent readiness to avoid redundant tmux capture-pane calls */
+  /** Cache agent readiness to avoid redundant capture-pane calls */
   private readinessCache = new Map<string, { ready: boolean; checkedAt: number }>();
   private readonly READINESS_CACHE_TTL = 400; // ms
   /** Agent IDs that support MCP — get mcp-pending delivery */
@@ -135,8 +135,8 @@ export class MessageQueue {
   private renotifyInterval: ReturnType<typeof setTimeout> | null = null;
   /** Callback to get unread count for an agent — set by orchestrator */
   private getUnreadCountFn: ((agentId: string) => Promise<number>) | null = null;
-  /** Callback to get agent tmux session — set by orchestrator */
-  private getAgentTmuxSessionFn: ((agentId: string) => string | null) | null = null;
+  /** Callback to get agent terminal session — set by orchestrator */
+  private getAgentTerminalSessionFn: ((agentId: string) => string | null) | null = null;
   /** Callback to alert orchestrator/architect when messages go unread too long */
   private onEscalationFn: ((agentId: string, unreadCount: number, elapsedMs: number) => void) | null = null;
 
@@ -490,7 +490,7 @@ export class MessageQueue {
     return ready;
   }
 
-  /** Actually check agent readiness via tmux capture-pane */
+  /** Actually check agent readiness via terminal capture-pane */
   private async checkAgentReady(terminalSession: string): Promise<boolean> {
     try {
       const output = await this.terminal.capturePane(terminalSession, 5, false);
@@ -536,13 +536,13 @@ export class MessageQueue {
         }, "[MessageQueue] Broadcast routing decision");
       }
       if (this.mcpAgents.has(msg.agentId)) {
-        // MCP agent: write to pending store + send tmux notification as fallback
+        // MCP agent: write to pending store + send terminal notification as fallback
         await this.deliverViaMcpPending(msg);
       } else if (this.messagingMode === "mcp" || this.messagingMode === "cli") {
-        // MCP/CLI mode: inbox file + tmux notification (CLI agents read via kora-agent messages)
+        // MCP/CLI mode: inbox file + terminal notification (CLI agents read via kora-agent messages)
         await this.deliverViaMcp(msg);
       } else if (this.messagingMode === "terminal") {
-        // Terminal mode: send directly via tmux (500 char limit)
+        // Terminal mode: send directly via terminal (500 char limit)
         await this.deliverViaTerminal(msg);
       }
       // "manual" mode: don't deliver automatically
@@ -644,7 +644,7 @@ export class MessageQueue {
     return false;
   }
 
-  /** MCP mode: write full message to inbox file, send short tmux notification */
+  /** MCP mode: write full message to inbox file, send short terminal notification */
   private async deliverViaMcp(msg: QueuedMessage): Promise<void> {
     // Skip terminal delivery for crashed/stopped agents (still persisted in SQLite)
     if (this.isAgentAliveFn && !this.isAgentAliveFn(msg.agentId)) {
@@ -697,7 +697,7 @@ export class MessageQueue {
       await fs.writeFile(path.join(inboxDir, filename), msg.message, "utf-8");
     }
 
-    // Send tmux notification — short notification pointing to check_messages
+    // Send terminal notification — short notification pointing to check_messages
     // (broadcasts included — full content is now in SQLite/inbox)
     if (isBroadcast && cleanMsg.length <= 500) {
       // Short broadcasts: send content directly for convenience
@@ -710,7 +710,7 @@ export class MessageQueue {
     }
   }
 
-  /** MCP pending mode: write to mcp-pending store + send tmux notification */
+  /** MCP pending mode: write to mcp-pending store + send terminal notification */
   private async deliverViaMcpPending(msg: QueuedMessage): Promise<void> {
     if (this.isAgentAliveFn && !this.isAgentAliveFn(msg.agentId)) {
       logger.debug({ agentId: msg.agentId }, "[MessageQueue] Skipping MCP-pending delivery — agent not alive");
@@ -766,7 +766,7 @@ export class MessageQueue {
       await fs.writeFile(path.join(pendingDir, filename), JSON.stringify(payload), "utf-8");
     }
 
-    // Send tmux notification — short notification pointing to check_messages
+    // Send terminal notification — short notification pointing to check_messages
     if (isBroadcast && cleanMsg.length <= 500) {
       // Short broadcasts: send content directly for convenience
       await this.terminal.sendKeys(msg.terminalSession, cleanMsg.slice(0, 500), { literal: true });
@@ -778,7 +778,7 @@ export class MessageQueue {
     }
   }
 
-  /** Terminal mode: send directly via tmux with 500 char limit */
+  /** Terminal mode: send directly via terminal with 500 char limit */
   private async deliverViaTerminal(msg: QueuedMessage): Promise<void> {
     if (this.isAgentAliveFn && !this.isAgentAliveFn(msg.agentId)) {
       logger.debug({ agentId: msg.agentId }, "[MessageQueue] Skipping terminal delivery — agent not alive");
@@ -891,11 +891,11 @@ export class MessageQueue {
   /** Set callbacks needed by the re-notification loop */
   setRenotifyCallbacks(
     getUnreadCount: (agentId: string) => Promise<number>,
-    getAgentTmuxSession: (agentId: string) => string | null,
+    getAgentTerminalSession: (agentId: string) => string | null,
     onEscalation?: (agentId: string, unreadCount: number, elapsedMs: number) => void,
   ): void {
     this.getUnreadCountFn = getUnreadCount;
-    this.getAgentTmuxSessionFn = getAgentTmuxSession;
+    this.getAgentTerminalSessionFn = getAgentTerminalSession;
     if (onEscalation) this.onEscalationFn = onEscalation;
   }
 
@@ -930,7 +930,7 @@ export class MessageQueue {
 
     const notification = `>>> 📬 YOU HAVE ${unread} UNREAD MESSAGE(S) — run check_messages NOW <<<`;
 
-    // Deliver nudge directly via tmux — send text then Enter separately
+    // Deliver nudge directly via terminal — send text then Enter separately
     // (literal mode doesn't interpret \n as Enter)
     try {
       await this.terminal.sendKeys(terminalSession, notification, { literal: true });
@@ -961,7 +961,7 @@ export class MessageQueue {
   /** Process re-notifications for all MCP agents with unread messages.
    *  Uses time-based escalation: normal → ⚠️ (30s) → 🔴 (60s) → architect alert (120s) */
   private async processRenotifications(): Promise<void> {
-    if (!this.getUnreadCountFn || !this.getAgentTmuxSessionFn) return;
+    if (!this.getUnreadCountFn || !this.getAgentTerminalSessionFn) return;
 
     const now = Date.now();
 
@@ -1003,7 +1003,7 @@ export class MessageQueue {
         const lastTime = this.lastNotificationTime.get(agentId) || 0;
         if (now - lastTime < 10_000) continue;
 
-        const terminalSession = this.getAgentTmuxSessionFn(agentId);
+        const terminalSession = this.getAgentTerminalSessionFn(agentId);
         if (!terminalSession) continue;
 
         const elapsedMs = now - this.firstUnreadTime.get(agentId)!;

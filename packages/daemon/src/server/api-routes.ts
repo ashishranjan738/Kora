@@ -82,7 +82,7 @@ export function createApiRouter(deps: {
   playbookDb: PlaybookDatabase;
 }, wss: WebSocketServer): Router {
   const { sessionManager, orchestrators, providerRegistry, terminal, startTime, globalConfigDir, suggestionsDb, playbookDb } = deps;
-  const tmux = terminal; // backward-compat alias for remaining usages
+  const backend = terminal;
   const router = Router();
 
   // Track standalone terminal sessions per session (id → terminal info)
@@ -99,8 +99,8 @@ export function createApiRouter(deps: {
         const persisted = await loadTerminalStates(runtimeDir);
         if (persisted.length === 0) continue;
 
-        // Verify each terminal's session exists AND socket file is accessible (for holdpty)
-        const { alive, dead } = await restoreTerminalsWithHealthCheck(tmux, persisted, sessionConfig.id);
+        // Verify each terminal's session exists and is accessible
+        const { alive, dead } = await restoreTerminalsWithHealthCheck(backend, persisted, sessionConfig.id);
 
         // Populate in-memory Map with alive terminals
         if (alive.length > 0) {

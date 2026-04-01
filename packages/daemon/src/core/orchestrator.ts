@@ -27,7 +27,7 @@ import { notifications } from "./notifications.js";
 import { notificationService } from "./notification-service.js";
 import { saveAgentStates, loadAgentStates } from "./state-persistence.js";
 import fs from "fs";
-import { HoldptyController } from "./holdpty-controller.js";
+
 import { rotateFileBySize, AGENT_LOG_MAX_BYTES, AGENT_LOG_KEEP_BYTES, CRASH_LOG_MAX_BYTES, CRASH_LOG_KEEP_BYTES } from "./log-rotation.js";
 import { getGlobalConfigDir } from "../daemon-lifecycle.js";
 import { logger } from "./logger.js";
@@ -688,7 +688,7 @@ export class Orchestrator extends EventEmitter {
   }
 
   /**
-   * Relay a message from one agent to another by sending it directly to the target's tmux terminal.
+   * Relay a message from one agent to another by sending it directly to the target's terminal.
    * This is the reliable path -- agents don't need to check file inboxes.
    */
   async relayMessage(fromAgentId: string, toAgentId: string, message: string, messageType?: string, channel?: string): Promise<boolean> {
@@ -1066,7 +1066,7 @@ RULES:
 
   /**
    * Restore agents from persisted state after daemon restart.
-   * Checks which tmux sessions are still alive and reconnects to them.
+   * Checks which terminal sessions are still alive and reconnects to them.
    * Dead agents are marked as "stopped".
    */
   async restore(options?: { respawnDead?: boolean }): Promise<{ restored: number; dead: number; respawned: number }> {
@@ -1087,20 +1087,7 @@ RULES:
         // Check if session exists (metadata + process alive)
         alive = await this.config.terminal.hasSession(terminalSession);
 
-        // For holdpty: also verify the socket file exists on disk
-        if (alive && this.config.terminal instanceof HoldptyController) {
-          try {
-            const socketPath = await this.config.terminal.getSocketPathForSession(terminalSession);
-            if (!fs.existsSync(socketPath)) {
-              alive = false;
-              logger.info(`[restore] Agent ${agent.config.name} (${agent.id}): socket file missing — marking as crashed`);
-            }
-          } catch {
-            alive = false;
-          }
-        }
-
-        // Double-check: verify the pane/socket is actually accessible
+        // Double-check: verify the session is actually accessible
         if (alive) {
           await this.config.terminal.capturePane(terminalSession, 1, false);
         }
@@ -1115,7 +1102,7 @@ RULES:
         agent.status = "running";
         agent.healthCheck.consecutiveFailures = 0;
 
-        // Re-register in agent manager (direct injection — no new tmux session)
+        // Re-register in agent manager (direct injection — no new terminal session)
         this.agentManager.restoreAgent(agent);
 
         // Restore channel memberships from DB
@@ -1538,7 +1525,7 @@ RULES:
 
     await this.agentManager.stopAll();
 
-    // Kill all tmux sessions that belong to this orchestrator's session
+    // Kill all terminal sessions that belong to this orchestrator's session
     const agents = this.agentManager.listAgents();
     for (const agent of agents) {
       try {
@@ -1547,7 +1534,7 @@ RULES:
           await this.config.terminal.killSession(terminalSession);
         }
       } catch (err) {
-        logger.error({ err: err }, `[orchestrator] Failed to kill tmux session for agent ${agent.id}:`);
+        logger.error({ err: err }, `[orchestrator] Failed to kill terminal session for agent ${agent.id}:`);
       }
     }
 
@@ -1560,11 +1547,11 @@ RULES:
   /**
    * Clean up orphaned sessions that no longer have corresponding active agents.
    * This handles stale sessions from crashed agents or incomplete cleanup.
-   * Works with both tmux and holdpty backends (uses listSessions + killSession interface).
+   * Uses the terminal backend's listSessions + killSession interface.
    */
   async cleanup(): Promise<void> {
     try {
-      // Get all sessions from the backend (tmux or holdpty)
+      // Get all sessions from the backend
       const allSessions = await this.config.terminal.listSessions();
 
       // Get active agents from this orchestrator's session

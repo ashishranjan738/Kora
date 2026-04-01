@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { AppDatabase } from "../../core/database.js";
 import { MessageQueue } from "../../core/message-queue.js";
-import { HoldptyController } from "../../core/holdpty-controller.js";
+import { MockPtyBackend } from "../../testing/mock-pty-backend.js";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -12,16 +12,13 @@ describe("Messages SQLite Migration - Integration", () => {
   let db: AppDatabase;
   let testDir: string;
   let messageQueue: MessageQueue;
-  let terminal: HoldptyController;
+  let terminal: MockPtyBackend;
 
   beforeEach(async () => {
     testDir = fs.mkdtempSync(path.join(os.tmpdir(), "kora-test-migration-"));
     db = new AppDatabase(testDir);
 
-    // Create holdpty controller with test socket dir
-    const socketDir = path.join(testDir, "holdpty-sockets");
-    fs.mkdirSync(socketDir, { recursive: true });
-    terminal = new HoldptyController(socketDir);
+    terminal = new MockPtyBackend();
 
     messageQueue = new MessageQueue(terminal, testDir, "mcp");
     messageQueue.setDeliveryTracking(db, "test-session");

@@ -4,13 +4,13 @@ import fsPromises from "fs/promises";
 import os from "os";
 import path from "path";
 import type { RouteDeps, Router, Request, Response } from "./route-deps.js";
-import { getRuntimeTmuxPrefix } from "@kora/shared";
+import { getRuntimeTmuxPrefix as getSessionPrefix } from "@kora/shared";
 import { validateProjectPath, isHiddenDirectory } from "../../core/path-validation.js";
 import { logger } from "../../core/logger.js";
 
 export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
   const { sessionManager, orchestrators, terminal, suggestionsDb, broadcastEvent, standaloneTerminals, persistTerminalsForSession } = deps;
-  const tmux = terminal;
+  const backend = terminal;
 
   function getDb(sid: string) {
     const orch = orchestrators.get(sid);
@@ -603,9 +603,9 @@ export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
       }
 
       const termId = `term-${randomUUID().slice(0, 8)}`;
-      const terminalSessionName = `${getRuntimeTmuxPrefix(process.env.KORA_DEV === "1")}${sid}-${termId}`;
+      const terminalSessionName = `${getSessionPrefix(process.env.KORA_DEV === "1")}${sid}-${termId}`;
 
-      await tmux.newSession(terminalSessionName);
+      await backend.newSession(terminalSessionName);
 
       // Wait for shell prompt before sending cd (shell may not be ready yet)
       const maxWait = 3000;
@@ -613,7 +613,7 @@ export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
       let waited = 0;
       while (waited < maxWait) {
         try {
-          const output = await tmux.capturePane(terminalSessionName, 5);
+          const output = await backend.capturePane(terminalSessionName, 5);
           const lastLine = output.trim().split('\n').pop() || '';
           if (lastLine.match(/[$%>❯]\s*$/)) break;
         } catch { /* pane may not be ready */ }
@@ -622,7 +622,7 @@ export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
       }
 
       // cd to the project directory
-      await tmux.sendKeys(terminalSessionName, `cd ${session.config.projectPath}`, { literal: false });
+      await backend.sendKeys(terminalSessionName, `cd ${session.config.projectPath}`, { literal: false });
 
       // Track this standalone terminal
       if (!standaloneTerminals.has(sid)) {
@@ -708,8 +708,8 @@ export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
         return;
       }
 
-      // Kill the holdpty session + clean up socket
-      try { await tmux.killSession(termInfo.terminalSession); } catch { /* may already be dead */ }
+      // Kill the terminal session
+      try { await backend.killSession(termInfo.terminalSession); } catch { /* may already be dead */ }
 
       // Remove from tracking
       terminals!.delete(tid);

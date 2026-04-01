@@ -80,7 +80,7 @@ export interface AgentConfig {
   allowedTools?: string[];
   extraCliArgs?: string[];
   envVars?: Record<string, string>;
-  /** Terminal session identifier (tmux session name or holdpty session ID) */
+  /** Terminal session identifier */
   terminalSession: string;
   spawnedBy: string;
   permissions: AgentPermissions;

@@ -13,9 +13,8 @@ import type { IPtyBackend } from "../core/pty-backend.js";
 import type { SuggestionsDatabase } from "../core/suggestions-db.js";
 import type { PlaybookDatabase } from "../core/playbook-database.js";
 import type { WSEvent } from "@kora/shared";
-import { getRuntimeTmuxPrefix } from "@kora/shared";
+import { getRuntimeTmuxPrefix as getSessionPrefix } from "@kora/shared";
 import { PtyManager } from "../core/pty-manager.js";
-import { HoldptyController } from "../core/holdpty-controller.js";
 import { logger } from "../core/logger.js";
 import { notificationService } from "../core/notification-service.js";
 import pinoHttp from "pino-http";
@@ -162,10 +161,7 @@ export function createServer(options: ServerOptions) {
   // Configure PTY manager with the active terminal backend
   ptyManager.setBackend(deps.terminal);
 
-  // Wire PtyManager into HoldptyController for sendKeys routing
-  if (deps.terminal instanceof HoldptyController) {
-    deps.terminal.setPtyManager(ptyManager);
-  }
+
 
   // Serve the built React dashboard
   const dashboardDistPath = resolveDashboardPath();
@@ -404,9 +400,9 @@ function handleTerminalConnection(
   agentId: string,
   deps: ServerDeps,
 ): void {
-  // Plain terminal tile — tmux session name is "kora--{sessionId}-{termId}" or "kora-dev--..."
+  // Plain terminal tile — session name is "kora--{sessionId}-{termId}" or "kora-dev--..."
   if (agentId.startsWith("term-")) {
-    const terminalSession = `${getRuntimeTmuxPrefix(process.env.KORA_DEV === "1")}${sessionId}-${agentId}`;
+    const terminalSession = `${getSessionPrefix(process.env.KORA_DEV === "1")}${sessionId}-${agentId}`;
     deps.terminal.hasSession(terminalSession).then((exists) => {
       if (!exists) {
         ws.close(4004, "Terminal session not found");

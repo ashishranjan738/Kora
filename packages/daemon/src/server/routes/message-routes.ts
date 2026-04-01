@@ -149,7 +149,7 @@ export function registerMessageRoutes(router: Router, deps: RouteDeps): void {
     }
   });
 
-  // Relay a message from one agent to another via tmux (reliable inter-agent communication)
+  // Relay a message from one agent to another via terminal (reliable inter-agent communication)
   router.post("/sessions/:sid/relay", async (req: Request, res: Response) => {
     try {
       const sid = String(req.params.sid);

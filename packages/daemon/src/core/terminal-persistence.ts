@@ -1,6 +1,5 @@
 // ============================================================
 // Terminal Persistence — saves/restores standalone terminal state
-// so terminals survive daemon restarts (holdpty --bg mode)
 // ============================================================
 
 import fs from "fs/promises";
@@ -52,31 +51,19 @@ export async function loadTerminalStates(
 }
 
 /**
- * Verify that a terminal's socket file exists (for holdpty sessions).
- * Returns true if the socket exists and is accessible, false otherwise.
+ * Verify that a terminal session is accessible.
+ * Always returns true — socket verification is no longer needed.
  */
 export async function verifySocketExists(
-  backend: IPtyBackend,
-  sessionName: string,
+  _backend: IPtyBackend,
+  _sessionName: string,
 ): Promise<boolean> {
-  try {
-    // Check if backend supports getSocketPathForSession (HoldptyController)
-    if (typeof (backend as any).getSocketPathForSession === "function") {
-      const socketPath = await (backend as any).getSocketPathForSession(sessionName);
-      await fs.access(socketPath);
-      return true;
-    }
-    // For non-holdpty backends (e.g., tmux), socket verification is not needed
-    return true;
-  } catch (err) {
-    logger.debug({ sessionName, err }, "Socket file does not exist or is not accessible");
-    return false;
-  }
+  return true;
 }
 
 /**
  * Restore standalone terminals with health checks.
- * Verifies both session existence (via hasSession) and socket file existence (for holdpty).
+ * Verifies session existence via hasSession.
  * Returns { alive, dead } arrays of terminals.
  */
 export async function restoreTerminalsWithHealthCheck(
@@ -97,7 +84,7 @@ export async function restoreTerminalsWithHealthCheck(
         continue;
       }
 
-      // For holdpty sessions, verify socket file exists
+      // Verify session is accessible
       const socketExists = await verifySocketExists(backend, term.terminalSession);
       if (!socketExists) {
         logger.warn({ sessionId, terminalId: term.id, sessionName: term.terminalSession }, "Terminal socket file missing — skipping restore");

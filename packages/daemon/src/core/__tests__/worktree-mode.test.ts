@@ -35,7 +35,7 @@ vi.mock("../worktree.js", () => {
   };
 });
 
-// Mock TmuxController
+// Mock pty backend
 const mockNewSession = vi.fn().mockResolvedValue(undefined);
 const mockSendKeys = vi.fn().mockResolvedValue(undefined);
 const mockCapturePane = vi.fn().mockResolvedValue("$ ");
@@ -44,21 +44,6 @@ const mockKillSession = vi.fn().mockResolvedValue(undefined);
 const mockPipePaneStart = vi.fn().mockResolvedValue(undefined);
 const mockPipePaneStop = vi.fn().mockResolvedValue(undefined);
 const mockSetEnvironment = vi.fn().mockResolvedValue(undefined);
-
-vi.mock("../tmux-controller.js", () => {
-  return {
-    TmuxController: class MockTmuxController {
-      newSession = mockNewSession;
-      sendKeys = mockSendKeys;
-      capturePane = mockCapturePane;
-      hasSession = mockHasSession;
-      killSession = mockKillSession;
-      pipePaneStart = mockPipePaneStart;
-      pipePaneStop = mockPipePaneStop;
-      setEnvironment = mockSetEnvironment;
-    },
-  };
-});
 
 // Mock AgentHealthMonitor
 const mockStartMonitoring = vi.fn();
@@ -80,7 +65,7 @@ vi.mock("../agent-health.js", () => {
 // ---------------------------------------------------------------------------
 
 import { AgentManager, SpawnAgentOptions } from "../agent-manager.js";
-import { TmuxController } from "../tmux-controller.js";
+import { MockPtyBackend } from "../../testing/mock-pty-backend.js";
 import { AgentHealthMonitor } from "../agent-health.js";
 import { WorktreeManager } from "../worktree.js";
 
@@ -121,10 +106,18 @@ describe("AgentManager — worktree mode", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    const tmux = new TmuxController();
+    const backend = new MockPtyBackend();
+    backend.newSession = mockNewSession;
+    backend.sendKeys = mockSendKeys;
+    backend.capturePane = mockCapturePane;
+    backend.hasSession = mockHasSession;
+    backend.killSession = mockKillSession;
+    backend.pipePaneStart = mockPipePaneStart;
+    backend.pipePaneStop = mockPipePaneStop;
+    backend.setEnvironment = mockSetEnvironment;
     const health = new AgentHealthMonitor({} as any);
     const wt = new WorktreeManager();
-    manager = new AgentManager(tmux, health, wt);
+    manager = new AgentManager(backend, health, wt);
 
     // Default: git repo, worktree creation succeeds
     mockIsGitRepo.mockResolvedValue(true);

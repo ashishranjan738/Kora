@@ -58,7 +58,7 @@ export class ClaudeSessionReader {
   /**
    * Initialize reader for an agent by finding its Claude session via cwd matching.
    * Scans ~/.claude/sessions/*.json to find a session whose cwd matches the agent's
-   * working directory. This is more robust than PID lookup since holdpty's PID differs
+   * working directory. This is more robust than PID lookup since the backend's PID differs
    * from the actual Claude Code child process PID.
    *
    * @param agentId - Kora agent ID

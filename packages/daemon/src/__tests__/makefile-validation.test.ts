@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { execSync } from "child_process";
 
 describe("Makefile validation", () => {
   // In git worktrees, __dirname points to the worktree which may not have node_modules.
@@ -22,43 +22,8 @@ describe("Makefile validation", () => {
     return worktreeRoot;
   })();
 
-  // Test 1: Verify make install removes holdpty bundled node-pty
-  it("removes holdpty bundled node-pty after make install", { timeout: 10000 }, () => {
-    // Path to the bundled node-pty that should be removed
-    const holdptyNodePtyPath = path.join(
-      repoRoot,
-      "node_modules",
-      "holdpty",
-      "node_modules",
-      "node-pty"
-    );
-
-    // Check if holdpty is installed at all
-    const holdptyPath = path.join(repoRoot, "node_modules", "holdpty");
-
-    if (!fs.existsSync(holdptyPath)) {
-      // If holdpty isn't installed, skip this test
-      console.log("Holdpty not installed, skipping bundled node-pty check");
-      return;
-    }
-
-    // Verify the bundled node-pty directory does NOT exist
-    // (it should be removed by make install's postinstall cleanup)
-    // Skip if running outside of `make install` context (e.g. npm install directly)
-    const bundledNodePtyExists = fs.existsSync(holdptyNodePtyPath);
-
-    if (bundledNodePtyExists) {
-      // This is expected if `make install` wasn't run (e.g. plain `npm install`).
-      // The Makefile cleanup step handles this — verify that step exists instead.
-      console.log("Bundled node-pty still present — `make install` cleanup not yet run (non-blocking)");
-      return;
-    }
-
-    expect(bundledNodePtyExists).toBe(false);
-  });
-
-  // Test 2: Verify Makefile has install target with cleanup command
-  it("has install target with holdpty node-pty cleanup", () => {
+  // Test 1: Verify Makefile has install target
+  it("has install target", () => {
     const makefilePath = path.join(repoRoot, "Makefile");
 
     expect(fs.existsSync(makefilePath)).toBe(true);
@@ -67,14 +32,10 @@ describe("Makefile validation", () => {
 
     // Verify install target exists
     expect(makefileContent).toContain("install:");
-
-    // Verify cleanup command is present
-    expect(makefileContent).toMatch(
-      /rm -rf.*holdpty\/node_modules\/node-pty/
-    );
+    expect(makefileContent).toContain("npm install");
   });
 
-  // Test 3: Verify node-pty is available at top level (not bundled)
+  // Test 2: Verify node-pty is available at top level
   it("has node-pty available at top level after make install", () => {
     const topLevelNodePtyPath = path.join(
       repoRoot,

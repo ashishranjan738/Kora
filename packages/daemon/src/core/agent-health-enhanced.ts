@@ -212,7 +212,7 @@ export class AgentHealthMonitor extends EventEmitter {
       // Always update time tracking (even if no state transition)
       this.updateTimeTracking(agentId, output, agent.activity);
     } catch (err) {
-      // Ignore errors during idle detection (tmux might be unavailable temporarily)
+      // Ignore errors during idle detection (terminal might be unavailable temporarily)
     }
   }
 

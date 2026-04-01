@@ -2,7 +2,7 @@ import type { RouteDeps, Router, Request, Response } from "./route-deps.js";
 import {
   APP_VERSION,
   API_VERSION,
-  getRuntimeTmuxPrefix,
+  getRuntimeTmuxPrefix as getSessionPrefix,
   getRuntimeDaemonDir,
   SESSIONS_SUBDIR,
   DEFAULT_WORKFLOW_STATES,
@@ -27,7 +27,7 @@ import { logger } from "../../core/logger.js";
 
 export function registerSessionRoutes(router: Router, deps: RouteDeps): void {
   const { sessionManager, orchestrators, providerRegistry, terminal, startTime, suggestionsDb, broadcastEvent, standaloneTerminals } = deps;
-  const tmux = terminal;
+  const backend = terminal;
 
   // ─── Status ──────────────────────────────────────────────────────────
 
@@ -295,7 +295,7 @@ export function registerSessionRoutes(router: Router, deps: RouteDeps): void {
     try {
       const sid = String(req.params.sid);
 
-      // Stop orchestrator (stops agents, message bus, control plane, kills tmux sessions)
+      // Stop orchestrator (stops agents, message bus, control plane, kills terminal sessions)
       const orch = orchestrators.get(sid);
       if (orch) {
         // Log to SQLite BEFORE stopping (DB closes on stop)
@@ -309,13 +309,13 @@ export function registerSessionRoutes(router: Router, deps: RouteDeps): void {
         orchestrators.delete(sid);
       }
 
-      // Kill any plain terminal tmux sessions (term-*) for this session
+      // Kill any plain terminal sessions (term-*) for this session
       try {
-        const allTmuxSessions = await tmux.listSessions();
-        const termPrefix = `${getRuntimeTmuxPrefix(process.env.KORA_DEV === "1")}${sid}-term-`;
-        for (const s of allTmuxSessions) {
+        const allSessions = await backend.listSessions();
+        const termPrefix = `${getSessionPrefix(process.env.KORA_DEV === "1")}${sid}-term-`;
+        for (const s of allSessions) {
           if (s.startsWith(termPrefix)) {
-            try { await tmux.killSession(s); } catch {}
+            try { await backend.killSession(s); } catch {}
           }
         }
       } catch {}
