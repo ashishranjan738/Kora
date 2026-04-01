@@ -89,6 +89,8 @@ export function EditorTile({ sessionId }: EditorTileProps) {
   });
   const [saving, setSaving] = useState(false);
   const [mdPreviewMode, setMdPreviewMode] = useState<Record<string, "edit" | "preview" | "split">>({});
+  const [imageZoomed, setImageZoomed] = useState(false);
+  const [imageDimensions, setImageDimensions] = useState<{ w: number; h: number } | null>(null);
   const openTabsRef = useRef(openTabs);
   const activeTabPathRef = useRef(activeTabPath);
 
@@ -143,6 +145,9 @@ export function EditorTile({ sessionId }: EditorTileProps) {
   // Keep refs in sync for the keydown handler
   useEffect(() => { openTabsRef.current = openTabs; }, [openTabs]);
   useEffect(() => { activeTabPathRef.current = activeTabPath; }, [activeTabPath]);
+
+  // Reset image viewer state when switching tabs
+  useEffect(() => { setImageZoomed(false); setImageDimensions(null); }, [activeTabPath]);
 
   // Derived: active tab object
   const activeTab = openTabs.find(t => t.path === activeTabPath) || null;
@@ -542,23 +547,22 @@ export function EditorTile({ sessionId }: EditorTileProps) {
                         <img
                           src={rawUrl}
                           alt={activeFilename}
-                          style={{ maxWidth: "100%", maxHeight: "calc(100vh - 200px)", borderRadius: 4, boxShadow: "0 2px 12px rgba(0,0,0,0.3)", cursor: "zoom-in" }}
-                          onClick={(e) => {
-                            const img = e.currentTarget;
-                            const isZoomed = img.style.maxWidth === "none";
-                            img.style.maxWidth = isZoomed ? "100%" : "none";
-                            img.style.maxHeight = isZoomed ? "calc(100vh - 200px)" : "none";
-                            img.style.cursor = isZoomed ? "zoom-in" : "zoom-out";
+                          style={{
+                            maxWidth: imageZoomed ? "none" : "100%",
+                            maxHeight: imageZoomed ? "none" : "calc(100vh - 200px)",
+                            borderRadius: 4,
+                            boxShadow: "0 2px 12px rgba(0,0,0,0.3)",
+                            cursor: imageZoomed ? "zoom-out" : "zoom-in",
                           }}
+                          onClick={() => setImageZoomed(z => !z)}
                           onLoad={(e) => {
                             const img = e.currentTarget;
-                            const info = img.parentElement?.nextElementSibling;
-                            if (info) info.textContent = `${activeFilename} — ${img.naturalWidth} × ${img.naturalHeight}`;
+                            setImageDimensions({ w: img.naturalWidth, h: img.naturalHeight });
                           }}
                         />
                       </div>
                       <div style={{ padding: "6px 12px", textAlign: "center", fontSize: 11, color: "var(--text-muted)", background: "var(--bg-secondary)", borderTop: "1px solid var(--border-color)", flexShrink: 0 }}>
-                        {activeFilename}
+                        {activeFilename}{imageDimensions ? ` — ${imageDimensions.w} × ${imageDimensions.h}` : ""}
                       </div>
                     </div>
                   );
