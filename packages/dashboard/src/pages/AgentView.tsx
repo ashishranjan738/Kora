@@ -4,6 +4,7 @@ import { useApi } from "../hooks/useApi";
 import { AgentTerminal } from "../components/AgentTerminal";
 import { ReplaceAgentDialog } from "../components/ReplaceAgentDialog";
 import { useMediaQuery } from "@mantine/hooks";
+import { Loader } from "@mantine/core";
 import { formatUptime, formatTokens } from "../utils/formatters";
 import { useApprovalRequests } from "../hooks/useApprovalRequests";
 import { ApprovalHistory } from "../components/ApprovalHistory";
@@ -23,6 +24,7 @@ export function AgentView() {
   const { getHistoryForAgent } = useApprovalRequests(sessionId);
   const [agent, setAgent] = useState<any>(null);
   const [session, setSession] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [sentMessages, setSentMessages] = useState<{ text: string; time: number }[]>([]);
@@ -50,6 +52,8 @@ export function AgentView() {
       if (sessionRes) setSession(sessionRes);
     } catch (err) {
       console.error("Failed to load agent:", err);
+    } finally {
+      setLoading(false);
     }
   }, [sessionId, agentId]);
 
@@ -200,6 +204,14 @@ export function AgentView() {
   const terminalSession = agent?.terminalSession || agent?.tmux || "--";
   const crashes = agent?.crashes ?? agent?.healthCheck?.crashes ?? 0;
   const statusClass = getStatusClass(agentStatus);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "60vh" }}>
+        <Loader size="lg" />
+      </div>
+    );
+  }
 
   return (
     <div className="agent-view-page">
