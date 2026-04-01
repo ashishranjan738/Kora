@@ -88,7 +88,7 @@ async function handleStart(): Promise<void> {
       try { execSync(`pm2 stop ${appName}`, { stdio: "ignore" }); } catch {}
       try { execSync(`pm2 delete ${appName}`, { stdio: "ignore" }); } catch {}
 
-      execSync(`pm2 start ${configPath}`, { stdio: "inherit" });
+      execSync(`pm2 start "${configPath}"`, { stdio: "inherit" });
       logger.info(`Kora daemon started under PM2 (${appName})`);
       logger.info(`  Config: ${configPath}`);
       logger.info(`  Logs:   pm2 logs ${appName}`);
