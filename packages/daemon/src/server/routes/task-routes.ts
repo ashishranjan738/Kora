@@ -681,6 +681,7 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
       db.addTaskComment({ id: randomUUID().slice(0, 8), taskId: tid, text: `Approved: moved to "${status}" by human reviewer.`, author: "user", authorName: "user", createdAt: new Date().toISOString() });
 
       // Notify assigned agent
+      const approvalWarnings: string[] = [];
       const orch = orchestrators.get(sid);
       if (orch && task.assignedTo) {
         try {
@@ -691,12 +692,12 @@ export function registerTaskRoutes(router: Router, deps: RouteDeps): void {
           }
         } catch (err) {
           logger.warn({ err, taskId: tid, agentId: task.assignedTo, action: "approval-notify" }, "[task-routes] Failed to notify agent of task approval");
+          approvalWarnings.push("Failed to notify agent of task approval");
         }
       }
 
       broadcastEvent({ event: "task-updated", sessionId: sid, taskId: tid });
       broadcastEvent({ event: "approval-resolved", sessionId: sid, taskId: tid, status, action: "approved" });
-      const approvalWarnings: string[] = [];
       res.json(approvalWarnings.length > 0 ? { approved: true, task, warnings: approvalWarnings } : { approved: true, task });
     } catch (err) {
       res.status(500).json({ error: String(err) });
