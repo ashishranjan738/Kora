@@ -250,7 +250,7 @@ export class PtyManager {
 
   /**
    * Write data directly to a session's PTY process.
-   * Used by HoldptyController to route sendKeys through the active dashboard connection.
+   * Used to route sendKeys through the active dashboard connection.
    */
   write(sessionName: string, data: string): void {
     const session = this.sessions.get(sessionName);

@@ -99,7 +99,7 @@ export function createApiRouter(deps: {
         const persisted = await loadTerminalStates(runtimeDir);
         if (persisted.length === 0) continue;
 
-        // Verify each terminal's session exists AND socket file is accessible (for holdpty)
+        // Verify each terminal's session exists and is accessible
         const { alive, dead } = await restoreTerminalsWithHealthCheck(tmux, persisted, sessionConfig.id);
 
         // Populate in-memory Map with alive terminals

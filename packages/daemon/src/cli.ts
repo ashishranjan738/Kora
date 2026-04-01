@@ -304,7 +304,7 @@ async function handleStart(): Promise<void> {
   }
 
   // 6. Graceful shutdown on SIGINT / SIGTERM
-  //    Persist state but DON'T kill agents — holdpty --bg sessions persist independently
+  //    Persist state but DON'T kill agents — terminal sessions persist independently
   const shutdown = async () => {
     logger.info("\nShutting down daemon...");
 

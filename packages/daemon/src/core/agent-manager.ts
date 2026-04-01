@@ -370,7 +370,7 @@ export class AgentManager extends EventEmitter {
       }
     }
 
-    // 6. Set environment variables via export commands (works for both tmux and holdpty)
+    // 6. Set environment variables via export commands
     const envEntries: [string, string][] = [];
     if (options.envVars) {
       envEntries.push(...Object.entries(options.envVars));
@@ -458,7 +458,7 @@ export class AgentManager extends EventEmitter {
     await this.terminal.sendKeys(terminalSession, fullCommand, { literal: false });
 
     // 8b. Fire-and-forget verification: after a delay, check if the CLI command
-    //     actually reached the terminal. If sendKeys failed silently (e.g. holdpty
+    //     actually reached the terminal. If sendKeys failed silently (e.g. backend
     //     socket race), retry once. This runs async to avoid blocking spawn.
     //     Skip for providers that launch interactive UIs quickly (Kiro) — their
     //     output won't contain the binary name, causing false-positive retries.
@@ -566,7 +566,7 @@ export class AgentManager extends EventEmitter {
     // 1. Stop health monitoring
     this.healthMonitor.stopMonitoring(agentId);
 
-    // 2. Gracefully stop tmux/holdpty session
+    // 2. Gracefully stop terminal session
     const sessionExists = await this.terminal.hasSession(terminalSession);
     if (sessionExists) {
       try { await this.terminal.pipePaneStop(terminalSession); } catch {}
@@ -583,7 +583,7 @@ export class AgentManager extends EventEmitter {
     }
 
     // 3. Always call killSession to clean up socket/metadata files
-    // Even if session is already dead, HoldptyController.killSession()
+    // Even if session is already dead, killSession()
     // cleans up orphaned socket + metadata files on disk.
     try { await this.terminal.killSession(terminalSession); } catch {}
 

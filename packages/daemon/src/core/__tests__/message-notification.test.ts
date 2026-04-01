@@ -19,33 +19,25 @@ vi.mock("crypto", () => ({
   },
 }));
 
-// Mock TmuxController
-const mockSendKeys = vi.fn().mockResolvedValue(undefined);
-const mockCapturePane = vi.fn().mockResolvedValue("❯ ");
-
-vi.mock("../tmux-controller.js", () => {
-  return {
-    TmuxController: class MockTmuxController {
-      sendKeys = mockSendKeys;
-      capturePane = mockCapturePane;
-    },
-  };
-});
-
 // ---------------------------------------------------------------------------
 // Import after mocks
 // ---------------------------------------------------------------------------
 
 import { MessageQueue } from "../message-queue.js";
-import { TmuxController } from "../tmux-controller.js";
+import { MockPtyBackend } from "../../testing/mock-pty-backend.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
+const mockSendKeys = vi.fn().mockResolvedValue(undefined);
+const mockCapturePane = vi.fn().mockResolvedValue("❯ ");
+
 function createQueue(mode: "mcp" | "terminal" | "manual" = "mcp"): MessageQueue {
-  const tmux = new TmuxController();
-  return new MessageQueue(tmux, "/projects/myapp/.kora", mode);
+  const backend = new MockPtyBackend();
+  backend.sendKeys = mockSendKeys;
+  backend.capturePane = mockCapturePane;
+  return new MessageQueue(backend, "/projects/myapp/.kora", mode);
 }
 
 // ---------------------------------------------------------------------------

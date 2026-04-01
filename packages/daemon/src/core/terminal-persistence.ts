@@ -84,7 +84,7 @@ export async function restoreTerminalsWithHealthCheck(
         continue;
       }
 
-      // For holdpty sessions, verify socket file exists
+      // Verify session is accessible
       const socketExists = await verifySocketExists(backend, term.terminalSession);
       if (!socketExists) {
         logger.warn({ sessionId, terminalId: term.id, sessionName: term.terminalSession }, "Terminal socket file missing — skipping restore");

@@ -11,7 +11,7 @@ import { logger } from "./logger.js";
  * - CSI sequences: ESC [ ... letter — colors, cursor movement, erasing
  * - Other C1 escapes: ESC followed by various characters
  *
- * Used to normalize holdpty's raw PTY output before hashing and pattern matching.
+ * Used to normalize raw PTY output before hashing and pattern matching.
  * Without this, cursor blink sequences, window title updates, and other invisible
  * ANSI output causes the hash to change every poll — falsely marking idle agents
  * as "working".
@@ -393,7 +393,7 @@ export class AgentHealthMonitor extends EventEmitter {
 
     try {
       // Capture last 10 lines of terminal output.
-      // capturePane(escapeSequences=false) strips ANSI in holdpty mode.
+      // capturePane(escapeSequences=false) returns plain text output.
       const rawOutput = await this.terminal.capturePane(terminalSession, 10, false);
       // Normalize output to prevent false "changed" detections from cursor movement,
       // trailing whitespace variations, shell status line updates, and system-injected

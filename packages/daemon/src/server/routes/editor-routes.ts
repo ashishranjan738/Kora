@@ -708,7 +708,7 @@ export function registerEditorRoutes(router: Router, deps: RouteDeps): void {
         return;
       }
 
-      // Kill the holdpty session + clean up socket
+      // Kill the terminal session
       try { await tmux.killSession(termInfo.terminalSession); } catch { /* may already be dead */ }
 
       // Remove from tracking

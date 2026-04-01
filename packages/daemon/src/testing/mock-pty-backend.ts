@@ -39,7 +39,7 @@ export class MockPtyBackend implements IPtyBackend {
   async sendKeys(session: string, keys: string, options?: { literal?: boolean }): Promise<void> {
     const sess = this.sessions.get(session);
     if (sess && sess.alive) {
-      // Always append newline — mirrors holdpty/tmux behavior where Enter is always sent
+      // Always append newline — mirrors IPtyBackend behavior where Enter is always sent
       sess.output.push(`> ${keys}\n`);
     }
   }

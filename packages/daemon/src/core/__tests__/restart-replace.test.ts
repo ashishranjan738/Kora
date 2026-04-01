@@ -44,19 +44,6 @@ const mockPipePaneStart = vi.fn().mockResolvedValue(undefined);
 const mockPipePaneStop = vi.fn().mockResolvedValue(undefined);
 const mockSetEnvironment = vi.fn().mockResolvedValue(undefined);
 
-vi.mock("../tmux-controller.js", () => ({
-  TmuxController: class MockTmuxController {
-    newSession = mockNewSession;
-    sendKeys = mockSendKeys;
-    capturePane = mockCapturePane;
-    hasSession = mockHasSession;
-    killSession = mockKillSession;
-    pipePaneStart = mockPipePaneStart;
-    pipePaneStop = mockPipePaneStop;
-    setEnvironment = mockSetEnvironment;
-  },
-}));
-
 const mockStartMonitoring = vi.fn();
 const mockStopMonitoring = vi.fn();
 
@@ -74,7 +61,7 @@ vi.mock("../agent-health.js", () => ({
 // ---------------------------------------------------------------------------
 
 import { AgentManager, SpawnAgentOptions } from "../agent-manager.js";
-import { TmuxController } from "../tmux-controller.js";
+import { MockPtyBackend } from "../../testing/mock-pty-backend.js";
 import { AgentHealthMonitor } from "../agent-health.js";
 import { WorktreeManager } from "../worktree.js";
 
@@ -121,10 +108,18 @@ describe("Restart vs Replace agent lifecycle", () => {
       .mockReturnValueOnce("11111111-2222-3333-4444-555555555555")
       .mockReturnValue("99999999-8888-7777-6666-555555555555");
 
-    const tmux = new TmuxController();
+    const backend = new MockPtyBackend();
+    backend.newSession = mockNewSession;
+    backend.sendKeys = mockSendKeys;
+    backend.capturePane = mockCapturePane;
+    backend.hasSession = mockHasSession;
+    backend.killSession = mockKillSession;
+    backend.pipePaneStart = mockPipePaneStart;
+    backend.pipePaneStop = mockPipePaneStop;
+    backend.setEnvironment = mockSetEnvironment;
     const health = new AgentHealthMonitor({} as any);
     const wt = new WorktreeManager();
-    manager = new AgentManager(tmux, health, wt);
+    manager = new AgentManager(backend, health, wt);
 
     mockIsGitRepo.mockResolvedValue(true);
     mockCreateWorktree.mockResolvedValue("/projects/myapp/.kora/worktrees/test-agent-aaaaaaaa");
