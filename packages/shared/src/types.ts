@@ -35,6 +35,14 @@ export interface SessionConfig {
   maxBudget?: number;
   /** Allow master agents to force task state transitions, bypassing pipeline validation. Default: false */
   allowMasterForceTransition?: boolean;
+  /** Feature flags for optional capabilities */
+  features?: SessionFeatureFlags;
+}
+
+/** Feature flags for optional session capabilities */
+export interface SessionFeatureFlags {
+  /** Enable group chat / channels. Default: false */
+  groupChat?: boolean;
 }
 
 export interface WebhookConfig {

@@ -85,6 +85,8 @@ export interface SessionResponse extends Omit<SessionConfig, "worktreeMode"> {
   budgetLimit?: number;
   /** Some API paths nest config — fallback access pattern */
   config?: Partial<SessionConfig>;
+  /** Feature flags for optional capabilities */
+  features?: { groupChat?: boolean };
 }
 
 export interface AgentSummary {
