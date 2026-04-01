@@ -41,9 +41,13 @@ export const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 10_000;
 export const SPAWN_TIMEOUT_MS = 30_000;
 export const MAX_AGENTS_PER_SESSION = 20;
 
-// Tmux session namespace — all Kora-managed tmux sessions use this prefix
-export const TMUX_SESSION_PREFIX = "kora--";
-export const TMUX_SESSION_PREFIX_DEV = "kora-dev--";
+// Session namespace — all Kora-managed terminal sessions use this prefix
+export const SESSION_PREFIX = "kora--";
+export const SESSION_PREFIX_DEV = "kora-dev--";
+/** @deprecated Use SESSION_PREFIX */
+export const TMUX_SESSION_PREFIX = SESSION_PREFIX;
+/** @deprecated Use SESSION_PREFIX_DEV */
+export const TMUX_SESSION_PREFIX_DEV = SESSION_PREFIX_DEV;
 
 // Per-project runtime directory (dev mode)
 export const DAEMON_DIR_DEV = ".kora-dev";
@@ -56,9 +60,11 @@ export function getRuntimeDaemonDir(isDev: boolean): string {
   return isDev ? DAEMON_DIR_DEV : DAEMON_DIR;
 }
 
-export function getRuntimeTmuxPrefix(isDev: boolean): string {
-  return isDev ? TMUX_SESSION_PREFIX_DEV : TMUX_SESSION_PREFIX;
+export function getSessionPrefix(isDev: boolean): string {
+  return isDev ? SESSION_PREFIX_DEV : SESSION_PREFIX;
 }
+/** @deprecated Use getSessionPrefix */
+export const getRuntimeTmuxPrefix = getSessionPrefix;
 
 // Terminal streaming
 export const TERMINAL_RING_BUFFER_LINES = 100_000;

@@ -16,7 +16,7 @@ import { Orchestrator } from "./core/orchestrator.js";
 import { registry } from "./cli-providers/index.js";
 import { loadPluginProviders } from "./cli-providers/plugin-loader.js";
 import type { IPtyBackend } from "./core/pty-backend.js";
-import { DEFAULT_PORT, APP_VERSION, DEFAULT_PTY_BACKEND, getRuntimeTmuxPrefix, getRuntimeDaemonDir, SESSIONS_SUBDIR } from "@kora/shared";
+import { DEFAULT_PORT, APP_VERSION, DEFAULT_PTY_BACKEND, getRuntimeTmuxPrefix as getSessionPrefix, getRuntimeDaemonDir, SESSIONS_SUBDIR } from "@kora/shared";
 import type { PtyBackendType } from "@kora/shared";
 import { logger } from "./core/logger.js";
 import { SuggestionsDatabase } from "./core/suggestions-db.js";
@@ -154,7 +154,7 @@ async function handleStart(): Promise<void> {
   const { ensureBuiltinPlaybooks: ensureJsonPlaybooks } = await import("./core/playbook-loader.js");
   await ensureJsonPlaybooks(globalConfigDir);
 
-  // 4. Restore existing sessions — reconnect to live tmux agents
+  // 4. Restore existing sessions — reconnect to live agents
   const orchestrators = new Map<string, Orchestrator>();
   const existingSessions = sessionManager.listSessions();
   for (const config of existingSessions) {
@@ -223,24 +223,24 @@ async function handleStart(): Promise<void> {
     );
   });
 
-  // 5a. Global tmux cleanup on startup — kill orphaned Kora sessions not matching any active session
+  // 5a. Global session cleanup on startup — kill orphaned Kora sessions not matching any active session
   try {
-    const tmuxPrefix = getRuntimeTmuxPrefix(process.env.KORA_DEV === "1");
-    const allTmux = await ptyBackend.listSessions();
+    const sessionPrefix = getSessionPrefix(process.env.KORA_DEV === "1");
+    const allSessions = await ptyBackend.listSessions();
     const activeSessionIds = new Set(sessionManager.listSessions().map(s => s.id));
     let cleaned = 0;
-    for (const s of allTmux) {
+    for (const s of allSessions) {
       // Only consider sessions created by this Kora instance (dev or prod)
-      if (!s.startsWith(tmuxPrefix)) continue;
-      const belongsToActive = Array.from(activeSessionIds).some(sid => s.startsWith(`${tmuxPrefix}${sid}-`));
+      if (!s.startsWith(sessionPrefix)) continue;
+      const belongsToActive = Array.from(activeSessionIds).some(sid => s.startsWith(`${sessionPrefix}${sid}-`));
       if (!belongsToActive) {
         try { await ptyBackend.killSession(s); cleaned++; } catch {}
       }
     }
-    if (cleaned > 0) logger.info(`  Cleaned up ${cleaned} orphaned tmux sessions`);
+    if (cleaned > 0) logger.info(`  Cleaned up ${cleaned} orphaned sessions`);
   } catch {}
 
-  // 5b. Set up periodic cleanup of orphaned tmux sessions (every 5 minutes)
+  // 5b. Set up periodic cleanup of orphaned sessions (every 5 minutes)
   const cleanupInterval = setInterval(async () => {
     for (const [sid, orch] of orchestrators) {
       try {
@@ -726,7 +726,7 @@ async function handleRun(): Promise<void> {
       await cleanup('TIMEOUT', 2);
     }
 
-    // Check if all agents are done by verifying their tmux sessions still exist
+    // Check if all agents are done by verifying their terminal sessions still exist
     const agents = orch.agentManager.listAgents().filter(a => spawnedAgents.includes(a.id));
     let allDone = true;
     const failedAgents: typeof agents = [];

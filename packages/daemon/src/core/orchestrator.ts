@@ -688,7 +688,7 @@ export class Orchestrator extends EventEmitter {
   }
 
   /**
-   * Relay a message from one agent to another by sending it directly to the target's tmux terminal.
+   * Relay a message from one agent to another by sending it directly to the target's terminal.
    * This is the reliable path -- agents don't need to check file inboxes.
    */
   async relayMessage(fromAgentId: string, toAgentId: string, message: string, messageType?: string, channel?: string): Promise<boolean> {
@@ -1066,7 +1066,7 @@ RULES:
 
   /**
    * Restore agents from persisted state after daemon restart.
-   * Checks which tmux sessions are still alive and reconnects to them.
+   * Checks which terminal sessions are still alive and reconnects to them.
    * Dead agents are marked as "stopped".
    */
   async restore(options?: { respawnDead?: boolean }): Promise<{ restored: number; dead: number; respawned: number }> {
@@ -1102,7 +1102,7 @@ RULES:
         agent.status = "running";
         agent.healthCheck.consecutiveFailures = 0;
 
-        // Re-register in agent manager (direct injection — no new tmux session)
+        // Re-register in agent manager (direct injection — no new terminal session)
         this.agentManager.restoreAgent(agent);
 
         // Restore channel memberships from DB
@@ -1525,7 +1525,7 @@ RULES:
 
     await this.agentManager.stopAll();
 
-    // Kill all tmux sessions that belong to this orchestrator's session
+    // Kill all terminal sessions that belong to this orchestrator's session
     const agents = this.agentManager.listAgents();
     for (const agent of agents) {
       try {
@@ -1534,7 +1534,7 @@ RULES:
           await this.config.terminal.killSession(terminalSession);
         }
       } catch (err) {
-        logger.error({ err: err }, `[orchestrator] Failed to kill tmux session for agent ${agent.id}:`);
+        logger.error({ err: err }, `[orchestrator] Failed to kill terminal session for agent ${agent.id}:`);
       }
     }
 

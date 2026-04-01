@@ -1,5 +1,5 @@
 import type { AgentConfig, AgentState, AgentRole, AgentPermissions, AgentCost, MessagingMode, WorktreeMode } from "@kora/shared";
-import { AutonomyLevel, DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS, DEFAULT_MAX_RESTARTS, PERSONAS_DIR, GRACEFUL_SHUTDOWN_TIMEOUT_MS, getRuntimeTmuxPrefix, MCP_SERVER_NAME, SPAWN_TIMEOUT_MS, MAX_AGENTS_PER_SESSION } from "@kora/shared";
+import { AutonomyLevel, DEFAULT_MASTER_PERMISSIONS, DEFAULT_WORKER_PERMISSIONS, DEFAULT_MAX_RESTARTS, PERSONAS_DIR, GRACEFUL_SHUTDOWN_TIMEOUT_MS, getRuntimeTmuxPrefix as getSessionPrefix, MCP_SERVER_NAME, SPAWN_TIMEOUT_MS, MAX_AGENTS_PER_SESSION } from "@kora/shared";
 import type { CLIProvider } from "@kora/shared";
 import { detectAgentSkills } from "@kora/shared";
 import type { IPtyBackend } from "./pty-backend.js";
@@ -83,7 +83,7 @@ export class AgentManager extends EventEmitter {
     // 1. Generate agent ID (slugify name) — or reuse existing ID for restarts
     const agentId = options.forceAgentId ?? (slugify(options.name) + "-" + uuidv4().slice(0, 8));
     const isDev = process.env.KORA_DEV === "1";
-    const terminalSession = `${getRuntimeTmuxPrefix(isDev)}${options.sessionId}-${agentId}`;
+    const terminalSession = `${getSessionPrefix(isDev)}${options.sessionId}-${agentId}`;
 
     // 2. Write persona files
     const personasDir = path.join(options.runtimeDir, PERSONAS_DIR);
@@ -336,7 +336,7 @@ export class AgentManager extends EventEmitter {
       }
     }
 
-    // 4. Create tmux session
+    // 4. Create terminal session
     await this.terminal.newSession(terminalSession);
 
     // 5. Wait for shell to be ready by polling capturePane for a prompt character
@@ -452,7 +452,7 @@ export class AgentManager extends EventEmitter {
       await new Promise(r => setTimeout(r, pollInterval));
     }
 
-    // 8. Send the command to tmux via sendKeys (join args with spaces)
+    // 8. Send the command via sendKeys (join args with spaces)
     const fullCommand = command.join(" ");
     logger.info(`[agent-manager] Sending CLI command for ${agentId}: ${command[0]} (${command.length} args)`);
     await this.terminal.sendKeys(terminalSession, fullCommand, { literal: false });
@@ -661,7 +661,7 @@ export class AgentManager extends EventEmitter {
       agent.healthCheck.restartCount += 1;
       agent.status = "running";
 
-      // Re-create the tmux session and restart the agent process
+      // Re-create the terminal session and restart the agent process
       const terminalSession = agent.config.terminalSession;
       await this.terminal.newSession(terminalSession);
       // Re-launch requires a resolved CLIProvider; emit event so the caller can handle it
@@ -696,7 +696,7 @@ export class AgentManager extends EventEmitter {
       agent.config.cliProvider = provider.id;
     } else {
       const options: SpawnAgentOptions = {
-        sessionId: agent.config.terminalSession.replace(getRuntimeTmuxPrefix(process.env.KORA_DEV === "1"), "").split("-").slice(0, -1).join("-"),
+        sessionId: agent.config.terminalSession.replace(getSessionPrefix(process.env.KORA_DEV === "1"), "").split("-").slice(0, -1).join("-"),
         name: agent.config.name,
         role: agent.config.role,
         provider,
@@ -753,8 +753,8 @@ export class AgentManager extends EventEmitter {
   }
 
   /**
-   * Restore an agent from persisted state — re-registers without spawning tmux.
-   * Used after daemon restart to reconnect to still-running tmux sessions.
+   * Restore an agent from persisted state — re-registers without spawning a new terminal.
+   * Used after daemon restart to reconnect to still-running terminal sessions.
    */
   restoreAgent(agent: AgentState): void {
     // Migrate persisted state from old tmuxSession → terminalSession field name

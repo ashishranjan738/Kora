@@ -564,7 +564,7 @@ export class AgentHealthMonitor extends EventEmitter {
       // Periodic utilization flush (real-time display without mutating accumulators)
       this.flushUtilization(agentId);
     } catch (err) {
-      // Ignore errors during idle detection (tmux might be unavailable temporarily)
+      // Ignore errors during idle detection (terminal might be unavailable temporarily)
     }
   }
 

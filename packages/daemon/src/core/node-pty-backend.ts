@@ -1,12 +1,11 @@
 /**
  * NodePtyBackend — IPtyBackend implementation using node-pty directly.
  *
- * Replaces holdpty/tmux for agent session management. Each agent gets
- * a node-pty process with a ring buffer for output capture.
+ * Each agent gets a node-pty process with a ring buffer for output capture.
  *
- * Key differences from holdpty/tmux:
- * - No external processes (holdpty binary, tmux server)
- * - capturePane reads from in-memory ring buffer instead of Unix socket/tmux
+ * Key characteristics:
+ * - No external processes required
+ * - capturePane reads from in-memory ring buffer
  * - Sessions do NOT survive daemon restart (no persistence layer yet)
  */
 

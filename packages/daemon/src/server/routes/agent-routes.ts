@@ -15,7 +15,7 @@ import { logger } from "../../core/logger.js";
 
 export function registerAgentRoutes(router: Router, deps: RouteDeps): void {
   const { sessionManager, orchestrators, providerRegistry, terminal, suggestionsDb, broadcastEvent, outputCache, stripAnsi } = deps;
-  const tmux = terminal;
+  const backend = terminal;
 
   function getDb(sid: string) {
     const orch = orchestrators.get(sid);
@@ -642,7 +642,7 @@ export function registerAgentRoutes(router: Router, deps: RouteDeps): void {
         // Direct custom message via sendTerminalNotification — bypass queue entirely
         try {
           const { sendTerminalNotification } = await import("../../core/terminal-utils.js");
-          await sendTerminalNotification(tmux, agent.config.terminalSession, `[Nudge]: ${customMessage}`);
+          await sendTerminalNotification(backend, agent.config.terminalSession, `[Nudge]: ${customMessage}`);
           logger.info({ agentId: aid, customMessage, sessionId: sid }, "[API] Custom nudge sent successfully");
 
           // Track nudge-sent event
@@ -786,7 +786,7 @@ export function registerAgentRoutes(router: Router, deps: RouteDeps): void {
         outputLines = cached.lines;
       } else {
         // Cache miss - fetch from terminal
-        rawOutput = await tmux.capturePane(agent.config.terminalSession, lines);
+        rawOutput = await backend.capturePane(agent.config.terminalSession, lines);
         outputLines = rawOutput.split("\n");
         outputCache.set(cacheKey, rawOutput, outputLines);
       }
@@ -849,7 +849,7 @@ export function registerAgentRoutes(router: Router, deps: RouteDeps): void {
       if (cached) {
         outputLines = cached.lines;
       } else {
-        const rawOutput = await tmux.capturePane(agent.config.terminalSession, lines);
+        const rawOutput = await backend.capturePane(agent.config.terminalSession, lines);
         outputLines = rawOutput.split("\n");
         outputCache.set(cacheKey, rawOutput, outputLines);
       }

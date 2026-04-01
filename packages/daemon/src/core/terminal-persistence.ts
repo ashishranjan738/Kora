@@ -52,7 +52,7 @@ export async function loadTerminalStates(
 
 /**
  * Verify that a terminal session is accessible.
- * Always returns true — socket verification was holdpty-specific and is no longer needed.
+ * Always returns true — socket verification is no longer needed.
  */
 export async function verifySocketExists(
   _backend: IPtyBackend,

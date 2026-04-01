@@ -3,8 +3,8 @@
  *
  * Saves agent states, session data, and task snapshots to disk at regular
  * intervals. On daemon restart, the latest checkpoint is used to restore
- * the session. Holdpty sessions survive independently (--bg flag), so the
- * daemon just needs to reconnect to them.
+ * the session. Terminal sessions persist independently, so the daemon
+ * just needs to reconnect to them.
  *
  * Checkpoint data is written atomically (tmp + rename) to avoid corruption.
  */
