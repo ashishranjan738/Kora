@@ -279,6 +279,16 @@ export function useApi() {
       apiFetch<{ promoted: boolean; id: string }>(`/sessions/${sid}/knowledge/${entryIndex}/promote`, {
         method: "POST",
       }),
+    addGlobalKnowledge: (text: string, source?: string) =>
+      apiFetch<{ id: string; created: boolean }>("/knowledge", {
+        method: "POST",
+        body: JSON.stringify({ text, source: source || "dashboard" }),
+      }),
+    updateGlobalKnowledge: (entryId: string, text: string) =>
+      apiFetch<{ updated: boolean }>(`/knowledge/${entryId}`, {
+        method: "PUT",
+        body: JSON.stringify({ text }),
+      }),
     deleteGlobalKnowledge: (entryId: string) =>
       apiFetch<{ deleted: boolean }>(`/knowledge/${entryId}`, {
         method: "DELETE",
