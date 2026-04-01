@@ -133,6 +133,10 @@ async function handleStart(): Promise<void> {
 
     ptyBackend = new HoldptyController();
     logger.info(`  [pty backend] holdpty (sessions: ${holdptyDir})`);
+  } else if (backendFlag === "node-pty") {
+    const { NodePtyBackend } = await import("./core/node-pty-backend.js");
+    ptyBackend = new NodePtyBackend();
+    logger.info(`  [pty backend] node-pty (direct, no external deps)`);
   } else {
     ptyBackend = tmuxDefault;
     logger.info(`  [pty backend] tmux`);
@@ -557,6 +561,9 @@ async function handleRun(): Promise<void> {
       if (fs.existsSync(spawnHelper)) fs.chmodSync(spawnHelper, 0o755);
     } catch { /* non-fatal */ }
     ptyBackend = new HoldptyController();
+  } else if (backendFlag === "node-pty") {
+    const { NodePtyBackend } = await import("./core/node-pty-backend.js");
+    ptyBackend = new NodePtyBackend();
   } else {
     ptyBackend = tmuxDefault;
   }
