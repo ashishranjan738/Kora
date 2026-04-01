@@ -19,6 +19,7 @@ import {
 import { useMediaQuery } from "@mantine/hooks";
 import { useApi } from "../hooks/useApi";
 import { MarkdownText } from "./MarkdownText";
+import { showError } from "../utils/notifications";
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -139,7 +140,9 @@ export function ChatTab({ sessionId, wsEvents }: ChatTabProps) {
         id: a.id, name: a.config?.name || a.name || a.id,
         role: a.config?.role || a.role, status: a.status,
       })));
-    } catch { /* silently fail */ }
+    } catch {
+      showError("Failed to join channel");
+    }
   }
 
   async function addAgentToChannel(channelId: string, agentId: string) {
@@ -235,6 +238,7 @@ export function ChatTab({ sessionId, wsEvents }: ChatTabProps) {
       }
     } catch (err: any) {
       setError(err.message || "Failed to send message");
+      showError("Failed to send message");
       // Remove optimistic message on failure
       setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
     } finally {
@@ -268,6 +272,7 @@ export function ChatTab({ sessionId, wsEvents }: ChatTabProps) {
       setActiveChannel(channelId);
     } catch (err: any) {
       setError(err.message || "Failed to create channel");
+      showError("Failed to create channel");
     } finally {
       setCreatingChannel(false);
     }

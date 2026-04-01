@@ -894,7 +894,7 @@ export function MultiAgentView() {
                 <AgentDetailPopover
                   agent={agent}
                   tasks={tasks}
-                  onNudge={async () => { try { await api.nudgeAgent(sessionId!, agent.id); } catch {} }}
+                  onNudge={async () => { try { await api.nudgeAgent(sessionId!, agent.id); } catch (err: any) { showError(err.message || "Failed to nudge agent", "Nudge Failed"); } }}
                   onExpand={() => toggleFullscreen(agent.id)}
                 />
               </HoverCard.Dropdown>
@@ -1031,7 +1031,7 @@ export function MultiAgentView() {
                     title="Nudge agent"
                     onClick={async (e) => {
                       e.stopPropagation();
-                      try { await api.nudgeAgent(sessionId!, agent.id); } catch {}
+                      try { await api.nudgeAgent(sessionId!, agent.id); } catch (err: any) { showError(err.message || "Failed to nudge agent", "Nudge Failed"); }
                     }}
                     style={{ color: agent.unreadMessages ? "var(--accent-yellow)" : undefined }}
                   >
@@ -1565,7 +1565,7 @@ export function MultiAgentView() {
       <UnreadMessageBanner
         agents={agents}
         onNudge={async (agentId) => {
-          try { await api.nudgeAgent(sessionId!, agentId); } catch {}
+          try { await api.nudgeAgent(sessionId!, agentId); } catch (err: any) { showError(err.message || "Failed to nudge agent", "Nudge Failed"); }
         }}
       />
 
@@ -1647,7 +1647,7 @@ export function MultiAgentView() {
                       ) : (
                         <button
                           style={{ flex: 1, padding: "10px 0", borderRadius: 6, border: "1px solid var(--border-color)", background: "var(--bg-tertiary)", color: "var(--text-secondary)", fontSize: 13, cursor: "pointer" }}
-                          onClick={async () => { try { await api.nudgeAgent(sessionId!, agent.id); showToast("Nudged"); } catch {} }}
+                          onClick={async () => { try { await api.nudgeAgent(sessionId!, agent.id); showToast("Nudged"); } catch (err: any) { showError(err.message || "Failed to nudge agent", "Nudge Failed"); } }}
                         >
                           Nudge
                         </button>

@@ -21,6 +21,7 @@ import { useMediaQuery } from "@mantine/hooks";
 import { AutonomyLevel } from "@kora/shared";
 import { NudgePolicyEditor } from "./NudgePolicyEditor";
 import { CleanupPanel } from "./CleanupPanel";
+import { showError } from "../utils/notifications";
 
 const AUTONOMY_DESCRIPTIONS: Record<AutonomyLevel, string> = {
   [AutonomyLevel.SuggestOnly]: "Agent proposes actions and waits for approval",
@@ -642,7 +643,9 @@ export function SessionSettingsDialog({
                   if (!isNaN(val) && val > 0) {
                     try {
                       await api.updateSessionConfig(sessionId, { budgetLimit: val });
-                    } catch {}
+                    } catch (err: any) {
+                      showError("Failed to save budget limit: " + (err.message || "Unknown error"));
+                    }
                   }
                 }, 800);
               }}
@@ -665,9 +668,10 @@ export function SessionSettingsDialog({
               setAutoAssign(newVal);
               try {
                 await api.updateSessionConfig(sessionId, { autoAssign: newVal });
-              } catch {
+              } catch (err: any) {
                 // Revert on failure
                 setAutoAssign(!newVal);
+                showError("Failed to update auto-assign setting: " + (err.message || "Unknown error"));
               }
             }}
             size="md"
@@ -689,8 +693,9 @@ export function SessionSettingsDialog({
               setAllowMasterForceTransition(newVal);
               try {
                 await api.updateSessionConfig(sessionId, { allowMasterForceTransition: newVal });
-              } catch {
+              } catch (err: any) {
                 setAllowMasterForceTransition(!newVal);
+                showError("Failed to update force transition setting: " + (err.message || "Unknown error"));
               }
             }}
             size="md"
@@ -711,8 +716,9 @@ export function SessionSettingsDialog({
               setGroupChatEnabled(newVal);
               try {
                 await api.updateSessionConfig(sessionId, { features: { groupChat: newVal } });
-              } catch {
+              } catch (err: any) {
                 setGroupChatEnabled(!newVal);
+                showError("Failed to update group chat setting: " + (err.message || "Unknown error"));
               }
             }}
             size="md"
@@ -1050,8 +1056,8 @@ function BoardCleanup({ sessionId }: { sessionId: string }) {
     try {
       const data = await api.archiveDoneTasks(sessionId, daysOld);
       setResult(data);
-    } catch {
-      // silently fail
+    } catch (err: any) {
+      showError("Failed to archive tasks: " + (err.message || "Unknown error"));
     } finally {
       setArchiving(false);
     }
