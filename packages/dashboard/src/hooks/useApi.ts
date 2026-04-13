@@ -274,23 +274,23 @@ export function useApi() {
       }),
     // Global knowledge (cross-session)
     getGlobalKnowledge: () =>
-      apiFetch<{ entries: Array<{ id: string; text: string; source: string; timestamp?: string; sourceSessionId?: string }> }>("/knowledge"),
+      apiFetch<{ entries: Array<{ id: string; text: string; source: string; timestamp?: string; sourceSessionId?: string }> }>("/global/knowledge"),
     promoteToGlobal: (sid: string, entryIndex: number) =>
       apiFetch<{ promoted: boolean; id: string }>(`/sessions/${sid}/knowledge/${entryIndex}/promote`, {
         method: "POST",
       }),
     addGlobalKnowledge: (text: string, source?: string) =>
-      apiFetch<{ id: string; created: boolean }>("/knowledge", {
+      apiFetch<{ id: string; created: boolean }>("/global/knowledge", {
         method: "POST",
         body: JSON.stringify({ text, source: source || "dashboard" }),
       }),
     updateGlobalKnowledge: (entryId: string, text: string) =>
-      apiFetch<{ updated: boolean }>(`/knowledge/${entryId}`, {
+      apiFetch<{ updated: boolean }>(`/global/knowledge/${entryId}`, {
         method: "PUT",
         body: JSON.stringify({ text }),
       }),
     deleteGlobalKnowledge: (entryId: string) =>
-      apiFetch<{ deleted: boolean }>(`/knowledge/${entryId}`, {
+      apiFetch<{ deleted: boolean }>(`/global/knowledge/${entryId}`, {
         method: "DELETE",
       }),
     approveRequest: (sid: string, aid: string, requestId: string) =>

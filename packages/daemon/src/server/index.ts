@@ -222,7 +222,7 @@ export function createServer(options: ServerOptions) {
     if (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/terminal/")) {
       // Generate per-request nonce for CSP
       const nonce = crypto.randomBytes(16).toString("base64");
-      const html = indexHtmlTemplate.replace(CSP_NONCE_PLACEHOLDER, nonce);
+      const html = indexHtmlTemplate.replaceAll(CSP_NONCE_PLACEHOLDER, nonce);
       res.setHeader("Content-Type", "text/html");
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       res.setHeader("Content-Security-Policy", `script-src 'self' 'nonce-${nonce}' 'unsafe-eval'; object-src 'none'; base-uri 'self'`);
